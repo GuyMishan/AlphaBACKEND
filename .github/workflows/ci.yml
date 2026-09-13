@@ -18,4 +18,4 @@ jobs:
           dotnet-version: 10.0.x
       - run: dotnet restore AlphaBackend.slnx
       - run: dotnet build AlphaBackend.slnx --no-restore --configuration Release
-      - run: dotnet test AlphaBackend.slnx --no-build --configuration Release
+      - run: dotnet test --solution AlphaBackend.slnx --no-build --configuration Release
