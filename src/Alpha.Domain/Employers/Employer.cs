@@ -22,6 +22,14 @@ public sealed class Employer : Entity
     public string WithholdingFileNumber { get; private set; } = string.Empty;
     public EmployerStatus Status { get; private set; } = EmployerStatus.Onboarding;
 
+    public void Update(string legalName, string registrationNumber, string withholdingFileNumber)
+    {
+        LegalName = Require(legalName, nameof(legalName));
+        RegistrationNumber = Require(registrationNumber, nameof(registrationNumber));
+        WithholdingFileNumber = Require(withholdingFileNumber, nameof(withholdingFileNumber));
+        Touch();
+    }
+
     private static string Require(string value, string name) =>
         string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value is required.", name) : value.Trim();
 }
