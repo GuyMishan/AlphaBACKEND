@@ -21,14 +21,31 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHealthChecks();
 
 if (builder.Environment.IsDevelopment())
+{
     builder.Services.AddAuthentication("DevelopmentHeaders")
         .AddScheme<AuthenticationSchemeOptions, DevelopmentHeaderAuthenticationHandler>("DevelopmentHeaders", null);
+}
 else
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
-    {
-        options.Authority = builder.Configuration["Authentication:Authority"];
-        options.Audience = builder.Configuration["Authentication:Audience"];
-    });
+{
+    builder.Services.AddAuthentication(options =>
+        {
+            options.DefaultScheme = "AlphaAuth";
+            options.DefaultChallengeScheme = "AlphaAuth";
+        })
+        .AddPolicyScheme("AlphaAuth", "JWT or internal proxy", options =>
+        {
+            options.ForwardDefaultSelector = context =>
+                context.Request.Headers.ContainsKey("X-Alpha-Internal-Secret")
+                    ? "InternalProxy"
+                    : JwtBearerDefaults.AuthenticationScheme;
+        })
+        .AddScheme<AuthenticationSchemeOptions, InternalProxyAuthenticationHandler>("InternalProxy", null)
+        .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+        {
+            options.Authority = builder.Configuration["Authentication:Authority"];
+            options.Audience = builder.Configuration["Authentication:Audience"];
+        });
+}
 
 builder.Services.AddAuthorization();
 var app = builder.Build();
