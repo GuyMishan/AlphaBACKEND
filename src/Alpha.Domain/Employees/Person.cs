@@ -19,6 +19,14 @@ public sealed class Person : Entity
     public string FirstName { get; private set; } = string.Empty;
     public string LastName { get; private set; } = string.Empty;
 
+    public void Update(string nationalId, string firstName, string lastName)
+    {
+        NationalId = Require(nationalId, nameof(nationalId));
+        FirstName = Require(firstName, nameof(firstName));
+        LastName = Require(lastName, nameof(lastName));
+        Touch();
+    }
+
     private static string Require(string value, string name) =>
         string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value is required.", name) : value.Trim();
 }

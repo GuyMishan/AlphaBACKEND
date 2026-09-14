@@ -51,6 +51,21 @@ public static class EmployerEndpoints
             return item is null ? Results.NotFound() : Results.Ok(item);
         });
 
+        group.MapPut("/{employerId:guid}", async (Guid organizationId, Guid employerId,
+            UpdateEmployerRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access,
+            HttpContext http, CancellationToken ct) =>
+        {
+            if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var item = await db.Employers.SingleOrDefaultAsync(x =>
+                x.Id == employerId && x.OrganizationId == organizationId, ct);
+            if (item is null) return Results.NotFound();
+            item.Update(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber);
+            db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.updated", nameof(Employer), item.Id,
+                organizationId, item.Id, JsonSerializer.Serialize(request), http.TraceIdentifier));
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(item);
+        });
+
         group.MapGet("/{employerId:guid}/employees", async (Guid organizationId, Guid employerId, IAlphaDbContext db,
             OrganizationAccessService access, CancellationToken ct) =>
         {
@@ -88,6 +103,45 @@ public static class EmployerEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/employees/{employment.Id}",
                 new { employment.Id, PersonId = person.Id });
+        });
+
+        group.MapGet("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId,
+            Guid employerId, Guid employmentId, IAlphaDbContext db, OrganizationAccessService access,
+            CancellationToken ct) =>
+        {
+            if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var item = await (from employment in db.Employments.AsNoTracking()
+                join person in db.People.AsNoTracking() on employment.PersonId equals person.Id
+                where employment.Id == employmentId && employment.OrganizationId == organizationId &&
+                      employment.EmployerId == employerId
+                select new { employment.Id, employment.EmployeeNumber, employment.Status, employment.StartDate,
+                    employment.EndDate, PersonId = person.Id, person.NationalId, person.FirstName, person.LastName })
+                .SingleOrDefaultAsync(ct);
+            return item is null ? Results.NotFound() : Results.Ok(item);
+        });
+
+        group.MapPut("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId,
+            Guid employerId, Guid employmentId, UpdateEmployeeRequest request, IAlphaDbContext db,
+            ICurrentUser user, OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
+        {
+            if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var employment = await db.Employments.SingleOrDefaultAsync(x => x.Id == employmentId &&
+                x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+            if (employment is null) return Results.NotFound();
+            var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
+            var duplicateNationalId = await db.People.AnyAsync(x => x.OrganizationId == organizationId &&
+                x.NationalId == request.NationalId && x.Id != person.Id, ct);
+            if (duplicateNationalId) return Results.Conflict(new { error = "National ID already exists in this organization." });
+            var duplicateEmployeeNumber = await db.Employments.AnyAsync(x => x.EmployerId == employerId &&
+                x.EmployeeNumber == request.EmployeeNumber && x.Id != employmentId, ct);
+            if (duplicateEmployeeNumber) return Results.Conflict(new { error = "Employee number already exists for this employer." });
+            person.Update(request.NationalId, request.FirstName, request.LastName);
+            employment.Update(request.EmployeeNumber, request.StartDate);
+            db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.updated", nameof(Employment), employment.Id,
+                organizationId, employerId, JsonSerializer.Serialize(request), http.TraceIdentifier));
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { employment.Id, employment.EmployeeNumber, employment.Status, employment.StartDate,
+                employment.EndDate, PersonId = person.Id, person.NationalId, person.FirstName, person.LastName });
         });
         return endpoints;
     }

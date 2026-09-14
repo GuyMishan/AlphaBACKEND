@@ -27,6 +27,15 @@ public sealed class Employment : Entity
     public DateOnly? EndDate { get; private set; }
     public EmploymentStatus Status { get; private set; } = EmploymentStatus.Active;
 
+    public void Update(string employeeNumber, DateOnly startDate)
+    {
+        EmployeeNumber = string.IsNullOrWhiteSpace(employeeNumber)
+            ? throw new ArgumentException("Employee number is required.", nameof(employeeNumber))
+            : employeeNumber.Trim();
+        StartDate = startDate;
+        Touch();
+    }
+
     public void End(DateOnly endDate)
     {
         if (endDate < StartDate) throw new ArgumentOutOfRangeException(nameof(endDate));
