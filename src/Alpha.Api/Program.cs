@@ -112,6 +112,7 @@ app.MapOrganizationEndpoints();
 app.MapEmployerEndpoints();
 app.MapAccessEndpoints();
 app.MapManualReportEndpoints();
+app.MapDerivedReportEndpoints();
 app.Run();
 
 public partial class Program;
