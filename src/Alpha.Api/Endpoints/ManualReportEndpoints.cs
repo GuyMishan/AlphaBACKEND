@@ -22,6 +22,7 @@ public static class ManualReportEndpoints
         group.MapGet("/{reportId:guid}/employees", GetEmployeesAsync);
         group.MapGet("/{reportId:guid}/employees/{reportEmployeeId:guid}", GetEmployeeAsync);
         group.MapPut("/{reportId:guid}/employees/{reportEmployeeId:guid}", SaveEmployeeAsync);
+        group.MapGet("/{reportId:guid}/deposits", GetDepositsAsync);
         return endpoints;
     }
 
@@ -133,6 +134,60 @@ public static class ManualReportEndpoints
             x.Id, x.EmploymentId, x.PersonId, x.NationalId, x.FirstName, x.LastName, x.EmployeeNumber,
             productCount = productCounts.GetValueOrDefault(x.Id),
             validationStatus = productCounts.GetValueOrDefault(x.Id) > 0 ? "ready" : "missing-products"
+        });
+        return Results.Ok(new { items, hasMore });
+    }
+
+    private static async Task<IResult> GetDepositsAsync(Guid organizationId, Guid employerId, Guid reportId,
+        string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await db.ManualReports.AsNoTracking().AnyAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct))
+            return Results.NotFound();
+
+        skip = Math.Max(0, skip);
+        take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
+        var query = from product in db.ManualReportProducts.AsNoTracking()
+                    join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                    where employee.ReportId == reportId
+                    select new { Product = product, Employee = employee };
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(x => x.Employee.FirstName.ToLower().Contains(term)
+                || x.Employee.LastName.ToLower().Contains(term)
+                || x.Employee.NationalId.Contains(term)
+                || x.Product.PolicyNumber.ToLower().Contains(term));
+        }
+
+        var page = await query.OrderBy(x => x.Employee.LastName).ThenBy(x => x.Employee.FirstName)
+            .ThenBy(x => x.Product.CreatedAt).Skip(skip).Take(take + 1).ToListAsync(ct);
+        var hasMore = page.Count > take;
+        if (hasMore) page.RemoveAt(page.Count - 1);
+        var productIds = page.Select(x => x.Product.Id).ToArray();
+        var totals = await db.ManualContributions.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .GroupBy(x => x.ReportProductId)
+            .Select(g => new { Id = g.Key, Amount = g.Sum(x => x.Amount) })
+            .ToDictionaryAsync(x => x.Id, x => x.Amount, ct);
+
+        var items = page.Select(x => new
+        {
+            id = x.Product.Id,
+            reportEmployeeId = x.Employee.Id,
+            x.Employee.EmploymentId,
+            employeeName = x.Employee.FirstName + " " + x.Employee.LastName,
+            x.Employee.NationalId,
+            x.Product.ProductType,
+            x.Product.PolicyNumber,
+            x.Product.SalaryMonth,
+            x.Product.Salary,
+            x.Product.ReportingType,
+            x.Product.SalaryLayer,
+            x.Product.Section14,
+            x.Product.Section14StartDate,
+            totalDeposit = totals.GetValueOrDefault(x.Product.Id)
         });
         return Results.Ok(new { items, hasMore });
     }
