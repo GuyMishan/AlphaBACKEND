@@ -3,9 +3,11 @@ using Alpha.Api.Endpoints;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Infrastructure;
+using Alpha.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -30,6 +32,14 @@ else
 
 builder.Services.AddAuthorization();
 var app = builder.Build();
+
+if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseAuthentication();
@@ -40,10 +50,20 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
     AllowCachingResponses = false
 }).AllowAnonymous();
+
+app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) =>
+{
+    var canConnect = await db.Database.CanConnectAsync(ct);
+    return canConnect
+        ? Results.Ok(new { status = "healthy", database = "postgresql" })
+        : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+}).AllowAnonymous().WithTags("Health");
+
 app.MapPlatformEndpoints();
 app.MapOrganizationEndpoints();
 app.MapEmployerEndpoints();
