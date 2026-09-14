@@ -52,7 +52,7 @@ public static class OrganizationEndpoints
             if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
             return Results.Ok(new
             {
-                canCreateEmployer = await access.CanManageOrganizationAsync(organizationId, ct)
+                canCreateEmployer = await access.CanCreateEmployerAsync(organizationId, ct)
             });
         });
 
