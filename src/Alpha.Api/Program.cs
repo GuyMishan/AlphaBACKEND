@@ -43,6 +43,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "alph
 app.MapPlatformEndpoints();
 app.MapOrganizationEndpoints();
 app.MapEmployerEndpoints();
+app.MapAccessEndpoints();
 app.Run();
 
 public partial class Program;
