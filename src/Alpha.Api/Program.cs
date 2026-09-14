@@ -65,6 +65,15 @@ if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
     await db.Database.MigrateAsync();
 }
 
+var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]);
+var demoDataEnabled = builder.Configuration.GetValue("DemoData:Enabled", true);
+if (prototypeAuthEnabled && demoDataEnabled)
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
+    await DemoDataSeeder.SeedAsync(db);
+}
+
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseAuthentication();
