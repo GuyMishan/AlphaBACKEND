@@ -46,6 +46,16 @@ public static class OrganizationEndpoints
             return item is null ? Results.NotFound() : Results.Ok(item);
         });
 
+        group.MapGet("/{organizationId:guid}/capabilities", async (Guid organizationId,
+            OrganizationAccessService access, CancellationToken ct) =>
+        {
+            if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            return Results.Ok(new
+            {
+                canCreateEmployer = await access.CanManageOrganizationAsync(organizationId, ct)
+            });
+        });
+
         group.MapPost("/{organizationId:guid}/memberships", async (Guid organizationId, AddMembershipRequest request,
             IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
         {
