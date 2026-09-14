@@ -7,8 +7,13 @@ public sealed class AlphaDbContextFactory : IDesignTimeDbContextFactory<AlphaDbC
 {
     public AlphaDbContext CreateDbContext(string[] args)
     {
+        var configuredConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__AlphaDatabase");
+        var connectionString = string.IsNullOrWhiteSpace(configuredConnectionString)
+            ? "Host=localhost;Database=alpha_design;Username=postgres"
+            : DependencyInjection.NormalizePostgresConnectionString(configuredConnectionString);
+
         var options = new DbContextOptionsBuilder<AlphaDbContext>()
-            .UseNpgsql("Host=localhost;Database=alpha_design;Username=postgres")
+            .UseNpgsql(connectionString)
             .Options;
 
         return new AlphaDbContext(options);
