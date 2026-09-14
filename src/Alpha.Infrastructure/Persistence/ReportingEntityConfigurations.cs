@@ -14,9 +14,12 @@ public sealed class ManualReportConfiguration : IEntityTypeConfiguration<ManualR
         b.ToTable("manual_reports", "reporting");
         b.HasKey(x => x.Id);
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(40);
+        b.Property(x => x.ReportKind).HasConversion<string>().HasMaxLength(30);
         b.HasIndex(x => new { x.OrganizationId, x.EmployerId, x.ReportingMonth });
+        b.HasIndex(x => x.SourceReportId);
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.SourceReportId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
