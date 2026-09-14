@@ -1,0 +1,17 @@
+**/bin/
+**/obj/
+.git/
+.github/
+.vs/
+.vscode/
+.idea/
+TestResults/
+coverage/
+*.user
+*.suo
+*.log
+.env
+.env.*
+docker-compose.yml
+README.md
+docs/
