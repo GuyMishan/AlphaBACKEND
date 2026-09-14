@@ -130,3 +130,42 @@ public sealed class ManualContribution : Entity
         Touch();
     }
 }
+
+public sealed class ManualReportPayment : Entity
+{
+    private ManualReportPayment() { }
+
+    public ManualReportPayment(Guid reportProductId)
+    {
+        ReportProductId = reportProductId;
+    }
+
+    public Guid ReportProductId { get; private set; }
+    public string ProviderName { get; private set; } = string.Empty;
+    public string ProviderAccount { get; private set; } = string.Empty;
+    public string PaymentMethod { get; private set; } = "העברה בנקאית";
+    public DateOnly? ValueDate { get; private set; }
+    public string ReferenceNumber { get; private set; } = string.Empty;
+    public string EmployerBankName { get; private set; } = string.Empty;
+    public string EmployerBankCode { get; private set; } = string.Empty;
+    public string EmployerBranch { get; private set; } = string.Empty;
+    public string EmployerAccount { get; private set; } = string.Empty;
+    public string ConfirmationFileName { get; private set; } = string.Empty;
+
+    public void Update(string? providerName, string? providerAccount, string? paymentMethod, DateOnly? valueDate,
+        string? referenceNumber, string? employerBankName, string? employerBankCode, string? employerBranch,
+        string? employerAccount, string? confirmationFileName)
+    {
+        ProviderName = providerName?.Trim() ?? string.Empty;
+        ProviderAccount = providerAccount?.Trim() ?? string.Empty;
+        PaymentMethod = string.IsNullOrWhiteSpace(paymentMethod) ? "העברה בנקאית" : paymentMethod.Trim();
+        ValueDate = valueDate;
+        ReferenceNumber = referenceNumber?.Trim() ?? string.Empty;
+        EmployerBankName = employerBankName?.Trim() ?? string.Empty;
+        EmployerBankCode = employerBankCode?.Trim() ?? string.Empty;
+        EmployerBranch = employerBranch?.Trim() ?? string.Empty;
+        EmployerAccount = employerAccount?.Trim() ?? string.Empty;
+        ConfirmationFileName = confirmationFileName?.Trim() ?? string.Empty;
+        Touch();
+    }
+}
