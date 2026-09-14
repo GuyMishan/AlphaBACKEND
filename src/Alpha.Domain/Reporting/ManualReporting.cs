@@ -3,6 +3,7 @@ using Alpha.Domain.Common;
 namespace Alpha.Domain.Reporting;
 
 public enum ManualReportStatus { Draft = 1, ReadyForValidation = 2, Validated = 3, Submitted = 4, Cancelled = 5 }
+public enum ManualReportKind { Current = 1, Differences = 2, Negative = 3 }
 public enum PensionProductType { PensionFund = 1, StudyFund = 2, ManagersInsurance = 3, ProvidentFund = 4, Other = 99 }
 public enum ContributionParty { Employer = 1, Employee = 2 }
 public enum ContributionComponent { Severance = 1, Benefits = 2, Disability = 3, Other = 4 }
@@ -11,12 +12,18 @@ public sealed class ManualReport : Entity
 {
     private ManualReport() { }
 
-    public ManualReport(Guid organizationId, Guid employerId, DateOnly reportingMonth, DateOnly? salaryPaymentDate)
+    public ManualReport(Guid organizationId, Guid employerId, DateOnly reportingMonth, DateOnly? salaryPaymentDate,
+        ManualReportKind reportKind = ManualReportKind.Current, Guid? sourceReportId = null)
     {
+        if (reportKind != ManualReportKind.Current && sourceReportId is null)
+            throw new ArgumentException("A source report is required for differences and negative reports.", nameof(sourceReportId));
+
         OrganizationId = organizationId;
         EmployerId = employerId;
         ReportingMonth = new DateOnly(reportingMonth.Year, reportingMonth.Month, 1);
         SalaryPaymentDate = salaryPaymentDate;
+        ReportKind = reportKind;
+        SourceReportId = sourceReportId;
     }
 
     public Guid OrganizationId { get; private set; }
@@ -24,6 +31,8 @@ public sealed class ManualReport : Entity
     public DateOnly ReportingMonth { get; private set; }
     public DateOnly? SalaryPaymentDate { get; private set; }
     public ManualReportStatus Status { get; private set; } = ManualReportStatus.Draft;
+    public ManualReportKind ReportKind { get; private set; } = ManualReportKind.Current;
+    public Guid? SourceReportId { get; private set; }
 
     public void UpdateDetails(DateOnly reportingMonth, DateOnly? salaryPaymentDate)
     {
