@@ -20,7 +20,7 @@ public static class DependencyInjection
         return services;
     }
 
-    private static string NormalizePostgresConnectionString(string value)
+    internal static string NormalizePostgresConnectionString(string value)
     {
         var trimmed = value.Trim();
         if (!trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
