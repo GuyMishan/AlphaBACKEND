@@ -5,6 +5,7 @@ using Alpha.Application.Authorization;
 using Alpha.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -15,6 +16,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHealthChecks();
 
 if (builder.Environment.IsDevelopment())
     builder.Services.AddAuthentication("DevelopmentHeaders")
@@ -38,8 +40,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "alpha-api" }))
-    .AllowAnonymous().WithTags("Health");
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    AllowCachingResponses = false
+}).AllowAnonymous();
 app.MapPlatformEndpoints();
 app.MapOrganizationEndpoints();
 app.MapEmployerEndpoints();
