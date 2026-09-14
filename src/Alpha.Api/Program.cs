@@ -65,6 +65,14 @@ if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
     await db.Database.MigrateAsync();
 }
 
+// The original database was created before migrations were committed to the repository.
+// Keep the reporting module idempotent in the prototype environment until all schema changes move to deploy-time migrations.
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
+    await ReportingSchemaInitializer.EnsureCreatedAsync(db);
+}
+
 var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]);
 var demoDataEnabled = builder.Configuration.GetValue("DemoData:Enabled", true);
 if (prototypeAuthEnabled && demoDataEnabled)
@@ -103,6 +111,7 @@ app.MapPlatformEndpoints();
 app.MapOrganizationEndpoints();
 app.MapEmployerEndpoints();
 app.MapAccessEndpoints();
+app.MapManualReportEndpoints();
 app.Run();
 
 public partial class Program;
