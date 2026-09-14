@@ -17,11 +17,27 @@ CREATE TABLE IF NOT EXISTS reporting.manual_reports (
     "ReportingMonth" date NOT NULL,
     "SalaryPaymentDate" date NULL,
     "Status" varchar(40) NOT NULL,
+    "ReportKind" varchar(30) NOT NULL DEFAULT 'Current',
+    "SourceReportId" uuid NULL,
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL
 );
+ALTER TABLE reporting.manual_reports
+    ADD COLUMN IF NOT EXISTS "ReportKind" varchar(30) NOT NULL DEFAULT 'Current';
+ALTER TABLE reporting.manual_reports
+    ADD COLUMN IF NOT EXISTS "SourceReportId" uuid NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_manual_reports_source') THEN
+        ALTER TABLE reporting.manual_reports
+            ADD CONSTRAINT "FK_manual_reports_source"
+            FOREIGN KEY ("SourceReportId") REFERENCES reporting.manual_reports("Id") ON DELETE RESTRICT;
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS "IX_manual_reports_scope_month"
     ON reporting.manual_reports ("OrganizationId", "EmployerId", "ReportingMonth");
+CREATE INDEX IF NOT EXISTS "IX_manual_reports_source"
+    ON reporting.manual_reports ("SourceReportId");
 
 CREATE TABLE IF NOT EXISTS reporting.manual_report_employees (
     "Id" uuid PRIMARY KEY,
