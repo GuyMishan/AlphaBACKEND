@@ -33,7 +33,7 @@ public static class EmployerEndpoints
         group.MapPost("/", async (Guid organizationId, CreateEmployerRequest request, IAlphaDbContext db,
             ICurrentUser user, OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
         {
-            if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            if (!await access.CanCreateEmployerAsync(organizationId, ct)) return Results.Forbid();
             var item = new Employer(organizationId, request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber);
             db.Employers.Add(item);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.created", nameof(Employer), item.Id,
@@ -57,7 +57,9 @@ public static class EmployerEndpoints
             if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
             return Results.Ok(new
             {
-                canCreateEmployee = await access.CanManageEmployerAsync(organizationId, employerId, ct)
+                canEditEmployer = await access.CanEditEmployerAsync(organizationId, employerId, ct),
+                canCreateEmployee = await access.CanCreateEmployeeAsync(organizationId, employerId, ct),
+                canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct)
             });
         });
 
@@ -65,7 +67,7 @@ public static class EmployerEndpoints
             UpdateEmployerRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access,
             HttpContext http, CancellationToken ct) =>
         {
-            if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
             var item = await db.Employers.SingleOrDefaultAsync(x =>
                 x.Id == employerId && x.OrganizationId == organizationId, ct);
             if (item is null) return Results.NotFound();
@@ -94,7 +96,7 @@ public static class EmployerEndpoints
             CreateEmployeeRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access,
             HttpContext http, CancellationToken ct) =>
         {
-            if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            if (!await access.CanCreateEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
             if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
                 return Results.NotFound();
             var person = await db.People.SingleOrDefaultAsync(x =>
@@ -134,7 +136,7 @@ public static class EmployerEndpoints
             Guid employerId, Guid employmentId, UpdateEmployeeRequest request, IAlphaDbContext db,
             ICurrentUser user, OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
         {
-            if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
             var employment = await db.Employments.SingleOrDefaultAsync(x => x.Id == employmentId &&
                 x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
             if (employment is null) return Results.NotFound();
