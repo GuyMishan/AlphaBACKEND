@@ -70,5 +70,23 @@ CREATE TABLE IF NOT EXISTS reporting.manual_contributions (
     "UpdatedAt" timestamptz NOT NULL,
     CONSTRAINT "UX_manual_contribution" UNIQUE ("ReportProductId", "Party", "Component")
 );
+
+CREATE TABLE IF NOT EXISTS reporting.manual_report_payments (
+    "Id" uuid PRIMARY KEY,
+    "ReportProductId" uuid NOT NULL REFERENCES reporting.manual_report_products("Id") ON DELETE CASCADE,
+    "ProviderName" varchar(160) NOT NULL DEFAULT '',
+    "ProviderAccount" varchar(120) NOT NULL DEFAULT '',
+    "PaymentMethod" varchar(80) NOT NULL DEFAULT 'העברה בנקאית',
+    "ValueDate" date NULL,
+    "ReferenceNumber" varchar(120) NOT NULL DEFAULT '',
+    "EmployerBankName" varchar(120) NOT NULL DEFAULT '',
+    "EmployerBankCode" varchar(30) NOT NULL DEFAULT '',
+    "EmployerBranch" varchar(30) NOT NULL DEFAULT '',
+    "EmployerAccount" varchar(80) NOT NULL DEFAULT '',
+    "ConfirmationFileName" varchar(260) NOT NULL DEFAULT '',
+    "CreatedAt" timestamptz NOT NULL,
+    "UpdatedAt" timestamptz NOT NULL,
+    CONSTRAINT "UX_manual_report_payment_product" UNIQUE ("ReportProductId")
+);
 """;
 }
