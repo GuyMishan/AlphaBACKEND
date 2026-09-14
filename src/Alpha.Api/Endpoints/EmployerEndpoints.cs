@@ -51,6 +51,16 @@ public static class EmployerEndpoints
             return item is null ? Results.NotFound() : Results.Ok(item);
         });
 
+        group.MapGet("/{employerId:guid}/capabilities", async (Guid organizationId, Guid employerId,
+            OrganizationAccessService access, CancellationToken ct) =>
+        {
+            if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            return Results.Ok(new
+            {
+                canCreateEmployee = await access.CanManageEmployerAsync(organizationId, employerId, ct)
+            });
+        });
+
         group.MapPut("/{employerId:guid}", async (Guid organizationId, Guid employerId,
             UpdateEmployerRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access,
             HttpContext http, CancellationToken ct) =>
