@@ -28,4 +28,26 @@ public sealed class OrganizationMembership : Entity
     public DateTimeOffset? ExpiresAt { get; private set; }
 
     public bool IsValidAt(DateTimeOffset now) => IsActive && (ExpiresAt is null || ExpiresAt > now);
+
+    public void ChangeAccess(OrganizationRole role, EmployerAccessMode employerAccessMode)
+    {
+        Role = role;
+        EmployerAccessMode = employerAccessMode;
+        Touch();
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+        Touch();
+    }
+
+    public void Reactivate(OrganizationRole role, EmployerAccessMode employerAccessMode)
+    {
+        Role = role;
+        EmployerAccessMode = employerAccessMode;
+        IsActive = true;
+        ExpiresAt = null;
+        Touch();
+    }
 }
