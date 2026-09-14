@@ -24,6 +24,7 @@ public static class ManualReportEndpoints
         group.MapGet("/{reportId:guid}/employees/{reportEmployeeId:guid}", GetEmployeeAsync);
         group.MapPut("/{reportId:guid}/employees/{reportEmployeeId:guid}", SaveEmployeeAsync);
         group.MapGet("/{reportId:guid}/deposits", GetDepositsAsync);
+        group.MapPut("/{reportId:guid}/deposits/{reportProductId:guid}", SaveDepositPaymentAsync);
         return endpoints;
     }
 
@@ -237,25 +238,67 @@ public static class ManualReportEndpoints
             .GroupBy(x => x.ReportProductId)
             .Select(g => new { Id = g.Key, Amount = g.Sum(x => x.Amount) })
             .ToDictionaryAsync(x => x.Id, x => x.Amount, ct);
+        var payments = await db.ManualReportPayments.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .ToDictionaryAsync(x => x.ReportProductId, ct);
 
-        var items = page.Select(x => new
+        var items = page.Select(x =>
         {
-            id = x.Product.Id,
-            reportEmployeeId = x.Employee.Id,
-            x.Employee.EmploymentId,
-            employeeName = x.Employee.FirstName + " " + x.Employee.LastName,
-            x.Employee.NationalId,
-            x.Product.ProductType,
-            x.Product.PolicyNumber,
-            x.Product.SalaryMonth,
-            x.Product.Salary,
-            x.Product.ReportingType,
-            x.Product.SalaryLayer,
-            x.Product.Section14,
-            x.Product.Section14StartDate,
-            totalDeposit = totals.GetValueOrDefault(x.Product.Id)
+            payments.TryGetValue(x.Product.Id, out var payment);
+            return new
+            {
+                id = x.Product.Id,
+                reportEmployeeId = x.Employee.Id,
+                x.Employee.EmploymentId,
+                employeeName = x.Employee.FirstName + " " + x.Employee.LastName,
+                x.Employee.NationalId,
+                x.Product.ProductType,
+                x.Product.PolicyNumber,
+                x.Product.SalaryMonth,
+                x.Product.Salary,
+                x.Product.ReportingType,
+                x.Product.SalaryLayer,
+                x.Product.Section14,
+                x.Product.Section14StartDate,
+                totalDeposit = totals.GetValueOrDefault(x.Product.Id),
+                providerName = payment?.ProviderName ?? string.Empty,
+                providerAccount = payment?.ProviderAccount ?? string.Empty,
+                paymentMethod = payment?.PaymentMethod ?? "העברה בנקאית",
+                valueDate = payment?.ValueDate,
+                referenceNumber = payment?.ReferenceNumber ?? string.Empty,
+                employerBankName = payment?.EmployerBankName ?? string.Empty,
+                employerBankCode = payment?.EmployerBankCode ?? string.Empty,
+                employerBranch = payment?.EmployerBranch ?? string.Empty,
+                employerAccount = payment?.EmployerAccount ?? string.Empty,
+                confirmationFileName = payment?.ConfirmationFileName ?? string.Empty
+            };
         });
         return Results.Ok(new { items, hasMore });
+    }
+
+    private static async Task<IResult> SaveDepositPaymentAsync(Guid organizationId, Guid employerId, Guid reportId,
+        Guid reportProductId, SaveManualReportPaymentRequest request, IAlphaDbContext db,
+        OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var exists = await (from product in db.ManualReportProducts.AsNoTracking()
+                            join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                            where product.Id == reportProductId && employee.ReportId == reportId
+                                && employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                            select product.Id).AnyAsync(ct);
+        if (!exists) return Results.NotFound();
+
+        var payment = await db.ManualReportPayments.SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
+        if (payment is null)
+        {
+            payment = new ManualReportPayment(reportProductId);
+            db.ManualReportPayments.Add(payment);
+        }
+        payment.Update(request.ProviderName, request.ProviderAccount, request.PaymentMethod, request.ValueDate,
+            request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode, request.EmployerBranch,
+            request.EmployerAccount, request.ConfirmationFileName);
+        await db.SaveChangesAsync(ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> GetEmployeeAsync(Guid organizationId, Guid employerId, Guid reportId,
@@ -324,3 +367,6 @@ public sealed record ManualProductInput(PensionProductType ProductType, string P
     decimal Salary, string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
     IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions);
 public sealed record ManualContributionInput(ContributionComponent Component, decimal Amount, decimal Percentage, decimal ExemptPayments);
+public sealed record SaveManualReportPaymentRequest(string ProviderName, string ProviderAccount, string PaymentMethod,
+    DateOnly? ValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,
+    string EmployerBranch, string EmployerAccount, string ConfirmationFileName);
