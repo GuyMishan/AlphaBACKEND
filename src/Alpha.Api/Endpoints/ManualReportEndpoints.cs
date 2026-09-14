@@ -16,6 +16,7 @@ public static class ManualReportEndpoints
             .RequireAuthorization().WithTags("Manual reporting");
 
         group.MapPost("/", CreateDraftAsync);
+        group.MapGet("/", GetOpenReportsAsync);
         group.MapGet("/{reportId:guid}", GetReportAsync);
         group.MapPut("/{reportId:guid}/details", UpdateDetailsAsync);
         group.MapPut("/{reportId:guid}/selection", SyncSelectionAsync);
@@ -24,6 +25,71 @@ public static class ManualReportEndpoints
         group.MapPut("/{reportId:guid}/employees/{reportEmployeeId:guid}", SaveEmployeeAsync);
         group.MapGet("/{reportId:guid}/deposits", GetDepositsAsync);
         return endpoints;
+    }
+
+    private static async Task<IResult> GetOpenReportsAsync(Guid organizationId, Guid employerId,
+        string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        skip = Math.Max(0, skip);
+        take = Math.Clamp(take == 0 ? 30 : take, 1, 100);
+
+        var query = db.ManualReports.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
+                && x.Status != ManualReportStatus.Submitted && x.Status != ManualReportStatus.Cancelled);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            if (DateOnly.TryParse(term, out var parsed))
+            {
+                var month = new DateOnly(parsed.Year, parsed.Month, 1);
+                query = query.Where(x => x.ReportingMonth == month);
+            }
+        }
+
+        var page = await query.OrderByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
+            .Skip(skip).Take(take + 1).ToListAsync(ct);
+        var hasMore = page.Count > take;
+        if (hasMore) page.RemoveAt(page.Count - 1);
+
+        var ids = page.Select(x => x.Id).ToArray();
+        var employeeCounts = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => ids.Contains(x.ReportId))
+            .GroupBy(x => x.ReportId)
+            .Select(g => new { ReportId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ReportId, x => x.Count, ct);
+
+        var reportEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => ids.Contains(x.ReportId))
+            .Select(x => new { x.Id, x.ReportId })
+            .ToListAsync(ct);
+        var employeeReportById = reportEmployeeIds.ToDictionary(x => x.Id, x => x.ReportId);
+        var reportEmployeeIdValues = employeeReportById.Keys.ToArray();
+        var productCounts = await db.ManualReportProducts.AsNoTracking()
+            .Where(x => reportEmployeeIdValues.Contains(x.ReportEmployeeId))
+            .GroupBy(x => x.ReportEmployeeId)
+            .Select(g => new { EmployeeId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        var productCountByReport = productCounts
+            .GroupBy(x => employeeReportById[x.EmployeeId])
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Count));
+
+        return Results.Ok(new
+        {
+            items = page.Select(x => new
+            {
+                x.Id,
+                x.ReportingMonth,
+                x.SalaryPaymentDate,
+                x.Status,
+                x.CreatedAt,
+                x.UpdatedAt,
+                employeeCount = employeeCounts.GetValueOrDefault(x.Id),
+                productCount = productCountByReport.GetValueOrDefault(x.Id)
+            }),
+            hasMore
+        });
     }
 
     private static async Task<IResult> CreateDraftAsync(Guid organizationId, Guid employerId,
