@@ -1,3 +1,4 @@
+using System.Text;
 using Alpha.Api.Authentication;
 using Alpha.Api.Endpoints;
 using Alpha.Application.Abstractions;
@@ -8,6 +9,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -27,23 +29,29 @@ if (builder.Environment.IsDevelopment())
 }
 else
 {
-    builder.Services.AddAuthentication(options =>
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
         {
-            options.DefaultScheme = "AlphaAuth";
-            options.DefaultChallengeScheme = "AlphaAuth";
-        })
-        .AddPolicyScheme("AlphaAuth", "JWT or internal proxy", options =>
-        {
-            options.ForwardDefaultSelector = context =>
-                context.Request.Headers.ContainsKey("X-Alpha-Internal-Secret")
-                    ? "InternalProxy"
-                    : JwtBearerDefaults.AuthenticationScheme;
-        })
-        .AddScheme<AuthenticationSchemeOptions, InternalProxyAuthenticationHandler>("InternalProxy", null)
-        .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
-        {
-            options.Authority = builder.Configuration["Authentication:Authority"];
-            options.Audience = builder.Configuration["Authentication:Audience"];
+            var prototypeSigningKey = builder.Configuration["PrototypeAuth:SigningKey"];
+            if (!string.IsNullOrWhiteSpace(prototypeSigningKey))
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidIssuer = "alpha-prototype",
+                    ValidateAudience = true,
+                    ValidAudience = "alpha-frontend",
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(prototypeSigningKey)),
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.FromMinutes(1)
+                };
+            }
+            else
+            {
+                options.Authority = builder.Configuration["Authentication:Authority"];
+                options.Audience = builder.Configuration["Authentication:Audience"];
+            }
         });
 }
 
@@ -81,6 +89,7 @@ app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) =>
         : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable);
 }).AllowAnonymous().WithTags("Health");
 
+app.MapAuthEndpoints();
 app.MapPlatformEndpoints();
 app.MapOrganizationEndpoints();
 app.MapEmployerEndpoints();
