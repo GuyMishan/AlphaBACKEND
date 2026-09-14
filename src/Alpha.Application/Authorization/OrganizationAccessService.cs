@@ -34,11 +34,38 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
             cancellationToken);
     }
 
-    public async Task<bool> CanManageEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken)
+    public async Task<bool> CanCreateEmployerAsync(Guid organizationId, CancellationToken cancellationToken)
+    {
+        if (currentUser.IsPlatformAdmin) return true;
+        var membership = await GetMembershipAsync(organizationId, cancellationToken);
+        return membership?.Role == OrganizationRole.Admin &&
+               membership.EmployerAccessMode == EmployerAccessMode.AllEmployers;
+    }
+
+    public async Task<bool> CanEditEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken)
     {
         if (currentUser.IsPlatformAdmin) return true;
         var membership = await GetMembershipAsync(organizationId, cancellationToken);
         if (membership is null || membership.Role == OrganizationRole.Viewer) return false;
         return await CanAccessEmployerAsync(organizationId, employerId, cancellationToken);
     }
+
+    public async Task<bool> CanCreateEmployeeAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken)
+    {
+        if (currentUser.IsPlatformAdmin) return true;
+        var membership = await GetMembershipAsync(organizationId, cancellationToken);
+        if (membership is null || membership.Role == OrganizationRole.Viewer) return false;
+        return await CanAccessEmployerAsync(organizationId, employerId, cancellationToken);
+    }
+
+    public async Task<bool> CanEditEmployeeAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken)
+    {
+        if (currentUser.IsPlatformAdmin) return true;
+        var membership = await GetMembershipAsync(organizationId, cancellationToken);
+        if (membership is null || membership.Role == OrganizationRole.Viewer) return false;
+        return await CanAccessEmployerAsync(organizationId, employerId, cancellationToken);
+    }
+
+    public Task<bool> CanManageEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
+        CanEditEmployerAsync(organizationId, employerId, cancellationToken);
 }
