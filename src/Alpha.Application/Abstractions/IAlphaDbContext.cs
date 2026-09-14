@@ -3,6 +3,7 @@ using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Identity;
 using Alpha.Domain.Organizations;
+using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Application.Abstractions;
@@ -16,6 +17,10 @@ public interface IAlphaDbContext
     DbSet<EmployerUserAccess> EmployerUserAccesses { get; }
     DbSet<Person> People { get; }
     DbSet<Employment> Employments { get; }
+    DbSet<ManualReport> ManualReports { get; }
+    DbSet<ManualReportEmployee> ManualReportEmployees { get; }
+    DbSet<ManualReportProduct> ManualReportProducts { get; }
+    DbSet<ManualContribution> ManualContributions { get; }
     DbSet<AuditEvent> AuditEvents { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
