@@ -22,6 +22,7 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<ManualReportEmployee> ManualReportEmployees => Set<ManualReportEmployee>();
     public DbSet<ManualReportProduct> ManualReportProducts => Set<ManualReportProduct>();
     public DbSet<ManualContribution> ManualContributions => Set<ManualContribution>();
+    public DbSet<ManualReportPayment> ManualReportPayments => Set<ManualReportPayment>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
