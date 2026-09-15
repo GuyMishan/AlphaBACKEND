@@ -48,6 +48,10 @@ public static class EmployeePensionMixEndpoints
             p.EffectiveTo,
             p.InstitutionalBody,
             p.Manufacturer,
+            p.FundExternalKey,
+            p.FundCode,
+            p.FundName,
+            p.FundCompanyName,
             p.SalaryAllocationType,
             p.SalaryAllocationValue,
             p.AllocationOrder,
@@ -87,6 +91,10 @@ public static class EmployeePensionMixEndpoints
             var effectiveTo = lifecycleProvided ? input.EffectiveTo : existing?.EffectiveTo;
             var institutionalBody = lifecycleProvided ? input.InstitutionalBody ?? string.Empty : existing?.InstitutionalBody ?? string.Empty;
             var manufacturer = lifecycleProvided ? input.Manufacturer ?? string.Empty : existing?.Manufacturer ?? string.Empty;
+            var fundExternalKey = input.FundExternalKey ?? existing?.FundExternalKey ?? string.Empty;
+            var fundCode = input.FundCode ?? existing?.FundCode ?? string.Empty;
+            var fundName = input.FundName ?? existing?.FundName ?? string.Empty;
+            var fundCompanyName = input.FundCompanyName ?? existing?.FundCompanyName ?? string.Empty;
             var allocationType = input.SalaryAllocationType ?? existing?.SalaryAllocationType ?? SalaryAllocationType.Fixed;
             var allocationValue = input.SalaryAllocationType.HasValue || input.SalaryAllocationValue.HasValue
                 ? input.SalaryAllocationValue
@@ -97,6 +105,8 @@ public static class EmployeePensionMixEndpoints
                 return Results.BadRequest(new { error = "Product effective end date cannot be earlier than the start date." });
             if (isActive && string.IsNullOrWhiteSpace(input.PolicyNumber))
                 return Results.BadRequest(new { error = "Active pension products must have a policy number." });
+            if (isActive && input.ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(fundExternalKey))
+                return Results.BadRequest(new { error = "Active pension products must have a selected fund." });
             if (allocationType != SalaryAllocationType.Remainder && (!allocationValue.HasValue || allocationValue.Value <= 0))
                 return Results.BadRequest(new { error = "Fixed, percentage and cap salary allocations require a positive value." });
             if (allocationType == SalaryAllocationType.Percentage && allocationValue > 100)
@@ -105,7 +115,8 @@ public static class EmployeePensionMixEndpoints
                 return Results.BadRequest(new { error = "Salary allocation order cannot be negative." });
 
             resolved.Add(new ResolvedProductInput(input, isActive, effectiveFrom, effectiveTo, institutionalBody,
-                manufacturer, allocationType, allocationValue, allocationOrder));
+                manufacturer, fundExternalKey, fundCode, fundName, fundCompanyName,
+                allocationType, allocationValue, allocationOrder));
         }
 
         var active = resolved.Where(x => x.IsActive).ToList();
@@ -136,6 +147,7 @@ public static class EmployeePensionMixEndpoints
             var product = new EmployeePensionProduct(employmentId, input.ProductType, input.PolicyNumber,
                 Math.Max(legacySalary, 0), input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate,
                 item.IsActive, item.EffectiveFrom, item.EffectiveTo, item.InstitutionalBody, item.Manufacturer,
+                item.FundExternalKey, item.FundCode, item.FundName, item.FundCompanyName,
                 item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder);
             db.EmployeePensionProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, input.EmployerContributions);
@@ -185,7 +197,8 @@ public static class EmployeePensionMixEndpoints
     }
 
     private sealed record ResolvedProductInput(EmployeePensionProductInput Input, bool IsActive, DateOnly EffectiveFrom,
-        DateOnly? EffectiveTo, string InstitutionalBody, string Manufacturer, SalaryAllocationType SalaryAllocationType,
+        DateOnly? EffectiveTo, string InstitutionalBody, string Manufacturer, string FundExternalKey,
+        string FundCode, string FundName, string FundCompanyName, SalaryAllocationType SalaryAllocationType,
         decimal? SalaryAllocationValue, int AllocationOrder);
 }
 
@@ -193,6 +206,7 @@ public sealed record SaveEmployeePensionMixRequest(decimal? MonthlySalary, IRead
 public sealed record EmployeePensionProductInput(PensionProductType ProductType, string PolicyNumber, decimal Salary,
     string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
     bool? IsActive, DateOnly? EffectiveFrom, DateOnly? EffectiveTo, string? InstitutionalBody, string? Manufacturer,
+    string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployerContributions,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployeeContributions);
