@@ -134,17 +134,18 @@ public static class EmployerEndpoints
             if (!await access.CanCreateEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
             var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate);
             if (validationError is not null) return Results.BadRequest(new { error = validationError });
+            if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative." });
             if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct)) return Results.NotFound();
             var nationalId = request.NationalId.Trim();
             var person = await db.People.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.NationalId == nationalId, ct);
             if (person is null) { person = new Person(organizationId, nationalId, request.FirstName.Trim(), request.LastName.Trim()); db.People.Add(person); }
             var employeeNumber = request.EmployeeNumber.Trim();
             if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
-            var employment = new Employment(organizationId, employerId, person.Id, request.StartDate, employeeNumber);
+            var employment = new Employment(organizationId, employerId, person.Id, request.StartDate, employeeNumber, request.MonthlySalary);
             db.Employments.Add(employment);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.created", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/employees/{employment.Id}", new { employment.Id, PersonId = person.Id });
+            return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/employees/{employment.Id}", new { employment.Id, PersonId = person.Id, employment.MonthlySalary });
         });
 
         group.MapGet("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId, Guid employerId, Guid employmentId, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct) =>
@@ -159,6 +160,7 @@ public static class EmployerEndpoints
             if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
             var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate);
             if (validationError is not null) return Results.BadRequest(new { error = validationError });
+            if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative." });
             var employment = await db.Employments.SingleOrDefaultAsync(x => x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
             if (employment is null) return Results.NotFound();
             var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
@@ -167,10 +169,10 @@ public static class EmployerEndpoints
             if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.NationalId == nationalId && x.Id != person.Id, ct)) return Results.Conflict(new { error = "National ID already exists in this organization." });
             if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber && x.Id != employmentId, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
             person.Update(nationalId, request.FirstName.Trim(), request.LastName.Trim());
-            employment.Update(employeeNumber, request.StartDate);
+            employment.Update(employeeNumber, request.StartDate, request.MonthlySalary);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.updated", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { employment.Id, employment.EmployeeNumber, employment.Status, employment.StartDate, employment.EndDate, PersonId = person.Id, person.NationalId, person.FirstName, person.LastName });
+            return Results.Ok(new { employment.Id, employment.EmployeeNumber, employment.Status, employment.StartDate, employment.EndDate, employment.MonthlySalary, PersonId = person.Id, person.NationalId, person.FirstName, person.LastName });
         });
         return endpoints;
     }
@@ -196,6 +198,7 @@ public static class EmployerEndpoints
             Status = employment.Status,
             StartDate = employment.StartDate,
             EndDate = employment.EndDate,
+            MonthlySalary = employment.MonthlySalary,
             PersonId = person.Id,
             NationalId = person.NationalId,
             FirstName = person.FirstName,
@@ -209,6 +212,7 @@ public static class EmployerEndpoints
         public EmploymentStatus Status { get; init; }
         public DateOnly StartDate { get; init; }
         public DateOnly? EndDate { get; init; }
+        public decimal MonthlySalary { get; init; }
         public Guid PersonId { get; init; }
         public string NationalId { get; init; } = string.Empty;
         public string FirstName { get; init; } = string.Empty;
