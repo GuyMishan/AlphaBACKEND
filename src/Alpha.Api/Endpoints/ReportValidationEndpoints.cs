@@ -49,7 +49,7 @@ public static class ReportValidationEndpoints
 
         var employeeIds = employees.Select(x => x.Id).ToArray();
         var products = await db.ManualReportProducts.AsNoTracking()
-            .Where(x => employeeIds.Contains(x.ReportEmployeeId)).OrderBy(x => x.ReportEmployeeId).ThenBy(x => x.CreatedAt).ToListAsync(ct);
+            .Where(x => employeeIds.Contains(x.ReportEmployeeId)).OrderBy(x => x.ReportEmployeeId).ThenBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToListAsync(ct);
         var productIds = products.Select(x => x.Id).ToArray();
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var years = products.Select(x => x.SalaryMonth.Year).Distinct().ToArray();
@@ -58,11 +58,17 @@ public static class ReportValidationEndpoints
         foreach (var employee in employees)
         {
             var employeeProducts = products.Where(x => x.ReportEmployeeId == employee.Id).ToList();
+            if (employee.MonthlySalary <= 0)
+                errors.Add($"לעובד {employee.FirstName} {employee.LastName} חסר שכר חודשי.");
             if (employeeProducts.Count == 0)
             {
                 errors.Add($"לעובד {employee.FirstName} {employee.LastName} אין מוצר פנסיוני בדיווח.");
                 continue;
             }
+            if (employeeProducts.Count(x => x.SalaryAllocationType == SalaryAllocationType.Remainder) > 1)
+                errors.Add($"לעובד {employee.FirstName} {employee.LastName} מוגדר יותר ממוצר אחד כיתרת שכר.");
+            if (employee.MonthlySalary > 0 && employeeProducts.Sum(x => x.Salary) > employee.MonthlySalary + 0.01m)
+                errors.Add($"סך השכר המבוטח של {employee.FirstName} {employee.LastName} גבוה מהשכר החודשי.");
 
             var inputs = employeeProducts.Select(product => new ManualProductInput(
                 product.ProductType,
@@ -73,6 +79,9 @@ public static class ReportValidationEndpoints
                 product.SalaryLayer,
                 product.Section14,
                 product.Section14StartDate,
+                product.SalaryAllocationType,
+                product.SalaryAllocationValue,
+                product.AllocationOrder,
                 contributions.Where(x => x.ReportProductId == product.Id && x.Party == ContributionParty.Employer)
                     .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray(),
                 contributions.Where(x => x.ReportProductId == product.Id && x.Party == ContributionParty.Employee)
