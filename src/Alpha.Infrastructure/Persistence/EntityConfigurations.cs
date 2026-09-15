@@ -98,6 +98,7 @@ public sealed class EmploymentConfiguration : IEntityTypeConfiguration<Employmen
         b.ToTable("employments", "employees");
         b.HasKey(x => x.Id);
         b.Property(x => x.EmployeeNumber).HasMaxLength(50).IsRequired();
+        b.Property(x => x.MonthlySalary).HasPrecision(18, 2).HasDefaultValue(0);
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(40);
         b.HasIndex(x => new { x.EmployerId, x.EmployeeNumber }).IsUnique();
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
