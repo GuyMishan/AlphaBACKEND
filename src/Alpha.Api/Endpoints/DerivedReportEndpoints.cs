@@ -140,8 +140,6 @@ public static class DerivedReportEndpoints
             .Where(x => sourceProductIds.Contains(x.ReportProductId))
             .ToListAsync(ct);
 
-        // Differences and negative reports are immutable descendants of a source report at creation time.
-        // We clone the report snapshot so future edits to the source cannot silently change this correction.
         var report = new ManualReport(organizationId, employerId, request.ReportingMonth, request.SalaryPaymentDate,
             request.ReportKind, source.Id);
         db.ManualReports.Add(report);
@@ -151,7 +149,7 @@ public static class DerivedReportEndpoints
         {
             var clone = new ManualReportEmployee(report.Id, organizationId, employerId, oldEmployee.EmploymentId,
                 oldEmployee.PersonId, oldEmployee.NationalId, oldEmployee.FirstName, oldEmployee.LastName,
-                oldEmployee.EmployeeNumber);
+                oldEmployee.EmployeeNumber, oldEmployee.MonthlySalary);
             db.ManualReportEmployees.Add(clone);
             employeeMap[oldEmployee.Id] = clone;
         }
@@ -162,7 +160,8 @@ public static class DerivedReportEndpoints
         {
             var clone = new ManualReportProduct(employeeMap[oldProduct.ReportEmployeeId].Id, oldProduct.ProductType,
                 oldProduct.PolicyNumber, oldProduct.SalaryMonth, oldProduct.Salary, reportingType, oldProduct.SalaryLayer,
-                oldProduct.Section14, oldProduct.Section14StartDate);
+                oldProduct.Section14, oldProduct.Section14StartDate, oldProduct.SalaryAllocationType,
+                oldProduct.SalaryAllocationValue, oldProduct.AllocationOrder);
             db.ManualReportProducts.Add(clone);
             productMap[oldProduct.Id] = clone;
         }
