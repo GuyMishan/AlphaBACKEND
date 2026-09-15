@@ -176,9 +176,29 @@ public static class EmployerEndpoints
         from employment in db.Employments.AsNoTracking()
         join person in db.People.AsNoTracking() on employment.PersonId equals person.Id
         where employment.OrganizationId == organizationId && employment.EmployerId == employerId
-        select new EmployeeListRow(employment.Id, employment.EmployeeNumber, employment.Status, employment.StartDate,
-            employment.EndDate, person.Id, person.NationalId, person.FirstName, person.LastName);
+        select new EmployeeListRow
+        {
+            Id = employment.Id,
+            EmployeeNumber = employment.EmployeeNumber,
+            Status = employment.Status,
+            StartDate = employment.StartDate,
+            EndDate = employment.EndDate,
+            PersonId = person.Id,
+            NationalId = person.NationalId,
+            FirstName = person.FirstName,
+            LastName = person.LastName
+        };
 
-    private sealed record EmployeeListRow(Guid Id, string EmployeeNumber, EmploymentStatus Status, DateOnly StartDate,
-        DateOnly? EndDate, Guid PersonId, string NationalId, string FirstName, string LastName);
+    private sealed class EmployeeListRow
+    {
+        public Guid Id { get; init; }
+        public string EmployeeNumber { get; init; } = string.Empty;
+        public EmploymentStatus Status { get; init; }
+        public DateOnly StartDate { get; init; }
+        public DateOnly? EndDate { get; init; }
+        public Guid PersonId { get; init; }
+        public string NationalId { get; init; } = string.Empty;
+        public string FirstName { get; init; } = string.Empty;
+        public string LastName { get; init; } = string.Empty;
+    }
 }
