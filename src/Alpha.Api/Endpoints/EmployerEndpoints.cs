@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Alpha.Api.Contracts;
+using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Domain.Auditing;
@@ -49,7 +50,9 @@ public static class EmployerEndpoints
             ICurrentUser user, OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanCreateEmployerAsync(organizationId, ct)) return Results.Forbid();
-            var item = new Employer(organizationId, request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber);
+            var validationError = ApiInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber);
+            if (validationError is not null) return Results.BadRequest(new { error = validationError });
+            var item = new Employer(organizationId, request.LegalName.Trim(), request.RegistrationNumber.Trim(), request.WithholdingFileNumber.Trim());
             db.Employers.Add(item);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.created", nameof(Employer), item.Id,
                 organizationId, item.Id, JsonSerializer.Serialize(request), http.TraceIdentifier));
@@ -83,10 +86,12 @@ public static class EmployerEndpoints
             HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var validationError = ApiInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber);
+            if (validationError is not null) return Results.BadRequest(new { error = validationError });
             var item = await db.Employers.SingleOrDefaultAsync(x =>
                 x.Id == employerId && x.OrganizationId == organizationId, ct);
             if (item is null) return Results.NotFound();
-            item.Update(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber);
+            item.Update(request.LegalName.Trim(), request.RegistrationNumber.Trim(), request.WithholdingFileNumber.Trim());
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.updated", nameof(Employer), item.Id,
                 organizationId, item.Id, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
@@ -127,11 +132,15 @@ public static class EmployerEndpoints
             HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanCreateEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate);
+            if (validationError is not null) return Results.BadRequest(new { error = validationError });
             if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct)) return Results.NotFound();
-            var person = await db.People.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.NationalId == request.NationalId, ct);
-            if (person is null) { person = new Person(organizationId, request.NationalId, request.FirstName, request.LastName); db.People.Add(person); }
-            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == request.EmployeeNumber, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
-            var employment = new Employment(organizationId, employerId, person.Id, request.StartDate, request.EmployeeNumber);
+            var nationalId = request.NationalId.Trim();
+            var person = await db.People.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.NationalId == nationalId, ct);
+            if (person is null) { person = new Person(organizationId, nationalId, request.FirstName.Trim(), request.LastName.Trim()); db.People.Add(person); }
+            var employeeNumber = request.EmployeeNumber.Trim();
+            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
+            var employment = new Employment(organizationId, employerId, person.Id, request.StartDate, employeeNumber);
             db.Employments.Add(employment);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.created", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
@@ -148,13 +157,17 @@ public static class EmployerEndpoints
         group.MapPut("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId, Guid employerId, Guid employmentId, UpdateEmployeeRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate);
+            if (validationError is not null) return Results.BadRequest(new { error = validationError });
             var employment = await db.Employments.SingleOrDefaultAsync(x => x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
             if (employment is null) return Results.NotFound();
             var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
-            if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.NationalId == request.NationalId && x.Id != person.Id, ct)) return Results.Conflict(new { error = "National ID already exists in this organization." });
-            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == request.EmployeeNumber && x.Id != employmentId, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
-            person.Update(request.NationalId, request.FirstName, request.LastName);
-            employment.Update(request.EmployeeNumber, request.StartDate);
+            var nationalId = request.NationalId.Trim();
+            var employeeNumber = request.EmployeeNumber.Trim();
+            if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.NationalId == nationalId && x.Id != person.Id, ct)) return Results.Conflict(new { error = "National ID already exists in this organization." });
+            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber && x.Id != employmentId, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
+            person.Update(nationalId, request.FirstName.Trim(), request.LastName.Trim());
+            employment.Update(employeeNumber, request.StartDate);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.updated", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { employment.Id, employment.EmployeeNumber, employment.Status, employment.StartDate, employment.EndDate, PersonId = person.Id, person.NationalId, person.FirstName, person.LastName });
