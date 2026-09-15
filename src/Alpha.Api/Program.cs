@@ -80,6 +80,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await IdentitySchemaInitializer.EnsureUpdatedAsync(db);
     await ReportingSchemaInitializer.EnsureCreatedAsync(db);
     await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db);
+    await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db);
     await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db);
 }
 
