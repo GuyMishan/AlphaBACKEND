@@ -51,7 +51,9 @@ public static class PublicReferenceDataEndpoints
         AlphaDbContext db, CancellationToken ct)
     {
         var limit = Math.Clamp(take ?? 30, 1, 100);
+        var hasSearch = !string.IsNullOrWhiteSpace(search);
         var result = new List<object>();
+
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = $"""
             SELECT DISTINCT ON (COALESCE(NULLIF(fund_code, ''), fund_name), fund_name)
@@ -59,11 +61,7 @@ public static class PublicReferenceDataEndpoints
             FROM reference_data.pension_products
             WHERE is_active = true
               AND product_type = @product_type
-              AND (@search IS NULL
-                   OR fund_name ILIKE '%' || @search || '%'
-                   OR company_name ILIKE '%' || @search || '%'
-                   OR fund_code ILIKE '%' || @search || '%'
-                   OR external_key ILIKE '%' || @search || '%')
+              {(hasSearch ? "AND (fund_name ILIKE '%' || @search || '%' OR company_name ILIKE '%' || @search || '%' OR fund_code ILIKE '%' || @search || '%' OR external_key ILIKE '%' || @search || '%')" : string.Empty)}
             ORDER BY COALESCE(NULLIF(fund_code, ''), fund_name), fund_name, company_name NULLS LAST, external_key
             LIMIT {limit}
             """;
@@ -73,10 +71,13 @@ public static class PublicReferenceDataEndpoints
         productTypeParameter.Value = normalizedType;
         command.Parameters.Add(productTypeParameter);
 
-        var searchParameter = command.CreateParameter();
-        searchParameter.ParameterName = "search";
-        searchParameter.Value = string.IsNullOrWhiteSpace(search) ? DBNull.Value : search.Trim();
-        command.Parameters.Add(searchParameter);
+        if (hasSearch)
+        {
+            var searchParameter = command.CreateParameter();
+            searchParameter.ParameterName = "search";
+            searchParameter.Value = search!.Trim();
+            command.Parameters.Add(searchParameter);
+        }
 
         if (command.Connection!.State != System.Data.ConnectionState.Open)
             await command.Connection.OpenAsync(ct);
