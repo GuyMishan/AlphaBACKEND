@@ -114,9 +114,13 @@ public static class ManualReportEndpoints
             if (employees.Count != selectedIds.Length)
                 return Results.BadRequest(new { error = "One or more selected employees do not belong to this employer." });
             foreach (var item in employees)
-                db.ManualReportEmployees.Add(new ManualReportEmployee(report.Id, organizationId, employerId,
+            {
+                var reportEmployee = new ManualReportEmployee(report.Id, organizationId, employerId,
                     item.Employment.Id, item.Person.Id, item.Person.NationalId, item.Person.FirstName,
-                    item.Person.LastName, item.Employment.EmployeeNumber));
+                    item.Person.LastName, item.Employment.EmployeeNumber, item.Employment.MonthlySalary);
+                db.ManualReportEmployees.Add(reportEmployee);
+                await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
+            }
         }
         await db.SaveChangesAsync(ct);
         return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/manual-reports/{report.Id}",
@@ -150,8 +154,8 @@ public static class ManualReportEndpoints
         if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.EmploymentIds.Count > MaxEmployeesPerDraft)
             return Results.BadRequest(new { error = $"Manual reports are limited to {MaxEmployeesPerDraft} employees per draft." });
-        if (!await db.ManualReports.AsNoTracking().AnyAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct))
-            return Results.NotFound();
+        var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
 
         var requested = request.EmploymentIds.Distinct().ToHashSet();
         var existing = await db.ManualReportEmployees.Where(x => x.ReportId == reportId).ToListAsync(ct);
@@ -168,9 +172,13 @@ public static class ManualReportEndpoints
             if (employees.Count != toAddIds.Length)
                 return Results.BadRequest(new { error = "One or more selected employees do not belong to this employer." });
             foreach (var item in employees)
-                db.ManualReportEmployees.Add(new ManualReportEmployee(reportId, organizationId, employerId,
+            {
+                var reportEmployee = new ManualReportEmployee(reportId, organizationId, employerId,
                     item.Employment.Id, item.Person.Id, item.Person.NationalId, item.Person.FirstName,
-                    item.Person.LastName, item.Employment.EmployeeNumber));
+                    item.Person.LastName, item.Employment.EmployeeNumber, item.Employment.MonthlySalary);
+                db.ManualReportEmployees.Add(reportEmployee);
+                await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
+            }
         }
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
@@ -225,7 +233,8 @@ public static class ManualReportEndpoints
             query = query.Where(x => x.Employee.FirstName.ToLower().Contains(term)
                 || x.Employee.LastName.ToLower().Contains(term)
                 || x.Employee.NationalId.Contains(term)
-                || x.Product.PolicyNumber.ToLower().Contains(term));
+                || x.Product.PolicyNumber.ToLower().Contains(term)
+                || x.Product.FundName.ToLower().Contains(term));
         }
 
         var page = await query.OrderBy(x => x.Employee.LastName).ThenBy(x => x.Employee.FirstName)
@@ -255,6 +264,10 @@ public static class ManualReportEndpoints
                 x.Employee.MonthlySalary,
                 x.Product.ProductType,
                 x.Product.PolicyNumber,
+                x.Product.FundExternalKey,
+                x.Product.FundCode,
+                x.Product.FundName,
+                x.Product.FundCompanyName,
                 x.Product.SalaryMonth,
                 x.Product.Salary,
                 x.Product.SalaryAllocationType,
@@ -320,8 +333,9 @@ public static class ManualReportEndpoints
             employee.Id, employee.EmploymentId, employee.PersonId, employee.NationalId, employee.FirstName, employee.LastName, employee.EmployeeNumber, employee.MonthlySalary,
             products = products.Select(p => new
             {
-                p.Id, p.ProductType, p.PolicyNumber, p.SalaryMonth, p.Salary, p.SalaryAllocationType,
-                p.SalaryAllocationValue, p.AllocationOrder, p.ReportingType, p.SalaryLayer, p.Section14, p.Section14StartDate,
+                p.Id, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName,
+                p.SalaryMonth, p.Salary, p.SalaryAllocationType, p.SalaryAllocationValue, p.AllocationOrder,
+                p.ReportingType, p.SalaryLayer, p.Section14, p.Section14StartDate,
                 employerContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employer).OrderBy(c => c.Component),
                 employeeContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employee).OrderBy(c => c.Component)
             })
@@ -338,6 +352,9 @@ public static class ManualReportEndpoints
 
         var employee = await db.ManualReportEmployees.SingleOrDefaultAsync(x => x.Id == reportEmployeeId && x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (employee is null) return Results.NotFound();
+
+        if (request.Products.Any(x => x.ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(x.FundExternalKey)))
+            return Results.BadRequest(new { error = "A fund must be selected for every pension product." });
 
         var monthlySalary = request.MonthlySalary > 0
             ? request.MonthlySalary
@@ -363,7 +380,8 @@ public static class ManualReportEndpoints
             var input = item.Input;
             var product = new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
                 input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
-                input.Section14StartDate, item.AllocationType, item.AllocationValue, item.AllocationOrder);
+                input.Section14StartDate, input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
+                item.AllocationType, item.AllocationValue, item.AllocationOrder);
             db.ManualReportProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
@@ -412,6 +430,38 @@ public static class ManualReportEndpoints
         return (resolved, null);
     }
 
+    private static async Task SeedProductsFromMixAsync(IAlphaDbContext db, ManualReportEmployee reportEmployee,
+        DateOnly reportingMonth, CancellationToken ct)
+    {
+        var mixProducts = await db.EmployeePensionProducts.AsNoTracking()
+            .Where(x => x.EmploymentId == reportEmployee.EmploymentId && x.IsActive
+                && x.EffectiveFrom <= reportingMonth
+                && (x.EffectiveTo == null || x.EffectiveTo >= reportingMonth))
+            .OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt)
+            .ToListAsync(ct);
+        if (mixProducts.Count == 0) return;
+
+        var mixIds = mixProducts.Select(x => x.Id).ToArray();
+        var mixContributions = await db.EmployeePensionContributions.AsNoTracking()
+            .Where(x => mixIds.Contains(x.EmployeePensionProductId)).ToListAsync(ct);
+
+        foreach (var mix in mixProducts)
+        {
+            var product = new ManualReportProduct(reportEmployee.Id, mix.ProductType, mix.PolicyNumber,
+                reportingMonth, mix.Salary, mix.ReportingType, mix.SalaryLayer, mix.Section14, mix.Section14StartDate,
+                mix.FundExternalKey, mix.FundCode, mix.FundName, mix.FundCompanyName,
+                mix.SalaryAllocationType, mix.SalaryAllocationValue, mix.AllocationOrder);
+            db.ManualReportProducts.Add(product);
+
+            foreach (var contribution in mixContributions.Where(x => x.EmployeePensionProductId == mix.Id))
+            {
+                var amount = Math.Round(mix.Salary * contribution.Percentage / 100m, 2, MidpointRounding.AwayFromZero);
+                db.ManualContributions.Add(new ManualContribution(product.Id, contribution.Party, contribution.Component,
+                    amount, contribution.Percentage, 0));
+            }
+        }
+    }
+
     private static void AddContributions(IAlphaDbContext db, Guid productId, ContributionParty party, decimal insuredSalary,
         IReadOnlyCollection<ManualContributionInput> items)
     {
@@ -434,6 +484,7 @@ public sealed record UpdateManualReportSelectionRequest(IReadOnlyCollection<Guid
 public sealed record SaveManualReportEmployeeRequest(decimal MonthlySalary, IReadOnlyCollection<ManualProductInput> Products);
 public sealed record ManualProductInput(PensionProductType ProductType, string PolicyNumber, DateOnly SalaryMonth,
     decimal Salary, string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
+    string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions);
 public sealed record ManualContributionInput(ContributionComponent Component, decimal Amount, decimal Percentage, decimal ExemptPayments);
