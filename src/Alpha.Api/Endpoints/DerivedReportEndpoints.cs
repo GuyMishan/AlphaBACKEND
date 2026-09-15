@@ -1,3 +1,4 @@
+using System.Globalization;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Domain.Reporting;
@@ -28,47 +29,58 @@ public static class DerivedReportEndpoints
         take = Math.Clamp(take == 0 ? 30 : take, 1, 100);
 
         var query = db.ManualReports.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.Status != ManualReportStatus.Cancelled);
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
+                && x.Status != ManualReportStatus.Cancelled);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
-            if (DateOnly.TryParse(term, out var parsed))
+            if (DateOnly.TryParseExact(term, "yyyy-MM", CultureInfo.InvariantCulture, DateTimeStyles.None, out var monthOnly)
+                || DateOnly.TryParse(term, out monthOnly))
             {
-                var month = new DateOnly(parsed.Year, parsed.Month, 1);
+                var month = new DateOnly(monthOnly.Year, monthOnly.Month, 1);
                 query = query.Where(x => x.ReportingMonth == month);
             }
         }
 
-        var page = await query.OrderByDescending(x => x.ReportingMonth).ThenByDescending(x => x.UpdatedAt)
-            .Skip(skip).Take(take + 1).ToListAsync(ct);
+        var page = await query
+            .OrderByDescending(x => x.ReportingMonth)
+            .ThenByDescending(x => x.UpdatedAt)
+            .Skip(skip)
+            .Take(take + 1)
+            .ToListAsync(ct);
+
         var hasMore = page.Count > take;
         if (hasMore) page.RemoveAt(page.Count - 1);
-
         var ids = page.Select(x => x.Id).ToArray();
+
         var employeeCounts = await db.ManualReportEmployees.AsNoTracking()
             .Where(x => ids.Contains(x.ReportId))
             .GroupBy(x => x.ReportId)
             .Select(g => new { ReportId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.ReportId, x => x.Count, ct);
 
-        var reportEmployees = await db.ManualReportEmployees.AsNoTracking()
-            .Where(x => ids.Contains(x.ReportId)).Select(x => new { x.Id, x.ReportId }).ToListAsync(ct);
-        var employeeToReport = reportEmployees.ToDictionary(x => x.Id, x => x.ReportId);
-        var employeeIds = employeeToReport.Keys.ToArray();
-        var productCountsByEmployee = await db.ManualReportProducts.AsNoTracking()
-            .Where(x => employeeIds.Contains(x.ReportEmployeeId))
-            .GroupBy(x => x.ReportEmployeeId)
-            .Select(g => new { EmployeeId = g.Key, Count = g.Count() }).ToListAsync(ct);
-        var productCounts = productCountsByEmployee.GroupBy(x => employeeToReport[x.EmployeeId])
-            .ToDictionary(g => g.Key, g => g.Sum(x => x.Count));
+        var productCounts = await (
+                from product in db.ManualReportProducts.AsNoTracking()
+                join employee in db.ManualReportEmployees.AsNoTracking()
+                    on product.ReportEmployeeId equals employee.Id
+                where ids.Contains(employee.ReportId)
+                group product by employee.ReportId into g
+                select new { ReportId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ReportId, x => x.Count, ct);
 
         return Results.Ok(new
         {
             items = page.Select(x => new
             {
-                x.Id, x.ReportingMonth, x.SalaryPaymentDate, x.Status, x.ReportKind, x.SourceReportId,
-                x.CreatedAt, x.UpdatedAt,
+                x.Id,
+                x.ReportingMonth,
+                x.SalaryPaymentDate,
+                x.Status,
+                x.ReportKind,
+                x.SourceReportId,
+                x.CreatedAt,
+                x.UpdatedAt,
                 employeeCount = employeeCounts.GetValueOrDefault(x.Id),
                 productCount = productCounts.GetValueOrDefault(x.Id)
             }),
@@ -84,7 +96,12 @@ public static class DerivedReportEndpoints
             x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         return report is null ? Results.NotFound() : Results.Ok(new
         {
-            report.Id, report.ReportingMonth, report.SalaryPaymentDate, report.Status, report.ReportKind, report.SourceReportId
+            report.Id,
+            report.ReportingMonth,
+            report.SalaryPaymentDate,
+            report.Status,
+            report.ReportKind,
+            report.SourceReportId
         });
     }
 
@@ -99,35 +116,48 @@ public static class DerivedReportEndpoints
             x.OrganizationId == organizationId && x.EmployerId == employerId && x.Status != ManualReportStatus.Cancelled, ct);
         if (source is null) return Results.BadRequest(new { error = "Source report was not found for this employer." });
 
-        var sourceEmployees = await db.ManualReportEmployees.AsNoTracking().Where(x => x.ReportId == source.Id)
-            .OrderBy(x => x.Id).ToListAsync(ct);
-        if (sourceEmployees.Count > MaxSourceEmployees)
+        var sourceEmployeeCount = await db.ManualReportEmployees.AsNoTracking()
+            .CountAsync(x => x.ReportId == source.Id, ct);
+        if (sourceEmployeeCount > MaxSourceEmployees)
             return Results.BadRequest(new { error = $"Source reports are limited to {MaxSourceEmployees} employees for derived drafts." });
+
+        var sourceEmployees = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => x.ReportId == source.Id)
+            .OrderBy(x => x.Id)
+            .ToListAsync(ct);
 
         var sourceEmployeeIds = sourceEmployees.Select(x => x.Id).ToArray();
         var sourceProducts = await db.ManualReportProducts.AsNoTracking()
-            .Where(x => sourceEmployeeIds.Contains(x.ReportEmployeeId)).OrderBy(x => x.Id).ToListAsync(ct);
+            .Where(x => sourceEmployeeIds.Contains(x.ReportEmployeeId))
+            .OrderBy(x => x.Id)
+            .ToListAsync(ct);
+
         var sourceProductIds = sourceProducts.Select(x => x.Id).ToArray();
         var sourceContributions = await db.ManualContributions.AsNoTracking()
-            .Where(x => sourceProductIds.Contains(x.ReportProductId)).ToListAsync(ct);
+            .Where(x => sourceProductIds.Contains(x.ReportProductId))
+            .ToListAsync(ct);
         var sourcePayments = await db.ManualReportPayments.AsNoTracking()
-            .Where(x => sourceProductIds.Contains(x.ReportProductId)).ToListAsync(ct);
+            .Where(x => sourceProductIds.Contains(x.ReportProductId))
+            .ToListAsync(ct);
 
+        // Differences and negative reports are immutable descendants of a source report at creation time.
+        // We clone the report snapshot so future edits to the source cannot silently change this correction.
         var report = new ManualReport(organizationId, employerId, request.ReportingMonth, request.SalaryPaymentDate,
             request.ReportKind, source.Id);
         db.ManualReports.Add(report);
 
-        var employeeMap = new Dictionary<Guid, ManualReportEmployee>();
+        var employeeMap = new Dictionary<Guid, ManualReportEmployee>(sourceEmployees.Count);
         foreach (var oldEmployee in sourceEmployees)
         {
             var clone = new ManualReportEmployee(report.Id, organizationId, employerId, oldEmployee.EmploymentId,
-                oldEmployee.PersonId, oldEmployee.NationalId, oldEmployee.FirstName, oldEmployee.LastName, oldEmployee.EmployeeNumber);
+                oldEmployee.PersonId, oldEmployee.NationalId, oldEmployee.FirstName, oldEmployee.LastName,
+                oldEmployee.EmployeeNumber);
             db.ManualReportEmployees.Add(clone);
             employeeMap[oldEmployee.Id] = clone;
         }
 
         var reportingType = request.ReportKind == ManualReportKind.Negative ? "שלילי" : "הפרשים";
-        var productMap = new Dictionary<Guid, ManualReportProduct>();
+        var productMap = new Dictionary<Guid, ManualReportProduct>(sourceProducts.Count);
         foreach (var oldProduct in sourceProducts)
         {
             var clone = new ManualReportProduct(employeeMap[oldProduct.ReportEmployeeId].Id, oldProduct.ProductType,
@@ -139,24 +169,29 @@ public static class DerivedReportEndpoints
 
         foreach (var oldContribution in sourceContributions)
         {
-            var clone = new ManualContribution(productMap[oldContribution.ReportProductId].Id, oldContribution.Party,
-                oldContribution.Component, oldContribution.Amount, oldContribution.Percentage, oldContribution.ExemptPayments);
-            db.ManualContributions.Add(clone);
+            db.ManualContributions.Add(new ManualContribution(productMap[oldContribution.ReportProductId].Id,
+                oldContribution.Party, oldContribution.Component, oldContribution.Amount, oldContribution.Percentage,
+                oldContribution.ExemptPayments));
         }
 
         foreach (var oldPayment in sourcePayments)
         {
             var clone = new ManualReportPayment(productMap[oldPayment.ReportProductId].Id);
             clone.Update(oldPayment.ProviderName, oldPayment.ProviderAccount, oldPayment.PaymentMethod, oldPayment.ValueDate,
-                oldPayment.ReferenceNumber, oldPayment.EmployerBankName, oldPayment.EmployerBankCode, oldPayment.EmployerBranch,
-                oldPayment.EmployerAccount, oldPayment.ConfirmationFileName);
+                oldPayment.ReferenceNumber, oldPayment.EmployerBankName, oldPayment.EmployerBankCode,
+                oldPayment.EmployerBranch, oldPayment.EmployerAccount, oldPayment.ConfirmationFileName);
             db.ManualReportPayments.Add(clone);
         }
 
         await db.SaveChangesAsync(ct);
         return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/manual-reports/{report.Id}", new
         {
-            report.Id, report.ReportingMonth, report.SalaryPaymentDate, report.Status, report.ReportKind, report.SourceReportId,
+            report.Id,
+            report.ReportingMonth,
+            report.SalaryPaymentDate,
+            report.Status,
+            report.ReportKind,
+            report.SourceReportId,
             employeeCount = sourceEmployees.Count
         });
     }
