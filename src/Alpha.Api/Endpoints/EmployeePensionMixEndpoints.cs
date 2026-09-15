@@ -63,26 +63,44 @@ public static class EmployeePensionMixEndpoints
         if (!await db.Employments.AsNoTracking().AnyAsync(x => x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct))
             return Results.NotFound();
 
+        var existingProducts = await db.EmployeePensionProducts.AsNoTracking()
+            .Where(x => x.EmploymentId == employmentId).ToListAsync(ct);
+        var resolved = new List<ResolvedProductInput>(request.Products.Count);
+
         foreach (var input in request.Products)
         {
-            if (input.EffectiveTo is not null && input.EffectiveTo.Value < input.EffectiveFrom)
+            var existing = existingProducts.FirstOrDefault(x =>
+                x.ProductType == input.ProductType &&
+                string.Equals(x.PolicyNumber.Trim(), input.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+            var lifecycleProvided = input.IsActive.HasValue || input.EffectiveFrom.HasValue || input.InstitutionalBody is not null || input.Manufacturer is not null;
+
+            var isActive = lifecycleProvided ? input.IsActive ?? true : existing?.IsActive ?? true;
+            var effectiveFrom = lifecycleProvided ? input.EffectiveFrom ?? DateOnly.FromDateTime(DateTime.UtcNow) : existing?.EffectiveFrom ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var effectiveTo = lifecycleProvided ? input.EffectiveTo : existing?.EffectiveTo;
+            var institutionalBody = lifecycleProvided ? input.InstitutionalBody ?? string.Empty : existing?.InstitutionalBody ?? string.Empty;
+            var manufacturer = lifecycleProvided ? input.Manufacturer ?? string.Empty : existing?.Manufacturer ?? string.Empty;
+
+            if (effectiveTo is not null && effectiveTo.Value < effectiveFrom)
                 return Results.BadRequest(new { error = "Product effective end date cannot be earlier than the start date." });
-            if (input.IsActive && string.IsNullOrWhiteSpace(input.PolicyNumber))
+            if (isActive && string.IsNullOrWhiteSpace(input.PolicyNumber))
                 return Results.BadRequest(new { error = "Active pension products must have a policy number." });
+
+            resolved.Add(new ResolvedProductInput(input, isActive, effectiveFrom, effectiveTo, institutionalBody, manufacturer));
         }
 
-        var existingIds = await db.EmployeePensionProducts.Where(x => x.EmploymentId == employmentId).Select(x => x.Id).ToArrayAsync(ct);
+        var existingIds = existingProducts.Select(x => x.Id).ToArray();
         if (existingIds.Length > 0)
         {
             await db.EmployeePensionContributions.Where(x => existingIds.Contains(x.EmployeePensionProductId)).ExecuteDeleteAsync(ct);
             await db.EmployeePensionProducts.Where(x => x.EmploymentId == employmentId).ExecuteDeleteAsync(ct);
         }
 
-        foreach (var input in request.Products)
+        foreach (var item in resolved)
         {
+            var input = item.Input;
             var product = new EmployeePensionProduct(employmentId, input.ProductType, input.PolicyNumber,
                 input.Salary, input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate,
-                input.IsActive, input.EffectiveFrom, input.EffectiveTo, input.InstitutionalBody, input.Manufacturer);
+                item.IsActive, item.EffectiveFrom, item.EffectiveTo, item.InstitutionalBody, item.Manufacturer);
             db.EmployeePensionProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, input.EmployeeContributions);
@@ -108,12 +126,15 @@ public static class EmployeePensionMixEndpoints
         foreach (var item in items)
             db.EmployeePensionContributions.Add(new EmployeePensionContribution(productId, party, item.Component, item.Percentage));
     }
+
+    private sealed record ResolvedProductInput(EmployeePensionProductInput Input, bool IsActive, DateOnly EffectiveFrom,
+        DateOnly? EffectiveTo, string InstitutionalBody, string Manufacturer);
 }
 
 public sealed record SaveEmployeePensionMixRequest(IReadOnlyCollection<EmployeePensionProductInput> Products);
 public sealed record EmployeePensionProductInput(PensionProductType ProductType, string PolicyNumber, decimal Salary,
     string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
-    bool IsActive, DateOnly EffectiveFrom, DateOnly? EffectiveTo, string InstitutionalBody, string Manufacturer,
+    bool? IsActive, DateOnly? EffectiveFrom, DateOnly? EffectiveTo, string? InstitutionalBody, string? Manufacturer,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployerContributions,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployeeContributions);
 public sealed record EmployeePensionContributionInput(ContributionComponent Component, decimal Percentage);
