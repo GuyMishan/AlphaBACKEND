@@ -17,6 +17,8 @@ public interface IAlphaDbContext
     DbSet<EmployerUserAccess> EmployerUserAccesses { get; }
     DbSet<Person> People { get; }
     DbSet<Employment> Employments { get; }
+    DbSet<EmployeePensionProduct> EmployeePensionProducts { get; }
+    DbSet<EmployeePensionContribution> EmployeePensionContributions { get; }
     DbSet<ManualReport> ManualReports { get; }
     DbSet<ManualReportEmployee> ManualReportEmployees { get; }
     DbSet<ManualReportProduct> ManualReportProducts { get; }
