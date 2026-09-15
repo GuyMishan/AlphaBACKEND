@@ -17,5 +17,16 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet restore AlphaBackend.slnx
-      - run: dotnet build AlphaBackend.slnx --no-restore --configuration Release
+      - name: Build
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet build AlphaBackend.slnx --no-restore --configuration Release 2>&1 | tee build.log
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-build-log
+          path: build.log
+          if-no-files-found: ignore
       - run: dotnet test --solution AlphaBackend.slnx --no-build --configuration Release
