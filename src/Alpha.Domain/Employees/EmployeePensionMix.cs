@@ -10,13 +10,14 @@ public sealed class EmployeePensionProduct : Entity
     public EmployeePensionProduct(Guid employmentId, PensionProductType productType, string policyNumber,
         decimal salary, string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate,
         bool isActive, DateOnly effectiveFrom, DateOnly? effectiveTo, string institutionalBody, string manufacturer,
+        string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null,
         SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
         int allocationOrder = 0)
     {
         EmploymentId = employmentId;
         Update(productType, policyNumber, salary, reportingType, salaryLayer, section14, section14StartDate,
-            isActive, effectiveFrom, effectiveTo, institutionalBody, manufacturer,
-            salaryAllocationType, salaryAllocationValue, allocationOrder);
+            isActive, effectiveFrom, effectiveTo, institutionalBody, manufacturer, fundExternalKey, fundCode, fundName,
+            fundCompanyName, salaryAllocationType, salaryAllocationValue, allocationOrder);
     }
 
     public Guid EmploymentId { get; private set; }
@@ -32,13 +33,18 @@ public sealed class EmployeePensionProduct : Entity
     public DateOnly? EffectiveTo { get; private set; }
     public string InstitutionalBody { get; private set; } = string.Empty;
     public string Manufacturer { get; private set; } = string.Empty;
+    public string FundExternalKey { get; private set; } = string.Empty;
+    public string FundCode { get; private set; } = string.Empty;
+    public string FundName { get; private set; } = string.Empty;
+    public string FundCompanyName { get; private set; } = string.Empty;
     public SalaryAllocationType SalaryAllocationType { get; private set; } = SalaryAllocationType.Fixed;
     public decimal? SalaryAllocationValue { get; private set; }
     public int AllocationOrder { get; private set; }
 
     public void Update(PensionProductType productType, string policyNumber, decimal salary, string reportingType,
         string salaryLayer, bool section14, DateOnly? section14StartDate, bool isActive, DateOnly effectiveFrom,
-        DateOnly? effectiveTo, string institutionalBody, string manufacturer,
+        DateOnly? effectiveTo, string institutionalBody, string manufacturer, string? fundExternalKey = null,
+        string? fundCode = null, string? fundName = null, string? fundCompanyName = null,
         SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
         int allocationOrder = 0)
     {
@@ -64,6 +70,10 @@ public sealed class EmployeePensionProduct : Entity
         EffectiveTo = effectiveTo;
         InstitutionalBody = institutionalBody?.Trim() ?? string.Empty;
         Manufacturer = manufacturer?.Trim() ?? string.Empty;
+        FundExternalKey = fundExternalKey?.Trim() ?? string.Empty;
+        FundCode = fundCode?.Trim() ?? string.Empty;
+        FundName = fundName?.Trim() ?? string.Empty;
+        FundCompanyName = fundCompanyName?.Trim() ?? string.Empty;
         SalaryAllocationType = salaryAllocationType;
         SalaryAllocationValue = salaryAllocationType == SalaryAllocationType.Remainder ? null : salaryAllocationValue;
         AllocationOrder = allocationOrder;
@@ -74,6 +84,7 @@ public sealed class EmployeePensionProduct : Entity
     {
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(PolicyNumber)) missing.Add("policyNumber");
+        if (ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(FundExternalKey)) missing.Add("fund");
         if (string.IsNullOrWhiteSpace(InstitutionalBody)) missing.Add("institutionalBody");
         if (string.IsNullOrWhiteSpace(Manufacturer)) missing.Add("manufacturer");
         if (Section14 && Section14StartDate is null) missing.Add("section14StartDate");
