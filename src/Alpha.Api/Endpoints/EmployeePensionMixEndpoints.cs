@@ -38,6 +38,7 @@ public static class EmployeePensionMixEndpoints
             p.Id,
             p.ProductType,
             p.PolicyNumber,
+            p.Salary,
             p.ReportingType,
             p.SalaryLayer,
             p.Section14,
@@ -65,7 +66,7 @@ public static class EmployeePensionMixEndpoints
         foreach (var input in request.Products)
         {
             var product = new EmployeePensionProduct(employmentId, input.ProductType, input.PolicyNumber,
-                input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate);
+                input.Salary, input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate);
             db.EmployeePensionProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, input.EmployeeContributions);
@@ -86,7 +87,7 @@ public static class EmployeePensionMixEndpoints
 }
 
 public sealed record SaveEmployeePensionMixRequest(IReadOnlyCollection<EmployeePensionProductInput> Products);
-public sealed record EmployeePensionProductInput(PensionProductType ProductType, string PolicyNumber,
+public sealed record EmployeePensionProductInput(PensionProductType ProductType, string PolicyNumber, decimal Salary,
     string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployerContributions,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployeeContributions);
