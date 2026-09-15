@@ -23,11 +23,22 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<ManualReportProduct> ManualReportProducts => Set<ManualReportProduct>();
     public DbSet<ManualContribution> ManualContributions => Set<ManualContribution>();
     public DbSet<ManualReportPayment> ManualReportPayments => Set<ManualReportPayment>();
+    public DbSet<ContributionPercentageLimit> ContributionPercentageLimits => Set<ContributionPercentageLimit>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AlphaDbContext).Assembly);
+
+        var limits = modelBuilder.Entity<ContributionPercentageLimit>();
+        limits.ToTable("contribution_percentage_limits", "reporting");
+        limits.HasKey(x => x.Id);
+        limits.Property(x => x.ProductType).HasConversion<string>().HasMaxLength(40);
+        limits.Property(x => x.Party).HasConversion<string>().HasMaxLength(20);
+        limits.Property(x => x.Component).HasConversion<string>().HasMaxLength(30);
+        limits.Property(x => x.MaxPercentage).HasPrecision(9, 4);
+        limits.HasIndex(x => new { x.Year, x.ProductType, x.Party, x.Component }).IsUnique();
+
         base.OnModelCreating(modelBuilder);
     }
 
