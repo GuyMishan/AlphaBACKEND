@@ -56,6 +56,9 @@ public static class ApiInputValidation
             if (product.Section14 && product.Section14StartDate is null) errors.Add(prefix + "יש להזין תאריך תחילת סעיף 14.");
             if (product.Section14StartDate is { } section14Date && section14Date > DateOnly.FromDateTime(DateTime.UtcNow)) errors.Add(prefix + "תאריך תחילת סעיף 14 לא יכול להיות בעתיד.");
 
+            if (!product.EmployerContributions.Concat(product.EmployeeContributions).Any(x => x.Amount > 0))
+                errors.Add(prefix + "יש להזין לפחות רכיב הפקדה אחד עם סכום גדול מאפס.");
+
             ValidateContributions(errors, prefix, product.SalaryMonth.Year, product.ProductType, ContributionParty.Employer,
                 product.Salary, product.EmployerContributions, limits);
             ValidateContributions(errors, prefix, product.SalaryMonth.Year, product.ProductType, ContributionParty.Employee,
@@ -97,6 +100,10 @@ public static class ApiInputValidation
             var side = party == ContributionParty.Employer ? "מעסיק" : "עובד";
             if (item.Amount < 0 || item.Percentage < 0 || item.ExemptPayments < 0)
                 errors.Add(prefix + $"ערכי הפקדת {side} לא יכולים להיות שליליים.");
+            if (item.Amount > 0 && item.Percentage <= 0)
+                errors.Add(prefix + $"יש להזין אחוז עבור {ComponentName(item.Component)} של {side}.");
+            if (item.Percentage > 0 && item.Amount <= 0)
+                errors.Add(prefix + $"יש להזין סכום עבור {ComponentName(item.Component)} של {side}.");
 
             var limit = limits.FirstOrDefault(x => x.Year == year && x.ProductType == productType
                 && x.Party == party && x.Component == item.Component);
