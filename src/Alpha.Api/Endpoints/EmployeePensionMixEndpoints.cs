@@ -63,10 +63,13 @@ public static class EmployeePensionMixEndpoints
     {
         if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.Products.Count > MaxProducts) return Results.BadRequest(new { error = $"Employee mix is limited to {MaxProducts} products." });
-        if (!await db.Employments.AsNoTracking().AnyAsync(x => x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct))
-            return Results.NotFound();
-        if (request.Products.Count(x => (x.SalaryAllocationType ?? SalaryAllocationType.Fixed) == SalaryAllocationType.Remainder) > 1)
-            return Results.BadRequest(new { error = "Only one product may use remainder salary allocation." });
+
+        var employment = await db.Employments.SingleOrDefaultAsync(x =>
+            x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (employment is null) return Results.NotFound();
+
+        var monthlySalary = request.MonthlySalary ?? employment.MonthlySalary;
+        if (monthlySalary < 0) return Results.BadRequest(new { error = "Employee monthly salary cannot be negative." });
 
         var existingProducts = await db.EmployeePensionProducts.AsNoTracking()
             .Where(x => x.EmploymentId == employmentId).ToListAsync(ct);
@@ -105,6 +108,18 @@ public static class EmployeePensionMixEndpoints
                 manufacturer, allocationType, allocationValue, allocationOrder));
         }
 
+        var active = resolved.Where(x => x.IsActive).ToList();
+        if (active.Count > 0 && monthlySalary <= 0)
+            return Results.BadRequest(new { error = "Employee monthly salary must be greater than zero when active pension products are configured." });
+        if (active.Count(x => x.SalaryAllocationType == SalaryAllocationType.Remainder) > 1)
+            return Results.BadRequest(new { error = "Only one active product may use remainder salary allocation." });
+        if (active.GroupBy(x => x.AllocationOrder).Any(g => g.Count() > 1))
+            return Results.BadRequest(new { error = "Active pension products must have a unique salary allocation order." });
+
+        var allocationError = ValidateSalaryAllocations(monthlySalary, active);
+        if (allocationError is not null) return Results.BadRequest(new { error = allocationError });
+
+        employment.UpdateMonthlySalary(monthlySalary);
         var existingIds = existingProducts.Select(x => x.Id).ToArray();
         if (existingIds.Length > 0)
         {
@@ -115,8 +130,11 @@ public static class EmployeePensionMixEndpoints
         foreach (var item in resolved)
         {
             var input = item.Input;
+            var legacySalary = item.SalaryAllocationType == SalaryAllocationType.Fixed
+                ? item.SalaryAllocationValue ?? input.Salary
+                : input.Salary;
             var product = new EmployeePensionProduct(employmentId, input.ProductType, input.PolicyNumber,
-                input.Salary, input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate,
+                Math.Max(legacySalary, 0), input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate,
                 item.IsActive, item.EffectiveFrom, item.EffectiveTo, item.InstitutionalBody, item.Manufacturer,
                 item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder);
             db.EmployeePensionProducts.Add(product);
@@ -126,6 +144,27 @@ public static class EmployeePensionMixEndpoints
 
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
+    }
+
+    private static string? ValidateSalaryAllocations(decimal monthlySalary, IReadOnlyCollection<ResolvedProductInput> products)
+    {
+        decimal allocated = 0;
+        foreach (var item in products.OrderBy(x => x.AllocationOrder))
+        {
+            var insuredSalary = item.SalaryAllocationType switch
+            {
+                SalaryAllocationType.Fixed => item.SalaryAllocationValue!.Value,
+                SalaryAllocationType.Percentage => Math.Round(monthlySalary * item.SalaryAllocationValue!.Value / 100m, 2, MidpointRounding.AwayFromZero),
+                SalaryAllocationType.Cap => Math.Min(monthlySalary, item.SalaryAllocationValue!.Value),
+                SalaryAllocationType.Remainder => Math.Max(monthlySalary - allocated, 0),
+                _ => 0
+            };
+
+            if (allocated + insuredSalary > monthlySalary + 0.01m)
+                return "Salary allocations exceed the employee monthly salary.";
+            allocated += insuredSalary;
+        }
+        return null;
     }
 
     private static IReadOnlyCollection<string> GetMissingDetails(EmployeePensionProduct product,
@@ -150,7 +189,7 @@ public static class EmployeePensionMixEndpoints
         decimal? SalaryAllocationValue, int AllocationOrder);
 }
 
-public sealed record SaveEmployeePensionMixRequest(IReadOnlyCollection<EmployeePensionProductInput> Products);
+public sealed record SaveEmployeePensionMixRequest(decimal? MonthlySalary, IReadOnlyCollection<EmployeePensionProductInput> Products);
 public sealed record EmployeePensionProductInput(PensionProductType ProductType, string PolicyNumber, decimal Salary,
     string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
     bool? IsActive, DateOnly? EffectiveFrom, DateOnly? EffectiveTo, string? InstitutionalBody, string? Manufacturer,
