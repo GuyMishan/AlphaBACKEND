@@ -25,21 +25,24 @@ CREATE TABLE IF NOT EXISTS employees.employee_pension_products (
     "EffectiveTo" date NULL,
     "InstitutionalBody" varchar(160) NOT NULL DEFAULT '',
     "Manufacturer" varchar(160) NOT NULL DEFAULT '',
+    "SalaryAllocationType" varchar(30) NOT NULL DEFAULT 'Fixed',
+    "SalaryAllocationValue" numeric(18,4) NULL,
+    "AllocationOrder" integer NOT NULL DEFAULT 0,
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL
 );
-ALTER TABLE employees.employee_pension_products
-    ADD COLUMN IF NOT EXISTS "Salary" numeric(18,2) NOT NULL DEFAULT 0;
-ALTER TABLE employees.employee_pension_products
-    ADD COLUMN IF NOT EXISTS "IsActive" boolean NOT NULL DEFAULT true;
-ALTER TABLE employees.employee_pension_products
-    ADD COLUMN IF NOT EXISTS "EffectiveFrom" date NOT NULL DEFAULT CURRENT_DATE;
-ALTER TABLE employees.employee_pension_products
-    ADD COLUMN IF NOT EXISTS "EffectiveTo" date NULL;
-ALTER TABLE employees.employee_pension_products
-    ADD COLUMN IF NOT EXISTS "InstitutionalBody" varchar(160) NOT NULL DEFAULT '';
-ALTER TABLE employees.employee_pension_products
-    ADD COLUMN IF NOT EXISTS "Manufacturer" varchar(160) NOT NULL DEFAULT '';
+ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS "Salary" numeric(18,2) NOT NULL DEFAULT 0;
+ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS "IsActive" boolean NOT NULL DEFAULT true;
+ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS "EffectiveFrom" date NOT NULL DEFAULT CURRENT_DATE;
+ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS "EffectiveTo" date NULL;
+ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS "InstitutionalBody" varchar(160) NOT NULL DEFAULT '';
+ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS "Manufacturer" varchar(160) NOT NULL DEFAULT '';
+ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS "SalaryAllocationType" varchar(30) NOT NULL DEFAULT 'Fixed';
+ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS "SalaryAllocationValue" numeric(18,4) NULL;
+ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS "AllocationOrder" integer NOT NULL DEFAULT 0;
+UPDATE employees.employee_pension_products
+SET "SalaryAllocationValue" = "Salary"
+WHERE "SalaryAllocationType" = 'Fixed' AND "SalaryAllocationValue" IS NULL AND "Salary" > 0;
 CREATE INDEX IF NOT EXISTS "IX_employee_pension_products_employment"
     ON employees.employee_pension_products ("EmploymentId");
 CREATE INDEX IF NOT EXISTS "IX_employee_pension_products_active_period"
@@ -68,10 +71,8 @@ CREATE TABLE IF NOT EXISTS reporting.manual_reports (
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL
 );
-ALTER TABLE reporting.manual_reports
-    ADD COLUMN IF NOT EXISTS "ReportKind" varchar(30) NOT NULL DEFAULT 'Current';
-ALTER TABLE reporting.manual_reports
-    ADD COLUMN IF NOT EXISTS "SourceReportId" uuid NULL;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "ReportKind" varchar(30) NOT NULL DEFAULT 'Current';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "SourceReportId" uuid NULL;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_manual_reports_source') THEN
@@ -96,10 +97,12 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_employees (
     "FirstName" varchar(100) NOT NULL,
     "LastName" varchar(100) NOT NULL,
     "EmployeeNumber" varchar(50) NOT NULL,
+    "MonthlySalary" numeric(18,2) NOT NULL DEFAULT 0,
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL,
     CONSTRAINT "UX_manual_report_employee" UNIQUE ("ReportId", "EmploymentId")
 );
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "MonthlySalary" numeric(18,2) NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS "IX_manual_report_employees_scope"
     ON reporting.manual_report_employees ("OrganizationId", "EmployerId", "ReportId");
 
@@ -110,6 +113,9 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_products (
     "PolicyNumber" varchar(100) NOT NULL,
     "SalaryMonth" date NOT NULL,
     "Salary" numeric(18,2) NOT NULL,
+    "SalaryAllocationType" varchar(30) NOT NULL DEFAULT 'Fixed',
+    "SalaryAllocationValue" numeric(18,4) NULL,
+    "AllocationOrder" integer NOT NULL DEFAULT 0,
     "ReportingType" varchar(80) NOT NULL,
     "SalaryLayer" varchar(80) NOT NULL,
     "Section14" boolean NOT NULL,
@@ -117,6 +123,12 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_products (
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL
 );
+ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "SalaryAllocationType" varchar(30) NOT NULL DEFAULT 'Fixed';
+ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "SalaryAllocationValue" numeric(18,4) NULL;
+ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "AllocationOrder" integer NOT NULL DEFAULT 0;
+UPDATE reporting.manual_report_products
+SET "SalaryAllocationValue" = "Salary"
+WHERE "SalaryAllocationType" = 'Fixed' AND "SalaryAllocationValue" IS NULL AND "Salary" > 0;
 CREATE INDEX IF NOT EXISTS "IX_manual_report_products_employee"
     ON reporting.manual_report_products ("ReportEmployeeId");
 
@@ -142,6 +154,8 @@ DECLARE
     mix_contribution record;
     report_month date;
     report_product_id uuid;
+    insured_salary numeric(18,2);
+    allocated_salary numeric(18,2) := 0;
 BEGIN
     IF EXISTS (SELECT 1 FROM reporting.manual_report_products p WHERE p."ReportEmployeeId" = NEW."Id") THEN
         RETURN NEW;
@@ -157,14 +171,26 @@ BEGIN
           AND p."IsActive" = true
           AND p."EffectiveFrom" <= (date_trunc('month', report_month)::date + interval '1 month - 1 day')::date
           AND (p."EffectiveTo" IS NULL OR p."EffectiveTo" >= date_trunc('month', report_month)::date)
-        ORDER BY p."CreatedAt"
+        ORDER BY p."AllocationOrder", p."CreatedAt"
     LOOP
+        insured_salary := CASE mix_product."SalaryAllocationType"
+            WHEN 'Fixed' THEN COALESCE(mix_product."SalaryAllocationValue", mix_product."Salary")
+            WHEN 'Percentage' THEN round((NEW."MonthlySalary" * COALESCE(mix_product."SalaryAllocationValue", 0) / 100.0)::numeric, 2)
+            WHEN 'Cap' THEN LEAST(NEW."MonthlySalary", COALESCE(mix_product."SalaryAllocationValue", 0))
+            WHEN 'Remainder' THEN GREATEST(NEW."MonthlySalary" - allocated_salary, 0)
+            ELSE mix_product."Salary"
+        END;
+        allocated_salary := allocated_salary + COALESCE(insured_salary, 0);
+
         report_product_id := md5(random()::text || clock_timestamp()::text || mix_product."Id"::text)::uuid;
         INSERT INTO reporting.manual_report_products
-            ("Id", "ReportEmployeeId", "ProductType", "PolicyNumber", "SalaryMonth", "Salary", "ReportingType", "SalaryLayer", "Section14", "Section14StartDate", "CreatedAt", "UpdatedAt")
+            ("Id", "ReportEmployeeId", "ProductType", "PolicyNumber", "SalaryMonth", "Salary",
+             "SalaryAllocationType", "SalaryAllocationValue", "AllocationOrder", "ReportingType", "SalaryLayer",
+             "Section14", "Section14StartDate", "CreatedAt", "UpdatedAt")
         VALUES
             (report_product_id, NEW."Id", mix_product."ProductType", mix_product."PolicyNumber", report_month,
-             mix_product."Salary", mix_product."ReportingType", mix_product."SalaryLayer", mix_product."Section14",
+             COALESCE(insured_salary, 0), mix_product."SalaryAllocationType", mix_product."SalaryAllocationValue",
+             mix_product."AllocationOrder", mix_product."ReportingType", mix_product."SalaryLayer", mix_product."Section14",
              mix_product."Section14StartDate", now(), now());
 
         FOR mix_contribution IN
@@ -177,7 +203,7 @@ BEGIN
             VALUES
                 (md5(random()::text || clock_timestamp()::text || mix_contribution."Id"::text)::uuid,
                  report_product_id, mix_contribution."Party", mix_contribution."Component",
-                 round((mix_product."Salary" * mix_contribution."Percentage" / 100.0)::numeric, 2),
+                 round((COALESCE(insured_salary, 0) * mix_contribution."Percentage" / 100.0)::numeric, 2),
                  mix_contribution."Percentage", 0, now(), now());
         END LOOP;
     END LOOP;
