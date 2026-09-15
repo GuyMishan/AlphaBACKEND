@@ -113,6 +113,7 @@ app.MapEmployerEndpoints();
 app.MapAccessEndpoints();
 app.MapManualReportEndpoints();
 app.MapDerivedReportEndpoints();
+app.MapReportValidationEndpoints();
 app.Run();
 
 public partial class Program;
