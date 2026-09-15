@@ -73,6 +73,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
     await IdentitySchemaInitializer.EnsureUpdatedAsync(db);
     await ReportingSchemaInitializer.EnsureCreatedAsync(db);
+    await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db);
 }
 
 var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]);
