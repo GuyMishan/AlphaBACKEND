@@ -1,5 +1,8 @@
 using System.Text.Json;
 using Alpha.Api.Endpoints;
+using Alpha.Application.Abstractions;
+using Alpha.Domain.Reporting;
+using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Validation;
 
@@ -29,7 +32,11 @@ public static class ReportingInputValidationMiddleware
                 context.Request.Body.Position = 0;
                 if (request is not null)
                 {
-                    var errors = ApiInputValidation.Products(request.Products);
+                    var db = context.RequestServices.GetRequiredService<IAlphaDbContext>();
+                    var years = request.Products.Select(x => x.SalaryMonth.Year).Distinct().ToArray();
+                    var limits = await db.ContributionPercentageLimits.AsNoTracking()
+                        .Where(x => years.Contains(x.Year)).ToListAsync(context.RequestAborted);
+                    var errors = ApiInputValidation.Products(request.Products, limits);
                     if (errors.Count > 0)
                     {
                         await WriteErrors(context, errors);
