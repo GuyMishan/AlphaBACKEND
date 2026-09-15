@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Alpha.Api.Contracts;
+using Alpha.Api.Endpoints;
 using Alpha.Domain.Reporting;
 
 namespace Alpha.Api.Validation;
