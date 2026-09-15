@@ -1,6 +1,7 @@
 using System.Text;
 using Alpha.Api.Authentication;
 using Alpha.Api.Endpoints;
+using Alpha.Api.Services;
 using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
@@ -17,6 +18,11 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<OrganizationAccessService>();
+builder.Services.AddHttpClient<ReferenceDataSyncService>(client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(5);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("AlphaReferenceDataSync/1.0");
+});
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();
@@ -74,6 +80,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await IdentitySchemaInitializer.EnsureUpdatedAsync(db);
     await ReportingSchemaInitializer.EnsureCreatedAsync(db);
     await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db);
+    await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db);
 }
 
 var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]);
@@ -112,6 +119,7 @@ app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) =>
 
 app.MapAuthEndpoints();
 app.MapPlatformEndpoints();
+app.MapReferenceDataEndpoints();
 app.MapOrganizationEndpoints();
 app.MapEmployerEndpoints();
 app.MapAccessEndpoints();
