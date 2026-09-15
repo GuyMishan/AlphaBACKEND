@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS employees.employee_pension_products (
     "EmploymentId" uuid NOT NULL REFERENCES employees.employments("Id") ON DELETE CASCADE,
     "ProductType" varchar(40) NOT NULL,
     "PolicyNumber" varchar(100) NOT NULL,
+    "Salary" numeric(18,2) NOT NULL DEFAULT 0,
     "ReportingType" varchar(80) NOT NULL DEFAULT 'שוטף',
     "SalaryLayer" varchar(80) NOT NULL DEFAULT 'רובד 1',
     "Section14" boolean NOT NULL,
@@ -22,6 +23,8 @@ CREATE TABLE IF NOT EXISTS employees.employee_pension_products (
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL
 );
+ALTER TABLE employees.employee_pension_products
+    ADD COLUMN IF NOT EXISTS "Salary" numeric(18,2) NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS "IX_employee_pension_products_employment"
     ON employees.employee_pension_products ("EmploymentId");
 
@@ -113,6 +116,60 @@ CREATE TABLE IF NOT EXISTS reporting.manual_contributions (
     CONSTRAINT "UX_manual_contribution" UNIQUE ("ReportProductId", "Party", "Component")
 );
 
+CREATE OR REPLACE FUNCTION reporting.seed_employee_mix_into_report()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    mix_product record;
+    mix_contribution record;
+    report_month date;
+    report_product_id uuid;
+BEGIN
+    IF EXISTS (SELECT 1 FROM reporting.manual_report_products p WHERE p."ReportEmployeeId" = NEW."Id") THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT r."ReportingMonth" INTO report_month
+    FROM reporting.manual_reports r
+    WHERE r."Id" = NEW."ReportId";
+
+    FOR mix_product IN
+        SELECT p.* FROM employees.employee_pension_products p
+        WHERE p."EmploymentId" = NEW."EmploymentId"
+        ORDER BY p."CreatedAt"
+    LOOP
+        report_product_id := md5(random()::text || clock_timestamp()::text || mix_product."Id"::text)::uuid;
+        INSERT INTO reporting.manual_report_products
+            ("Id", "ReportEmployeeId", "ProductType", "PolicyNumber", "SalaryMonth", "Salary", "ReportingType", "SalaryLayer", "Section14", "Section14StartDate", "CreatedAt", "UpdatedAt")
+        VALUES
+            (report_product_id, NEW."Id", mix_product."ProductType", mix_product."PolicyNumber", report_month,
+             mix_product."Salary", mix_product."ReportingType", mix_product."SalaryLayer", mix_product."Section14",
+             mix_product."Section14StartDate", now(), now());
+
+        FOR mix_contribution IN
+            SELECT c.* FROM employees.employee_pension_contributions c
+            WHERE c."EmployeePensionProductId" = mix_product."Id"
+            ORDER BY c."Party", c."Component"
+        LOOP
+            INSERT INTO reporting.manual_contributions
+                ("Id", "ReportProductId", "Party", "Component", "Amount", "Percentage", "ExemptPayments", "CreatedAt", "UpdatedAt")
+            VALUES
+                (md5(random()::text || clock_timestamp()::text || mix_contribution."Id"::text)::uuid,
+                 report_product_id, mix_contribution."Party", mix_contribution."Component",
+                 round((mix_product."Salary" * mix_contribution."Percentage" / 100.0)::numeric, 2),
+                 mix_contribution."Percentage", 0, now(), now());
+        END LOOP;
+    END LOOP;
+
+    RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS "TR_manual_report_employee_seed_mix" ON reporting.manual_report_employees;
+CREATE TRIGGER "TR_manual_report_employee_seed_mix"
+AFTER INSERT ON reporting.manual_report_employees
+FOR EACH ROW EXECUTE FUNCTION reporting.seed_employee_mix_into_report();
+
 CREATE TABLE IF NOT EXISTS reporting.manual_report_payments (
     "Id" uuid PRIMARY KEY,
     "ReportProductId" uuid NOT NULL REFERENCES reporting.manual_report_products("Id") ON DELETE CASCADE,
@@ -145,8 +202,6 @@ CREATE TABLE IF NOT EXISTS reporting.contribution_percentage_limits (
 CREATE INDEX IF NOT EXISTS "IX_contribution_percentage_limits_year"
     ON reporting.contribution_percentage_limits ("Year");
 
--- The validation engine reads limits by salary year from this table. Add a new year's rows
--- when regulatory/business limits change instead of changing application code.
 INSERT INTO reporting.contribution_percentage_limits
     ("Id", "Year", "ProductType", "Party", "Component", "MaxPercentage", "CreatedAt", "UpdatedAt")
 SELECT
