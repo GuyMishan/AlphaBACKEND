@@ -104,5 +104,46 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_payments (
     "UpdatedAt" timestamptz NOT NULL,
     CONSTRAINT "UX_manual_report_payment_product" UNIQUE ("ReportProductId")
 );
+
+CREATE TABLE IF NOT EXISTS reporting.contribution_percentage_limits (
+    "Id" uuid PRIMARY KEY,
+    "Year" integer NOT NULL,
+    "ProductType" varchar(40) NOT NULL,
+    "Party" varchar(20) NOT NULL,
+    "Component" varchar(30) NOT NULL,
+    "MaxPercentage" numeric(9,4) NOT NULL,
+    "CreatedAt" timestamptz NOT NULL,
+    "UpdatedAt" timestamptz NOT NULL,
+    CONSTRAINT "UX_contribution_percentage_limit" UNIQUE ("Year", "ProductType", "Party", "Component")
+);
+CREATE INDEX IF NOT EXISTS "IX_contribution_percentage_limits_year"
+    ON reporting.contribution_percentage_limits ("Year");
+
+-- The validation engine reads limits by salary year from this table. Add a new year's rows
+-- when regulatory/business limits change instead of changing application code.
+INSERT INTO reporting.contribution_percentage_limits
+    ("Id", "Year", "ProductType", "Party", "Component", "MaxPercentage", "CreatedAt", "UpdatedAt")
+SELECT
+    md5('contribution-limit-2026-' || product_type || '-' || party || '-' || component)::uuid,
+    2026,
+    product_type,
+    party,
+    component,
+    CASE
+        WHEN party = 'Employer' AND component = 'Severance' THEN 8.33
+        WHEN party = 'Employer' AND component = 'Benefits' THEN 7.50
+        WHEN party = 'Employer' AND component = 'Disability' THEN 2.50
+        WHEN party = 'Employee' AND component = 'Benefits' AND product_type = 'StudyFund' THEN 2.50
+        WHEN party = 'Employee' AND component = 'Benefits' THEN 7.00
+        ELSE 100.00
+    END,
+    now(),
+    now()
+FROM (VALUES ('PensionFund'), ('StudyFund'), ('ManagersInsurance'), ('ProvidentFund'), ('Other')) AS products(product_type)
+CROSS JOIN (VALUES ('Employer'), ('Employee')) AS parties(party)
+CROSS JOIN (VALUES ('Severance'), ('Benefits'), ('Disability'), ('Other')) AS components(component)
+ON CONFLICT ("Year", "ProductType", "Party", "Component") DO UPDATE
+SET "MaxPercentage" = EXCLUDED."MaxPercentage",
+    "UpdatedAt" = now();
 """;
 }
