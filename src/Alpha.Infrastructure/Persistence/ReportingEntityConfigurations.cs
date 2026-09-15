@@ -18,7 +18,10 @@ public sealed class EmployeePensionProductConfiguration : IEntityTypeConfigurati
         b.Property(x => x.Salary).HasPrecision(18, 2);
         b.Property(x => x.ReportingType).HasMaxLength(80);
         b.Property(x => x.SalaryLayer).HasMaxLength(80);
+        b.Property(x => x.InstitutionalBody).HasMaxLength(160);
+        b.Property(x => x.Manufacturer).HasMaxLength(160);
         b.HasIndex(x => x.EmploymentId);
+        b.HasIndex(x => new { x.EmploymentId, x.IsActive, x.EffectiveFrom, x.EffectiveTo });
         b.HasOne<Employment>().WithMany().HasForeignKey(x => x.EmploymentId).OnDelete(DeleteBehavior.Cascade);
     }
 }
