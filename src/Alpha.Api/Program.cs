@@ -120,6 +120,7 @@ app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) =>
 app.MapAuthEndpoints();
 app.MapPlatformEndpoints();
 app.MapReferenceDataEndpoints();
+app.MapPublicReferenceDataEndpoints();
 app.MapOrganizationEndpoints();
 app.MapEmployerEndpoints();
 app.MapAccessEndpoints();
