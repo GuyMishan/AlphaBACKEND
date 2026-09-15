@@ -114,6 +114,7 @@ app.MapPlatformEndpoints();
 app.MapOrganizationEndpoints();
 app.MapEmployerEndpoints();
 app.MapAccessEndpoints();
+app.MapEmployeePensionMixEndpoints();
 app.MapManualReportEndpoints();
 app.MapDerivedReportEndpoints();
 app.MapReportValidationEndpoints();
