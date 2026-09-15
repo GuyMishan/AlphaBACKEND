@@ -8,7 +8,8 @@ public sealed class Employment : Entity
 {
     private Employment() { }
 
-    public Employment(Guid organizationId, Guid employerId, Guid personId, DateOnly startDate, string employeeNumber)
+    public Employment(Guid organizationId, Guid employerId, Guid personId, DateOnly startDate, string employeeNumber,
+        decimal monthlySalary = 0)
     {
         OrganizationId = organizationId;
         EmployerId = employerId;
@@ -17,6 +18,7 @@ public sealed class Employment : Entity
         EmployeeNumber = string.IsNullOrWhiteSpace(employeeNumber)
             ? throw new ArgumentException("Employee number is required.", nameof(employeeNumber))
             : employeeNumber.Trim();
+        SetMonthlySalary(monthlySalary);
     }
 
     public Guid OrganizationId { get; private set; }
@@ -26,13 +28,21 @@ public sealed class Employment : Entity
     public DateOnly StartDate { get; private set; }
     public DateOnly? EndDate { get; private set; }
     public EmploymentStatus Status { get; private set; } = EmploymentStatus.Active;
+    public decimal MonthlySalary { get; private set; }
 
-    public void Update(string employeeNumber, DateOnly startDate)
+    public void Update(string employeeNumber, DateOnly startDate, decimal monthlySalary)
     {
         EmployeeNumber = string.IsNullOrWhiteSpace(employeeNumber)
             ? throw new ArgumentException("Employee number is required.", nameof(employeeNumber))
             : employeeNumber.Trim();
         StartDate = startDate;
+        SetMonthlySalary(monthlySalary);
+        Touch();
+    }
+
+    public void UpdateMonthlySalary(decimal monthlySalary)
+    {
+        SetMonthlySalary(monthlySalary);
         Touch();
     }
 
@@ -42,5 +52,11 @@ public sealed class Employment : Entity
         EndDate = endDate;
         Status = EmploymentStatus.Ended;
         Touch();
+    }
+
+    private void SetMonthlySalary(decimal monthlySalary)
+    {
+        if (monthlySalary < 0) throw new ArgumentOutOfRangeException(nameof(monthlySalary));
+        MonthlySalary = monthlySalary;
     }
 }
