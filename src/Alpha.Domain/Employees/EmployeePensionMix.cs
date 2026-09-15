@@ -9,11 +9,14 @@ public sealed class EmployeePensionProduct : Entity
 
     public EmployeePensionProduct(Guid employmentId, PensionProductType productType, string policyNumber,
         decimal salary, string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate,
-        bool isActive, DateOnly effectiveFrom, DateOnly? effectiveTo, string institutionalBody, string manufacturer)
+        bool isActive, DateOnly effectiveFrom, DateOnly? effectiveTo, string institutionalBody, string manufacturer,
+        SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
+        int allocationOrder = 0)
     {
         EmploymentId = employmentId;
         Update(productType, policyNumber, salary, reportingType, salaryLayer, section14, section14StartDate,
-            isActive, effectiveFrom, effectiveTo, institutionalBody, manufacturer);
+            isActive, effectiveFrom, effectiveTo, institutionalBody, manufacturer,
+            salaryAllocationType, salaryAllocationValue, allocationOrder);
     }
 
     public Guid EmploymentId { get; private set; }
@@ -29,14 +32,25 @@ public sealed class EmployeePensionProduct : Entity
     public DateOnly? EffectiveTo { get; private set; }
     public string InstitutionalBody { get; private set; } = string.Empty;
     public string Manufacturer { get; private set; } = string.Empty;
+    public SalaryAllocationType SalaryAllocationType { get; private set; } = SalaryAllocationType.Fixed;
+    public decimal? SalaryAllocationValue { get; private set; }
+    public int AllocationOrder { get; private set; }
 
     public void Update(PensionProductType productType, string policyNumber, decimal salary, string reportingType,
         string salaryLayer, bool section14, DateOnly? section14StartDate, bool isActive, DateOnly effectiveFrom,
-        DateOnly? effectiveTo, string institutionalBody, string manufacturer)
+        DateOnly? effectiveTo, string institutionalBody, string manufacturer,
+        SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
+        int allocationOrder = 0)
     {
         if (salary < 0) throw new ArgumentOutOfRangeException(nameof(salary));
         if (effectiveTo is not null && effectiveTo.Value < effectiveFrom)
             throw new ArgumentException("Product effective end date cannot be earlier than the start date.", nameof(effectiveTo));
+        if (allocationOrder < 0) throw new ArgumentOutOfRangeException(nameof(allocationOrder));
+        if (salaryAllocationType != SalaryAllocationType.Remainder && (!salaryAllocationValue.HasValue || salaryAllocationValue.Value <= 0))
+            salaryAllocationValue = salary > 0 ? salary : null;
+        if (salaryAllocationValue < 0) throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue));
+        if (salaryAllocationType == SalaryAllocationType.Percentage && salaryAllocationValue > 100)
+            throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue), "Salary allocation percentage cannot exceed 100%.");
 
         ProductType = productType;
         PolicyNumber = policyNumber?.Trim() ?? string.Empty;
@@ -50,6 +64,9 @@ public sealed class EmployeePensionProduct : Entity
         EffectiveTo = effectiveTo;
         InstitutionalBody = institutionalBody?.Trim() ?? string.Empty;
         Manufacturer = manufacturer?.Trim() ?? string.Empty;
+        SalaryAllocationType = salaryAllocationType;
+        SalaryAllocationValue = salaryAllocationType == SalaryAllocationType.Remainder ? null : salaryAllocationValue;
+        AllocationOrder = allocationOrder;
         Touch();
     }
 
@@ -57,10 +74,11 @@ public sealed class EmployeePensionProduct : Entity
     {
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(PolicyNumber)) missing.Add("policyNumber");
-        if (Salary <= 0) missing.Add("salary");
         if (string.IsNullOrWhiteSpace(InstitutionalBody)) missing.Add("institutionalBody");
         if (string.IsNullOrWhiteSpace(Manufacturer)) missing.Add("manufacturer");
         if (Section14 && Section14StartDate is null) missing.Add("section14StartDate");
+        if (SalaryAllocationType != SalaryAllocationType.Remainder && (!SalaryAllocationValue.HasValue || SalaryAllocationValue.Value <= 0))
+            missing.Add("salaryAllocationValue");
         return missing;
     }
 }
