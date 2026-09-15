@@ -20,6 +20,8 @@ public sealed class EmployeePensionProductConfiguration : IEntityTypeConfigurati
         b.Property(x => x.SalaryLayer).HasMaxLength(80);
         b.Property(x => x.InstitutionalBody).HasMaxLength(160);
         b.Property(x => x.Manufacturer).HasMaxLength(160);
+        b.Property(x => x.SalaryAllocationType).HasConversion<string>().HasMaxLength(30);
+        b.Property(x => x.SalaryAllocationValue).HasPrecision(18, 4);
         b.HasIndex(x => x.EmploymentId);
         b.HasIndex(x => new { x.EmploymentId, x.IsActive, x.EffectiveFrom, x.EffectiveTo });
         b.HasOne<Employment>().WithMany().HasForeignKey(x => x.EmploymentId).OnDelete(DeleteBehavior.Cascade);
@@ -66,6 +68,7 @@ public sealed class ManualReportEmployeeConfiguration : IEntityTypeConfiguration
         b.Property(x => x.FirstName).HasMaxLength(100).IsRequired();
         b.Property(x => x.LastName).HasMaxLength(100).IsRequired();
         b.Property(x => x.EmployeeNumber).HasMaxLength(50).IsRequired();
+        b.Property(x => x.MonthlySalary).HasPrecision(18, 2);
         b.HasIndex(x => new { x.ReportId, x.EmploymentId }).IsUnique();
         b.HasIndex(x => new { x.OrganizationId, x.EmployerId, x.ReportId });
         b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Cascade);
@@ -84,6 +87,8 @@ public sealed class ManualReportProductConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.Salary).HasPrecision(18, 2);
         b.Property(x => x.ReportingType).HasMaxLength(80);
         b.Property(x => x.SalaryLayer).HasMaxLength(80);
+        b.Property(x => x.SalaryAllocationType).HasConversion<string>().HasMaxLength(30);
+        b.Property(x => x.SalaryAllocationValue).HasPrecision(18, 4);
         b.HasIndex(x => x.ReportEmployeeId);
         b.HasOne<ManualReportEmployee>().WithMany().HasForeignKey(x => x.ReportEmployeeId).OnDelete(DeleteBehavior.Cascade);
     }
