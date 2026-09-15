@@ -7,6 +7,35 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Alpha.Infrastructure.Persistence;
 
+public sealed class EmployeePensionProductConfiguration : IEntityTypeConfiguration<EmployeePensionProduct>
+{
+    public void Configure(EntityTypeBuilder<EmployeePensionProduct> b)
+    {
+        b.ToTable("employee_pension_products", "employees");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.ProductType).HasConversion<string>().HasMaxLength(40);
+        b.Property(x => x.PolicyNumber).HasMaxLength(100);
+        b.Property(x => x.ReportingType).HasMaxLength(80);
+        b.Property(x => x.SalaryLayer).HasMaxLength(80);
+        b.HasIndex(x => x.EmploymentId);
+        b.HasOne<Employment>().WithMany().HasForeignKey(x => x.EmploymentId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class EmployeePensionContributionConfiguration : IEntityTypeConfiguration<EmployeePensionContribution>
+{
+    public void Configure(EntityTypeBuilder<EmployeePensionContribution> b)
+    {
+        b.ToTable("employee_pension_contributions", "employees");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Party).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.Component).HasConversion<string>().HasMaxLength(30);
+        b.Property(x => x.Percentage).HasPrecision(9, 4);
+        b.HasIndex(x => new { x.EmployeePensionProductId, x.Party, x.Component }).IsUnique();
+        b.HasOne<EmployeePensionProduct>().WithMany().HasForeignKey(x => x.EmployeePensionProductId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class ManualReportConfiguration : IEntityTypeConfiguration<ManualReport>
 {
     public void Configure(EntityTypeBuilder<ManualReport> b)
