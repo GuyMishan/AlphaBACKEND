@@ -87,12 +87,15 @@ public sealed class ManualReportProduct : Entity
 
     public ManualReportProduct(Guid reportEmployeeId, PensionProductType productType, string policyNumber,
         DateOnly salaryMonth, decimal salary, string reportingType, string salaryLayer, bool section14,
-        DateOnly? section14StartDate, SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed,
+        DateOnly? section14StartDate, string? fundExternalKey = null, string? fundCode = null,
+        string? fundName = null, string? fundCompanyName = null,
+        SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed,
         decimal? salaryAllocationValue = null, int allocationOrder = 0)
     {
         ReportEmployeeId = reportEmployeeId;
         Update(productType, policyNumber, salaryMonth, salary, reportingType, salaryLayer, section14,
-            section14StartDate, salaryAllocationType, salaryAllocationValue, allocationOrder);
+            section14StartDate, fundExternalKey, fundCode, fundName, fundCompanyName,
+            salaryAllocationType, salaryAllocationValue, allocationOrder);
     }
 
     public Guid ReportEmployeeId { get; private set; }
@@ -104,14 +107,19 @@ public sealed class ManualReportProduct : Entity
     public string SalaryLayer { get; private set; } = string.Empty;
     public bool Section14 { get; private set; }
     public DateOnly? Section14StartDate { get; private set; }
+    public string FundExternalKey { get; private set; } = string.Empty;
+    public string FundCode { get; private set; } = string.Empty;
+    public string FundName { get; private set; } = string.Empty;
+    public string FundCompanyName { get; private set; } = string.Empty;
     public SalaryAllocationType SalaryAllocationType { get; private set; } = SalaryAllocationType.Fixed;
     public decimal? SalaryAllocationValue { get; private set; }
     public int AllocationOrder { get; private set; }
 
     public void Update(PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary,
         string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate,
-        SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
-        int allocationOrder = 0)
+        string? fundExternalKey = null, string? fundCode = null, string? fundName = null,
+        string? fundCompanyName = null, SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed,
+        decimal? salaryAllocationValue = null, int allocationOrder = 0)
     {
         if (salary < 0) throw new ArgumentOutOfRangeException(nameof(salary));
         if (allocationOrder < 0) throw new ArgumentOutOfRangeException(nameof(allocationOrder));
@@ -127,6 +135,10 @@ public sealed class ManualReportProduct : Entity
         SalaryLayer = salaryLayer?.Trim() ?? string.Empty;
         Section14 = section14;
         Section14StartDate = section14 ? section14StartDate : null;
+        FundExternalKey = fundExternalKey?.Trim() ?? string.Empty;
+        FundCode = fundCode?.Trim() ?? string.Empty;
+        FundName = fundName?.Trim() ?? string.Empty;
+        FundCompanyName = fundCompanyName?.Trim() ?? string.Empty;
         SalaryAllocationType = salaryAllocationType;
         SalaryAllocationValue = salaryAllocationType == SalaryAllocationType.Remainder ? null : salaryAllocationValue;
         AllocationOrder = allocationOrder;
