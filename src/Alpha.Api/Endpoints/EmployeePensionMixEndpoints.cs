@@ -28,7 +28,7 @@ public static class EmployeePensionMixEndpoints
             return Results.NotFound();
 
         var products = await db.EmployeePensionProducts.AsNoTracking()
-            .Where(x => x.EmploymentId == employmentId).OrderBy(x => x.CreatedAt).ToListAsync(ct);
+            .Where(x => x.EmploymentId == employmentId).OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToListAsync(ct);
         var ids = products.Select(x => x.Id).ToArray();
         var contributions = await db.EmployeePensionContributions.AsNoTracking()
             .Where(x => ids.Contains(x.EmployeePensionProductId)).ToListAsync(ct);
@@ -48,6 +48,9 @@ public static class EmployeePensionMixEndpoints
             p.EffectiveTo,
             p.InstitutionalBody,
             p.Manufacturer,
+            p.SalaryAllocationType,
+            p.SalaryAllocationValue,
+            p.AllocationOrder,
             missingDetails = GetMissingDetails(p, contributions.Where(c => c.EmployeePensionProductId == p.Id)),
             isComplete = GetMissingDetails(p, contributions.Where(c => c.EmployeePensionProductId == p.Id)).Count == 0,
             employerContributions = contributions.Where(c => c.EmployeePensionProductId == p.Id && c.Party == ContributionParty.Employer).OrderBy(c => c.Component),
@@ -62,6 +65,8 @@ public static class EmployeePensionMixEndpoints
         if (request.Products.Count > MaxProducts) return Results.BadRequest(new { error = $"Employee mix is limited to {MaxProducts} products." });
         if (!await db.Employments.AsNoTracking().AnyAsync(x => x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct))
             return Results.NotFound();
+        if (request.Products.Count(x => (x.SalaryAllocationType ?? SalaryAllocationType.Fixed) == SalaryAllocationType.Remainder) > 1)
+            return Results.BadRequest(new { error = "Only one product may use remainder salary allocation." });
 
         var existingProducts = await db.EmployeePensionProducts.AsNoTracking()
             .Where(x => x.EmploymentId == employmentId).ToListAsync(ct);
@@ -79,13 +84,25 @@ public static class EmployeePensionMixEndpoints
             var effectiveTo = lifecycleProvided ? input.EffectiveTo : existing?.EffectiveTo;
             var institutionalBody = lifecycleProvided ? input.InstitutionalBody ?? string.Empty : existing?.InstitutionalBody ?? string.Empty;
             var manufacturer = lifecycleProvided ? input.Manufacturer ?? string.Empty : existing?.Manufacturer ?? string.Empty;
+            var allocationType = input.SalaryAllocationType ?? existing?.SalaryAllocationType ?? SalaryAllocationType.Fixed;
+            var allocationValue = input.SalaryAllocationType.HasValue || input.SalaryAllocationValue.HasValue
+                ? input.SalaryAllocationValue
+                : existing?.SalaryAllocationValue ?? (input.Salary > 0 ? input.Salary : null);
+            var allocationOrder = input.AllocationOrder ?? existing?.AllocationOrder ?? resolved.Count;
 
             if (effectiveTo is not null && effectiveTo.Value < effectiveFrom)
                 return Results.BadRequest(new { error = "Product effective end date cannot be earlier than the start date." });
             if (isActive && string.IsNullOrWhiteSpace(input.PolicyNumber))
                 return Results.BadRequest(new { error = "Active pension products must have a policy number." });
+            if (allocationType != SalaryAllocationType.Remainder && (!allocationValue.HasValue || allocationValue.Value <= 0))
+                return Results.BadRequest(new { error = "Fixed, percentage and cap salary allocations require a positive value." });
+            if (allocationType == SalaryAllocationType.Percentage && allocationValue > 100)
+                return Results.BadRequest(new { error = "Salary allocation percentage cannot exceed 100%." });
+            if (allocationOrder < 0)
+                return Results.BadRequest(new { error = "Salary allocation order cannot be negative." });
 
-            resolved.Add(new ResolvedProductInput(input, isActive, effectiveFrom, effectiveTo, institutionalBody, manufacturer));
+            resolved.Add(new ResolvedProductInput(input, isActive, effectiveFrom, effectiveTo, institutionalBody,
+                manufacturer, allocationType, allocationValue, allocationOrder));
         }
 
         var existingIds = existingProducts.Select(x => x.Id).ToArray();
@@ -100,7 +117,8 @@ public static class EmployeePensionMixEndpoints
             var input = item.Input;
             var product = new EmployeePensionProduct(employmentId, input.ProductType, input.PolicyNumber,
                 input.Salary, input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate,
-                item.IsActive, item.EffectiveFrom, item.EffectiveTo, item.InstitutionalBody, item.Manufacturer);
+                item.IsActive, item.EffectiveFrom, item.EffectiveTo, item.InstitutionalBody, item.Manufacturer,
+                item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder);
             db.EmployeePensionProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, input.EmployeeContributions);
@@ -128,13 +146,15 @@ public static class EmployeePensionMixEndpoints
     }
 
     private sealed record ResolvedProductInput(EmployeePensionProductInput Input, bool IsActive, DateOnly EffectiveFrom,
-        DateOnly? EffectiveTo, string InstitutionalBody, string Manufacturer);
+        DateOnly? EffectiveTo, string InstitutionalBody, string Manufacturer, SalaryAllocationType SalaryAllocationType,
+        decimal? SalaryAllocationValue, int AllocationOrder);
 }
 
 public sealed record SaveEmployeePensionMixRequest(IReadOnlyCollection<EmployeePensionProductInput> Products);
 public sealed record EmployeePensionProductInput(PensionProductType ProductType, string PolicyNumber, decimal Salary,
     string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
     bool? IsActive, DateOnly? EffectiveFrom, DateOnly? EffectiveTo, string? InstitutionalBody, string? Manufacturer,
+    SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployerContributions,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployeeContributions);
 public sealed record EmployeePensionContributionInput(ContributionComponent Component, decimal Percentage);
