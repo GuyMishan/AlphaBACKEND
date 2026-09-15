@@ -11,6 +11,24 @@ public static class PublicReferenceDataEndpoints
             .RequireAuthorization()
             .WithTags("Reference Data");
 
+        group.MapGet("/salary-layers", async (AlphaDbContext db, CancellationToken ct) =>
+        {
+            var result = new List<object>();
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = """
+                SELECT code, name
+                FROM reference_data.salary_layers
+                WHERE is_active = true
+                ORDER BY sort_order, code
+                """;
+            if (command.Connection!.State != System.Data.ConnectionState.Open)
+                await command.Connection.OpenAsync(ct);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                result.Add(new { code = reader.GetInt32(0), name = reader.GetString(1) });
+            return Results.Ok(result);
+        });
+
         // Backwards-compatible endpoint used by the current frontend.
         group.MapGet("/pension-funds", async (int productType, string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
         {
