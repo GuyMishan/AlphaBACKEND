@@ -13,9 +13,18 @@ public sealed class User : Entity
         DisplayName = Require(displayName, nameof(displayName));
     }
 
+    public User(string externalSubject, string email, string displayName, string nationalId, string phone)
+        : this(externalSubject, email, displayName)
+    {
+        NationalId = Require(nationalId, nameof(nationalId));
+        Phone = Require(phone, nameof(phone));
+    }
+
     public string ExternalSubject { get; private set; } = string.Empty;
     public string Email { get; private set; } = string.Empty;
     public string DisplayName { get; private set; } = string.Empty;
+    public string? NationalId { get; private set; }
+    public string? Phone { get; private set; }
     public bool IsActive { get; private set; } = true;
 
     public void Deactivate()
