@@ -198,9 +198,9 @@ public static class ManualReportEndpoints
             .GroupBy(x => x.ReportEmployeeId).Select(g => new { Id = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Id, x => x.Count, ct);
         var items = page.Select(x => new
         {
-            x.Id, x.EmploymentId, x.PersonId, x.NationalId, x.FirstName, x.LastName, x.EmployeeNumber,
+            x.Id, x.EmploymentId, x.PersonId, x.NationalId, x.FirstName, x.LastName, x.EmployeeNumber, x.MonthlySalary,
             productCount = productCounts.GetValueOrDefault(x.Id),
-            validationStatus = productCounts.GetValueOrDefault(x.Id) > 0 ? "ready" : "missing-products"
+            validationStatus = productCounts.GetValueOrDefault(x.Id) > 0 && x.MonthlySalary > 0 ? "ready" : "missing-products"
         });
         return Results.Ok(new { items, hasMore });
     }
@@ -229,7 +229,7 @@ public static class ManualReportEndpoints
         }
 
         var page = await query.OrderBy(x => x.Employee.LastName).ThenBy(x => x.Employee.FirstName)
-            .ThenBy(x => x.Product.CreatedAt).Skip(skip).Take(take + 1).ToListAsync(ct);
+            .ThenBy(x => x.Product.AllocationOrder).ThenBy(x => x.Product.CreatedAt).Skip(skip).Take(take + 1).ToListAsync(ct);
         var hasMore = page.Count > take;
         if (hasMore) page.RemoveAt(page.Count - 1);
         var productIds = page.Select(x => x.Product.Id).ToArray();
@@ -252,10 +252,14 @@ public static class ManualReportEndpoints
                 x.Employee.EmploymentId,
                 employeeName = x.Employee.FirstName + " " + x.Employee.LastName,
                 x.Employee.NationalId,
+                x.Employee.MonthlySalary,
                 x.Product.ProductType,
                 x.Product.PolicyNumber,
                 x.Product.SalaryMonth,
                 x.Product.Salary,
+                x.Product.SalaryAllocationType,
+                x.Product.SalaryAllocationValue,
+                x.Product.AllocationOrder,
                 x.Product.ReportingType,
                 x.Product.SalaryLayer,
                 x.Product.Section14,
@@ -307,15 +311,17 @@ public static class ManualReportEndpoints
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var employee = await db.ManualReportEmployees.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reportEmployeeId && x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (employee is null) return Results.NotFound();
-        var products = await db.ManualReportProducts.AsNoTracking().Where(x => x.ReportEmployeeId == reportEmployeeId).OrderBy(x => x.CreatedAt).ToListAsync(ct);
+        var products = await db.ManualReportProducts.AsNoTracking().Where(x => x.ReportEmployeeId == reportEmployeeId)
+            .OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToListAsync(ct);
         var productIds = products.Select(x => x.Id).ToArray();
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         return Results.Ok(new
         {
-            employee.Id, employee.EmploymentId, employee.PersonId, employee.NationalId, employee.FirstName, employee.LastName, employee.EmployeeNumber,
+            employee.Id, employee.EmploymentId, employee.PersonId, employee.NationalId, employee.FirstName, employee.LastName, employee.EmployeeNumber, employee.MonthlySalary,
             products = products.Select(p => new
             {
-                p.Id, p.ProductType, p.PolicyNumber, p.SalaryMonth, p.Salary, p.ReportingType, p.SalaryLayer, p.Section14, p.Section14StartDate,
+                p.Id, p.ProductType, p.PolicyNumber, p.SalaryMonth, p.Salary, p.SalaryAllocationType,
+                p.SalaryAllocationValue, p.AllocationOrder, p.ReportingType, p.SalaryLayer, p.Section14, p.Section14StartDate,
                 employerContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employer).OrderBy(c => c.Component),
                 employeeContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employee).OrderBy(c => c.Component)
             })
@@ -329,42 +335,106 @@ public static class ManualReportEndpoints
         if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.Products.Count > MaxProductsPerEmployee)
             return Results.BadRequest(new { error = $"An employee can have up to {MaxProductsPerEmployee} products in a report." });
-        if (!await db.ManualReportEmployees.AsNoTracking().AnyAsync(x => x.Id == reportEmployeeId && x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct))
-            return Results.NotFound();
 
+        var employee = await db.ManualReportEmployees.SingleOrDefaultAsync(x => x.Id == reportEmployeeId && x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (employee is null) return Results.NotFound();
+
+        var monthlySalary = request.MonthlySalary > 0
+            ? request.MonthlySalary
+            : request.Products.Select(x => x.Salary).DefaultIfEmpty(0).Max();
+        if (request.Products.Count > 0 && monthlySalary <= 0)
+            return Results.BadRequest(new { error = "Employee monthly salary is required before salary allocations can be calculated." });
+        if (request.Products.Count(x => (x.SalaryAllocationType ?? SalaryAllocationType.Fixed) == SalaryAllocationType.Remainder) > 1)
+            return Results.BadRequest(new { error = "Only one product may use remainder salary allocation." });
+
+        var resolvedProducts = ResolveSalaryAllocations(monthlySalary, request.Products);
+        if (resolvedProducts.Error is not null) return Results.BadRequest(new { error = resolvedProducts.Error });
+
+        employee.UpdateMonthlySalary(monthlySalary);
         var existingProductIds = await db.ManualReportProducts.Where(x => x.ReportEmployeeId == reportEmployeeId).Select(x => x.Id).ToArrayAsync(ct);
         if (existingProductIds.Length > 0)
         {
             await db.ManualContributions.Where(x => existingProductIds.Contains(x.ReportProductId)).ExecuteDeleteAsync(ct);
             await db.ManualReportProducts.Where(x => x.ReportEmployeeId == reportEmployeeId).ExecuteDeleteAsync(ct);
         }
-        foreach (var input in request.Products)
+
+        foreach (var item in resolvedProducts.Items)
         {
+            var input = item.Input;
             var product = new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
-                input.SalaryMonth, input.Salary, input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate);
+                input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
+                input.Section14StartDate, item.AllocationType, item.AllocationValue, item.AllocationOrder);
             db.ManualReportProducts.Add(product);
-            AddContributions(db, product.Id, ContributionParty.Employer, input.EmployerContributions);
-            AddContributions(db, product.Id, ContributionParty.Employee, input.EmployeeContributions);
+            AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
+            AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
         }
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
 
-    private static void AddContributions(IAlphaDbContext db, Guid productId, ContributionParty party, IReadOnlyCollection<ManualContributionInput> items)
+    private static (List<ResolvedReportProduct> Items, string? Error) ResolveSalaryAllocations(decimal monthlySalary,
+        IReadOnlyCollection<ManualProductInput> products)
+    {
+        var ordered = products.Select((input, index) => new
+        {
+            Input = input,
+            AllocationType = input.SalaryAllocationType ?? SalaryAllocationType.Fixed,
+            AllocationValue = input.SalaryAllocationValue ?? (input.Salary > 0 ? input.Salary : null),
+            AllocationOrder = input.AllocationOrder ?? index
+        }).OrderBy(x => x.AllocationOrder).ThenBy(x => x.Input.PolicyNumber).ToList();
+
+        decimal allocated = 0;
+        var resolved = new List<ResolvedReportProduct>(ordered.Count);
+        foreach (var item in ordered)
+        {
+            if (item.AllocationOrder < 0) return (resolved, "Salary allocation order cannot be negative.");
+            if (item.AllocationType != SalaryAllocationType.Remainder && (!item.AllocationValue.HasValue || item.AllocationValue.Value <= 0))
+                return (resolved, "Fixed, percentage and cap allocations require a positive value.");
+            if (item.AllocationType == SalaryAllocationType.Percentage && item.AllocationValue > 100)
+                return (resolved, "Salary allocation percentage cannot exceed 100%.");
+
+            var insuredSalary = item.AllocationType switch
+            {
+                SalaryAllocationType.Fixed => item.AllocationValue!.Value,
+                SalaryAllocationType.Percentage => Math.Round(monthlySalary * item.AllocationValue!.Value / 100m, 2, MidpointRounding.AwayFromZero),
+                SalaryAllocationType.Cap => Math.Min(monthlySalary, item.AllocationValue!.Value),
+                SalaryAllocationType.Remainder => Math.Max(monthlySalary - allocated, 0),
+                _ => 0
+            };
+
+            if (item.AllocationType != SalaryAllocationType.Remainder && allocated + insuredSalary > monthlySalary + 0.01m)
+                return (resolved, "Salary allocations exceed the employee monthly salary.");
+            allocated += insuredSalary;
+            resolved.Add(new ResolvedReportProduct(item.Input, item.AllocationType,
+                item.AllocationType == SalaryAllocationType.Remainder ? null : item.AllocationValue,
+                item.AllocationOrder, insuredSalary));
+        }
+        return (resolved, null);
+    }
+
+    private static void AddContributions(IAlphaDbContext db, Guid productId, ContributionParty party, decimal insuredSalary,
+        IReadOnlyCollection<ManualContributionInput> items)
     {
         if (items.GroupBy(x => x.Component).Any(g => g.Count() > 1))
             throw new ArgumentException("Each contribution component may appear only once per party.");
         foreach (var item in items)
-            db.ManualContributions.Add(new ManualContribution(productId, party, item.Component, item.Amount, item.Percentage, item.ExemptPayments));
+        {
+            var amount = Math.Round(insuredSalary * item.Percentage / 100m, 2, MidpointRounding.AwayFromZero);
+            db.ManualContributions.Add(new ManualContribution(productId, party, item.Component, amount, item.Percentage, item.ExemptPayments));
+        }
     }
+
+    private sealed record ResolvedReportProduct(ManualProductInput Input, SalaryAllocationType AllocationType,
+        decimal? AllocationValue, int AllocationOrder, decimal InsuredSalary);
 }
 
 public sealed record CreateManualReportRequest(DateOnly ReportingMonth, DateOnly? SalaryPaymentDate, IReadOnlyCollection<Guid> EmploymentIds);
 public sealed record UpdateManualReportDetailsRequest(DateOnly ReportingMonth, DateOnly? SalaryPaymentDate);
 public sealed record UpdateManualReportSelectionRequest(IReadOnlyCollection<Guid> EmploymentIds);
-public sealed record SaveManualReportEmployeeRequest(IReadOnlyCollection<ManualProductInput> Products);
+public sealed record SaveManualReportEmployeeRequest(decimal MonthlySalary, IReadOnlyCollection<ManualProductInput> Products);
 public sealed record ManualProductInput(PensionProductType ProductType, string PolicyNumber, DateOnly SalaryMonth,
     decimal Salary, string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
+    SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions);
 public sealed record ManualContributionInput(ContributionComponent Component, decimal Amount, decimal Percentage, decimal ExemptPayments);
 public sealed record SaveManualReportPaymentRequest(string ProviderName, string ProviderAccount, string PaymentMethod,
