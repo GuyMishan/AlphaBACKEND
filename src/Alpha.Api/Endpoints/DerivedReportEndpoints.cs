@@ -160,8 +160,9 @@ public static class DerivedReportEndpoints
         {
             var clone = new ManualReportProduct(employeeMap[oldProduct.ReportEmployeeId].Id, oldProduct.ProductType,
                 oldProduct.PolicyNumber, oldProduct.SalaryMonth, oldProduct.Salary, reportingType, oldProduct.SalaryLayer,
-                oldProduct.Section14, oldProduct.Section14StartDate, oldProduct.SalaryAllocationType,
-                oldProduct.SalaryAllocationValue, oldProduct.AllocationOrder);
+                oldProduct.Section14, oldProduct.Section14StartDate,
+                oldProduct.FundExternalKey, oldProduct.FundCode, oldProduct.FundName, oldProduct.FundCompanyName,
+                oldProduct.SalaryAllocationType, oldProduct.SalaryAllocationValue, oldProduct.AllocationOrder);
             db.ManualReportProducts.Add(clone);
             productMap[oldProduct.Id] = clone;
         }
