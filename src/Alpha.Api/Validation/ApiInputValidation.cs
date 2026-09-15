@@ -31,7 +31,8 @@ public static class ApiInputValidation
         return null;
     }
 
-    public static IReadOnlyList<string> Products(IReadOnlyCollection<ManualProductInput> products)
+    public static IReadOnlyList<string> Products(IReadOnlyCollection<ManualProductInput> products,
+        IReadOnlyCollection<ContributionPercentageLimit> limits)
     {
         var errors = new List<string>();
         if (products.Count == 0) errors.Add("יש להגדיר לפחות מוצר פנסיוני אחד לעובד.");
@@ -55,8 +56,10 @@ public static class ApiInputValidation
             if (product.Section14 && product.Section14StartDate is null) errors.Add(prefix + "יש להזין תאריך תחילת סעיף 14.");
             if (product.Section14StartDate is { } section14Date && section14Date > DateOnly.FromDateTime(DateTime.UtcNow)) errors.Add(prefix + "תאריך תחילת סעיף 14 לא יכול להיות בעתיד.");
 
-            ValidateContributions(errors, prefix, product.ProductType, ContributionParty.Employer, product.Salary, product.EmployerContributions);
-            ValidateContributions(errors, prefix, product.ProductType, ContributionParty.Employee, product.Salary, product.EmployeeContributions);
+            ValidateContributions(errors, prefix, product.SalaryMonth.Year, product.ProductType, ContributionParty.Employer,
+                product.Salary, product.EmployerContributions, limits);
+            ValidateContributions(errors, prefix, product.SalaryMonth.Year, product.ProductType, ContributionParty.Employee,
+                product.Salary, product.EmployeeContributions, limits);
         }
         return errors;
     }
@@ -79,8 +82,9 @@ public static class ApiInputValidation
         return errors;
     }
 
-    private static void ValidateContributions(List<string> errors, string prefix, PensionProductType productType,
-        ContributionParty party, decimal salary, IReadOnlyCollection<ManualContributionInput> items)
+    private static void ValidateContributions(List<string> errors, string prefix, int year, PensionProductType productType,
+        ContributionParty party, decimal salary, IReadOnlyCollection<ManualContributionInput> items,
+        IReadOnlyCollection<ContributionPercentageLimit> limits)
     {
         if (items.GroupBy(x => x.Component).Any(g => g.Count() > 1))
         {
@@ -93,8 +97,18 @@ public static class ApiInputValidation
             var side = party == ContributionParty.Employer ? "מעסיק" : "עובד";
             if (item.Amount < 0 || item.Percentage < 0 || item.ExemptPayments < 0)
                 errors.Add(prefix + $"ערכי הפקדת {side} לא יכולים להיות שליליים.");
-            if (item.Percentage > MaxPercentage(productType, party, item.Component))
-                errors.Add(prefix + $"אחוז {ComponentName(item.Component)} של {side} חורג מהמקסימום המותר ({MaxPercentage(productType, party, item.Component):0.##}%).");
+
+            var limit = limits.FirstOrDefault(x => x.Year == year && x.ProductType == productType
+                && x.Party == party && x.Component == item.Component);
+            if (limit is null)
+            {
+                errors.Add(prefix + $"לא הוגדר גבול אחוזים לשנת {year}, {ProductName(productType)}, {ComponentName(item.Component)} ({side}).");
+            }
+            else if (item.Percentage > limit.MaxPercentage)
+            {
+                errors.Add(prefix + $"אחוז {ComponentName(item.Component)} של {side} חורג מהמקסימום לשנת {year} ({limit.MaxPercentage:0.##}%).");
+            }
+
             if (item.ExemptPayments > item.Amount)
                 errors.Add(prefix + $"תשלומים פטורים של {side} לא יכולים להיות גבוהים מסכום ההפקדה.");
             if (item.Amount > salary)
@@ -102,21 +116,14 @@ public static class ApiInputValidation
         }
     }
 
-    private static decimal MaxPercentage(PensionProductType productType, ContributionParty party, ContributionComponent component)
+    private static string ProductName(PensionProductType productType) => productType switch
     {
-        if (component == ContributionComponent.Other) return 100m;
-        if (party == ContributionParty.Employer)
-        {
-            if (component == ContributionComponent.Severance) return 8.33m;
-            if (component == ContributionComponent.Disability) return 2.5m;
-            if (component == ContributionComponent.Benefits) return 7.5m;
-        }
-        else if (component == ContributionComponent.Benefits)
-        {
-            return productType == PensionProductType.StudyFund ? 2.5m : 7m;
-        }
-        return 100m;
-    }
+        PensionProductType.PensionFund => "קרן פנסיה",
+        PensionProductType.StudyFund => "קרן השתלמות",
+        PensionProductType.ManagersInsurance => "ביטוח מנהלים",
+        PensionProductType.ProvidentFund => "קופת גמל",
+        _ => "מוצר אחר"
+    };
 
     private static string ComponentName(ContributionComponent component) => component switch
     {
