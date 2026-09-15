@@ -82,6 +82,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db);
     await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db);
     await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db);
+    await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db);
 }
 
 var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]);
