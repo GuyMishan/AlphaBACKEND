@@ -15,6 +15,7 @@ public sealed class EmployeePensionProductConfiguration : IEntityTypeConfigurati
         b.HasKey(x => x.Id);
         b.Property(x => x.ProductType).HasConversion<string>().HasMaxLength(40);
         b.Property(x => x.PolicyNumber).HasMaxLength(100);
+        b.Property(x => x.Salary).HasPrecision(18, 2);
         b.Property(x => x.ReportingType).HasMaxLength(80);
         b.Property(x => x.SalaryLayer).HasMaxLength(80);
         b.HasIndex(x => x.EmploymentId);
