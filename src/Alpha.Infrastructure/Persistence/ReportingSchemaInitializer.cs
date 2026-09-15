@@ -20,13 +20,30 @@ CREATE TABLE IF NOT EXISTS employees.employee_pension_products (
     "SalaryLayer" varchar(80) NOT NULL DEFAULT 'רובד 1',
     "Section14" boolean NOT NULL,
     "Section14StartDate" date NULL,
+    "IsActive" boolean NOT NULL DEFAULT true,
+    "EffectiveFrom" date NOT NULL DEFAULT CURRENT_DATE,
+    "EffectiveTo" date NULL,
+    "InstitutionalBody" varchar(160) NOT NULL DEFAULT '',
+    "Manufacturer" varchar(160) NOT NULL DEFAULT '',
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL
 );
 ALTER TABLE employees.employee_pension_products
     ADD COLUMN IF NOT EXISTS "Salary" numeric(18,2) NOT NULL DEFAULT 0;
+ALTER TABLE employees.employee_pension_products
+    ADD COLUMN IF NOT EXISTS "IsActive" boolean NOT NULL DEFAULT true;
+ALTER TABLE employees.employee_pension_products
+    ADD COLUMN IF NOT EXISTS "EffectiveFrom" date NOT NULL DEFAULT CURRENT_DATE;
+ALTER TABLE employees.employee_pension_products
+    ADD COLUMN IF NOT EXISTS "EffectiveTo" date NULL;
+ALTER TABLE employees.employee_pension_products
+    ADD COLUMN IF NOT EXISTS "InstitutionalBody" varchar(160) NOT NULL DEFAULT '';
+ALTER TABLE employees.employee_pension_products
+    ADD COLUMN IF NOT EXISTS "Manufacturer" varchar(160) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS "IX_employee_pension_products_employment"
     ON employees.employee_pension_products ("EmploymentId");
+CREATE INDEX IF NOT EXISTS "IX_employee_pension_products_active_period"
+    ON employees.employee_pension_products ("EmploymentId", "IsActive", "EffectiveFrom", "EffectiveTo");
 
 CREATE TABLE IF NOT EXISTS employees.employee_pension_contributions (
     "Id" uuid PRIMARY KEY,
@@ -137,6 +154,9 @@ BEGIN
     FOR mix_product IN
         SELECT p.* FROM employees.employee_pension_products p
         WHERE p."EmploymentId" = NEW."EmploymentId"
+          AND p."IsActive" = true
+          AND p."EffectiveFrom" <= (date_trunc('month', report_month)::date + interval '1 month - 1 day')::date
+          AND (p."EffectiveTo" IS NULL OR p."EffectiveTo" >= date_trunc('month', report_month)::date)
         ORDER BY p."CreatedAt"
     LOOP
         report_product_id := md5(random()::text || clock_timestamp()::text || mix_product."Id"::text)::uuid;
