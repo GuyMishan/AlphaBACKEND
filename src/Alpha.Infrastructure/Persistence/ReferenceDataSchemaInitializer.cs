@@ -79,5 +79,19 @@ public static class ReferenceDataSchemaInitializer
             CREATE INDEX IF NOT EXISTS ix_pension_products_domain ON reference_data.pension_products (domain);
             CREATE INDEX IF NOT EXISTS ix_pension_products_fund_code ON reference_data.pension_products (fund_code);
             CREATE INDEX IF NOT EXISTS ix_pension_products_company ON reference_data.pension_products (company_name);
+
+            ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS fund_external_key text NOT NULL DEFAULT '';
+            ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS fund_code text NOT NULL DEFAULT '';
+            ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS fund_name text NOT NULL DEFAULT '';
+            ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS fund_company_name text NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS ix_employee_pension_products_fund_external_key
+                ON employees.employee_pension_products (fund_external_key);
+
+            ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS fund_external_key text NOT NULL DEFAULT '';
+            ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS fund_code text NOT NULL DEFAULT '';
+            ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS fund_name text NOT NULL DEFAULT '';
+            ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS fund_company_name text NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS ix_manual_report_products_fund_external_key
+                ON reporting.manual_report_products (fund_external_key);
             """, ct);
 }
