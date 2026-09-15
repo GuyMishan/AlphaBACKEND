@@ -13,7 +13,21 @@ public static class ReportValidationEndpoints
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/manual-reports")
             .RequireAuthorization().WithTags("Manual reporting");
         group.MapGet("/{reportId:guid}/validate", ValidateAsync);
+        group.MapGet("/contribution-limits", GetContributionLimitsAsync);
         return endpoints;
+    }
+
+    private static async Task<IResult> GetContributionLimitsAsync(Guid organizationId, Guid employerId, int year,
+        IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (year < 2000 || year > 2200) return Results.BadRequest(new { error = "שנת הגבולות אינה תקינה." });
+        var items = await db.ContributionPercentageLimits.AsNoTracking()
+            .Where(x => x.Year == year)
+            .OrderBy(x => x.ProductType).ThenBy(x => x.Party).ThenBy(x => x.Component)
+            .Select(x => new { x.Year, x.ProductType, x.Party, x.Component, x.MaxPercentage })
+            .ToListAsync(ct);
+        return Results.Ok(items);
     }
 
     private static async Task<IResult> ValidateAsync(Guid organizationId, Guid employerId, Guid reportId,
@@ -38,6 +52,8 @@ public static class ReportValidationEndpoints
             .Where(x => employeeIds.Contains(x.ReportEmployeeId)).OrderBy(x => x.ReportEmployeeId).ThenBy(x => x.CreatedAt).ToListAsync(ct);
         var productIds = products.Select(x => x.Id).ToArray();
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var years = products.Select(x => x.SalaryMonth.Year).Distinct().ToArray();
+        var limits = await db.ContributionPercentageLimits.AsNoTracking().Where(x => years.Contains(x.Year)).ToListAsync(ct);
 
         foreach (var employee in employees)
         {
@@ -63,7 +79,7 @@ public static class ReportValidationEndpoints
                     .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray()
             )).ToArray();
 
-            foreach (var error in ApiInputValidation.Products(inputs))
+            foreach (var error in ApiInputValidation.Products(inputs, limits))
                 errors.Add($"{employee.FirstName} {employee.LastName}: {error}");
         }
 
