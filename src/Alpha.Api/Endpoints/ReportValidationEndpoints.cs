@@ -1,0 +1,94 @@
+using Alpha.Api.Validation;
+using Alpha.Application.Abstractions;
+using Alpha.Application.Authorization;
+using Alpha.Domain.Reporting;
+using Microsoft.EntityFrameworkCore;
+
+namespace Alpha.Api.Endpoints;
+
+public static class ReportValidationEndpoints
+{
+    public static IEndpointRouteBuilder MapReportValidationEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/manual-reports")
+            .RequireAuthorization().WithTags("Manual reporting");
+        group.MapGet("/{reportId:guid}/validate", ValidateAsync);
+        return endpoints;
+    }
+
+    private static async Task<IResult> ValidateAsync(Guid organizationId, Guid employerId, Guid reportId,
+        string? stage, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+
+        var errors = new List<string>();
+        if (report.ReportingMonth.Year < 2000 || report.ReportingMonth > new DateOnly(DateTime.UtcNow.Year + 1, 12, 1))
+            errors.Add("חודש הדיווח אינו תקין.");
+        if (report.SalaryPaymentDate is null)
+            errors.Add("תאריך תשלום שכר הוא שדה חובה.");
+
+        var employees = await db.ManualReportEmployees.AsNoTracking().Where(x => x.ReportId == reportId).ToListAsync(ct);
+        if (employees.Count == 0) errors.Add("יש לבחור לפחות עובד אחד לדיווח.");
+
+        var employeeIds = employees.Select(x => x.Id).ToArray();
+        var products = await db.ManualReportProducts.AsNoTracking()
+            .Where(x => employeeIds.Contains(x.ReportEmployeeId)).OrderBy(x => x.ReportEmployeeId).ThenBy(x => x.CreatedAt).ToListAsync(ct);
+        var productIds = products.Select(x => x.Id).ToArray();
+        var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+
+        foreach (var employee in employees)
+        {
+            var employeeProducts = products.Where(x => x.ReportEmployeeId == employee.Id).ToList();
+            if (employeeProducts.Count == 0)
+            {
+                errors.Add($"לעובד {employee.FirstName} {employee.LastName} אין מוצר פנסיוני בדיווח.");
+                continue;
+            }
+
+            var inputs = employeeProducts.Select(product => new ManualProductInput(
+                product.ProductType,
+                product.PolicyNumber,
+                product.SalaryMonth,
+                product.Salary,
+                product.ReportingType,
+                product.SalaryLayer,
+                product.Section14,
+                product.Section14StartDate,
+                contributions.Where(x => x.ReportProductId == product.Id && x.Party == ContributionParty.Employer)
+                    .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray(),
+                contributions.Where(x => x.ReportProductId == product.Id && x.Party == ContributionParty.Employee)
+                    .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray()
+            )).ToArray();
+
+            foreach (var error in ApiInputValidation.Products(inputs))
+                errors.Add($"{employee.FirstName} {employee.LastName}: {error}");
+        }
+
+        var includePayments = string.Equals(stage, "deposits", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(stage, "final", StringComparison.OrdinalIgnoreCase);
+        if (includePayments && products.Count > 0)
+        {
+            var payments = await db.ManualReportPayments.AsNoTracking()
+                .Where(x => productIds.Contains(x.ReportProductId)).ToDictionaryAsync(x => x.ReportProductId, ct);
+            foreach (var product in products)
+            {
+                var employee = employees.First(x => x.Id == product.ReportEmployeeId);
+                if (!payments.TryGetValue(product.Id, out var payment))
+                {
+                    errors.Add($"חסרים פרטי אמצעי תשלום עבור {employee.FirstName} {employee.LastName}, פוליסה {product.PolicyNumber}.");
+                    continue;
+                }
+                var request = new SaveManualReportPaymentRequest(payment.ProviderName, payment.ProviderAccount,
+                    payment.PaymentMethod, payment.ValueDate, payment.ReferenceNumber, payment.EmployerBankName,
+                    payment.EmployerBankCode, payment.EmployerBranch, payment.EmployerAccount, payment.ConfirmationFileName);
+                foreach (var error in ApiInputValidation.Payment(request))
+                    errors.Add($"{employee.FirstName} {employee.LastName}, פוליסה {product.PolicyNumber}: {error}");
+            }
+        }
+
+        return Results.Ok(new { isValid = errors.Count == 0, errors = errors.Distinct().Take(100).ToArray() });
+    }
+}
