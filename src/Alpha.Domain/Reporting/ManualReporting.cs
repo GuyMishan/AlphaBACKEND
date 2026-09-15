@@ -7,6 +7,7 @@ public enum ManualReportKind { Current = 1, Differences = 2, Negative = 3 }
 public enum PensionProductType { PensionFund = 1, StudyFund = 2, ManagersInsurance = 3, ProvidentFund = 4, Other = 99 }
 public enum ContributionParty { Employer = 1, Employee = 2 }
 public enum ContributionComponent { Severance = 1, Benefits = 2, Disability = 3, Other = 4 }
+public enum SalaryAllocationType { Fixed = 1, Percentage = 2, Cap = 3, Remainder = 4 }
 
 public sealed class ManualReport : Entity
 {
@@ -47,7 +48,7 @@ public sealed class ManualReportEmployee : Entity
     private ManualReportEmployee() { }
 
     public ManualReportEmployee(Guid reportId, Guid organizationId, Guid employerId, Guid employmentId, Guid personId,
-        string nationalId, string firstName, string lastName, string employeeNumber)
+        string nationalId, string firstName, string lastName, string employeeNumber, decimal monthlySalary = 0)
     {
         ReportId = reportId;
         OrganizationId = organizationId;
@@ -58,6 +59,7 @@ public sealed class ManualReportEmployee : Entity
         FirstName = firstName.Trim();
         LastName = lastName.Trim();
         EmployeeNumber = employeeNumber.Trim();
+        UpdateMonthlySalary(monthlySalary);
     }
 
     public Guid ReportId { get; private set; }
@@ -69,6 +71,14 @@ public sealed class ManualReportEmployee : Entity
     public string FirstName { get; private set; } = string.Empty;
     public string LastName { get; private set; } = string.Empty;
     public string EmployeeNumber { get; private set; } = string.Empty;
+    public decimal MonthlySalary { get; private set; }
+
+    public void UpdateMonthlySalary(decimal monthlySalary)
+    {
+        if (monthlySalary < 0) throw new ArgumentOutOfRangeException(nameof(monthlySalary));
+        MonthlySalary = monthlySalary;
+        Touch();
+    }
 }
 
 public sealed class ManualReportProduct : Entity
@@ -77,10 +87,12 @@ public sealed class ManualReportProduct : Entity
 
     public ManualReportProduct(Guid reportEmployeeId, PensionProductType productType, string policyNumber,
         DateOnly salaryMonth, decimal salary, string reportingType, string salaryLayer, bool section14,
-        DateOnly? section14StartDate)
+        DateOnly? section14StartDate, SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed,
+        decimal? salaryAllocationValue = null, int allocationOrder = 0)
     {
         ReportEmployeeId = reportEmployeeId;
-        Update(productType, policyNumber, salaryMonth, salary, reportingType, salaryLayer, section14, section14StartDate);
+        Update(productType, policyNumber, salaryMonth, salary, reportingType, salaryLayer, section14,
+            section14StartDate, salaryAllocationType, salaryAllocationValue, allocationOrder);
     }
 
     public Guid ReportEmployeeId { get; private set; }
@@ -92,11 +104,21 @@ public sealed class ManualReportProduct : Entity
     public string SalaryLayer { get; private set; } = string.Empty;
     public bool Section14 { get; private set; }
     public DateOnly? Section14StartDate { get; private set; }
+    public SalaryAllocationType SalaryAllocationType { get; private set; } = SalaryAllocationType.Fixed;
+    public decimal? SalaryAllocationValue { get; private set; }
+    public int AllocationOrder { get; private set; }
 
     public void Update(PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary,
-        string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate)
+        string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate,
+        SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
+        int allocationOrder = 0)
     {
         if (salary < 0) throw new ArgumentOutOfRangeException(nameof(salary));
+        if (allocationOrder < 0) throw new ArgumentOutOfRangeException(nameof(allocationOrder));
+        if (salaryAllocationValue < 0) throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue));
+        if (salaryAllocationType == SalaryAllocationType.Percentage && salaryAllocationValue > 100)
+            throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue));
+
         ProductType = productType;
         PolicyNumber = policyNumber?.Trim() ?? string.Empty;
         SalaryMonth = new DateOnly(salaryMonth.Year, salaryMonth.Month, 1);
@@ -105,6 +127,9 @@ public sealed class ManualReportProduct : Entity
         SalaryLayer = salaryLayer?.Trim() ?? string.Empty;
         Section14 = section14;
         Section14StartDate = section14 ? section14StartDate : null;
+        SalaryAllocationType = salaryAllocationType;
+        SalaryAllocationValue = salaryAllocationType == SalaryAllocationType.Remainder ? null : salaryAllocationValue;
+        AllocationOrder = allocationOrder;
         Touch();
     }
 }
