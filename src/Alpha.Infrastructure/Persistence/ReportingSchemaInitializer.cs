@@ -10,6 +10,32 @@ public static class ReportingSchemaInitializer
     private const string Sql = """
 CREATE SCHEMA IF NOT EXISTS reporting;
 
+CREATE TABLE IF NOT EXISTS employees.employee_pension_products (
+    "Id" uuid PRIMARY KEY,
+    "EmploymentId" uuid NOT NULL REFERENCES employees.employments("Id") ON DELETE CASCADE,
+    "ProductType" varchar(40) NOT NULL,
+    "PolicyNumber" varchar(100) NOT NULL,
+    "ReportingType" varchar(80) NOT NULL DEFAULT 'שוטף',
+    "SalaryLayer" varchar(80) NOT NULL DEFAULT 'רובד 1',
+    "Section14" boolean NOT NULL,
+    "Section14StartDate" date NULL,
+    "CreatedAt" timestamptz NOT NULL,
+    "UpdatedAt" timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "IX_employee_pension_products_employment"
+    ON employees.employee_pension_products ("EmploymentId");
+
+CREATE TABLE IF NOT EXISTS employees.employee_pension_contributions (
+    "Id" uuid PRIMARY KEY,
+    "EmployeePensionProductId" uuid NOT NULL REFERENCES employees.employee_pension_products("Id") ON DELETE CASCADE,
+    "Party" varchar(20) NOT NULL,
+    "Component" varchar(30) NOT NULL,
+    "Percentage" numeric(9,4) NOT NULL,
+    "CreatedAt" timestamptz NOT NULL,
+    "UpdatedAt" timestamptz NOT NULL,
+    CONSTRAINT "UX_employee_pension_contribution" UNIQUE ("EmployeePensionProductId", "Party", "Component")
+);
+
 CREATE TABLE IF NOT EXISTS reporting.manual_reports (
     "Id" uuid PRIMARY KEY,
     "OrganizationId" uuid NOT NULL REFERENCES organizations.organizations("Id") ON DELETE RESTRICT,
