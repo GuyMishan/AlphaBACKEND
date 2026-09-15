@@ -9,12 +9,25 @@ namespace Alpha.Infrastructure.Persistence;
 public static class DemoDataSeeder
 {
     private const string Marker = "[DEMO]";
+    private const string OrganizationUserSubject = "demo-org-admin";
+    private const string EmployerUserSubject = "demo-employer-admin";
+    private const string OrganizationUserNationalId = "200000008";
+    private const string EmployerUserNationalId = "200000016";
+    private const string OrganizationUserPhone = "0507000001";
+    private const string EmployerUserPhone = "0507000002";
 
     public static async Task SeedAsync(AlphaDbContext db, CancellationToken ct = default)
     {
-        if (await db.Organizations.AsNoTracking().AnyAsync(x => x.Name.StartsWith(Marker), ct))
-            return;
+        var alreadySeeded = await db.Organizations.AsNoTracking().AnyAsync(x => x.Name.StartsWith(Marker), ct);
+        if (!alreadySeeded)
+            await SeedBaseDemoDataAsync(db, ct);
 
+        await EnsureScopedDemoUsersAsync(db, ct);
+        await RepairInvalidEmployeeNationalIdsAsync(db, ct);
+    }
+
+    private static async Task SeedBaseDemoDataAsync(AlphaDbContext db, CancellationToken ct)
+    {
         var organizations = new[]
         {
             new Organization($"{Marker} קבוצת אלפא", OrganizationType.CorporateGroup),
@@ -64,7 +77,7 @@ public static class DemoDataSeeder
         var firstNames = new[] { "יעל", "אורי", "נועה", "איתי", "מאיה", "דניאל", "שירה", "עומר", "רוני", "יובל", "תמר", "אלון" };
         var lastNames = new[] { "כהן", "לוי", "מזרחי", "פרץ", "ביטון", "ישראלי", "אברהם", "דהן", "שחר", "ברק", "מלכה", "רוזן" };
         var employeeCounter = 1;
-        var nationalIdCounter = 200000001;
+        var nationalIdCandidate = 300000000;
 
         foreach (var employer in employers)
         {
@@ -72,7 +85,7 @@ public static class DemoDataSeeder
             {
                 var person = new Person(
                     employer.OrganizationId,
-                    (nationalIdCounter++).ToString(),
+                    NextValidNationalId(ref nationalIdCandidate),
                     firstNames[(employeeCounter + i) % firstNames.Length],
                     lastNames[(employeeCounter * 2 + i) % lastNames.Length]);
                 db.People.Add(person);
@@ -91,5 +104,131 @@ public static class DemoDataSeeder
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsureScopedDemoUsersAsync(AlphaDbContext db, CancellationToken ct)
+    {
+        var organization = await db.Organizations.FirstOrDefaultAsync(x => x.Name == $"{Marker} קבוצת אלפא", ct);
+        if (organization is null) return;
+
+        var employer = await db.Employers
+            .Where(x => x.OrganizationId == organization.Id)
+            .OrderBy(x => x.LegalName)
+            .FirstOrDefaultAsync(ct);
+        if (employer is null) return;
+
+        var organizationUser = await db.Users.FirstOrDefaultAsync(x => x.ExternalSubject == OrganizationUserSubject, ct);
+        if (organizationUser is null)
+        {
+            organizationUser = new User(
+                OrganizationUserSubject,
+                "org.admin@alpha-demo.local",
+                "מנהל ארגון בדיקה",
+                OrganizationUserNationalId,
+                OrganizationUserPhone);
+            db.Users.Add(organizationUser);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var employerUser = await db.Users.FirstOrDefaultAsync(x => x.ExternalSubject == EmployerUserSubject, ct);
+        if (employerUser is null)
+        {
+            employerUser = new User(
+                EmployerUserSubject,
+                "employer.admin@alpha-demo.local",
+                "מנהל מעסיק בדיקה",
+                EmployerUserNationalId,
+                EmployerUserPhone);
+            db.Users.Add(employerUser);
+            await db.SaveChangesAsync(ct);
+        }
+
+        if (!await db.OrganizationMemberships.AnyAsync(x => x.UserId == organizationUser.Id && x.OrganizationId == organization.Id, ct))
+        {
+            db.OrganizationMemberships.Add(new OrganizationMembership(
+                organizationUser.Id,
+                organization.Id,
+                OrganizationRole.Admin,
+                EmployerAccessMode.AllEmployers,
+                organizationUser.Id));
+        }
+
+        if (!await db.OrganizationMemberships.AnyAsync(x => x.UserId == employerUser.Id && x.OrganizationId == organization.Id, ct))
+        {
+            db.OrganizationMemberships.Add(new OrganizationMembership(
+                employerUser.Id,
+                organization.Id,
+                OrganizationRole.Admin,
+                EmployerAccessMode.SelectedEmployers,
+                organizationUser.Id));
+        }
+
+        if (!await db.EmployerUserAccesses.AnyAsync(x => x.UserId == employerUser.Id && x.EmployerId == employer.Id, ct))
+        {
+            db.EmployerUserAccesses.Add(new EmployerUserAccess(
+                employerUser.Id,
+                organization.Id,
+                employer.Id));
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task RepairInvalidEmployeeNationalIdsAsync(AlphaDbContext db, CancellationToken ct)
+    {
+        var people = await db.People.OrderBy(x => x.OrganizationId).ThenBy(x => x.Id).ToListAsync(ct);
+        if (people.Count == 0) return;
+
+        var usedByOrganization = people
+            .GroupBy(x => x.OrganizationId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => x.NationalId).ToHashSet(StringComparer.Ordinal));
+
+        var candidate = 700000000;
+        var changed = false;
+
+        foreach (var person in people.Where(x => !IsIsraeliId(x.NationalId)))
+        {
+            var used = usedByOrganization[person.OrganizationId];
+            string replacement;
+            do
+            {
+                replacement = NextValidNationalId(ref candidate);
+            }
+            while (used.Contains(replacement));
+
+            used.Remove(person.NationalId);
+            used.Add(replacement);
+            person.Update(replacement, person.FirstName, person.LastName);
+            changed = true;
+        }
+
+        if (changed)
+            await db.SaveChangesAsync(ct);
+    }
+
+    private static string NextValidNationalId(ref int candidate)
+    {
+        while (candidate <= 999999999)
+        {
+            var value = candidate++.ToString("000000000");
+            if (IsIsraeliId(value)) return value;
+        }
+
+        throw new InvalidOperationException("Could not generate a valid Israeli national ID for demo data.");
+    }
+
+    private static bool IsIsraeliId(string value)
+    {
+        if (value.Length is < 1 or > 9 || !value.All(char.IsDigit)) return false;
+        var id = value.PadLeft(9, '0');
+        var sum = 0;
+        for (var i = 0; i < id.Length; i++)
+        {
+            var number = (id[i] - '0') * (i % 2 == 0 ? 1 : 2);
+            sum += number > 9 ? number - 9 : number;
+        }
+        return sum % 10 == 0;
     }
 }
