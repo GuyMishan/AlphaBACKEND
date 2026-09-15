@@ -1,6 +1,7 @@
 using System.Text;
 using Alpha.Api.Authentication;
 using Alpha.Api.Endpoints;
+using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Infrastructure;
@@ -86,6 +87,7 @@ app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseReportingInputValidation();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
