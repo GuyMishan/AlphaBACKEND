@@ -67,10 +67,11 @@ if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
 }
 
 // The original database was created before migrations were committed to the repository.
-// Keep the reporting module idempotent in the prototype environment until all schema changes move to deploy-time migrations.
+// Keep prototype schema additions idempotent until all changes move to deploy-time migrations.
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
+    await IdentitySchemaInitializer.EnsureUpdatedAsync(db);
     await ReportingSchemaInitializer.EnsureCreatedAsync(db);
 }
 
