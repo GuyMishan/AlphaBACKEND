@@ -177,7 +177,7 @@ public static class ReportValidationEndpoints
                 issues.Add(new("PRODUCT_VALIDATION", $"{employeeName}: {error}", ValidationScope.Contribution, employee.Id));
         }
 
-        if (stage is ValidationStage.Deposits or ValidationStage.Final && products.Count > 0)
+        if ((stage is ValidationStage.Deposits or ValidationStage.Final) && products.Count > 0)
         {
             var payments = await db.ManualReportPayments.AsNoTracking()
                 .Where(x => productIds.Contains(x.ReportProductId)).ToDictionaryAsync(x => x.ReportProductId, ct);
