@@ -12,6 +12,7 @@ public sealed class EmployerInterfaceReportProductData : Entity
     }
 
     public Guid ReportProductId { get; private set; }
+    public int? OperationCode { get; private set; }
     public int? DepositStatus { get; private set; }
     public int? EmployeeStatus { get; private set; }
     public DateOnly? StatusStartDate { get; private set; }
@@ -23,10 +24,11 @@ public sealed class EmployerInterfaceReportProductData : Entity
     public int? EmployerAccountType { get; private set; }
     public int? ReceiverAccountType { get; private set; }
 
-    public void Update(int? depositStatus, int? employeeStatus, DateOnly? statusStartDate,
+    public void Update(int? operationCode, int? depositStatus, int? employeeStatus, DateOnly? statusStartDate,
         decimal? employmentPercentage, int? workDaysInMonth, int? lastDeposit, int? refundReason,
         int? paymentMethodCode, int? employerAccountType, int? receiverAccountType)
     {
+        OperationCode = Allowed(operationCode, [1, 2, 3, 5, 6, 7], nameof(operationCode));
         DepositStatus = Allowed(depositStatus, [1, 2, 3], nameof(depositStatus));
         EmployeeStatus = Allowed(employeeStatus, [1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 14, 17, 18], nameof(employeeStatus));
         if (employmentPercentage is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(employmentPercentage));
