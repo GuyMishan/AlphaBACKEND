@@ -27,11 +27,14 @@ public sealed class ReferenceDataSyncService(HttpClient httpClient, AlphaDbConte
     private const string TransferFundsResource = "b5223cbc-e1b2-4503-a499-97cdcd7190d2";
     private const string GemelNetResource = "a30dcbea-a1d2-482c-ae29-8f781f5025fb";
     private const string InsuranceNetResource = "c6c62cc7-fe02-4b18-8f3e-813abfbb4647";
+    private const string IsraelStreetsResource = "bf185c7f-1a4e-4662-88c5-fa118a244bda";
+    private const string AddressSource = "population_authority_streets";
 
     public static readonly IReadOnlyDictionary<string, string> Integrations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["banks-branches"] = "בנקים וסניפים",
-        ["pension-products"] = "קופות ומוצרים פנסיוניים"
+        ["pension-products"] = "קופות ומוצרים פנסיוניים",
+        ["address-data"] = "יישובים ורחובות בישראל"
     };
 
     public async Task<ReferenceDataSyncResult> RunAsync(string key, Guid triggeredBy, CancellationToken ct)
@@ -49,6 +52,7 @@ public sealed class ReferenceDataSyncService(HttpClient httpClient, AlphaDbConte
             {
                 "banks-branches" => await SyncBanksAndBranchesAsync(ct),
                 "pension-products" => await SyncPensionProductsAsync(ct),
+                "address-data" => await SyncAddressDataAsync(ct),
                 _ => throw new ArgumentOutOfRangeException(nameof(key))
             };
 
@@ -141,6 +145,121 @@ public sealed class ReferenceDataSyncService(HttpClient httpClient, AlphaDbConte
             banks = bankSeen.Count,
             branches = branchSeen.Count,
             resourceId = BankBranchesResource
+        });
+    }
+
+    private async Task<SyncStats> SyncAddressDataAsync(CancellationToken ct)
+    {
+        var records = await FetchAllAsync(IsraelStreetsResource, ct);
+        var now = DateTimeOffset.UtcNow;
+        var cities = records
+            .Select(row => new
+            {
+                CityCode = Int(row, "city_code"),
+                CityName = Text(row, "city_name"),
+                RegionCode = Int(row, "region_code"),
+                RegionName = Text(row, "region_name")
+            })
+            .Where(x => x.CityCode.HasValue && !string.IsNullOrWhiteSpace(x.CityName))
+            .GroupBy(x => x.CityCode!.Value)
+            .Select(g => g.First())
+            .ToList();
+        var streets = records
+            .Select(row => new
+            {
+                CityCode = Int(row, "city_code"),
+                StreetCode = Int(row, "street_code"),
+                StreetName = Text(row, "street_name"),
+                StreetNameStatus = Text(row, "street_name_status") ?? "official",
+                OfficialCode = Int(row, "official_code")
+            })
+            .Where(x => x.CityCode.HasValue && x.StreetCode.HasValue && x.OfficialCode.HasValue && !string.IsNullOrWhiteSpace(x.StreetName))
+            .GroupBy(x => (x.CityCode!.Value, x.StreetCode!.Value))
+            .Select(g => g.First())
+            .ToList();
+
+        var existingCities = await ScalarIntAsync($"SELECT count(*) FROM reference_data.cities WHERE source = '{AddressSource}'", ct);
+        var existingStreets = await ScalarIntAsync($"SELECT count(*) FROM reference_data.streets WHERE source = '{AddressSource}'", ct);
+
+        const int batchSize = 5000;
+        for (var offset = 0; offset < cities.Count; offset += batchSize)
+        {
+            var json = JsonSerializer.Serialize(cities.Skip(offset).Take(batchSize).Select(x => new
+            {
+                city_code = x.CityCode!.Value,
+                city_name = x.CityName,
+                region_code = x.RegionCode,
+                region_name = x.RegionName
+            }));
+            await ExecuteAsync("""
+                WITH rows AS (
+                    SELECT * FROM jsonb_to_recordset(CAST(@p0 AS jsonb)) AS x(
+                        city_code integer, city_name text, region_code integer, region_name text)
+                )
+                INSERT INTO reference_data.cities
+                    (city_code, city_name, region_code, region_name, is_active, source, last_seen_at, updated_at)
+                SELECT city_code, city_name, region_code, region_name, true, @p1, @p2, @p2 FROM rows
+                ON CONFLICT (city_code) DO UPDATE SET
+                    city_name = EXCLUDED.city_name,
+                    region_code = EXCLUDED.region_code,
+                    region_name = EXCLUDED.region_name,
+                    is_active = true,
+                    source = EXCLUDED.source,
+                    last_seen_at = EXCLUDED.last_seen_at,
+                    updated_at = EXCLUDED.updated_at
+                """, new object?[] { json, AddressSource, now }, ct);
+        }
+
+        for (var offset = 0; offset < streets.Count; offset += batchSize)
+        {
+            var json = JsonSerializer.Serialize(streets.Skip(offset).Take(batchSize).Select(x => new
+            {
+                city_code = x.CityCode!.Value,
+                street_code = x.StreetCode!.Value,
+                street_name = x.StreetName,
+                official_code = x.OfficialCode!.Value,
+                street_name_status = x.StreetNameStatus
+            }));
+            await ExecuteAsync("""
+                WITH rows AS (
+                    SELECT * FROM jsonb_to_recordset(CAST(@p0 AS jsonb)) AS x(
+                        city_code integer, street_code integer, street_name text, official_code integer, street_name_status text)
+                )
+                INSERT INTO reference_data.streets
+                    (city_code, street_code, street_name, official_code, street_name_status, is_active, source, last_seen_at, updated_at)
+                SELECT city_code, street_code, street_name, official_code, street_name_status, true, @p1, @p2, @p2 FROM rows
+                ON CONFLICT (city_code, street_code) DO UPDATE SET
+                    street_name = EXCLUDED.street_name,
+                    official_code = EXCLUDED.official_code,
+                    street_name_status = EXCLUDED.street_name_status,
+                    is_active = true,
+                    source = EXCLUDED.source,
+                    last_seen_at = EXCLUDED.last_seen_at,
+                    updated_at = EXCLUDED.updated_at
+                """, new object?[] { json, AddressSource, now }, ct);
+        }
+
+        var deactivated = await db.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE reference_data.cities SET is_active = false, updated_at = {now}
+            WHERE source = {AddressSource} AND is_active = true AND last_seen_at < {now}
+            """, ct);
+        deactivated += await db.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE reference_data.streets SET is_active = false, updated_at = {now}
+            WHERE source = {AddressSource} AND is_active = true AND last_seen_at < {now}
+            """, ct);
+
+        var insertedCities = Math.Max(cities.Count - existingCities, 0);
+        var insertedStreets = Math.Max(streets.Count - existingStreets, 0);
+        var inserted = insertedCities + insertedStreets;
+        var updated = Math.Max(cities.Count + streets.Count - inserted, 0);
+        return new SyncStats(records.Count, inserted, updated, deactivated, new
+        {
+            source = "רשות האוכלוסין וההגירה / data.gov.il",
+            resourceId = IsraelStreetsResource,
+            cities = cities.Count,
+            streets = streets.Count,
+            officialStreets = streets.Count(x => string.Equals(x.StreetNameStatus, "official", StringComparison.OrdinalIgnoreCase)),
+            synonyms = streets.Count(x => !string.Equals(x.StreetNameStatus, "official", StringComparison.OrdinalIgnoreCase))
         });
     }
 
@@ -288,6 +407,14 @@ public sealed class ReferenceDataSyncService(HttpClient httpClient, AlphaDbConte
                 details_json=CAST(@p8 AS jsonb)
             WHERE id=@p0
             """, new object?[] { id, status, finished, stats.Received, stats.Inserted, stats.Updated, stats.Deactivated, error, JsonSerializer.Serialize(stats.Details) }, ct);
+
+    private async Task<int> ScalarIntAsync(string sql, CancellationToken ct)
+    {
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = sql;
+        if (command.Connection!.State != System.Data.ConnectionState.Open) await command.Connection.OpenAsync(ct);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+    }
 
     private async Task<bool> ExistsAsync(string sql, object?[] values, CancellationToken ct)
     {
