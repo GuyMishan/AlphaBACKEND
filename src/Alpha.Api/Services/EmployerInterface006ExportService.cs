@@ -41,11 +41,16 @@ public sealed class EmployerInterface006ExportService(
 
         var context = new EmployerInterface006XmlBuilder.BuildContext(employer, employees, people, employments,
             products, contributions, payments, metadata, options.Value);
-        var built = documentType == EmployerInterfaceDocumentType.NegativeReport
+        var negative = documentType == EmployerInterfaceDocumentType.NegativeReport;
+        var built = negative
             ? EmployerInterface006XmlBuilder.BuildNegative(context)
             : EmployerInterface006XmlBuilder.BuildCurrent(context);
         if (built.Document is null)
             return new([], new(false, documentType, EmployerInterfaceSchemaRegistry.Version, null, built.Issues));
+
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(built.Document, context, negative);
+        if (workbookIssues.Count > 0)
+            return new([], new(false, documentType, EmployerInterfaceSchemaRegistry.Version, null, workbookIssues));
 
         var bytes = Serialize(built.Document);
         var validation = schemas.Validate(bytes, documentType);
