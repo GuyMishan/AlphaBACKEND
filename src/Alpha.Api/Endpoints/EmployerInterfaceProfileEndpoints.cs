@@ -49,12 +49,23 @@ public static class EmployerInterfaceProfileEndpoints
         OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
-        var exists = await (from product in db.ManualReportProducts.AsNoTracking()
-                            join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                            where product.Id == reportProductId && employee.ReportId == reportId
-                                && employee.OrganizationId == organizationId && employee.EmployerId == employerId
-                            select product.Id).AnyAsync(ct);
-        if (!exists) return Results.NotFound();
+        var reportKind = await (from product in db.ManualReportProducts.AsNoTracking()
+                                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                                join report in db.ManualReports.AsNoTracking() on employee.ReportId equals report.Id
+                                where product.Id == reportProductId && employee.ReportId == reportId
+                                    && employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                                select (ManualReportKind?)report.ReportKind).SingleOrDefaultAsync(ct);
+        if (reportKind is null) return Results.NotFound();
+        if (request.OperationCode.HasValue)
+        {
+            var allowed = reportKind == ManualReportKind.Negative
+                ? request.OperationCode is 5 or 6
+                : request.OperationCode is 1 or 2 or 3 or 7;
+            if (!allowed)
+                return Results.BadRequest(new { error = reportKind == ManualReportKind.Negative
+                    ? "Negative Version 006 reports allow OperationCode 5 or 6 only."
+                    : "Current Version 006 reports allow OperationCode 1, 2, 3 or 7 only." });
+        }
 
         var item = await db.EmployerInterfaceReportProductData.SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
         if (item is null)
@@ -64,7 +75,7 @@ public static class EmployerInterfaceProfileEndpoints
         }
         try
         {
-            item.Update(request.DepositStatus, request.EmployeeStatus, request.StatusStartDate,
+            item.Update(request.OperationCode, request.DepositStatus, request.EmployeeStatus, request.StatusStartDate,
                 request.EmploymentPercentage, request.WorkDaysInMonth, request.LastDeposit, request.RefundReason,
                 request.PaymentMethodCode, request.EmployerAccountType, request.ReceiverAccountType);
         }
@@ -80,6 +91,6 @@ public static class EmployerInterfaceProfileEndpoints
 public sealed record EmployerInterfaceEmployerProfileRequest(string ContactFirstName, string ContactLastName,
     string ContactPhone, string ContactEmail, string ContactMobile);
 public sealed record EmployerInterfaceEmployeeProfileRequest(DateOnly? BirthDate, PersonGender? Gender, string? Email, string? Mobile);
-public sealed record EmployerInterfaceProductMetadataRequest(int? DepositStatus, int? EmployeeStatus, DateOnly? StatusStartDate,
+public sealed record EmployerInterfaceProductMetadataRequest(int? OperationCode, int? DepositStatus, int? EmployeeStatus, DateOnly? StatusStartDate,
     decimal? EmploymentPercentage, int? WorkDaysInMonth, int? LastDeposit, int? RefundReason,
     int? PaymentMethodCode, int? EmployerAccountType, int? ReceiverAccountType);
