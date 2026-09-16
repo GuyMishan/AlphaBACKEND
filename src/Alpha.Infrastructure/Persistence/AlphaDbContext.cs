@@ -25,13 +25,13 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<ManualReportProduct> ManualReportProducts => Set<ManualReportProduct>();
     public DbSet<ManualContribution> ManualContributions => Set<ManualContribution>();
     public DbSet<ManualReportPayment> ManualReportPayments => Set<ManualReportPayment>();
+    public DbSet<ReportTransmission> ReportTransmissions => Set<ReportTransmission>();
     public DbSet<ContributionPercentageLimit> ContributionPercentageLimits => Set<ContributionPercentageLimit>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AlphaDbContext).Assembly);
-
         var limits = modelBuilder.Entity<ContributionPercentageLimit>();
         limits.ToTable("contribution_percentage_limits", "reporting");
         limits.HasKey(x => x.Id);
@@ -40,16 +40,13 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
         limits.Property(x => x.Component).HasConversion<string>().HasMaxLength(30);
         limits.Property(x => x.MaxPercentage).HasPrecision(9, 4);
         limits.HasIndex(x => new { x.Year, x.ProductType, x.Party, x.Component }).IsUnique();
-
         base.OnModelCreating(modelBuilder);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        var invalidAuditMutation = ChangeTracker.Entries<AuditEvent>()
-            .Any(x => x.State is EntityState.Modified or EntityState.Deleted);
-        if (invalidAuditMutation)
-            throw new InvalidOperationException("Audit events are append-only and cannot be changed or deleted.");
+        var invalidAuditMutation = ChangeTracker.Entries<AuditEvent>().Any(x => x.State is EntityState.Modified or EntityState.Deleted);
+        if (invalidAuditMutation) throw new InvalidOperationException("Audit events are append-only and cannot be changed or deleted.");
         return base.SaveChangesAsync(cancellationToken);
     }
 }

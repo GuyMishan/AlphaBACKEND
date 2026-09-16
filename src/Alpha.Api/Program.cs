@@ -18,6 +18,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<OrganizationAccessService>();
+builder.Services.AddScoped<IReportTransmissionProvider, MockReportTransmissionProvider>();
 builder.Services.AddHttpClient<ReferenceDataSyncService>(client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
@@ -72,8 +73,6 @@ if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
     await db.Database.MigrateAsync();
 }
 
-// The original database was created before migrations were committed to the repository.
-// Keep prototype schema additions idempotent until all changes move to deploy-time migrations.
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
@@ -82,6 +81,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db);
     await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db);
     await ReportLifecycleSchemaInitializer.EnsureUpdatedAsync(db);
+    await ReportTransmissionSchemaInitializer.EnsureUpdatedAsync(db);
     await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db);
     await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db);
 }
@@ -107,17 +107,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.MapHealthChecks("/health", new HealthCheckOptions
-{
-    AllowCachingResponses = false
-}).AllowAnonymous();
-
+app.MapHealthChecks("/health", new HealthCheckOptions { AllowCachingResponses = false }).AllowAnonymous();
 app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) =>
 {
     var canConnect = await db.Database.CanConnectAsync(ct);
-    return canConnect
-        ? Results.Ok(new { status = "healthy", database = "postgresql" })
-        : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    return canConnect ? Results.Ok(new { status = "healthy", database = "postgresql" }) : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable);
 }).AllowAnonymous().WithTags("Health");
 
 app.MapAuthEndpoints();
@@ -131,6 +125,7 @@ app.MapEmployeePensionMixEndpoints();
 app.MapManualReportEndpoints();
 app.MapDerivedReportEndpoints();
 app.MapReportValidationEndpoints();
+app.MapReportTransmissionEndpoints();
 app.Run();
 
 public partial class Program;
