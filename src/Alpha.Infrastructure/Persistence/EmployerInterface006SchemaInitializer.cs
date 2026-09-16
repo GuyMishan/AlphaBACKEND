@@ -22,6 +22,7 @@ ALTER TABLE employers.employers ADD COLUMN IF NOT EXISTS "ContactMobile" varchar
 CREATE TABLE IF NOT EXISTS reporting.employer_interface_report_product_data (
     "Id" uuid PRIMARY KEY,
     "ReportProductId" uuid NOT NULL REFERENCES reporting.manual_report_products("Id") ON DELETE CASCADE,
+    "OperationCode" integer NULL,
     "DepositStatus" integer NULL,
     "EmployeeStatus" integer NULL,
     "StatusStartDate" date NULL,
@@ -36,5 +37,6 @@ CREATE TABLE IF NOT EXISTS reporting.employer_interface_report_product_data (
     "UpdatedAt" timestamptz NOT NULL,
     CONSTRAINT "UX_employer_interface_report_product_data_product" UNIQUE ("ReportProductId")
 );
+ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "OperationCode" integer NULL;
 """;
 }
