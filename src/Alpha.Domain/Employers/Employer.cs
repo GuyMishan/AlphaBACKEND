@@ -30,13 +30,17 @@ public sealed class Employer : Entity
     public string ContactEmail { get; private set; } = string.Empty;
     public string ContactMobile { get; private set; } = string.Empty;
 
-    public void Update(string legalName, string registrationNumber, string withholdingFileNumber,
-        string? contactFirstName = null, string? contactLastName = null, string? contactPhone = null,
-        string? contactEmail = null, string? contactMobile = null)
+    public void Update(string legalName, string registrationNumber, string withholdingFileNumber)
     {
         LegalName = Require(legalName, nameof(legalName));
         RegistrationNumber = Require(registrationNumber, nameof(registrationNumber));
         WithholdingFileNumber = Require(withholdingFileNumber, nameof(withholdingFileNumber));
+        Touch();
+    }
+
+    public void UpdateInterfaceContact(string? contactFirstName, string? contactLastName, string? contactPhone,
+        string? contactEmail, string? contactMobile)
+    {
         SetInterfaceContact(contactFirstName, contactLastName, contactPhone, contactEmail, contactMobile);
         Touch();
     }
