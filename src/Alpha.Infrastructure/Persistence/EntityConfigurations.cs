@@ -58,6 +58,11 @@ public sealed class EmployerConfiguration : IEntityTypeConfiguration<Employer>
         b.Property(x => x.RegistrationNumber).HasMaxLength(30).IsRequired();
         b.Property(x => x.WithholdingFileNumber).HasMaxLength(30).IsRequired();
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(40);
+        b.Property(x => x.ContactFirstName).HasMaxLength(20);
+        b.Property(x => x.ContactLastName).HasMaxLength(20);
+        b.Property(x => x.ContactPhone).HasMaxLength(20);
+        b.Property(x => x.ContactEmail).HasMaxLength(50);
+        b.Property(x => x.ContactMobile).HasMaxLength(15);
         b.HasIndex(x => new { x.OrganizationId, x.RegistrationNumber }).IsUnique();
         b.HasIndex(x => new { x.OrganizationId, x.WithholdingFileNumber }).IsUnique();
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
@@ -86,6 +91,9 @@ public sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
         b.Property(x => x.NationalId).HasMaxLength(30).IsRequired();
         b.Property(x => x.FirstName).HasMaxLength(100).IsRequired();
         b.Property(x => x.LastName).HasMaxLength(100).IsRequired();
+        b.Property(x => x.Gender).HasConversion<string>().HasMaxLength(20);
+        b.Property(x => x.Email).HasMaxLength(50);
+        b.Property(x => x.Mobile).HasMaxLength(15);
         b.HasIndex(x => new { x.OrganizationId, x.NationalId }).IsUnique();
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
     }
