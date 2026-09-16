@@ -29,6 +29,37 @@ public static class PublicReferenceDataEndpoints
             return Results.Ok(result);
         });
 
+        group.MapGet("/employer-interface-006/options", async (string category, string? scope, AlphaDbContext db, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(category)) return Results.BadRequest(new { error = "category is required." });
+            var normalizedCategory = category.Trim().ToLowerInvariant();
+            var normalizedScope = string.IsNullOrWhiteSpace(scope) ? "all" : scope.Trim().ToLowerInvariant();
+            var result = new List<object>();
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = """
+                SELECT code, name, scope
+                FROM reference_data.employer_interface_006_options
+                WHERE category = @category
+                  AND is_active = true
+                  AND (scope = 'all' OR scope = @scope)
+                ORDER BY CASE WHEN scope = @scope THEN 0 ELSE 1 END, sort_order, code
+                """;
+            var categoryParameter = command.CreateParameter();
+            categoryParameter.ParameterName = "category";
+            categoryParameter.Value = normalizedCategory;
+            command.Parameters.Add(categoryParameter);
+            var scopeParameter = command.CreateParameter();
+            scopeParameter.ParameterName = "scope";
+            scopeParameter.Value = normalizedScope;
+            command.Parameters.Add(scopeParameter);
+            if (command.Connection!.State != System.Data.ConnectionState.Open)
+                await command.Connection.OpenAsync(ct);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                result.Add(new { code = reader.GetInt32(0), name = reader.GetString(1), scope = reader.GetString(2) });
+            return Results.Ok(result);
+        });
+
         // Backwards-compatible endpoint used by the current frontend.
         group.MapGet("/pension-funds", async (int productType, string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
         {

@@ -13,10 +13,29 @@ public static class EmployerInterfaceProfileEndpoints
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/employer-interface")
             .RequireAuthorization().WithTags("Employer Interface 006");
 
+        group.MapGet("/profile", GetEmployerProfileAsync);
         group.MapPut("/profile", UpdateEmployerProfileAsync);
+        group.MapGet("/employees/{employmentId:guid}/profile", GetEmployeeProfileAsync);
         group.MapPut("/employees/{employmentId:guid}/profile", UpdateEmployeeProfileAsync);
+        group.MapGet("/reports/{reportId:guid}/products/{reportProductId:guid}/metadata", GetProductMetadataAsync);
         group.MapPut("/reports/{reportId:guid}/products/{reportProductId:guid}/metadata", UpdateProductMetadataAsync);
         return endpoints;
+    }
+
+    private static async Task<IResult> GetEmployerProfileAsync(Guid organizationId, Guid employerId,
+        IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var employer = await db.Employers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
+        if (employer is null) return Results.NotFound();
+        return Results.Ok(new
+        {
+            employer.ContactFirstName,
+            employer.ContactLastName,
+            employer.ContactPhone,
+            employer.ContactEmail,
+            employer.ContactMobile
+        });
     }
 
     private static async Task<IResult> UpdateEmployerProfileAsync(Guid organizationId, Guid employerId,
@@ -28,7 +47,25 @@ public static class EmployerInterfaceProfileEndpoints
         employer.UpdateInterfaceContact(request.ContactFirstName, request.ContactLastName, request.ContactPhone,
             request.ContactEmail, request.ContactMobile);
         await db.SaveChangesAsync(ct);
-        return Results.Ok(employer);
+        return Results.Ok(new
+        {
+            employer.ContactFirstName,
+            employer.ContactLastName,
+            employer.ContactPhone,
+            employer.ContactEmail,
+            employer.ContactMobile
+        });
+    }
+
+    private static async Task<IResult> GetEmployeeProfileAsync(Guid organizationId, Guid employerId, Guid employmentId,
+        IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var item = await (from employment in db.Employments.AsNoTracking()
+                          join person in db.People.AsNoTracking() on employment.PersonId equals person.Id
+                          where employment.Id == employmentId && employment.OrganizationId == organizationId && employment.EmployerId == employerId
+                          select new { person.BirthDate, person.Gender, person.Email, person.Mobile }).SingleOrDefaultAsync(ct);
+        return item is null ? Results.NotFound() : Results.Ok(item);
     }
 
     private static async Task<IResult> UpdateEmployeeProfileAsync(Guid organizationId, Guid employerId, Guid employmentId,
@@ -41,7 +78,37 @@ public static class EmployerInterfaceProfileEndpoints
         var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
         person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile);
         await db.SaveChangesAsync(ct);
-        return Results.Ok(new { person.Id, person.BirthDate, person.Gender, person.Email, person.Mobile });
+        return Results.Ok(new { person.BirthDate, person.Gender, person.Email, person.Mobile });
+    }
+
+    private static async Task<IResult> GetProductMetadataAsync(Guid organizationId, Guid employerId, Guid reportId,
+        Guid reportProductId, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var reportKind = await (from product in db.ManualReportProducts.AsNoTracking()
+                                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                                join report in db.ManualReports.AsNoTracking() on employee.ReportId equals report.Id
+                                where product.Id == reportProductId && employee.ReportId == reportId
+                                    && employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                                select (ManualReportKind?)report.ReportKind).SingleOrDefaultAsync(ct);
+        if (reportKind is null) return Results.NotFound();
+        var item = await db.EmployerInterfaceReportProductData.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
+        return Results.Ok(new
+        {
+            reportKind,
+            operationCode = item?.OperationCode,
+            depositStatus = item?.DepositStatus,
+            employeeStatus = item?.EmployeeStatus,
+            statusStartDate = item?.StatusStartDate,
+            employmentPercentage = item?.EmploymentPercentage,
+            workDaysInMonth = item?.WorkDaysInMonth,
+            lastDeposit = item?.LastDeposit,
+            refundReason = item?.RefundReason,
+            paymentMethodCode = item?.PaymentMethodCode,
+            employerAccountType = item?.EmployerAccountType,
+            receiverAccountType = item?.ReceiverAccountType
+        });
     }
 
     private static async Task<IResult> UpdateProductMetadataAsync(Guid organizationId, Guid employerId, Guid reportId,
@@ -84,7 +151,21 @@ public static class EmployerInterfaceProfileEndpoints
             return Results.BadRequest(new { error = ex.Message });
         }
         await db.SaveChangesAsync(ct);
-        return Results.Ok(item);
+        return Results.Ok(new
+        {
+            reportKind,
+            item.OperationCode,
+            item.DepositStatus,
+            item.EmployeeStatus,
+            item.StatusStartDate,
+            item.EmploymentPercentage,
+            item.WorkDaysInMonth,
+            item.LastDeposit,
+            item.RefundReason,
+            item.PaymentMethodCode,
+            item.EmployerAccountType,
+            item.ReceiverAccountType
+        });
     }
 }
 
