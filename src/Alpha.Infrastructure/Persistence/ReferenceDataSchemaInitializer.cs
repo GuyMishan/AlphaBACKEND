@@ -80,6 +80,77 @@ public static class ReferenceDataSchemaInitializer
             CREATE INDEX IF NOT EXISTS ix_pension_products_fund_code ON reference_data.pension_products (fund_code);
             CREATE INDEX IF NOT EXISTS ix_pension_products_company ON reference_data.pension_products (company_name);
 
+            CREATE TABLE IF NOT EXISTS reference_data.employer_interface_006_options (
+                category varchar(60) NOT NULL,
+                scope varchar(20) NOT NULL DEFAULT 'all',
+                code integer NOT NULL,
+                name varchar(160) NOT NULL,
+                sort_order integer NOT NULL DEFAULT 0,
+                is_active boolean NOT NULL DEFAULT true,
+                source varchar(80) NOT NULL DEFAULT 'EmployerInterface006-XSD',
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (category, scope, code)
+            );
+            CREATE INDEX IF NOT EXISTS ix_employer_interface_006_options_lookup
+                ON reference_data.employer_interface_006_options (category, scope, is_active, sort_order, code);
+
+            INSERT INTO reference_data.employer_interface_006_options (category, scope, code, name, sort_order)
+            VALUES
+                ('gender', 'all', 1, 'זכר', 1),
+                ('gender', 'all', 2, 'נקבה', 2),
+                ('receipt-type', 'all', 1, 'קוד 1', 1),
+                ('receipt-type', 'all', 2, 'קוד 2', 2),
+                ('receipt-type', 'all', 4, 'קוד 4', 4),
+                ('receipt-type', 'all', 6, 'קוד 6', 6),
+                ('receipt-type', 'all', 8, 'קוד 8', 8),
+                ('operation-code', 'current', 1, 'קוד 1', 1),
+                ('operation-code', 'current', 2, 'קוד 2', 2),
+                ('operation-code', 'current', 3, 'קוד 3', 3),
+                ('operation-code', 'current', 7, 'קוד 7', 7),
+                ('operation-code', 'negative', 5, 'קוד 5', 5),
+                ('operation-code', 'negative', 6, 'קוד 6', 6),
+                ('deposit-status', 'all', 1, 'קוד 1', 1),
+                ('deposit-status', 'all', 2, 'קוד 2', 2),
+                ('deposit-status', 'all', 3, 'קוד 3', 3),
+                ('employee-status', 'all', 1, 'קוד 1', 1),
+                ('employee-status', 'all', 2, 'קוד 2', 2),
+                ('employee-status', 'all', 3, 'קוד 3', 3),
+                ('employee-status', 'all', 4, 'קוד 4', 4),
+                ('employee-status', 'all', 5, 'קוד 5', 5),
+                ('employee-status', 'all', 8, 'קוד 8', 8),
+                ('employee-status', 'all', 9, 'קוד 9', 9),
+                ('employee-status', 'all', 10, 'קוד 10', 10),
+                ('employee-status', 'all', 11, 'קוד 11', 11),
+                ('employee-status', 'all', 12, 'קוד 12', 12),
+                ('employee-status', 'all', 14, 'קוד 14', 14),
+                ('employee-status', 'all', 17, 'קוד 17', 17),
+                ('employee-status', 'all', 18, 'קוד 18', 18),
+                ('refund-reason', 'negative', 1, 'קוד 1', 1),
+                ('refund-reason', 'negative', 2, 'קוד 2', 2),
+                ('refund-reason', 'negative', 3, 'קוד 3', 3),
+                ('refund-reason', 'negative', 4, 'קוד 4', 4),
+                ('refund-reason', 'negative', 5, 'קוד 5', 5),
+                ('refund-reason', 'negative', 6, 'קוד 6', 6),
+                ('refund-reason', 'negative', 7, 'קוד 7', 7),
+                ('refund-reason', 'negative', 8, 'קוד 8', 8),
+                ('refund-reason', 'negative', 9, 'קוד 9', 9),
+                ('refund-reason', 'negative', 10, 'קוד 10', 10),
+                ('payment-method', 'all', 1, 'קוד 1', 1),
+                ('payment-method', 'all', 3, 'קוד 3', 3),
+                ('payment-method', 'all', 4, 'קוד 4', 4),
+                ('payment-method', 'all', 5, 'קוד 5', 5),
+                ('payment-method', 'all', 6, 'קוד 6', 6),
+                ('payment-method', 'all', 7, 'קוד 7', 7),
+                ('payment-method', 'all', 9, 'קוד 9', 9),
+                ('account-type', 'all', 1, 'קוד 1', 1),
+                ('account-type', 'all', 2, 'קוד 2', 2)
+            ON CONFLICT (category, scope, code) DO UPDATE
+            SET name = EXCLUDED.name,
+                sort_order = EXCLUDED.sort_order,
+                is_active = true,
+                source = 'EmployerInterface006-XSD',
+                updated_at = now();
+
             ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS fund_external_key text NOT NULL DEFAULT '';
             ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS fund_code text NOT NULL DEFAULT '';
             ALTER TABLE employees.employee_pension_products ADD COLUMN IF NOT EXISTS fund_name text NOT NULL DEFAULT '';
