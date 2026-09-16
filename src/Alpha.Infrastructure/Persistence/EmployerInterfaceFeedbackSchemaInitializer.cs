@@ -21,9 +21,9 @@ public static class EmployerInterfaceFeedbackSchemaInitializer
                 "CreatedAt" timestamptz NOT NULL,
                 "UpdatedAt" timestamptz NOT NULL,
                 CONSTRAINT "FK_employer_interface_feedback_organizations_OrganizationId"
-                    FOREIGN KEY ("OrganizationId") REFERENCES core.organizations("Id") ON DELETE RESTRICT,
+                    FOREIGN KEY ("OrganizationId") REFERENCES organizations.organizations("Id") ON DELETE RESTRICT,
                 CONSTRAINT "FK_employer_interface_feedback_employers_EmployerId"
-                    FOREIGN KEY ("EmployerId") REFERENCES core.employers("Id") ON DELETE RESTRICT
+                    FOREIGN KEY ("EmployerId") REFERENCES employers.employers("Id") ON DELETE RESTRICT
             );
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_employer_interface_feedback_EmployerId_PayloadHash"
                 ON reporting.employer_interface_feedback ("EmployerId", "PayloadHash");
