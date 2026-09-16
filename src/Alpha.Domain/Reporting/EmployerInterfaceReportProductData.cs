@@ -62,7 +62,8 @@ public sealed class EmployerInterfaceReportProductData : Entity
     private static string NormalizeGuid(string? value, string name)
     {
         if (string.IsNullOrWhiteSpace(value)) return string.Empty;
-        if (!Guid.TryParseExact(value.Trim(), "D", out var parsed) || parsed.Version != 4)
+        var normalized = value.Trim();
+        if (!Guid.TryParseExact(normalized, "D", out var parsed) || normalized.Length != 36 || char.ToLowerInvariant(normalized[14]) != '4')
             throw new ArgumentException("Employer Interface previous identifiers must be GUID version 4 values.", name);
         return parsed.ToString("D").ToUpperInvariant();
     }
