@@ -75,9 +75,69 @@ public sealed class ManualReportEmployee : Entity
 public sealed class ManualReportProduct : Entity
 {
     private ManualReportProduct() { }
-    public ManualReportProduct(Guid reportEmployeeId, PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary, string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate, string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null, SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null, int allocationOrder = 0) { ReportEmployeeId = reportEmployeeId; Update(productType, policyNumber, salaryMonth, salary, reportingType, salaryLayer, section14, section14StartDate, fundExternalKey, fundCode, fundName, fundCompanyName, salaryAllocationType, salaryAllocationValue, allocationOrder); }
-    public Guid ReportEmployeeId { get; private set; } public PensionProductType ProductType { get; private set; } public string PolicyNumber { get; private set; } = string.Empty; public DateOnly SalaryMonth { get; private set; } public decimal Salary { get; private set; } public string ReportingType { get; private set; } = string.Empty; public string SalaryLayer { get; private set; } = string.Empty; public bool Section14 { get; private set; } public DateOnly? Section14StartDate { get; private set; } public string FundExternalKey { get; private set; } = string.Empty; public string FundCode { get; private set; } = string.Empty; public string FundName { get; private set; } = string.Empty; public string FundCompanyName { get; private set; } = string.Empty; public SalaryAllocationType SalaryAllocationType { get; private set; } = SalaryAllocationType.Fixed; public decimal? SalaryAllocationValue { get; private set; } public int AllocationOrder { get; private set; } public ManualReportItemStatus ValidationStatus { get; private set; } = ManualReportItemStatus.Draft; public string ValidationError { get; private set; } = string.Empty;
-    public void Update(PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary, string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate, string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null, SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null, int allocationOrder = 0) { if (salary < 0) throw new ArgumentOutOfRangeException(nameof(salary)); if (allocationOrder < 0) throw new ArgumentOutOfRangeException(nameof(allocationOrder)); if (salaryAllocationValue < 0) throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue)); if (salaryAllocationType == SalaryAllocationType.Percentage && salaryAllocationValue > 100) throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue)); ProductType = productType; PolicyNumber = policyNumber?.Trim() ?? string.Empty; SalaryMonth = new DateOnly(salaryMonth.Year, salaryMonth.Month, 1); Salary = salary; ReportingType = reportingType?.Trim() ?? string.Empty; SalaryLayer = salaryLayer?.Trim() ?? string.Empty; Section14 = section14; Section14StartDate = section14 ? section14StartDate : null; FundExternalKey = fundExternalKey?.Trim() ?? string.Empty; FundCode = fundCode?.Trim() ?? string.Empty; FundName = fundName?.Trim() ?? string.Empty; FundCompanyName = fundCompanyName?.Trim() ?? string.Empty; SalaryAllocationType = salaryAllocationType; SalaryAllocationValue = salaryAllocationType == SalaryAllocationType.Remainder ? null : salaryAllocationValue; AllocationOrder = allocationOrder; ValidationStatus = ManualReportItemStatus.Draft; ValidationError = string.Empty; Touch(); }
+    public ManualReportProduct(Guid reportEmployeeId, PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary, string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate, string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null, SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null, int allocationOrder = 0, int? section14Code = null)
+    {
+        ReportEmployeeId = reportEmployeeId;
+        Update(productType, policyNumber, salaryMonth, salary, reportingType, salaryLayer, section14, section14StartDate,
+            fundExternalKey, fundCode, fundName, fundCompanyName, salaryAllocationType, salaryAllocationValue, allocationOrder, section14Code);
+    }
+
+    public Guid ReportEmployeeId { get; private set; }
+    public PensionProductType ProductType { get; private set; }
+    public string PolicyNumber { get; private set; } = string.Empty;
+    public DateOnly SalaryMonth { get; private set; }
+    public decimal Salary { get; private set; }
+    public string ReportingType { get; private set; } = string.Empty;
+    public string SalaryLayer { get; private set; } = string.Empty;
+    public bool Section14 { get; private set; }
+    public int Section14Code { get; private set; } = 3;
+    public DateOnly? Section14StartDate { get; private set; }
+    public string FundExternalKey { get; private set; } = string.Empty;
+    public string FundCode { get; private set; } = string.Empty;
+    public string FundName { get; private set; } = string.Empty;
+    public string FundCompanyName { get; private set; } = string.Empty;
+    public SalaryAllocationType SalaryAllocationType { get; private set; } = SalaryAllocationType.Fixed;
+    public decimal? SalaryAllocationValue { get; private set; }
+    public int AllocationOrder { get; private set; }
+    public ManualReportItemStatus ValidationStatus { get; private set; } = ManualReportItemStatus.Draft;
+    public string ValidationError { get; private set; } = string.Empty;
+
+    public void Update(PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary,
+        string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate,
+        string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null,
+        SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
+        int allocationOrder = 0, int? section14Code = null)
+    {
+        if (salary < 0) throw new ArgumentOutOfRangeException(nameof(salary));
+        if (allocationOrder < 0) throw new ArgumentOutOfRangeException(nameof(allocationOrder));
+        if (salaryAllocationValue < 0) throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue));
+        if (salaryAllocationType == SalaryAllocationType.Percentage && salaryAllocationValue > 100)
+            throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue));
+        var resolvedSection14Code = section14Code ?? (!section14 ? 3 : section14StartDate.HasValue ? 2 : 1);
+        if (resolvedSection14Code is < 1 or > 4) throw new ArgumentOutOfRangeException(nameof(section14Code));
+        if (resolvedSection14Code is 2 or 4 && !section14StartDate.HasValue)
+            throw new ArgumentException("Section 14 effective/cancellation date is required for codes 2 and 4.", nameof(section14StartDate));
+
+        ProductType = productType;
+        PolicyNumber = policyNumber?.Trim() ?? string.Empty;
+        SalaryMonth = new DateOnly(salaryMonth.Year, salaryMonth.Month, 1);
+        Salary = salary;
+        ReportingType = reportingType?.Trim() ?? string.Empty;
+        SalaryLayer = salaryLayer?.Trim() ?? string.Empty;
+        Section14Code = resolvedSection14Code;
+        Section14 = resolvedSection14Code is 1 or 2;
+        Section14StartDate = resolvedSection14Code is 2 or 4 ? section14StartDate : null;
+        FundExternalKey = fundExternalKey?.Trim() ?? string.Empty;
+        FundCode = fundCode?.Trim() ?? string.Empty;
+        FundName = fundName?.Trim() ?? string.Empty;
+        FundCompanyName = fundCompanyName?.Trim() ?? string.Empty;
+        SalaryAllocationType = salaryAllocationType;
+        SalaryAllocationValue = salaryAllocationType == SalaryAllocationType.Remainder ? null : salaryAllocationValue;
+        AllocationOrder = allocationOrder;
+        ValidationStatus = ManualReportItemStatus.Draft;
+        ValidationError = string.Empty;
+        Touch();
+    }
     public void SetValidationResult(bool isValid, string? error = null) { ValidationStatus = isValid ? ManualReportItemStatus.Validated : ManualReportItemStatus.Error; ValidationError = isValid ? string.Empty : error?.Trim() ?? string.Empty; Touch(); }
     public void MarkReadyForValidation() { ValidationStatus = ManualReportItemStatus.ReadyForValidation; ValidationError = string.Empty; Touch(); }
 }
