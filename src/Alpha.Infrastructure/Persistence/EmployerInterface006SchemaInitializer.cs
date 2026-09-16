@@ -12,6 +12,12 @@ ALTER TABLE employees.people ADD COLUMN IF NOT EXISTS "BirthDate" date NULL;
 ALTER TABLE employees.people ADD COLUMN IF NOT EXISTS "Gender" varchar(20) NULL;
 ALTER TABLE employees.people ADD COLUMN IF NOT EXISTS "Email" varchar(50) NOT NULL DEFAULT '';
 ALTER TABLE employees.people ADD COLUMN IF NOT EXISTS "Mobile" varchar(15) NOT NULL DEFAULT '';
+ALTER TABLE employees.people ADD COLUMN IF NOT EXISTS "City" varchar(100) NOT NULL DEFAULT '';
+ALTER TABLE employees.people ADD COLUMN IF NOT EXISTS "Street" varchar(100) NOT NULL DEFAULT '';
+ALTER TABLE employees.people ADD COLUMN IF NOT EXISTS "HouseNumber" varchar(20) NOT NULL DEFAULT '';
+ALTER TABLE employees.people ADD COLUMN IF NOT EXISTS "Apartment" varchar(20) NOT NULL DEFAULT '';
+ALTER TABLE employees.people ADD COLUMN IF NOT EXISTS "PostalCode" varchar(10) NOT NULL DEFAULT '';
+ALTER TABLE employees.people ADD COLUMN IF NOT EXISTS "PostOfficeBox" varchar(20) NOT NULL DEFAULT '';
 
 ALTER TABLE employers.employers ADD COLUMN IF NOT EXISTS "ContactFirstName" varchar(20) NOT NULL DEFAULT '';
 ALTER TABLE employers.employers ADD COLUMN IF NOT EXISTS "ContactLastName" varchar(20) NOT NULL DEFAULT '';
