@@ -18,114 +18,22 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<OrganizationAccessService>();
+builder.Services.AddScoped<EmployerInterfaceService>();
 builder.Services.AddScoped<IReportTransmissionProvider, MockReportTransmissionProvider>();
-builder.Services.AddHttpClient<ReferenceDataSyncService>(client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(5);
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("AlphaReferenceDataSync/1.0");
-});
-builder.Services.AddProblemDetails();
-builder.Services.AddOpenApi();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-builder.Services.AddHealthChecks();
+builder.Services.AddHttpClient<ReferenceDataSyncService>(client => { client.Timeout = TimeSpan.FromMinutes(5); client.DefaultRequestHeaders.UserAgent.ParseAdd("AlphaReferenceDataSync/1.0"); });
+builder.Services.AddProblemDetails(); builder.Services.AddOpenApi(); builder.Services.AddEndpointsApiExplorer(); builder.Services.AddSwaggerGen(); builder.Services.AddHealthChecks();
 
-if (builder.Environment.IsDevelopment())
-{
-    builder.Services.AddAuthentication("DevelopmentHeaders")
-        .AddScheme<AuthenticationSchemeOptions, DevelopmentHeaderAuthenticationHandler>("DevelopmentHeaders", null);
-}
-else
-{
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(options =>
-        {
-            var prototypeSigningKey = builder.Configuration["PrototypeAuth:SigningKey"];
-            if (!string.IsNullOrWhiteSpace(prototypeSigningKey))
-            {
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateIssuer = true,
-                    ValidIssuer = "alpha-prototype",
-                    ValidateAudience = true,
-                    ValidAudience = "alpha-frontend",
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(prototypeSigningKey)),
-                    ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromMinutes(1)
-                };
-            }
-            else
-            {
-                options.Authority = builder.Configuration["Authentication:Authority"];
-                options.Audience = builder.Configuration["Authentication:Audience"];
-            }
-        });
-}
-
+if (builder.Environment.IsDevelopment()) builder.Services.AddAuthentication("DevelopmentHeaders").AddScheme<AuthenticationSchemeOptions, DevelopmentHeaderAuthenticationHandler>("DevelopmentHeaders", null);
+else builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => { var key = builder.Configuration["PrototypeAuth:SigningKey"]; if (!string.IsNullOrWhiteSpace(key)) options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer = true, ValidIssuer = "alpha-prototype", ValidateAudience = true, ValidAudience = "alpha-frontend", ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), ValidateLifetime = true, ClockSkew = TimeSpan.FromMinutes(1) }; else { options.Authority = builder.Configuration["Authentication:Authority"]; options.Audience = builder.Configuration["Authentication:Audience"]; } });
 builder.Services.AddAuthorization();
 var app = builder.Build();
-
-if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
-{
-    await using var scope = app.Services.CreateAsyncScope();
-    var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
-    await db.Database.MigrateAsync();
-}
-
-await using (var scope = app.Services.CreateAsyncScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
-    await IdentitySchemaInitializer.EnsureUpdatedAsync(db);
-    await ReportingSchemaInitializer.EnsureCreatedAsync(db);
-    await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db);
-    await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db);
-    await ReportLifecycleSchemaInitializer.EnsureUpdatedAsync(db);
-    await ReportTransmissionSchemaInitializer.EnsureUpdatedAsync(db);
-    await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db);
-    await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db);
-}
-
-var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]);
-var demoDataEnabled = builder.Configuration.GetValue("DemoData:Enabled", true);
-if (prototypeAuthEnabled && demoDataEnabled)
-{
-    await using var scope = app.Services.CreateAsyncScope();
-    var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
-    await DemoDataSeeder.SeedAsync(db);
-}
-
-app.UseExceptionHandler();
-app.UseHttpsRedirection();
-app.UseAuthentication();
-app.UseAuthorization();
-app.UseReportingInputValidation();
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
+if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations")) { await using var scope = app.Services.CreateAsyncScope(); var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await db.Database.MigrateAsync(); }
+await using (var scope = app.Services.CreateAsyncScope()) { var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await IdentitySchemaInitializer.EnsureUpdatedAsync(db); await ReportingSchemaInitializer.EnsureCreatedAsync(db); await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db); await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db); await ReportLifecycleSchemaInitializer.EnsureUpdatedAsync(db); await ReportTransmissionSchemaInitializer.EnsureUpdatedAsync(db); await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db); await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db); }
+var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]); var demoDataEnabled = builder.Configuration.GetValue("DemoData:Enabled", true);
+if (prototypeAuthEnabled && demoDataEnabled) { await using var scope = app.Services.CreateAsyncScope(); var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await DemoDataSeeder.SeedAsync(db); }
+app.UseExceptionHandler(); app.UseHttpsRedirection(); app.UseAuthentication(); app.UseAuthorization(); app.UseReportingInputValidation();
+if (app.Environment.IsDevelopment()) { app.MapOpenApi(); app.UseSwagger(); app.UseSwaggerUI(); }
 app.MapHealthChecks("/health", new HealthCheckOptions { AllowCachingResponses = false }).AllowAnonymous();
-app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) =>
-{
-    var canConnect = await db.Database.CanConnectAsync(ct);
-    return canConnect ? Results.Ok(new { status = "healthy", database = "postgresql" }) : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable);
-}).AllowAnonymous().WithTags("Health");
-
-app.MapAuthEndpoints();
-app.MapPlatformEndpoints();
-app.MapReferenceDataEndpoints();
-app.MapPublicReferenceDataEndpoints();
-app.MapOrganizationEndpoints();
-app.MapEmployerEndpoints();
-app.MapAccessEndpoints();
-app.MapEmployeePensionMixEndpoints();
-app.MapManualReportEndpoints();
-app.MapDerivedReportEndpoints();
-app.MapReportValidationEndpoints();
-app.MapReportTransmissionEndpoints();
-app.Run();
-
+app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) => await db.Database.CanConnectAsync(ct) ? Results.Ok(new { status = "healthy", database = "postgresql" }) : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable)).AllowAnonymous().WithTags("Health");
+app.MapAuthEndpoints(); app.MapPlatformEndpoints(); app.MapReferenceDataEndpoints(); app.MapPublicReferenceDataEndpoints(); app.MapOrganizationEndpoints(); app.MapEmployerEndpoints(); app.MapAccessEndpoints(); app.MapEmployeePensionMixEndpoints(); app.MapManualReportEndpoints(); app.MapDerivedReportEndpoints(); app.MapReportValidationEndpoints(); app.MapEmployerInterfaceEndpoints(); app.MapReportTransmissionEndpoints(); app.Run();
 public partial class Program;
