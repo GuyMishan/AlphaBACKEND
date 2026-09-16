@@ -64,7 +64,12 @@ public static class EmployerInterfaceProfileEndpoints
         var item = await (from employment in db.Employments.AsNoTracking()
                           join person in db.People.AsNoTracking() on employment.PersonId equals person.Id
                           where employment.Id == employmentId && employment.OrganizationId == organizationId && employment.EmployerId == employerId
-                          select new { person.BirthDate, person.Gender, person.Email, person.Mobile }).SingleOrDefaultAsync(ct);
+                          select new
+                          {
+                              person.BirthDate, person.Gender, person.Email, person.Mobile,
+                              person.City, person.Street, person.HouseNumber, person.Apartment,
+                              person.PostalCode, person.PostOfficeBox
+                          }).SingleOrDefaultAsync(ct);
         return item is null ? Results.NotFound() : Results.Ok(item);
     }
 
@@ -76,9 +81,15 @@ public static class EmployerInterfaceProfileEndpoints
             x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (employment is null) return Results.NotFound();
         var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
-        person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile);
+        person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile,
+            request.City, request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
         await db.SaveChangesAsync(ct);
-        return Results.Ok(new { person.BirthDate, person.Gender, person.Email, person.Mobile });
+        return Results.Ok(new
+        {
+            person.BirthDate, person.Gender, person.Email, person.Mobile,
+            person.City, person.Street, person.HouseNumber, person.Apartment,
+            person.PostalCode, person.PostOfficeBox
+        });
     }
 
     private static async Task<IResult> GetProductMetadataAsync(Guid organizationId, Guid employerId, Guid reportId,
@@ -107,7 +118,10 @@ public static class EmployerInterfaceProfileEndpoints
             refundReason = item?.RefundReason,
             paymentMethodCode = item?.PaymentMethodCode,
             employerAccountType = item?.EmployerAccountType,
-            receiverAccountType = item?.ReceiverAccountType
+            receiverAccountType = item?.ReceiverAccountType,
+            previousIdentifier = item?.PreviousIdentifier,
+            previousClearingIdentifier = item?.PreviousClearingIdentifier,
+            previousReferenceExceptionCode = item?.PreviousReferenceExceptionCode
         });
     }
 
@@ -144,9 +158,10 @@ public static class EmployerInterfaceProfileEndpoints
         {
             item.Update(request.OperationCode, request.DepositStatus, request.EmployeeStatus, request.StatusStartDate,
                 request.EmploymentPercentage, request.WorkDaysInMonth, request.LastDeposit, request.RefundReason,
-                request.PaymentMethodCode, request.EmployerAccountType, request.ReceiverAccountType);
+                request.PaymentMethodCode, request.EmployerAccountType, request.ReceiverAccountType,
+                request.PreviousIdentifier, request.PreviousClearingIdentifier, request.PreviousReferenceExceptionCode);
         }
-        catch (ArgumentOutOfRangeException ex)
+        catch (Exception ex) when (ex is ArgumentOutOfRangeException or ArgumentException)
         {
             return Results.BadRequest(new { error = ex.Message });
         }
@@ -164,14 +179,19 @@ public static class EmployerInterfaceProfileEndpoints
             item.RefundReason,
             item.PaymentMethodCode,
             item.EmployerAccountType,
-            item.ReceiverAccountType
+            item.ReceiverAccountType,
+            item.PreviousIdentifier,
+            item.PreviousClearingIdentifier,
+            item.PreviousReferenceExceptionCode
         });
     }
 }
 
 public sealed record EmployerInterfaceEmployerProfileRequest(string ContactFirstName, string ContactLastName,
     string ContactPhone, string ContactEmail, string ContactMobile);
-public sealed record EmployerInterfaceEmployeeProfileRequest(DateOnly? BirthDate, PersonGender? Gender, string? Email, string? Mobile);
+public sealed record EmployerInterfaceEmployeeProfileRequest(DateOnly? BirthDate, PersonGender? Gender, string? Email, string? Mobile,
+    string? City, string? Street, string? HouseNumber, string? Apartment, string? PostalCode, string? PostOfficeBox);
 public sealed record EmployerInterfaceProductMetadataRequest(int? OperationCode, int? DepositStatus, int? EmployeeStatus, DateOnly? StatusStartDate,
     decimal? EmploymentPercentage, int? WorkDaysInMonth, int? LastDeposit, int? RefundReason,
-    int? PaymentMethodCode, int? EmployerAccountType, int? ReceiverAccountType);
+    int? PaymentMethodCode, int? EmployerAccountType, int? ReceiverAccountType,
+    string? PreviousIdentifier = null, string? PreviousClearingIdentifier = null, int? PreviousReferenceExceptionCode = null);
