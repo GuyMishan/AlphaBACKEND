@@ -10,9 +10,10 @@
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="../../docs/specifications/employer-interface/006/*.xsd.xml">
+    <Content Include="../../docs/specifications/employer-interface/006/*.xsd">
       <Link>Specifications/EmployerInterface/006/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
 </Project>

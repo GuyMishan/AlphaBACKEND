@@ -25,6 +25,7 @@ public interface IAlphaDbContext
     DbSet<ManualContribution> ManualContributions { get; }
     DbSet<ManualReportPayment> ManualReportPayments { get; }
     DbSet<ReportTransmission> ReportTransmissions { get; }
+    DbSet<EmployerInterfaceFeedback> EmployerInterfaceFeedback { get; }
     DbSet<ContributionPercentageLimit> ContributionPercentageLimits { get; }
     DbSet<AuditEvent> AuditEvents { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
