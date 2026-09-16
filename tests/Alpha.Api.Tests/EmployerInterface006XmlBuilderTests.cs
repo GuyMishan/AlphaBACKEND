@@ -61,7 +61,8 @@ public sealed class EmployerInterface006XmlBuilderTests
         var employer = new Employer(organizationId, "Test Employer", "123456789", "987654321",
             "Guy", "Mishan", "031234567", "employer@example.com", "0501234567");
         var person = new Person(organizationId, "123456789", "Test", "Employee",
-            new DateOnly(1990, 1, 1), PersonGender.Male, "employee@example.com", "0507654321");
+            new DateOnly(1990, 1, 1), PersonGender.Male, "employee@example.com", "0507654321",
+            "Tel Aviv", "Herzl", "10", "4", "6100001", "123");
         var employment = new Employment(organizationId, employer.Id, person.Id, new DateOnly(2020, 1, 1), "E1", 1000m);
         var reportId = Guid.NewGuid();
         var reportEmployee = new ManualReportEmployee(reportId, organizationId, employer.Id, employment.Id, person.Id,
