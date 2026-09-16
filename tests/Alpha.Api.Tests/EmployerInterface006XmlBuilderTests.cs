@@ -5,6 +5,7 @@ using Alpha.Api.Services;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Reporting;
+using Xunit;
 
 namespace Alpha.Api.Tests;
 
