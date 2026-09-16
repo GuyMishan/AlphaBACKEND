@@ -25,8 +25,8 @@ public static class EmployerInterfaceProfileEndpoints
         if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var employer = await db.Employers.SingleOrDefaultAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
         if (employer is null) return Results.NotFound();
-        employer.Update(employer.LegalName, employer.RegistrationNumber, employer.WithholdingFileNumber,
-            request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
+        employer.UpdateInterfaceContact(request.ContactFirstName, request.ContactLastName, request.ContactPhone,
+            request.ContactEmail, request.ContactMobile);
         await db.SaveChangesAsync(ct);
         return Results.Ok(employer);
     }
@@ -39,7 +39,7 @@ public static class EmployerInterfaceProfileEndpoints
             x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (employment is null) return Results.NotFound();
         var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
-        person.Update(person.NationalId, person.FirstName, person.LastName, request.BirthDate, request.Gender, request.Email, request.Mobile);
+        person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile);
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { person.Id, person.BirthDate, person.Gender, person.Email, person.Mobile });
     }
