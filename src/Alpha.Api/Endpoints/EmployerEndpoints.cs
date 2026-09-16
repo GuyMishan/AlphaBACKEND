@@ -132,13 +132,27 @@ public static class EmployerEndpoints
             HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanCreateEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
-            var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate);
+            var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate)
+                ?? ValidateEmployeeProfile(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City, request.Street,
+                    request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
             if (validationError is not null) return Results.BadRequest(new { error = validationError });
             if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative." });
             if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct)) return Results.NotFound();
             var nationalId = request.NationalId.Trim();
             var person = await db.People.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.NationalId == nationalId, ct);
-            if (person is null) { person = new Person(organizationId, nationalId, request.FirstName.Trim(), request.LastName.Trim()); db.People.Add(person); }
+            if (person is null)
+            {
+                person = new Person(organizationId, nationalId, request.FirstName.Trim(), request.LastName.Trim(),
+                    request.BirthDate, request.Gender, request.Email, request.Mobile, request.City, request.Street,
+                    request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
+                db.People.Add(person);
+            }
+            else
+            {
+                person.Update(request.NationalId, request.FirstName, request.LastName);
+                person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City,
+                    request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
+            }
             var employeeNumber = request.EmployeeNumber.Trim();
             if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
             var employment = new Employment(organizationId, employerId, person.Id, request.StartDate, employeeNumber, request.MonthlySalary);
@@ -158,7 +172,9 @@ public static class EmployerEndpoints
         group.MapPut("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId, Guid employerId, Guid employmentId, UpdateEmployeeRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
-            var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate);
+            var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate)
+                ?? ValidateEmployeeProfile(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City, request.Street,
+                    request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
             if (validationError is not null) return Results.BadRequest(new { error = validationError });
             if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative." });
             var employment = await db.Employments.SingleOrDefaultAsync(x => x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
@@ -169,12 +185,30 @@ public static class EmployerEndpoints
             if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.NationalId == nationalId && x.Id != person.Id, ct)) return Results.Conflict(new { error = "National ID already exists in this organization." });
             if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber && x.Id != employmentId, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
             person.Update(nationalId, request.FirstName.Trim(), request.LastName.Trim());
+            person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City,
+                request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
             employment.Update(employeeNumber, request.StartDate, request.MonthlySalary);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.updated", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { employment.Id, employment.EmployeeNumber, employment.Status, employment.StartDate, employment.EndDate, employment.MonthlySalary, PersonId = person.Id, person.NationalId, person.FirstName, person.LastName });
+            return Results.Ok(await EmployeeQuery(db, organizationId, employerId).SingleAsync(x => x.Id == employmentId, ct));
         });
         return endpoints;
+    }
+
+    private static string? ValidateEmployeeProfile(DateOnly birthDate, PersonGender gender, string? email, string? mobile,
+        string? city, string? street, string? houseNumber, string? apartment, string? postalCode, string? postOfficeBox)
+    {
+        if (birthDate >= DateOnly.FromDateTime(DateTime.UtcNow)) return "Birth date must be in the past.";
+        if (!Enum.IsDefined(gender)) return "Employee gender is invalid.";
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) return "Employee email is required.";
+        if (string.IsNullOrWhiteSpace(mobile) || !mobile.Any(char.IsDigit)) return "Employee mobile is required.";
+        if (string.IsNullOrWhiteSpace(city)) return "Employee city is required.";
+        if (string.IsNullOrWhiteSpace(street)) return "Employee street is required.";
+        if (string.IsNullOrWhiteSpace(houseNumber)) return "Employee house number is required.";
+        if (string.IsNullOrWhiteSpace(apartment)) return "Employee apartment is required.";
+        if (string.IsNullOrWhiteSpace(postalCode) || !postalCode.All(char.IsDigit)) return "Employee postal code is required and must be numeric.";
+        if (string.IsNullOrWhiteSpace(postOfficeBox)) return "Employee post office box is required.";
+        return null;
     }
 
     private static IQueryable<Employer> ApplyEmployerAccess(IQueryable<Employer> query, Guid organizationId, IAlphaDbContext db, ICurrentUser user, OrganizationMembership? membership)
@@ -202,7 +236,17 @@ public static class EmployerEndpoints
             PersonId = person.Id,
             NationalId = person.NationalId,
             FirstName = person.FirstName,
-            LastName = person.LastName
+            LastName = person.LastName,
+            BirthDate = person.BirthDate,
+            Gender = person.Gender,
+            Email = person.Email,
+            Mobile = person.Mobile,
+            City = person.City,
+            Street = person.Street,
+            HouseNumber = person.HouseNumber,
+            Apartment = person.Apartment,
+            PostalCode = person.PostalCode,
+            PostOfficeBox = person.PostOfficeBox
         };
 
     private sealed class EmployeeListRow
@@ -217,5 +261,15 @@ public static class EmployerEndpoints
         public string NationalId { get; init; } = string.Empty;
         public string FirstName { get; init; } = string.Empty;
         public string LastName { get; init; } = string.Empty;
+        public DateOnly? BirthDate { get; init; }
+        public PersonGender? Gender { get; init; }
+        public string Email { get; init; } = string.Empty;
+        public string Mobile { get; init; } = string.Empty;
+        public string City { get; init; } = string.Empty;
+        public string Street { get; init; } = string.Empty;
+        public string HouseNumber { get; init; } = string.Empty;
+        public string Apartment { get; init; } = string.Empty;
+        public string PostalCode { get; init; } = string.Empty;
+        public string PostOfficeBox { get; init; } = string.Empty;
     }
 }
