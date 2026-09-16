@@ -44,15 +44,13 @@ public static class EmployerInterface006WorkbookRules
             var hasPrevious = !string.IsNullOrWhiteSpace(first.PreviousIdentifier)
                 || !string.IsNullOrWhiteSpace(first.PreviousClearingIdentifier);
             if (requiresPrevious && !hasPrevious && first.PreviousReferenceExceptionCode is null)
-            {
                 issues.Add($"{label}: operation {first.OperationCode} must reference the original report using MISPAR-ZIHUI-KODEM or MISPAR-MISLAKA-KODEM, or select one of the official Version 6 exceptions.");
-            }
 
             if (first.PreviousReferenceExceptionCode is not null && first.PreviousReferenceExceptionCode is not (1 or 2 or 3))
                 issues.Add($"{label}: unsupported previous-report reference exception code.");
 
-            SetNullable(transfers[i].Element("MISPAR-ZIHUI-KODEM"), first.PreviousIdentifier);
-            SetNullable(transfers[i].Element("MISPAR-MISLAKA-KODEM"), first.PreviousClearingIdentifier);
+            SetNullable(transfers[i].Element("MISPAR-ZIHUI-KODEM"), requiresPrevious ? first.PreviousIdentifier : null);
+            SetNullable(transfers[i].Element("MISPAR-MISLAKA-KODEM"), requiresPrevious ? first.PreviousClearingIdentifier : null);
         }
 
         return issues;
