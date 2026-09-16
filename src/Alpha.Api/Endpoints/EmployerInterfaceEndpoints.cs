@@ -68,16 +68,16 @@ public static class EmployerInterfaceEndpoints
     }
 
     private static async Task<IResult> ExportAsync(Guid organizationId, Guid employerId, Guid reportId,
-        IAlphaDbContext db, OrganizationAccessService access, EmployerInterfaceService service, CancellationToken ct)
+        IAlphaDbContext db, OrganizationAccessService access, EmployerInterface006ExportService exporter, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
         if (report.Status is not ManualReportStatus.Validated and not ManualReportStatus.Processing and not ManualReportStatus.Sent and not ManualReportStatus.Completed)
             return Results.Conflict(new { error = "Employer Interface XML can only be exported after final Alpha report validation." });
-        var generated = await service.ExportAsync(report, ct);
+        var generated = await exporter.ExportAsync(report, ct);
         if (!generated.Validation.IsValid)
-            return Results.BadRequest(new { error = "Generated Employer Interface XML does not validate against its official 006 XSD.", generated.Validation });
+            return Results.BadRequest(new { error = "Generated Employer Interface XML does not validate against its official report-type-specific 006 XSD.", generated.Validation });
         return Results.File(generated.Bytes, "application/xml", $"employer-interface-{report.ReportingMonth:yyyy-MM}-{report.Id:N}.xml");
     }
 
