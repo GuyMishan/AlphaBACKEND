@@ -10,13 +10,8 @@
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="../../docs/specifications/employer-interface/006/*.xsd;../../docs/specifications/employer-interface/006/*.xsd.xml">
+    <Content Include="../../docs/specifications/employer-interface/006/*.xsd.xml">
       <Link>Specifications/EmployerInterface/006/%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-    <Content Include="../../docs/specifications/employer-interface/006/source/official-employer-interface-006.zip.b64.part*">
-      <Link>Specifications/EmployerInterface/006/source/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
