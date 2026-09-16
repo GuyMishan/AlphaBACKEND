@@ -54,6 +54,7 @@ public sealed class ManualReportConfiguration : IEntityTypeConfiguration<ManualR
         b.HasKey(x => x.Id);
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(40);
         b.Property(x => x.ReportKind).HasConversion<string>().HasMaxLength(30);
+        b.Property(x => x.ValidationError).HasMaxLength(2000);
         b.HasIndex(x => new { x.OrganizationId, x.EmployerId, x.ReportingMonth });
         b.HasIndex(x => x.SourceReportId);
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
@@ -73,6 +74,8 @@ public sealed class ManualReportEmployeeConfiguration : IEntityTypeConfiguration
         b.Property(x => x.LastName).HasMaxLength(100).IsRequired();
         b.Property(x => x.EmployeeNumber).HasMaxLength(50).IsRequired();
         b.Property(x => x.MonthlySalary).HasPrecision(18, 2);
+        b.Property(x => x.ValidationStatus).HasConversion<string>().HasMaxLength(40);
+        b.Property(x => x.ValidationError).HasMaxLength(2000);
         b.HasIndex(x => new { x.ReportId, x.EmploymentId }).IsUnique();
         b.HasIndex(x => new { x.OrganizationId, x.EmployerId, x.ReportId });
         b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Cascade);
@@ -97,6 +100,8 @@ public sealed class ManualReportProductConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.FundCompanyName).HasColumnName("fund_company_name").HasMaxLength(300);
         b.Property(x => x.SalaryAllocationType).HasConversion<string>().HasMaxLength(30);
         b.Property(x => x.SalaryAllocationValue).HasPrecision(18, 4);
+        b.Property(x => x.ValidationStatus).HasConversion<string>().HasMaxLength(40);
+        b.Property(x => x.ValidationError).HasMaxLength(2000);
         b.HasIndex(x => x.ReportEmployeeId);
         b.HasOne<ManualReportEmployee>().WithMany().HasForeignKey(x => x.ReportEmployeeId).OnDelete(DeleteBehavior.Cascade);
     }
