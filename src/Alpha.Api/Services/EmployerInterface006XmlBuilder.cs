@@ -11,6 +11,7 @@ public static class EmployerInterface006XmlBuilder
     private static readonly XNamespace Xsi = "http://www.w3.org/2001/XMLSchema-instance";
     private static readonly int[] CurrentReceiptCodes = [1, 2, 4, 6, 8];
     private static readonly int[] SalaryLayerCodes = [1, 3, 5, 6, 7];
+    private static readonly int[] PaymentMethodCodes = [1, 3, 4, 5, 6, 7, 9];
 
     public static BuildResult BuildCurrent(BuildContext context) => Build(context, false);
     public static BuildResult BuildNegative(BuildContext context) => Build(context, true);
@@ -27,8 +28,7 @@ public static class EmployerInterface006XmlBuilder
         root.Add(BuildHeader(c, negative, now, senderId));
 
         var body = new XElement("GufHamimshak");
-        foreach (var group in groups)
-            body.Add(BuildRequester(c, group.ToList(), negative, senderId));
+        foreach (var group in groups) body.Add(BuildRequester(c, group.ToList(), negative, senderId));
         root.Add(body);
 
         var totalContributions = c.Contributions.Sum(x => x.Amount);
@@ -46,7 +46,6 @@ public static class EmployerInterface006XmlBuilder
     private static XElement BuildHeader(BuildContext c, bool negative, DateTimeOffset now, string senderId)
     {
         var o = c.Options;
-        var recipientInternal = Nil("MISPAR-ZIHUI-ETZEL-YATZRAN-NIMAAN", o.RecipientInternalIdentifier);
         return new XElement("KoteretKovetz",
             E("SUG-MIMSHAK", negative ? 13 : 12),
             E("MISPAR-GIRSAT-XML", EmployerInterfaceSchemaRegistry.Version),
@@ -68,7 +67,7 @@ public static class EmployerInterface006XmlBuilder
                 E("KOD-NIMAAN", o.RecipientCode),
                 E("SUG-MEZAHE-NIMAAN", o.RecipientIdentifierType),
                 E("MISPAR-ZIHUI-NIMAAN", o.RecipientIdentifier),
-                recipientInternal));
+                Nil("MISPAR-ZIHUI-ETZEL-YATZRAN-NIMAAN", o.RecipientInternalIdentifier)));
     }
 
     private static XElement BuildRequester(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative, string senderId)
@@ -87,34 +86,51 @@ public static class EmployerInterface006XmlBuilder
             E("MISPAR-TIK-NIKUIM-MAASIK", Digits(c.Employer.WithholdingFileNumber)),
             Nil("KOD-MEZAHE-MAASIK-ETZEL-YATZRAN", null),
             Nil("KOD-MASAV", null),
-            E("SCHUM-HAFKADA-KOLEL", Money(total)),
+            E("SCHUM-HAFKADA-KOLEL", negative && metadata.OperationCode == 6 ? Money(0) : Money(total)),
             E("SHEM-MAASIK", c.Employer.LegalName),
             E("SHEM-PRATI-ISH-KESHER-MAASIK", c.Employer.ContactFirstName),
             E("SHEM-MISHPACHA-ISH-KESHER-MAASIK", c.Employer.ContactLastName),
             E("MISPAR-TELEPHONE-KAVI-ISH-KESHER-MAASIK", Digits(c.Employer.ContactPhone)),
             E("E-MAIL-ISH-KESHER-MAASIK", c.Employer.ContactEmail),
             E("MISPAR-CELLULARI-ISH-KESHER-MAASIK", Digits(c.Employer.ContactMobile)),
-            E("SUG-PEULA", metadata.OperationCode!.Value),
-            E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value),
-            E("SACH-HAFKADA-KUPA-H-P", Money(total)),
-            Nil("TAARICH-ERECH-HAFKADA-LEKUPA", payment?.ValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
-            Nil("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT", null),
-            E("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM", payment?.ReferenceNumber ?? string.Empty),
-            E("MISPAR-ZIHUI", UpperGuid(first.Id)),
-            E("MISPAR-BANK-MAASIK", int.Parse(Digits(payment!.EmployerBankCode), CultureInfo.InvariantCulture)),
-            E("MISPAR-SNIF-MAASIK", Digits(payment.EmployerBranch)),
-            E("MISPAR-CHESHBON-MAASIK", Digits(payment.EmployerAccount)),
-            Nil("SUG-CHESHBON", null),
-            E("SUG-CHESHBON-MAASIK", metadata.EmployerAccountType!.Value),
-            E("SUG-CHESHBON-KOLET-TASHLUM", metadata.ReceiverAccountType!.Value),
-            Nil("MISPAR-BANK-KOLET", null),
-            Nil("MISPAR-SNIF-KOLET", null),
-            Nil("MISPAR-CHESHBON-KOLET", null),
-            Nil("MISPAR-ZIHUI-KODEM", null),
-            Nil("MISPAR-MISLAKA", null),
-            Nil("MISPAR-MISLAKA-KODEM", null));
+            E("SUG-PEULA", metadata.OperationCode!.Value));
 
+        if (!negative)
+        {
+            transfer.Add(
+                E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value),
+                E("SACH-HAFKADA-KUPA-H-P", Money(total)),
+                Nil("TAARICH-ERECH-HAFKADA-LEKUPA", payment?.ValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                Nil("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT", null),
+                E("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM", payment?.ReferenceNumber ?? string.Empty),
+                E("MISPAR-ZIHUI", UpperGuid(first.Id)),
+                E("MISPAR-BANK-MAASIK", int.Parse(Digits(payment!.EmployerBankCode), CultureInfo.InvariantCulture)),
+                E("MISPAR-SNIF-MAASIK", Digits(payment.EmployerBranch)),
+                E("MISPAR-CHESHBON-MAASIK", Digits(payment.EmployerAccount)),
+                Nil("SUG-CHESHBON", null),
+                E("SUG-CHESHBON-MAASIK", metadata.EmployerAccountType!.Value),
+                E("SUG-CHESHBON-KOLET-TASHLUM", metadata.ReceiverAccountType!.Value),
+                Nil("MISPAR-BANK-KOLET", null),
+                Nil("MISPAR-SNIF-KOLET", null),
+                Nil("MISPAR-CHESHBON-KOLET", null));
+        }
+        else
+        {
+            if (metadata.OperationCode == 5) transfer.Add(E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value));
+            transfer.Add(E("SACH-HAFKADA-KUPA-H-P", metadata.OperationCode == 6 ? Money(0) : Money(total)));
+            transfer.Add(E("MISPAR-ZIHUI", UpperGuid(first.Id)));
+            if (metadata.OperationCode == 5 && metadata.PaymentMethodCode == 1)
+            {
+                transfer.Add(
+                    E("MISPAR-BANK-MAASIK", int.Parse(Digits(payment!.EmployerBankCode), CultureInfo.InvariantCulture)),
+                    E("MISPAR-SNIF-MAASIK", Digits(payment.EmployerBranch)),
+                    E("MISPAR-CHESHBON-MAASIK", Digits(payment.EmployerAccount)));
+            }
+        }
+
+        transfer.Add(Nil("MISPAR-ZIHUI-KODEM", null), Nil("MISPAR-MISLAKA", null), Nil("MISPAR-MISLAKA-KODEM", null));
         transfer.Add(BuildFund(c, products, negative));
+
         return new XElement("YeshutGoremPoneLemislaka",
             E("SUG-PONE", 5),
             E("SUG-KOD-MEZAHE-PONE", 1),
@@ -138,8 +154,7 @@ public static class EmployerInterface006XmlBuilder
             Nil("SHEM-KUPA-ETZEL-MAASIK", first.FundName),
             Nil("MISPAR-KUPA-ETZEL-MAASIK", null));
 
-        foreach (var product in products)
-            fund.Add(BuildEmployee(c, product, negative));
+        foreach (var product in products) fund.Add(BuildEmployee(c, product, negative));
 
         var ids = products.Select(x => x.Id).ToHashSet();
         var total = c.Contributions.Where(x => ids.Contains(x.ReportProductId)).Sum(x => x.Amount);
@@ -168,52 +183,53 @@ public static class EmployerInterface006XmlBuilder
 
         if (!negative) node.Add(E("TAARICH-LEIDA", person.BirthDate!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         else if (person.BirthDate.HasValue) node.Add(E("TAARICH-LEIDA", person.BirthDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
-
         node.Add(Nil("MISPAR-OVED-ETZEL-MAASIK", employee.EmployeeNumber));
+
         if (!negative)
         {
-            node.Add(Nil("SHEM-YISHUV", null), Nil("SHEM-RECHOV", null), Nil("MISPAR-BAIT", null),
-                Nil("MISPAR-DIRA", null), Nil("MIKUD", null), Nil("TA-DOAR", null),
-                E("E-MAIL", person.Email), E("MISPAR-CELLULARI", Digits(person.Mobile)), E("MIN", (int)person.Gender!.Value),
-                Nil("MOED-TCHILAT-AHASAKAT-OVED", employment.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
-                E("SEIF-ARBA-ESRE-LAOVED", Section14Code(product, employment)),
+            node.Add(
+                E("SHEM-YISHUV", person.City),
+                E("SHEM-RECHOV", person.Street),
+                E("MISPAR-BAIT", person.HouseNumber),
+                E("MISPAR-DIRA", person.Apartment),
+                E("MIKUD", person.PostalCode),
+                E("TA-DOAR", person.PostOfficeBox),
+                E("E-MAIL", person.Email),
+                E("MISPAR-CELLULARI", Digits(person.Mobile)),
+                E("MIN", (int)person.Gender!.Value),
+                E("MOED-TCHILAT-AHASAKAT-OVED", employment.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                E("SEIF-ARBA-ESRE-LAOVED", product.Section14Code),
                 Nil("SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF", product.Section14StartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         }
         else
         {
-            node.Add(Nil("HASHAVA-KIBUTZI", null), Nil("HATZHARAT-OVED", null),
-                Nil("SEIF-ARBA-ESRE-LAOVED", Section14Code(product, employment)),
-                Nil("SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF", product.Section14StartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+            node.Add(
+                Nil("HASHAVA-KIBUTZI", null),
+                Nil("HATZHARAT-OVED", null),
+                Nil("SEIF-ARBA-ESRE-LAOVED", null),
+                Nil("SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF", null));
         }
 
         var salary = new XElement("ChodeshMaskoretVestatusOved",
             E("CHODESH-MASKORET", product.SalaryMonth.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         if (!negative) salary.Add(E("MAHAMAD-HAFKADA-BEKUPA", metadata.DepositStatus!.Value));
-        else if (metadata.DepositStatus.HasValue) salary.Add(E("MAHAMAD-HAFKADA-BEKUPA", metadata.DepositStatus.Value));
         salary.Add(E("SUG-TAKBUL", ParseRequiredCode(product.ReportingType)), E("ROVED-SACHAR", ParseRequiredCode(product.SalaryLayer)));
         if (negative) salary.Add(E("SIBAT-BAKASH-LECHZER-KSAFIM", metadata.RefundReason!.Value));
-        if (!negative) salary.Add(E("SACHAR-MEDUVACH", Money(product.Salary)));
-        else if (product.Salary > 0) salary.Add(E("SACHAR-MEDUVACH", Money(product.Salary)));
-        if (!negative) salary.Add(E("STATUS-OVED-BECHODESH-MASKORET", metadata.EmployeeStatus!.Value));
-        else if (metadata.EmployeeStatus.HasValue) salary.Add(E("STATUS-OVED-BECHODESH-MASKORET", metadata.EmployeeStatus.Value));
-        salary.Add(Nil("TAARICH-TCHILAT-STATUS", metadata.StatusStartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         if (!negative)
         {
-            salary.Add(Nil("CHELKIUT-MISRA", metadata.EmploymentPercentage), Nil("YEMEI-AVODA-BECHODESH", metadata.WorkDaysInMonth),
+            salary.Add(E("SACHAR-MEDUVACH", Money(product.Salary)), E("STATUS-OVED-BECHODESH-MASKORET", metadata.EmployeeStatus!.Value),
+                Nil("TAARICH-TCHILAT-STATUS", metadata.StatusStartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                Nil("CHELKIUT-MISRA", metadata.EmploymentPercentage), Nil("YEMEI-AVODA-BECHODESH", metadata.WorkDaysInMonth),
                 Nil("MISPAR-POLISA-O-HESHBON", product.PolicyNumber), E("HAFKADA-ACHRONA", metadata.LastDeposit!.Value));
         }
         else
         {
-            if (metadata.EmploymentPercentage.HasValue) salary.Add(E("CHELKIUT-MISRA", metadata.EmploymentPercentage.Value));
-            if (metadata.WorkDaysInMonth.HasValue) salary.Add(E("YEMEI-AVODA-BECHODESH", metadata.WorkDaysInMonth.Value));
-            if (!string.IsNullOrWhiteSpace(product.PolicyNumber)) salary.Add(E("MISPAR-POLISA-O-HESHBON", product.PolicyNumber));
-            if (metadata.LastDeposit.HasValue) salary.Add(E("HAFKADA-ACHRONA", metadata.LastDeposit.Value));
+            salary.Add(Nil("TAARICH-TCHILAT-STATUS", null));
         }
 
         foreach (var contribution in contributions)
         {
-            var split = new XElement("PizulHafrashotOvedBeKupa",
-                E("SUG-HAFRASHA", MapContributionCode(contribution)));
+            var split = new XElement("PizulHafrashotOvedBeKupa", E("SUG-HAFRASHA", MapContributionCode(contribution)));
             if (!negative) split.Add(contribution.Percentage > 0 ? E("SHIUR-HAFRASHA", contribution.Percentage) : Nil("SHIUR-HAFRASHA", null));
             else if (contribution.Percentage > 0) split.Add(E("SHIUR-HAFRASHA", contribution.Percentage));
             split.Add(E("SCHUM-HAFRASHA", Money(contribution.Amount)));
@@ -243,7 +259,7 @@ public static class EmployerInterface006XmlBuilder
         if (Digits(c.Employer.WithholdingFileNumber).Length is 0 or > 9) issues.Add("Employer withholding file number must contain 1-9 digits for Version 006.");
         if (string.IsNullOrWhiteSpace(c.Employer.ContactFirstName)) issues.Add("Employer Interface contact first name is required.");
         if (string.IsNullOrWhiteSpace(c.Employer.ContactLastName)) issues.Add("Employer Interface contact last name is required.");
-        if (Digits(c.Employer.ContactPhone).Length is 0 or > 11) issues.Add("Employer Interface contact phone must contain 1-11 digits.");
+        if (Digits(c.Employer.ContactPhone).Length is 0 or > 20) issues.Add("Employer Interface contact phone must contain 1-20 digits.");
         if (string.IsNullOrWhiteSpace(c.Employer.ContactEmail)) issues.Add("Employer Interface contact email is required.");
         if (Digits(c.Employer.ContactMobile).Length is 0 or > 15) issues.Add("Employer Interface contact mobile must contain 1-15 digits.");
         if (c.Products.Count == 0) issues.Add("The report has no pension products to export.");
@@ -254,27 +270,43 @@ public static class EmployerInterface006XmlBuilder
             if (Digits(product.FundCode).Length != 30) issues.Add($"{label}: fund code must be exactly 30 digits (KOD-MEZAHE-KUPA-H-P).");
             if (!TryCode(product.ReportingType, CurrentReceiptCodes, out _)) issues.Add($"{label}: ReportingType must be one of 1,2,4,6,8 for Version 006.");
             if (!TryCode(product.SalaryLayer, SalaryLayerCodes, out _)) issues.Add($"{label}: SalaryLayer must be one of 1,3,5,6,7 for Version 006.");
+            if (!negative)
+            {
+                if (product.Section14Code is < 1 or > 4) issues.Add($"{label}: Section14Code must be one of 1,2,3,4.");
+                if (product.Section14Code is 2 or 4 && !product.Section14StartDate.HasValue)
+                    issues.Add($"{label}: Section14StartDate is required for Section14Code 2 or 4.");
+            }
             var meta = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
             if (meta is null) { issues.Add($"{label}: Employer Interface 006 metadata is missing."); continue; }
             if (!meta.OperationCode.HasValue) issues.Add($"{label}: OperationCode is required.");
             else if (negative && meta.OperationCode is not (5 or 6)) issues.Add($"{label}: negative Version 006 requires OperationCode 5 or 6.");
             else if (!negative && meta.OperationCode is not (1 or 2 or 3 or 7)) issues.Add($"{label}: current Version 006 requires OperationCode 1, 2, 3 or 7.");
-            if (!negative && !meta.DepositStatus.HasValue) issues.Add($"{label}: DepositStatus is required for a current report.");
-            if (!negative && !meta.EmployeeStatus.HasValue) issues.Add($"{label}: EmployeeStatus is required for a current report.");
-            if (!negative && !meta.StatusStartDate.HasValue) issues.Add($"{label}: StatusStartDate is required for a current report.");
-            if (!negative && !meta.LastDeposit.HasValue) issues.Add($"{label}: LastDeposit is required for a current report.");
-            if (negative && !meta.RefundReason.HasValue) issues.Add($"{label}: RefundReason is required for a negative report.");
-            if (!meta.PaymentMethodCode.HasValue) issues.Add($"{label}: PaymentMethodCode is required.");
-            if (!meta.EmployerAccountType.HasValue) issues.Add($"{label}: EmployerAccountType is required.");
-            if (!meta.ReceiverAccountType.HasValue) issues.Add($"{label}: ReceiverAccountType is required.");
-            var payment = c.Payments.FirstOrDefault(x => x.ReportProductId == product.Id);
-            if (payment is null) issues.Add($"{label}: payment details are required.");
+
+            if (!negative)
+            {
+                if (!meta.DepositStatus.HasValue) issues.Add($"{label}: DepositStatus is required for a current report.");
+                if (!meta.EmployeeStatus.HasValue) issues.Add($"{label}: EmployeeStatus is required for a current report.");
+                if (!meta.StatusStartDate.HasValue) issues.Add($"{label}: StatusStartDate is required for a current report.");
+                if (!meta.LastDeposit.HasValue) issues.Add($"{label}: LastDeposit is required for a current report.");
+                if (!meta.PaymentMethodCode.HasValue || !PaymentMethodCodes.Contains(meta.PaymentMethodCode.Value)) issues.Add($"{label}: PaymentMethodCode must be one of 1,3,4,5,6,7,9.");
+                if (meta.EmployerAccountType is not (1 or 2)) issues.Add($"{label}: EmployerAccountType must be 1 or 2 for a current report.");
+                if (meta.ReceiverAccountType is not (1 or 2)) issues.Add($"{label}: ReceiverAccountType must be 1 or 2 for a current report.");
+                ValidatePaymentAccount(c, product, label, requireBankAccount: true, issues);
+            }
             else
             {
-                if (!int.TryParse(Digits(payment.EmployerBankCode), out _)) issues.Add($"{label}: employer bank code must be numeric.");
-                if (Digits(payment.EmployerBranch).Length != 3) issues.Add($"{label}: employer bank branch must be exactly 3 digits.");
-                if (Digits(payment.EmployerAccount).Length != 20) issues.Add($"{label}: employer bank account must be exactly 20 digits.");
+                if (!meta.RefundReason.HasValue || meta.RefundReason is < 1 or > 10) issues.Add($"{label}: RefundReason 1-10 is required for a negative report.");
+                if (meta.OperationCode == 5)
+                {
+                    if (!meta.PaymentMethodCode.HasValue || !PaymentMethodCodes.Contains(meta.PaymentMethodCode.Value)) issues.Add($"{label}: OperationCode 5 requires a valid refund PaymentMethodCode.");
+                    ValidatePaymentAccount(c, product, label, requireBankAccount: meta.PaymentMethodCode == 1, issues);
+                }
+                else if (meta.OperationCode == 6 && meta.PaymentMethodCode.HasValue)
+                {
+                    issues.Add($"{label}: OperationCode 6 must not include PaymentMethodCode according to Employer Interface Version 6.");
+                }
             }
+
             var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
             if (negative && contributions.Count == 0) issues.Add($"{label}: negative Version 006 requires at least one contribution record.");
             if (negative && contributions.Any(x => x.Amount <= 0)) issues.Add($"{label}: negative contribution amounts must be greater than zero.");
@@ -285,22 +317,34 @@ public static class EmployerInterface006XmlBuilder
             foreach (var employee in c.Employees)
             {
                 if (!c.People.TryGetValue(employee.PersonId, out var person)) { issues.Add($"Employee {employee.Id}: person profile was not found."); continue; }
-                if (!person.BirthDate.HasValue) issues.Add($"Employee {employee.Id}: BirthDate is required for a current report.");
-                if (!person.Gender.HasValue) issues.Add($"Employee {employee.Id}: Gender is required for a current report.");
-                if (string.IsNullOrWhiteSpace(person.Email)) issues.Add($"Employee {employee.Id}: Email is required for a current report.");
-                if (Digits(person.Mobile).Length == 0) issues.Add($"Employee {employee.Id}: Mobile is required for a current report.");
+                if (!person.BirthDate.HasValue) issues.Add($"Employee {employee.Id}: BirthDate is required.");
+                if (!person.Gender.HasValue) issues.Add($"Employee {employee.Id}: Gender is required.");
+                if (string.IsNullOrWhiteSpace(person.Email)) issues.Add($"Employee {employee.Id}: Email is required.");
+                if (Digits(person.Mobile).Length == 0) issues.Add($"Employee {employee.Id}: Mobile is required.");
+                if (string.IsNullOrWhiteSpace(person.City)) issues.Add($"Employee {employee.Id}: City is required.");
+                if (string.IsNullOrWhiteSpace(person.Street)) issues.Add($"Employee {employee.Id}: Street is required.");
+                if (string.IsNullOrWhiteSpace(person.HouseNumber)) issues.Add($"Employee {employee.Id}: HouseNumber is required.");
+                if (string.IsNullOrWhiteSpace(person.Apartment)) issues.Add($"Employee {employee.Id}: Apartment is required.");
+                if (Digits(person.PostalCode).Length == 0) issues.Add($"Employee {employee.Id}: PostalCode is required.");
+                if (string.IsNullOrWhiteSpace(person.PostOfficeBox)) issues.Add($"Employee {employee.Id}: PostOfficeBox is required.");
                 if (!c.Employments.ContainsKey(employee.EmploymentId)) issues.Add($"Employee {employee.Id}: employment profile was not found.");
             }
         }
         return issues;
     }
 
-    private static int Section14Code(ManualReportProduct product, Employment employment) =>
-        !product.Section14 ? 3 : product.Section14StartDate.HasValue && product.Section14StartDate.Value != employment.StartDate ? 2 : 1;
+    private static void ValidatePaymentAccount(BuildContext c, ManualReportProduct product, string label, bool requireBankAccount, List<string> issues)
+    {
+        var payment = c.Payments.FirstOrDefault(x => x.ReportProductId == product.Id);
+        if (!requireBankAccount) return;
+        if (payment is null) { issues.Add($"{label}: payment/bank details are required."); return; }
+        if (!int.TryParse(Digits(payment.EmployerBankCode), out _)) issues.Add($"{label}: employer bank code must be numeric.");
+        if (Digits(payment.EmployerBranch).Length != 3) issues.Add($"{label}: employer bank branch must be exactly 3 digits.");
+        if (Digits(payment.EmployerAccount).Length != 20) issues.Add($"{label}: employer bank account must be exactly 20 digits.");
+    }
 
     private static int ParseRequiredCode(string value) => int.Parse(value.Trim(), CultureInfo.InvariantCulture);
-    private static bool TryCode(string? value, int[] allowed, out int code) =>
-        int.TryParse(value?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out code) && allowed.Contains(code);
+    private static bool TryCode(string? value, int[] allowed, out int code) => int.TryParse(value?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out code) && allowed.Contains(code);
     private static string MapProductCode(PensionProductType type) => type switch
     {
         PensionProductType.ManagersInsurance => "1", PensionProductType.PensionFund => "2",
@@ -308,10 +352,13 @@ public static class EmployerInterface006XmlBuilder
     };
     private static string MapContributionCode(ManualContribution c) => (c.Party, c.Component) switch
     {
-        (ContributionParty.Employee, ContributionComponent.Benefits) => "1",
-        (ContributionParty.Employer, ContributionComponent.Benefits) => "2",
-        (ContributionParty.Employer, ContributionComponent.Severance) => "3",
-        (ContributionParty.Employer, ContributionComponent.Disability) => "4",
+        (ContributionParty.Employer, ContributionComponent.Severance) => "1",
+        (ContributionParty.Employee, ContributionComponent.Benefits) => "2",
+        (ContributionParty.Employer, ContributionComponent.Benefits) => "3",
+        (ContributionParty.Employee, ContributionComponent.Disability) => "5",
+        (ContributionParty.Employer, ContributionComponent.Disability) => "6",
+        (ContributionParty.Employee, ContributionComponent.Other) => "7",
+        (ContributionParty.Employer, ContributionComponent.Other) => "8",
         _ => "8"
     };
     private static XElement E(string name, object? value) => new(name, Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);

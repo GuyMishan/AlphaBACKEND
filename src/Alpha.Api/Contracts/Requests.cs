@@ -12,8 +12,10 @@ public sealed record UpdateEmployerRequest(string LegalName, string Registration
     string? ContactFirstName = null, string? ContactLastName = null, string? ContactPhone = null,
     string? ContactEmail = null, string? ContactMobile = null);
 public sealed record CreateEmployeeRequest(string NationalId, string FirstName, string LastName, string EmployeeNumber,
-    DateOnly StartDate, decimal MonthlySalary = 0, DateOnly? BirthDate = null, PersonGender? Gender = null,
-    string? Email = null, string? Mobile = null);
+    DateOnly StartDate, decimal MonthlySalary, DateOnly BirthDate, PersonGender Gender,
+    string Email, string Mobile, string City, string Street, string HouseNumber, string Apartment,
+    string PostalCode, string PostOfficeBox);
 public sealed record UpdateEmployeeRequest(string NationalId, string FirstName, string LastName, string EmployeeNumber,
-    DateOnly StartDate, decimal MonthlySalary = 0, DateOnly? BirthDate = null, PersonGender? Gender = null,
-    string? Email = null, string? Mobile = null);
+    DateOnly StartDate, decimal MonthlySalary, DateOnly BirthDate, PersonGender Gender,
+    string Email, string Mobile, string City, string Street, string HouseNumber, string Apartment,
+    string PostalCode, string PostOfficeBox);

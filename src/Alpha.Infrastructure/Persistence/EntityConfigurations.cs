@@ -94,6 +94,12 @@ public sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
         b.Property(x => x.Gender).HasConversion<string>().HasMaxLength(20);
         b.Property(x => x.Email).HasMaxLength(50);
         b.Property(x => x.Mobile).HasMaxLength(15);
+        b.Property(x => x.City).HasMaxLength(100);
+        b.Property(x => x.Street).HasMaxLength(100);
+        b.Property(x => x.HouseNumber).HasMaxLength(20);
+        b.Property(x => x.Apartment).HasMaxLength(20);
+        b.Property(x => x.PostalCode).HasMaxLength(10);
+        b.Property(x => x.PostOfficeBox).HasMaxLength(20);
         b.HasIndex(x => new { x.OrganizationId, x.NationalId }).IsUnique();
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
     }

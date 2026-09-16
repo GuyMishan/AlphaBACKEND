@@ -23,10 +23,15 @@ public sealed class EmployerInterfaceReportProductData : Entity
     public int? PaymentMethodCode { get; private set; }
     public int? EmployerAccountType { get; private set; }
     public int? ReceiverAccountType { get; private set; }
+    public string PreviousIdentifier { get; private set; } = string.Empty;
+    public string PreviousClearingIdentifier { get; private set; } = string.Empty;
+    public int? PreviousReferenceExceptionCode { get; private set; }
 
     public void Update(int? operationCode, int? depositStatus, int? employeeStatus, DateOnly? statusStartDate,
         decimal? employmentPercentage, int? workDaysInMonth, int? lastDeposit, int? refundReason,
-        int? paymentMethodCode, int? employerAccountType, int? receiverAccountType)
+        int? paymentMethodCode, int? employerAccountType, int? receiverAccountType,
+        string? previousIdentifier = null, string? previousClearingIdentifier = null,
+        int? previousReferenceExceptionCode = null)
     {
         OperationCode = Allowed(operationCode, [1, 2, 3, 5, 6, 7], nameof(operationCode));
         DepositStatus = Allowed(depositStatus, [1, 2, 3], nameof(depositStatus));
@@ -41,6 +46,9 @@ public sealed class EmployerInterfaceReportProductData : Entity
         PaymentMethodCode = Allowed(paymentMethodCode, [1, 3, 4, 5, 6, 7, 9], nameof(paymentMethodCode));
         EmployerAccountType = Allowed(employerAccountType, [1, 2], nameof(employerAccountType));
         ReceiverAccountType = Allowed(receiverAccountType, [1, 2], nameof(receiverAccountType));
+        PreviousIdentifier = NormalizeGuid(previousIdentifier, nameof(previousIdentifier));
+        PreviousClearingIdentifier = NormalizeGuid(previousClearingIdentifier, nameof(previousClearingIdentifier));
+        PreviousReferenceExceptionCode = Allowed(previousReferenceExceptionCode, [1, 2, 3], nameof(previousReferenceExceptionCode));
         Touch();
     }
 
@@ -49,5 +57,14 @@ public sealed class EmployerInterfaceReportProductData : Entity
         if (value.HasValue && !allowed.Contains(value.Value))
             throw new ArgumentOutOfRangeException(name, $"Unsupported Employer Interface 006 code: {value}.");
         return value;
+    }
+
+    private static string NormalizeGuid(string? value, string name)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var normalized = value.Trim();
+        if (!Guid.TryParseExact(normalized, "D", out var parsed) || normalized.Length != 36 || char.ToLowerInvariant(normalized[14]) != '4')
+            throw new ArgumentException("Employer Interface previous identifiers must be GUID version 4 values.", name);
+        return parsed.ToString("D").ToUpperInvariant();
     }
 }
