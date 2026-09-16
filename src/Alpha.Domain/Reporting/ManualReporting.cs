@@ -113,7 +113,7 @@ public sealed class ManualReportProduct : Entity
         if (salaryAllocationValue < 0) throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue));
         if (salaryAllocationType == SalaryAllocationType.Percentage && salaryAllocationValue > 100)
             throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue));
-        var resolvedSection14Code = section14Code ?? (!section14 ? 3 : section14StartDate.HasValue ? 2 : 1);
+        var resolvedSection14Code = section14Code ?? (!section14 && section14StartDate.HasValue ? 4 : !section14 ? 3 : section14StartDate.HasValue ? 2 : 1);
         if (resolvedSection14Code is < 1 or > 4) throw new ArgumentOutOfRangeException(nameof(section14Code));
         if (resolvedSection14Code is 2 or 4 && !section14StartDate.HasValue)
             throw new ArgumentException("Section 14 effective/cancellation date is required for codes 2 and 4.", nameof(section14StartDate));
