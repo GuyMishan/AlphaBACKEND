@@ -18,8 +18,10 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<OrganizationAccessService>();
+builder.Services.Configure<EmployerInterface006Options>(builder.Configuration.GetSection(EmployerInterface006Options.SectionName));
 builder.Services.AddSingleton<EmployerInterfaceSchemaRegistry>();
 builder.Services.AddScoped<EmployerInterfaceService>();
+builder.Services.AddScoped<EmployerInterface006ExportService>();
 builder.Services.AddScoped<IReportTransmissionProvider, MockReportTransmissionProvider>();
 builder.Services.AddHttpClient<ReferenceDataSyncService>(client => { client.Timeout = TimeSpan.FromMinutes(5); client.DefaultRequestHeaders.UserAgent.ParseAdd("AlphaReferenceDataSync/1.0"); });
 builder.Services.AddProblemDetails(); builder.Services.AddOpenApi(); builder.Services.AddEndpointsApiExplorer(); builder.Services.AddSwaggerGen(); builder.Services.AddHealthChecks();
@@ -29,12 +31,12 @@ else builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).
 builder.Services.AddAuthorization();
 var app = builder.Build();
 if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations")) { await using var scope = app.Services.CreateAsyncScope(); var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await db.Database.MigrateAsync(); }
-await using (var scope = app.Services.CreateAsyncScope()) { var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await IdentitySchemaInitializer.EnsureUpdatedAsync(db); await ReportingSchemaInitializer.EnsureCreatedAsync(db); await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db); await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db); await ReportLifecycleSchemaInitializer.EnsureUpdatedAsync(db); await ReportTransmissionSchemaInitializer.EnsureUpdatedAsync(db); await EmployerInterfaceFeedbackSchemaInitializer.EnsureCreatedAsync(db); await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db); await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db); }
+await using (var scope = app.Services.CreateAsyncScope()) { var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await IdentitySchemaInitializer.EnsureUpdatedAsync(db); await ReportingSchemaInitializer.EnsureCreatedAsync(db); await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db); await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db); await ReportLifecycleSchemaInitializer.EnsureUpdatedAsync(db); await ReportTransmissionSchemaInitializer.EnsureUpdatedAsync(db); await EmployerInterfaceFeedbackSchemaInitializer.EnsureCreatedAsync(db); await EmployerInterface006SchemaInitializer.EnsureUpdatedAsync(db); await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db); await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db); }
 var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]); var demoDataEnabled = builder.Configuration.GetValue("DemoData:Enabled", true);
 if (prototypeAuthEnabled && demoDataEnabled) { await using var scope = app.Services.CreateAsyncScope(); var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await DemoDataSeeder.SeedAsync(db); }
 app.UseExceptionHandler(); app.UseHttpsRedirection(); app.UseAuthentication(); app.UseAuthorization(); app.UseReportingInputValidation();
 if (app.Environment.IsDevelopment()) { app.MapOpenApi(); app.UseSwagger(); app.UseSwaggerUI(); }
 app.MapHealthChecks("/health", new HealthCheckOptions { AllowCachingResponses = false }).AllowAnonymous();
 app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) => await db.Database.CanConnectAsync(ct) ? Results.Ok(new { status = "healthy", database = "postgresql" }) : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable)).AllowAnonymous().WithTags("Health");
-app.MapAuthEndpoints(); app.MapPlatformEndpoints(); app.MapReferenceDataEndpoints(); app.MapPublicReferenceDataEndpoints(); app.MapOrganizationEndpoints(); app.MapEmployerEndpoints(); app.MapAccessEndpoints(); app.MapEmployeePensionMixEndpoints(); app.MapManualReportEndpoints(); app.MapDerivedReportEndpoints(); app.MapReportValidationEndpoints(); app.MapEmployerInterfaceEndpoints(); app.MapReportTransmissionEndpoints(); app.Run();
+app.MapAuthEndpoints(); app.MapPlatformEndpoints(); app.MapReferenceDataEndpoints(); app.MapPublicReferenceDataEndpoints(); app.MapOrganizationEndpoints(); app.MapEmployerEndpoints(); app.MapAccessEndpoints(); app.MapEmployeePensionMixEndpoints(); app.MapManualReportEndpoints(); app.MapDerivedReportEndpoints(); app.MapReportValidationEndpoints(); app.MapEmployerInterfaceEndpoints(); app.MapEmployerInterfaceProfileEndpoints(); app.MapReportTransmissionEndpoints(); app.Run();
 public partial class Program;
