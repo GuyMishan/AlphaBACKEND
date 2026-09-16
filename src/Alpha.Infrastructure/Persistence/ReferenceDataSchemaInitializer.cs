@@ -54,6 +54,33 @@ public static class ReferenceDataSchemaInitializer
             );
             CREATE INDEX IF NOT EXISTS ix_bank_branches_city ON reference_data.bank_branches (city);
 
+            CREATE TABLE IF NOT EXISTS reference_data.cities (
+                city_code integer PRIMARY KEY,
+                city_name text NOT NULL,
+                region_code integer NULL,
+                region_name text NULL,
+                is_active boolean NOT NULL DEFAULT true,
+                source varchar(80) NOT NULL,
+                last_seen_at timestamptz NOT NULL,
+                updated_at timestamptz NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_cities_name ON reference_data.cities (city_name);
+
+            CREATE TABLE IF NOT EXISTS reference_data.streets (
+                city_code integer NOT NULL,
+                street_code integer NOT NULL,
+                street_name text NOT NULL,
+                official_code integer NOT NULL,
+                street_name_status text NOT NULL,
+                is_active boolean NOT NULL DEFAULT true,
+                source varchar(80) NOT NULL,
+                last_seen_at timestamptz NOT NULL,
+                updated_at timestamptz NOT NULL,
+                PRIMARY KEY (city_code, street_code)
+            );
+            CREATE INDEX IF NOT EXISTS ix_streets_city_name ON reference_data.streets (city_code, street_name);
+            CREATE INDEX IF NOT EXISTS ix_streets_official ON reference_data.streets (city_code, official_code);
+
             CREATE TABLE IF NOT EXISTS reference_data.pension_products (
                 external_key text PRIMARY KEY,
                 source varchar(80) NOT NULL,
