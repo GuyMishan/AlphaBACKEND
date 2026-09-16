@@ -59,7 +59,7 @@ public sealed class EmployeePensionProduct : Entity
         if (salaryAllocationType == SalaryAllocationType.Percentage && salaryAllocationValue > 100)
             throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue), "Salary allocation percentage cannot exceed 100%.");
 
-        var resolvedSection14Code = section14Code ?? (!section14 ? 3 : section14StartDate.HasValue ? 2 : 1);
+        var resolvedSection14Code = section14Code ?? (!section14 && section14StartDate.HasValue ? 4 : !section14 ? 3 : section14StartDate.HasValue ? 2 : 1);
         if (resolvedSection14Code is < 1 or > 4)
             throw new ArgumentOutOfRangeException(nameof(section14Code), "Section 14 code must be 1-4.");
         if (resolvedSection14Code is 2 or 4 && !section14StartDate.HasValue)
