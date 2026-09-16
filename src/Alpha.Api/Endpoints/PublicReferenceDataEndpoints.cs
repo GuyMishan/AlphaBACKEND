@@ -11,6 +11,31 @@ public static class PublicReferenceDataEndpoints
             .RequireAuthorization()
             .WithTags("Reference Data");
 
+        group.MapGet("/options", async (string category, string? scope, AlphaDbContext db, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(category)) return Results.BadRequest(new { error = "category is required." });
+            var normalizedCategory = category.Trim().ToLowerInvariant();
+            var normalizedScope = string.IsNullOrWhiteSpace(scope) ? "all" : scope.Trim().ToLowerInvariant();
+            var result = new List<object>();
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = """
+                SELECT value, label, scope
+                FROM reference_data.select_options
+                WHERE category = @category
+                  AND is_active = true
+                  AND (scope = 'all' OR scope = @scope)
+                ORDER BY CASE WHEN scope = @scope THEN 0 ELSE 1 END, sort_order, value
+                """;
+            AddParameter(command, "category", normalizedCategory);
+            AddParameter(command, "scope", normalizedScope);
+            if (command.Connection!.State != System.Data.ConnectionState.Open)
+                await command.Connection.OpenAsync(ct);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                result.Add(new { value = reader.GetString(0), label = reader.GetString(1), scope = reader.GetString(2) });
+            return Results.Ok(result);
+        });
+
         group.MapGet("/salary-layers", async (AlphaDbContext db, CancellationToken ct) =>
         {
             var result = new List<object>();
@@ -44,14 +69,8 @@ public static class PublicReferenceDataEndpoints
                   AND (scope = 'all' OR scope = @scope)
                 ORDER BY CASE WHEN scope = @scope THEN 0 ELSE 1 END, sort_order, code
                 """;
-            var categoryParameter = command.CreateParameter();
-            categoryParameter.ParameterName = "category";
-            categoryParameter.Value = normalizedCategory;
-            command.Parameters.Add(categoryParameter);
-            var scopeParameter = command.CreateParameter();
-            scopeParameter.ParameterName = "scope";
-            scopeParameter.Value = normalizedScope;
-            command.Parameters.Add(scopeParameter);
+            AddParameter(command, "category", normalizedCategory);
+            AddParameter(command, "scope", normalizedScope);
             if (command.Connection!.State != System.Data.ConnectionState.Open)
                 await command.Connection.OpenAsync(ct);
             await using var reader = await command.ExecuteReaderAsync(ct);
@@ -60,21 +79,17 @@ public static class PublicReferenceDataEndpoints
             return Results.Ok(result);
         });
 
-        // Backwards-compatible endpoint used by the current frontend.
         group.MapGet("/pension-funds", async (int productType, string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
         {
-            var normalizedType = NormalizeProductType(productType.ToString());
+            var normalizedType = await NormalizeProductTypeAsync(productType.ToString(), db, ct);
             return normalizedType is null
                 ? Results.Ok(Array.Empty<object>())
                 : await QueryPensionProductsAsync(normalizedType, search, take, db, ct);
         });
 
-        // General endpoint for employee mix/report autocomplete.
-        // Supports enum names (PensionFund, StudyFund, ManagersInsurance, ProvidentFund)
-        // as well as their numeric values.
         group.MapGet("/pension-products", async (string productType, string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
         {
-            var normalizedType = NormalizeProductType(productType);
+            var normalizedType = await NormalizeProductTypeAsync(productType, db, ct);
             return normalizedType is null
                 ? Results.Ok(Array.Empty<object>())
                 : await QueryPensionProductsAsync(normalizedType, search, take, db, ct);
@@ -83,16 +98,29 @@ public static class PublicReferenceDataEndpoints
         return endpoints;
     }
 
-    private static string? NormalizeProductType(string? productType)
+    private static async Task<string?> NormalizeProductTypeAsync(string? productType, AlphaDbContext db, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(productType)) return null;
-        return productType.Trim().ToLowerInvariant() switch
+        var value = productType.Trim();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = """
+            SELECT label
+            FROM reference_data.select_options
+            WHERE category = 'pension-product-type'
+              AND scope = 'all'
+              AND is_active = true
+              AND (value = @value OR lower(label) = lower(@value))
+            LIMIT 1
+            """;
+        AddParameter(command, "value", value);
+        if (command.Connection!.State != System.Data.ConnectionState.Open)
+            await command.Connection.OpenAsync(ct);
+        var result = await command.ExecuteScalarAsync(ct);
+        if (result is not string label) return null;
+        return label switch
         {
-            "1" or "pensionfund" or "pension-fund" => "קרן פנסיה",
-            "2" or "studyfund" or "study-fund" => "קרן השתלמות",
-            "3" or "managersinsurance" or "managers-insurance" => "ביטוח מנהלים / פוליסה",
-            "4" or "providentfund" or "provident-fund" => "קופת גמל",
-            _ => null
+            "ביטוח מנהלים" => "ביטוח מנהלים / פוליסה",
+            _ => label
         };
     }
 
@@ -115,18 +143,8 @@ public static class PublicReferenceDataEndpoints
             LIMIT {limit}
             """;
 
-        var productTypeParameter = command.CreateParameter();
-        productTypeParameter.ParameterName = "product_type";
-        productTypeParameter.Value = normalizedType;
-        command.Parameters.Add(productTypeParameter);
-
-        if (hasSearch)
-        {
-            var searchParameter = command.CreateParameter();
-            searchParameter.ParameterName = "search";
-            searchParameter.Value = search!.Trim();
-            command.Parameters.Add(searchParameter);
-        }
+        AddParameter(command, "product_type", normalizedType);
+        if (hasSearch) AddParameter(command, "search", search!.Trim());
 
         if (command.Connection!.State != System.Data.ConnectionState.Open)
             await command.Connection.OpenAsync(ct);
@@ -146,5 +164,13 @@ public static class PublicReferenceDataEndpoints
         }
 
         return Results.Ok(result);
+    }
+
+    private static void AddParameter(System.Data.Common.DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 }
