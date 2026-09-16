@@ -2,7 +2,20 @@ using Alpha.Domain.Common;
 
 namespace Alpha.Domain.Reporting;
 
-public enum ManualReportStatus { Draft = 1, ReadyForValidation = 2, Validated = 3, Submitted = 4, Cancelled = 5 }
+public enum ManualReportStatus
+{
+    Draft = 1,
+    ReadyForValidation = 2,
+    Validated = 3,
+    Submitted = 4,
+    Cancelled = 5,
+    Sent = 6,
+    Processing = 7,
+    Completed = 8,
+    Error = 9
+}
+
+public enum ManualReportItemStatus { Draft = 1, ReadyForValidation = 2, Validated = 3, Error = 4 }
 public enum ManualReportKind { Current = 1, Differences = 2, Negative = 3 }
 public enum PensionProductType { PensionFund = 1, StudyFund = 2, ManagersInsurance = 3, ProvidentFund = 4, Other = 99 }
 public enum ContributionParty { Employer = 1, Employee = 2 }
@@ -34,12 +47,60 @@ public sealed class ManualReport : Entity
     public ManualReportStatus Status { get; private set; } = ManualReportStatus.Draft;
     public ManualReportKind ReportKind { get; private set; } = ManualReportKind.Current;
     public Guid? SourceReportId { get; private set; }
+    public DateTimeOffset? SnapshotTakenAt { get; private set; }
+    public DateTimeOffset? ValidatedAt { get; private set; }
+    public string ValidationError { get; private set; } = string.Empty;
 
     public void UpdateDetails(DateOnly reportingMonth, DateOnly? salaryPaymentDate)
     {
+        EnsureEditable();
         ReportingMonth = new DateOnly(reportingMonth.Year, reportingMonth.Month, 1);
         SalaryPaymentDate = salaryPaymentDate;
+        MarkDirty();
+    }
+
+    public void MarkReadyForValidation()
+    {
+        EnsureEditable();
+        Status = ManualReportStatus.ReadyForValidation;
+        ValidationError = string.Empty;
         Touch();
+    }
+
+    public void MarkValidated()
+    {
+        Status = ManualReportStatus.Validated;
+        SnapshotTakenAt ??= DateTimeOffset.UtcNow;
+        ValidatedAt = DateTimeOffset.UtcNow;
+        ValidationError = string.Empty;
+        Touch();
+    }
+
+    public void MarkValidationError(string? message)
+    {
+        Status = ManualReportStatus.Error;
+        ValidationError = message?.Trim() ?? string.Empty;
+        ValidatedAt = null;
+        Touch();
+    }
+
+    public void MarkDirty()
+    {
+        if (Status is ManualReportStatus.Sent or ManualReportStatus.Processing or ManualReportStatus.Completed or ManualReportStatus.Submitted or ManualReportStatus.Cancelled)
+            throw new InvalidOperationException("A sent or completed report cannot be edited.");
+        Status = ManualReportStatus.Draft;
+        SnapshotTakenAt = null;
+        ValidatedAt = null;
+        ValidationError = string.Empty;
+        Touch();
+    }
+
+    public bool IsEditable => Status is ManualReportStatus.Draft or ManualReportStatus.ReadyForValidation or ManualReportStatus.Validated or ManualReportStatus.Error;
+
+    private void EnsureEditable()
+    {
+        if (!IsEditable)
+            throw new InvalidOperationException("This report can no longer be edited.");
     }
 }
 
@@ -72,11 +133,29 @@ public sealed class ManualReportEmployee : Entity
     public string LastName { get; private set; } = string.Empty;
     public string EmployeeNumber { get; private set; } = string.Empty;
     public decimal MonthlySalary { get; private set; }
+    public ManualReportItemStatus ValidationStatus { get; private set; } = ManualReportItemStatus.Draft;
+    public string ValidationError { get; private set; } = string.Empty;
 
     public void UpdateMonthlySalary(decimal monthlySalary)
     {
         if (monthlySalary < 0) throw new ArgumentOutOfRangeException(nameof(monthlySalary));
         MonthlySalary = monthlySalary;
+        ValidationStatus = ManualReportItemStatus.Draft;
+        ValidationError = string.Empty;
+        Touch();
+    }
+
+    public void SetValidationResult(bool isValid, string? error = null)
+    {
+        ValidationStatus = isValid ? ManualReportItemStatus.Validated : ManualReportItemStatus.Error;
+        ValidationError = isValid ? string.Empty : error?.Trim() ?? string.Empty;
+        Touch();
+    }
+
+    public void MarkReadyForValidation()
+    {
+        ValidationStatus = ManualReportItemStatus.ReadyForValidation;
+        ValidationError = string.Empty;
         Touch();
     }
 }
@@ -114,6 +193,8 @@ public sealed class ManualReportProduct : Entity
     public SalaryAllocationType SalaryAllocationType { get; private set; } = SalaryAllocationType.Fixed;
     public decimal? SalaryAllocationValue { get; private set; }
     public int AllocationOrder { get; private set; }
+    public ManualReportItemStatus ValidationStatus { get; private set; } = ManualReportItemStatus.Draft;
+    public string ValidationError { get; private set; } = string.Empty;
 
     public void Update(PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary,
         string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate,
@@ -142,6 +223,22 @@ public sealed class ManualReportProduct : Entity
         SalaryAllocationType = salaryAllocationType;
         SalaryAllocationValue = salaryAllocationType == SalaryAllocationType.Remainder ? null : salaryAllocationValue;
         AllocationOrder = allocationOrder;
+        ValidationStatus = ManualReportItemStatus.Draft;
+        ValidationError = string.Empty;
+        Touch();
+    }
+
+    public void SetValidationResult(bool isValid, string? error = null)
+    {
+        ValidationStatus = isValid ? ManualReportItemStatus.Validated : ManualReportItemStatus.Error;
+        ValidationError = isValid ? string.Empty : error?.Trim() ?? string.Empty;
+        Touch();
+    }
+
+    public void MarkReadyForValidation()
+    {
+        ValidationStatus = ManualReportItemStatus.ReadyForValidation;
+        ValidationError = string.Empty;
         Touch();
     }
 }
