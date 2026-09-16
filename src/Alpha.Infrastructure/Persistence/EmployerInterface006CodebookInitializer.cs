@@ -70,6 +70,11 @@ public static class EmployerInterface006CodebookInitializer
                 ('receiver-account-type', 'current', 1, 'חשבון יצרן', 1, true, 'EmployerInterface006-Workbook-V6', now()),
                 ('receiver-account-type', 'current', 2, 'חשבון נאמנות', 2, true, 'EmployerInterface006-Workbook-V6', now()),
 
+                ('section14-code', 'all', 1, 'כן - סעיף 14 חל ממועד תחילת ההעסקה', 1, true, 'EmployerInterface006-Workbook-V6', now()),
+                ('section14-code', 'all', 2, 'כן - סעיף 14 חל מתאריך שונה ממועד תחילת ההעסקה', 2, true, 'EmployerInterface006-Workbook-V6', now()),
+                ('section14-code', 'all', 3, 'העובד אינו חתום על סעיף 14', 3, true, 'EmployerInterface006-Workbook-V6', now()),
+                ('section14-code', 'all', 4, 'סעיף 14 אינו חל עוד על העובד החל מתאריך אחר', 4, true, 'EmployerInterface006-Workbook-V6', now()),
+
                 ('contribution-type', 'all', 1, 'פיצויים', 1, true, 'EmployerInterface006-Workbook-V6', now()),
                 ('contribution-type', 'all', 2, 'תגמולי עובד', 2, true, 'EmployerInterface006-Workbook-V6', now()),
                 ('contribution-type', 'all', 3, 'תגמולי מעביד', 3, true, 'EmployerInterface006-Workbook-V6', now()),
@@ -85,8 +90,6 @@ public static class EmployerInterface006CodebookInitializer
                 source = EXCLUDED.source,
                 updated_at = now();
 
-            -- Legacy Alpha payment method choices are intentionally retired. The UI now uses
-            -- KOD-EMTZAI-TASHLUM from Employer Interface 006 as the single payment-method source.
             UPDATE reference_data.select_options
                SET is_active = false, updated_at = now()
              WHERE category = 'manual-payment-method';
