@@ -46,10 +46,10 @@ public static class SelectOptionsSchemaInitializer
                 ('employer-access-mode', 'all', '1', 'כל המעסיקים בארגון', 1, 'Alpha.Authorization'),
                 ('employer-access-mode', 'all', '2', 'מעסיקים מסוימים בלבד', 2, 'Alpha.Authorization'),
 
-                ('manual-payment-method', 'all', 'bank-transfer', 'העברה בנקאית', 1, 'Alpha.Reporting'),
-                ('manual-payment-method', 'all', 'masav', 'מס״ב', 2, 'Alpha.Reporting'),
-                ('manual-payment-method', 'all', 'check', 'המחאה', 3, 'Alpha.Reporting'),
-                ('manual-payment-method', 'all', 'other', 'אחר', 4, 'Alpha.Reporting'),
+                ('manual-payment-method', 'all', 'העברה בנקאית', 'העברה בנקאית', 1, 'Alpha.Reporting'),
+                ('manual-payment-method', 'all', 'מס״ב', 'מס״ב', 2, 'Alpha.Reporting'),
+                ('manual-payment-method', 'all', 'המחאה', 'המחאה', 3, 'Alpha.Reporting'),
+                ('manual-payment-method', 'all', 'אחר', 'אחר', 4, 'Alpha.Reporting'),
 
                 ('manual-report-kind', 'all', '1', 'שוטף', 1, 'Alpha.Reporting'),
                 ('manual-report-kind', 'all', '2', 'הפרשים', 2, 'Alpha.Reporting'),
