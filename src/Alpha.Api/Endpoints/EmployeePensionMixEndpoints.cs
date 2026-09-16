@@ -42,6 +42,7 @@ public static class EmployeePensionMixEndpoints
             p.ReportingType,
             p.SalaryLayer,
             p.Section14,
+            p.Section14Code,
             p.Section14StartDate,
             p.IsActive,
             p.EffectiveFrom,
@@ -100,6 +101,7 @@ public static class EmployeePensionMixEndpoints
                 ? input.SalaryAllocationValue
                 : existing?.SalaryAllocationValue ?? (input.Salary > 0 ? input.Salary : null);
             var allocationOrder = input.AllocationOrder ?? existing?.AllocationOrder ?? resolved.Count;
+            var section14Code = input.Section14Code ?? existing?.Section14Code ?? (input.Section14 ? 1 : 3);
 
             if (effectiveTo is not null && effectiveTo.Value < effectiveFrom)
                 return Results.BadRequest(new { error = "Product effective end date cannot be earlier than the start date." });
@@ -113,10 +115,14 @@ public static class EmployeePensionMixEndpoints
                 return Results.BadRequest(new { error = "Salary allocation percentage cannot exceed 100%." });
             if (allocationOrder < 0)
                 return Results.BadRequest(new { error = "Salary allocation order cannot be negative." });
+            if (section14Code is < 1 or > 4)
+                return Results.BadRequest(new { error = "Section14Code must be one of 1,2,3,4." });
+            if (section14Code is 2 or 4 && !input.Section14StartDate.HasValue)
+                return Results.BadRequest(new { error = "Section 14 effective/cancellation date is required for codes 2 and 4." });
 
             resolved.Add(new ResolvedProductInput(input, isActive, effectiveFrom, effectiveTo, institutionalBody,
                 manufacturer, fundExternalKey, fundCode, fundName, fundCompanyName,
-                allocationType, allocationValue, allocationOrder));
+                allocationType, allocationValue, allocationOrder, section14Code));
         }
 
         var active = resolved.Where(x => x.IsActive).ToList();
@@ -145,10 +151,10 @@ public static class EmployeePensionMixEndpoints
                 ? item.SalaryAllocationValue ?? input.Salary
                 : input.Salary;
             var product = new EmployeePensionProduct(employmentId, input.ProductType, input.PolicyNumber,
-                Math.Max(legacySalary, 0), input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate,
+                Math.Max(legacySalary, 0), input.ReportingType, input.SalaryLayer, item.Section14Code is 1 or 2, input.Section14StartDate,
                 item.IsActive, item.EffectiveFrom, item.EffectiveTo, item.InstitutionalBody, item.Manufacturer,
                 item.FundExternalKey, item.FundCode, item.FundName, item.FundCompanyName,
-                item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder);
+                item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder, item.Section14Code);
             db.EmployeePensionProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, input.EmployeeContributions);
@@ -199,12 +205,12 @@ public static class EmployeePensionMixEndpoints
     private sealed record ResolvedProductInput(EmployeePensionProductInput Input, bool IsActive, DateOnly EffectiveFrom,
         DateOnly? EffectiveTo, string InstitutionalBody, string Manufacturer, string FundExternalKey,
         string FundCode, string FundName, string FundCompanyName, SalaryAllocationType SalaryAllocationType,
-        decimal? SalaryAllocationValue, int AllocationOrder);
+        decimal? SalaryAllocationValue, int AllocationOrder, int Section14Code);
 }
 
 public sealed record SaveEmployeePensionMixRequest(decimal? MonthlySalary, IReadOnlyCollection<EmployeePensionProductInput> Products);
 public sealed record EmployeePensionProductInput(PensionProductType ProductType, string PolicyNumber, decimal Salary,
-    string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
+    string ReportingType, string SalaryLayer, bool Section14, int? Section14Code, DateOnly? Section14StartDate,
     bool? IsActive, DateOnly? EffectiveFrom, DateOnly? EffectiveTo, string? InstitutionalBody, string? Manufacturer,
     string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
