@@ -7,6 +7,7 @@
     <Project Path="src/Alpha.Worker/Alpha.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Alpha.Api.Tests/Alpha.Api.Tests.csproj" />
     <Project Path="tests/Alpha.Domain.Tests/Alpha.Domain.Tests.csproj" />
   </Folder>
 </Solution>
