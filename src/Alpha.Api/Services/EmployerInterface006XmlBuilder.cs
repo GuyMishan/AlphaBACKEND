@@ -76,7 +76,7 @@ public static class EmployerInterface006XmlBuilder
         var productIds = products.Select(x => x.Id).ToHashSet();
         var first = products[0];
         var payment = c.Payments.FirstOrDefault(x => productIds.Contains(x.ReportProductId));
-        var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == first.Id);
+        var metadata = c.ProductMetadata.First(x => x.ReportProductId == first.Id);
         var total = c.Contributions.Where(x => productIds.Contains(x.ReportProductId)).Sum(x => x.Amount);
 
         var transfer = new XElement("PirteiHaavaratKsafim",
@@ -94,8 +94,8 @@ public static class EmployerInterface006XmlBuilder
             E("MISPAR-TELEPHONE-KAVI-ISH-KESHER-MAASIK", Digits(c.Employer.ContactPhone)),
             E("E-MAIL-ISH-KESHER-MAASIK", c.Employer.ContactEmail),
             E("MISPAR-CELLULARI-ISH-KESHER-MAASIK", Digits(c.Employer.ContactMobile)),
-            E("SUG-PEULA", negative ? 2 : 1),
-            E("KOD-EMTZAI-TASHLUM", metadata!.PaymentMethodCode!.Value),
+            E("SUG-PEULA", metadata.OperationCode!.Value),
+            E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value),
             E("SACH-HAFKADA-KUPA-H-P", Money(total)),
             Nil("TAARICH-ERECH-HAFKADA-LEKUPA", payment?.ValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
             Nil("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT", null),
@@ -256,6 +256,9 @@ public static class EmployerInterface006XmlBuilder
             if (!TryCode(product.SalaryLayer, SalaryLayerCodes, out _)) issues.Add($"{label}: SalaryLayer must be one of 1,3,5,6,7 for Version 006.");
             var meta = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
             if (meta is null) { issues.Add($"{label}: Employer Interface 006 metadata is missing."); continue; }
+            if (!meta.OperationCode.HasValue) issues.Add($"{label}: OperationCode is required.");
+            else if (negative && meta.OperationCode is not (5 or 6)) issues.Add($"{label}: negative Version 006 requires OperationCode 5 or 6.");
+            else if (!negative && meta.OperationCode is not (1 or 2 or 3 or 7)) issues.Add($"{label}: current Version 006 requires OperationCode 1, 2, 3 or 7.");
             if (!negative && !meta.DepositStatus.HasValue) issues.Add($"{label}: DepositStatus is required for a current report.");
             if (!negative && !meta.EmployeeStatus.HasValue) issues.Add($"{label}: EmployeeStatus is required for a current report.");
             if (!negative && !meta.StatusStartDate.HasValue) issues.Add($"{label}: StatusStartDate is required for a current report.");
