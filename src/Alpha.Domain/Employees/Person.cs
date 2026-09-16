@@ -31,12 +31,16 @@ public sealed class Person : Entity
     public string Email { get; private set; } = string.Empty;
     public string Mobile { get; private set; } = string.Empty;
 
-    public void Update(string nationalId, string firstName, string lastName,
-        DateOnly? birthDate = null, PersonGender? gender = null, string? email = null, string? mobile = null)
+    public void Update(string nationalId, string firstName, string lastName)
     {
         NationalId = Require(nationalId, nameof(nationalId));
         FirstName = Require(firstName, nameof(firstName));
         LastName = Require(lastName, nameof(lastName));
+        Touch();
+    }
+
+    public void UpdateInterfaceDetails(DateOnly? birthDate, PersonGender? gender, string? email, string? mobile)
+    {
         SetInterfaceDetails(birthDate, gender, email, mobile);
         Touch();
     }
