@@ -18,6 +18,8 @@ public sealed class EmployerInterface006XmlBuilderTests
         var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
         Assert.Empty(result.Issues);
         Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, false);
+        Assert.Empty(workbookIssues);
         AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
     }
 
@@ -28,6 +30,8 @@ public sealed class EmployerInterface006XmlBuilderTests
         var result = EmployerInterface006XmlBuilder.BuildNegative(fixture.Context);
         Assert.Empty(result.Issues);
         Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, true);
+        Assert.Empty(workbookIssues);
         AssertValid(result.Document!, "mimshak_maasikim_shliliim_xsd_schema_006.xsd.xml");
     }
 
@@ -40,8 +44,18 @@ public sealed class EmployerInterface006XmlBuilderTests
         Assert.Contains(result.Issues, x => x.Contains("OperationCode 5 or 6", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Corrective_report_requires_previous_reference_or_official_exception()
+    {
+        var fixture = CreateFixture(false, operationCode: 2, previousExceptionCode: null);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, false);
+        Assert.Contains(workbookIssues, x => x.Contains("must reference the original report", StringComparison.Ordinal));
+    }
+
     private static (EmployerInterface006XmlBuilder.BuildContext Context, ManualReportProduct Product) CreateFixture(
-        bool negative, int? operationCode = null)
+        bool negative, int? operationCode = null, int? previousExceptionCode = 1)
     {
         var organizationId = Guid.NewGuid();
         var employer = new Employer(organizationId, "Test Employer", "123456789", "987654321",
@@ -62,7 +76,8 @@ public sealed class EmployerInterface006XmlBuilderTests
             "12345678901234567890", "");
         var metadata = new EmployerInterfaceReportProductData(product.Id);
         metadata.Update(operationCode ?? (negative ? 5 : 1), 1, 1, new DateOnly(2026, 9, 1), null, null, 2,
-            negative ? 1 : null, 1, 1, 1);
+            negative ? 1 : null, 1, 1, 1,
+            previousReferenceExceptionCode: (negative || (operationCode is 2 or 3 or 7)) ? previousExceptionCode : null);
         var options = new EmployerInterface006Options
         {
             EnvironmentCode = 2,
