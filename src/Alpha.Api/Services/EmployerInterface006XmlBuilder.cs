@@ -116,10 +116,7 @@ public static class EmployerInterface006XmlBuilder
         }
         else
         {
-            if (metadata.OperationCode == 5)
-            {
-                transfer.Add(E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value));
-            }
+            if (metadata.OperationCode == 5) transfer.Add(E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value));
             transfer.Add(E("SACH-HAFKADA-KUPA-H-P", metadata.OperationCode == 6 ? Money(0) : Money(total)));
             transfer.Add(E("MISPAR-ZIHUI", UpperGuid(first.Id)));
             if (metadata.OperationCode == 5 && metadata.PaymentMethodCode == 1)
@@ -179,8 +176,10 @@ public static class EmployerInterface006XmlBuilder
         var total = contributions.Sum(x => x.Amount);
 
         var node = new XElement("PirteiOved",
-            E("SUG-MEZAHE-OVED", 1), E("MISPAR-MEZAHE", Digits(employee.NationalId)),
-            E("SHEM-PRATI", employee.FirstName), E("SHEM-MISHPACHA", employee.LastName));
+            E("SUG-MEZAHE-OVED", 1),
+            E("MISPAR-MEZAHE", Digits(employee.NationalId)),
+            E("SHEM-PRATI", employee.FirstName),
+            E("SHEM-MISHPACHA", employee.LastName));
 
         if (!negative) node.Add(E("TAARICH-LEIDA", person.BirthDate!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         else if (person.BirthDate.HasValue) node.Add(E("TAARICH-LEIDA", person.BirthDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
@@ -188,15 +187,27 @@ public static class EmployerInterface006XmlBuilder
 
         if (!negative)
         {
-            node.Add(Nil("SHEM-YISHUV", null), Nil("SHEM-RECHOV", null), Nil("MISPAR-BAIT", null), Nil("MISPAR-DIRA", null),
-                Nil("MIKUD", null), Nil("TA-DOAR", null), E("E-MAIL", person.Email), E("MISPAR-CELLULARI", Digits(person.Mobile)),
-                E("MIN", (int)person.Gender!.Value), Nil("MOED-TCHILAT-AHASAKAT-OVED", employment.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
-                E("SEIF-ARBA-ESRE-LAOVED", Section14Code(product, employment)),
+            node.Add(
+                E("SHEM-YISHUV", person.City),
+                E("SHEM-RECHOV", person.Street),
+                E("MISPAR-BAIT", person.HouseNumber),
+                E("MISPAR-DIRA", person.Apartment),
+                E("MIKUD", person.PostalCode),
+                E("TA-DOAR", person.PostOfficeBox),
+                E("E-MAIL", person.Email),
+                E("MISPAR-CELLULARI", Digits(person.Mobile)),
+                E("MIN", (int)person.Gender!.Value),
+                E("MOED-TCHILAT-AHASAKAT-OVED", employment.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                E("SEIF-ARBA-ESRE-LAOVED", product.Section14Code),
                 Nil("SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF", product.Section14StartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         }
         else
         {
-            node.Add(Nil("HASHAVA-KIBUTZI", null), Nil("HATZHARAT-OVED", null));
+            node.Add(
+                Nil("HASHAVA-KIBUTZI", null),
+                Nil("HATZHARAT-OVED", null),
+                Nil("SEIF-ARBA-ESRE-LAOVED", null),
+                Nil("SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF", null));
         }
 
         var salary = new XElement("ChodeshMaskoretVestatusOved",
@@ -213,8 +224,6 @@ public static class EmployerInterface006XmlBuilder
         }
         else
         {
-            // Version 6 workbook marks salary/status/part-time/days/policy/last-deposit as not relevant to negative reports.
-            // TAARICH-TCHILAT-STATUS remains emitted as nil because the negative XSD still requires the element positionally.
             salary.Add(Nil("TAARICH-TCHILAT-STATUS", null));
         }
 
@@ -261,6 +270,12 @@ public static class EmployerInterface006XmlBuilder
             if (Digits(product.FundCode).Length != 30) issues.Add($"{label}: fund code must be exactly 30 digits (KOD-MEZAHE-KUPA-H-P).");
             if (!TryCode(product.ReportingType, CurrentReceiptCodes, out _)) issues.Add($"{label}: ReportingType must be one of 1,2,4,6,8 for Version 006.");
             if (!TryCode(product.SalaryLayer, SalaryLayerCodes, out _)) issues.Add($"{label}: SalaryLayer must be one of 1,3,5,6,7 for Version 006.");
+            if (!negative)
+            {
+                if (product.Section14Code is < 1 or > 4) issues.Add($"{label}: Section14Code must be one of 1,2,3,4.");
+                if (product.Section14Code is 2 or 4 && !product.Section14StartDate.HasValue)
+                    issues.Add($"{label}: Section14StartDate is required for Section14Code 2 or 4.");
+            }
             var meta = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
             if (meta is null) { issues.Add($"{label}: Employer Interface 006 metadata is missing."); continue; }
             if (!meta.OperationCode.HasValue) issues.Add($"{label}: OperationCode is required.");
@@ -302,10 +317,16 @@ public static class EmployerInterface006XmlBuilder
             foreach (var employee in c.Employees)
             {
                 if (!c.People.TryGetValue(employee.PersonId, out var person)) { issues.Add($"Employee {employee.Id}: person profile was not found."); continue; }
-                if (!person.BirthDate.HasValue) issues.Add($"Employee {employee.Id}: BirthDate is required for a current report.");
-                if (!person.Gender.HasValue) issues.Add($"Employee {employee.Id}: Gender is required for a current report.");
-                if (string.IsNullOrWhiteSpace(person.Email)) issues.Add($"Employee {employee.Id}: Email is required for a current report.");
-                if (Digits(person.Mobile).Length == 0) issues.Add($"Employee {employee.Id}: Mobile is required for a current report.");
+                if (!person.BirthDate.HasValue) issues.Add($"Employee {employee.Id}: BirthDate is required.");
+                if (!person.Gender.HasValue) issues.Add($"Employee {employee.Id}: Gender is required.");
+                if (string.IsNullOrWhiteSpace(person.Email)) issues.Add($"Employee {employee.Id}: Email is required.");
+                if (Digits(person.Mobile).Length == 0) issues.Add($"Employee {employee.Id}: Mobile is required.");
+                if (string.IsNullOrWhiteSpace(person.City)) issues.Add($"Employee {employee.Id}: City is required.");
+                if (string.IsNullOrWhiteSpace(person.Street)) issues.Add($"Employee {employee.Id}: Street is required.");
+                if (string.IsNullOrWhiteSpace(person.HouseNumber)) issues.Add($"Employee {employee.Id}: HouseNumber is required.");
+                if (string.IsNullOrWhiteSpace(person.Apartment)) issues.Add($"Employee {employee.Id}: Apartment is required.");
+                if (Digits(person.PostalCode).Length == 0) issues.Add($"Employee {employee.Id}: PostalCode is required.");
+                if (string.IsNullOrWhiteSpace(person.PostOfficeBox)) issues.Add($"Employee {employee.Id}: PostOfficeBox is required.");
                 if (!c.Employments.ContainsKey(employee.EmploymentId)) issues.Add($"Employee {employee.Id}: employment profile was not found.");
             }
         }
@@ -322,8 +343,6 @@ public static class EmployerInterface006XmlBuilder
         if (Digits(payment.EmployerAccount).Length != 20) issues.Add($"{label}: employer bank account must be exactly 20 digits.");
     }
 
-    private static int Section14Code(ManualReportProduct product, Employment employment) =>
-        !product.Section14 ? 3 : product.Section14StartDate.HasValue && product.Section14StartDate.Value != employment.StartDate ? 2 : 1;
     private static int ParseRequiredCode(string value) => int.Parse(value.Trim(), CultureInfo.InvariantCulture);
     private static bool TryCode(string? value, int[] allowed, out int code) => int.TryParse(value?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out code) && allowed.Contains(code);
     private static string MapProductCode(PensionProductType type) => type switch
