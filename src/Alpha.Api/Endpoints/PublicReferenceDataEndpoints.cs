@@ -79,6 +79,66 @@ public static class PublicReferenceDataEndpoints
             return Results.Ok(result);
         });
 
+        group.MapGet("/cities", async (string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
+        {
+            var limit = Math.Clamp(take ?? 30, 1, 100);
+            var hasSearch = !string.IsNullOrWhiteSpace(search);
+            var result = new List<object>();
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = $"""
+                SELECT city_code, city_name, region_code, region_name
+                FROM reference_data.cities
+                WHERE is_active = true
+                  {(hasSearch ? "AND city_name ILIKE '%' || @search || '%'" : string.Empty)}
+                ORDER BY city_name
+                LIMIT {limit}
+                """;
+            if (hasSearch) AddParameter(command, "search", search!.Trim());
+            if (command.Connection!.State != System.Data.ConnectionState.Open)
+                await command.Connection.OpenAsync(ct);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                result.Add(new
+                {
+                    cityCode = reader.GetInt32(0),
+                    cityName = reader.GetString(1),
+                    regionCode = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2),
+                    regionName = reader.IsDBNull(3) ? string.Empty : reader.GetString(3)
+                });
+            return Results.Ok(result);
+        });
+
+        group.MapGet("/streets", async (int cityCode, string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
+        {
+            var limit = Math.Clamp(take ?? 40, 1, 100);
+            var hasSearch = !string.IsNullOrWhiteSpace(search);
+            var result = new List<object>();
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = $"""
+                SELECT street_code, street_name, official_code
+                FROM reference_data.streets
+                WHERE city_code = @city_code
+                  AND is_active = true
+                  AND lower(street_name_status) = 'official'
+                  {(hasSearch ? "AND street_name ILIKE '%' || @search || '%'" : string.Empty)}
+                ORDER BY street_name
+                LIMIT {limit}
+                """;
+            AddParameter(command, "city_code", cityCode);
+            if (hasSearch) AddParameter(command, "search", search!.Trim());
+            if (command.Connection!.State != System.Data.ConnectionState.Open)
+                await command.Connection.OpenAsync(ct);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                result.Add(new
+                {
+                    streetCode = reader.GetInt32(0),
+                    streetName = reader.GetString(1),
+                    officialCode = reader.GetInt32(2)
+                });
+            return Results.Ok(result);
+        });
+
         group.MapGet("/pension-funds", async (int productType, string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
         {
             var normalizedType = await NormalizeProductTypeAsync(productType.ToString(), db, ct);
