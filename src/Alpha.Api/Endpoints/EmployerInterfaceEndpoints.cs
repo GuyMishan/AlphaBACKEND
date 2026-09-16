@@ -15,6 +15,7 @@ public static class EmployerInterfaceEndpoints
         group.MapPost("/validate", ValidateAsync).DisableAntiforgery();
         group.MapPost("/import", ImportAsync).DisableAntiforgery();
         group.MapGet("/schemas/status", SchemaStatusAsync);
+        group.MapGet("/reports/{reportId:guid}/preflight", PreflightAsync);
         group.MapGet("/reports/{reportId:guid}/xml", ExportAsync);
         return endpoints;
     }
@@ -65,6 +66,27 @@ public static class EmployerInterfaceEndpoints
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var missing = schemas.MissingSchemas();
         return Results.Ok(new { version = EmployerInterfaceSchemaRegistry.Version, ready = missing.Count == 0, missing, runtimeDirectory = schemas.SchemaDirectory });
+    }
+
+    private static async Task<IResult> PreflightAsync(Guid organizationId, Guid employerId, Guid reportId,
+        IAlphaDbContext db, OrganizationAccessService access, EmployerInterface006ExportService exporter, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var report = await db.ManualReports.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (report.ReportKind == ManualReportKind.Differences)
+            return Results.Ok(new { isValid = true, reportKind = report.ReportKind, transmittable = false, issues = Array.Empty<string>() });
+        var generated = await exporter.ExportAsync(report, ct);
+        return Results.Ok(new
+        {
+            isValid = generated.Validation.IsValid,
+            reportKind = report.ReportKind,
+            transmittable = true,
+            documentType = generated.Validation.DocumentType?.ToString(),
+            generated.Validation.Version,
+            generated.Validation.SchemaFileName,
+            issues = generated.Validation.Issues
+        });
     }
 
     private static async Task<IResult> ExportAsync(Guid organizationId, Guid employerId, Guid reportId,
