@@ -64,8 +64,6 @@ public static class ReferenceDataSchemaInitializer
                 short_name text NULL,
                 company_legal_id text NULL,
                 company_name text NULL,
-                investment_track_code text NULL,
-                investment_track_name text NULL,
                 classification text NULL,
                 bank_code integer NULL,
                 bank_name text NULL,
@@ -76,6 +74,8 @@ public static class ReferenceDataSchemaInitializer
                 last_seen_at timestamptz NOT NULL,
                 updated_at timestamptz NOT NULL
             );
+            ALTER TABLE reference_data.pension_products ADD COLUMN IF NOT EXISTS investment_track_code text NULL;
+            ALTER TABLE reference_data.pension_products ADD COLUMN IF NOT EXISTS investment_track_name text NULL;
             CREATE INDEX IF NOT EXISTS ix_pension_products_domain ON reference_data.pension_products (domain);
             CREATE INDEX IF NOT EXISTS ix_pension_products_fund_code ON reference_data.pension_products (fund_code);
             CREATE INDEX IF NOT EXISTS ix_pension_products_company ON reference_data.pension_products (company_name);
@@ -125,6 +125,8 @@ public static class ReferenceDataSchemaInitializer
                 ('employee-status', 'all', 14, 'קוד 14', 14),
                 ('employee-status', 'all', 17, 'קוד 17', 17),
                 ('employee-status', 'all', 18, 'קוד 18', 18),
+                ('last-deposit', 'all', 1, 'קוד 1', 1),
+                ('last-deposit', 'all', 2, 'קוד 2', 2),
                 ('refund-reason', 'negative', 1, 'קוד 1', 1),
                 ('refund-reason', 'negative', 2, 'קוד 2', 2),
                 ('refund-reason', 'negative', 3, 'קוד 3', 3),
