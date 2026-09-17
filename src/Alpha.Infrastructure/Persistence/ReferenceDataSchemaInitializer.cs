@@ -81,6 +81,44 @@ public static class ReferenceDataSchemaInitializer
             CREATE INDEX IF NOT EXISTS ix_streets_city_name ON reference_data.streets (city_code, street_name);
             CREATE INDEX IF NOT EXISTS ix_streets_official ON reference_data.streets (city_code, official_code);
 
+            CREATE OR REPLACE FUNCTION reference_data.normalize_address_parentheses()
+            RETURNS trigger AS $function$
+            BEGIN
+                IF TG_TABLE_NAME = 'cities' THEN
+                    NEW.city_name := regexp_replace(NEW.city_name, '\)([^()]*)\(', '(\1)', 'g');
+                    IF NEW.region_name IS NOT NULL THEN
+                        NEW.region_name := regexp_replace(NEW.region_name, '\)([^()]*)\(', '(\1)', 'g');
+                    END IF;
+                ELSIF TG_TABLE_NAME = 'streets' THEN
+                    NEW.street_name := regexp_replace(NEW.street_name, '\)([^()]*)\(', '(\1)', 'g');
+                END IF;
+                RETURN NEW;
+            END;
+            $function$ LANGUAGE plpgsql;
+
+            DROP TRIGGER IF EXISTS trg_normalize_city_parentheses ON reference_data.cities;
+            CREATE TRIGGER trg_normalize_city_parentheses
+                BEFORE INSERT OR UPDATE OF city_name, region_name ON reference_data.cities
+                FOR EACH ROW EXECUTE FUNCTION reference_data.normalize_address_parentheses();
+
+            DROP TRIGGER IF EXISTS trg_normalize_street_parentheses ON reference_data.streets;
+            CREATE TRIGGER trg_normalize_street_parentheses
+                BEFORE INSERT OR UPDATE OF street_name ON reference_data.streets
+                FOR EACH ROW EXECUTE FUNCTION reference_data.normalize_address_parentheses();
+
+            UPDATE reference_data.cities
+            SET city_name = regexp_replace(city_name, '\)([^()]*)\(', '(\1)', 'g'),
+                region_name = CASE
+                    WHEN region_name IS NULL THEN NULL
+                    ELSE regexp_replace(region_name, '\)([^()]*)\(', '(\1)', 'g')
+                END
+            WHERE city_name ~ '\)[^()]*\('
+               OR (region_name IS NOT NULL AND region_name ~ '\)[^()]*\(');
+
+            UPDATE reference_data.streets
+            SET street_name = regexp_replace(street_name, '\)([^()]*)\(', '(\1)', 'g')
+            WHERE street_name ~ '\)[^()]*\(';
+
             CREATE TABLE IF NOT EXISTS reference_data.pension_products (
                 external_key text PRIMARY KEY,
                 source varchar(80) NOT NULL,
