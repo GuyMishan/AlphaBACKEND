@@ -25,7 +25,18 @@ public sealed class User : Entity
     public string DisplayName { get; private set; } = string.Empty;
     public string? NationalId { get; private set; }
     public string? Phone { get; private set; }
+    public string Appearance { get; private set; } = "system";
     public bool IsActive { get; private set; } = true;
+
+    public void SetAppearance(string appearance)
+    {
+        var normalized = appearance.Trim().ToLowerInvariant();
+        if (normalized is not ("system" or "light" or "dark"))
+            throw new ArgumentException("Appearance must be system, light or dark.", nameof(appearance));
+
+        Appearance = normalized;
+        Touch();
+    }
 
     public void Deactivate()
     {
