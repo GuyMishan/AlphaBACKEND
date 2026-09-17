@@ -139,6 +139,60 @@ public static class PublicReferenceDataEndpoints
             return Results.Ok(result);
         });
 
+        group.MapGet("/banks", async (string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
+        {
+            var limit = Math.Clamp(take ?? 50, 1, 100);
+            var hasSearch = !string.IsNullOrWhiteSpace(search);
+            var result = new List<object>();
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = $"""
+                SELECT bank_code, bank_name
+                FROM reference_data.banks
+                WHERE is_active = true
+                  {(hasSearch ? "AND (bank_name ILIKE '%' || @search || '%' OR CAST(bank_code AS text) ILIKE '%' || @search || '%')" : string.Empty)}
+                ORDER BY bank_code
+                LIMIT {limit}
+                """;
+            if (hasSearch) AddParameter(command, "search", search!.Trim());
+            if (command.Connection!.State != System.Data.ConnectionState.Open)
+                await command.Connection.OpenAsync(ct);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                result.Add(new { bankCode = reader.GetInt32(0), bankName = reader.GetString(1) });
+            return Results.Ok(result);
+        });
+
+        group.MapGet("/bank-branches", async (int bankCode, string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
+        {
+            var limit = Math.Clamp(take ?? 100, 1, 200);
+            var hasSearch = !string.IsNullOrWhiteSpace(search);
+            var result = new List<object>();
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = $"""
+                SELECT branch_code, branch_name, branch_address, city
+                FROM reference_data.bank_branches
+                WHERE bank_code = @bank_code
+                  AND is_active = true
+                  {(hasSearch ? "AND (branch_name ILIKE '%' || @search || '%' OR city ILIKE '%' || @search || '%' OR CAST(branch_code AS text) ILIKE '%' || @search || '%')" : string.Empty)}
+                ORDER BY branch_code
+                LIMIT {limit}
+                """;
+            AddParameter(command, "bank_code", bankCode);
+            if (hasSearch) AddParameter(command, "search", search!.Trim());
+            if (command.Connection!.State != System.Data.ConnectionState.Open)
+                await command.Connection.OpenAsync(ct);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                result.Add(new
+                {
+                    branchCode = reader.GetInt32(0),
+                    branchName = reader.GetString(1),
+                    branchAddress = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                    city = reader.IsDBNull(3) ? string.Empty : reader.GetString(3)
+                });
+            return Results.Ok(result);
+        });
+
         group.MapGet("/pension-funds", async (int productType, string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
         {
             var normalizedType = await NormalizeProductTypeAsync(productType.ToString(), db, ct);
@@ -194,7 +248,8 @@ public static class PublicReferenceDataEndpoints
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = $"""
             SELECT DISTINCT ON (COALESCE(NULLIF(fund_code, ''), fund_name), fund_name)
-                   external_key, fund_code, fund_name, company_name, domain, product_type
+                   external_key, fund_code, fund_name, company_name, domain, product_type,
+                   bank_code, bank_name, branch_code, account_number
             FROM reference_data.pension_products
             WHERE is_active = true
               AND product_type = @product_type
@@ -219,7 +274,11 @@ public static class PublicReferenceDataEndpoints
                 fundName = reader.GetString(2),
                 companyName = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
                 domain = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
-                productType = reader.IsDBNull(5) ? string.Empty : reader.GetString(5)
+                productType = reader.IsDBNull(5) ? string.Empty : reader.GetString(5),
+                bankCode = reader.IsDBNull(6) ? (int?)null : reader.GetInt32(6),
+                bankName = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
+                branchCode = reader.IsDBNull(8) ? (int?)null : reader.GetInt32(8),
+                accountNumber = reader.IsDBNull(9) ? string.Empty : reader.GetString(9)
             });
         }
 
