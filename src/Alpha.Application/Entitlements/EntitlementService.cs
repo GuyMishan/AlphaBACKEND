@@ -39,6 +39,30 @@ public sealed class EntitlementService(IAlphaDbContext db)
             : EntitlementDecision.LimitReached("active_employees", current, plan.MaxEmployees);
     }
 
+    public async Task<EntitlementDecision> CanInviteNewUser(Guid organizationId, CancellationToken ct = default)
+    {
+        var plan = await GetPlanAsync(organizationId, ct);
+        var membershipUserIds = db.OrganizationMemberships.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.IsActive &&
+                        (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow))
+            .Select(x => x.UserId);
+        var employerUserIds = db.EmployerUserAccesses.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId)
+            .Select(x => x.UserId);
+        var current = await membershipUserIds.Union(employerUserIds).CountAsync(ct);
+        var pendingInvites = await db.UserInvitations.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId &&
+                        x.Status == Alpha.Domain.Identity.UserInvitationStatus.Pending &&
+                        x.ExpiresAt > DateTimeOffset.UtcNow)
+            .Select(x => x.Email)
+            .Distinct()
+            .CountAsync(ct);
+
+        return current + pendingInvites < plan.MaxUsers
+            ? EntitlementDecision.Allow()
+            : EntitlementDecision.LimitReached("users", current + pendingInvites, plan.MaxUsers);
+    }
+
     public async Task<EntitlementDecision> CanInviteUser(Guid organizationId, Guid userId, CancellationToken ct = default)
     {
         var alreadyCounted = await db.OrganizationMemberships.AsNoTracking().AnyAsync(x =>
