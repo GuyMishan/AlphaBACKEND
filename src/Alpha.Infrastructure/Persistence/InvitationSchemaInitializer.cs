@@ -24,11 +24,7 @@ public static class InvitationSchemaInitializer
                 CONSTRAINT "FK_user_invitations_OrganizationId"
                     FOREIGN KEY ("OrganizationId") REFERENCES organizations.organizations("Id") ON DELETE CASCADE,
                 CONSTRAINT "FK_user_invitations_EmployerId"
-                    FOREIGN KEY ("EmployerId") REFERENCES employers.employers("Id") ON DELETE CASCADE,
-                CONSTRAINT "FK_user_invitations_CreatedBy"
-                    FOREIGN KEY ("CreatedBy") REFERENCES identity.users("Id") ON DELETE RESTRICT,
-                CONSTRAINT "FK_user_invitations_AcceptedByUserId"
-                    FOREIGN KEY ("AcceptedByUserId") REFERENCES identity.users("Id") ON DELETE RESTRICT
+                    FOREIGN KEY ("EmployerId") REFERENCES employers.employers("Id") ON DELETE CASCADE
             );
 
             CREATE UNIQUE INDEX IF NOT EXISTS "UX_user_invitations_token_hash"
@@ -39,6 +35,9 @@ public static class InvitationSchemaInitializer
 
             CREATE INDEX IF NOT EXISTS "IX_user_invitations_email_status"
                 ON identity.user_invitations ("Email", "Status", "ExpiresAt");
+
+            ALTER TABLE identity.user_invitations DROP CONSTRAINT IF EXISTS "FK_user_invitations_CreatedBy";
+            ALTER TABLE identity.user_invitations DROP CONSTRAINT IF EXISTS "FK_user_invitations_AcceptedByUserId";
 
             ALTER TABLE identity.registration_otp_challenges
                 ADD COLUMN IF NOT EXISTS "InvitationTokenHash" varchar(64) NULL;
