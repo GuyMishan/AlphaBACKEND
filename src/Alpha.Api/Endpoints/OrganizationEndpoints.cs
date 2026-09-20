@@ -19,9 +19,10 @@ public static class OrganizationEndpoints
             var query = db.Organizations.AsNoTracking();
             if (!user.IsPlatformAdmin)
             {
-                var ids = db.OrganizationMemberships.Where(x => x.UserId == user.UserId && x.IsActive &&
+                var membershipIds = db.OrganizationMemberships.Where(x => x.UserId == user.UserId && x.IsActive &&
                     (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow)).Select(x => x.OrganizationId);
-                query = query.Where(x => ids.Contains(x.Id));
+                var employerAccessIds = db.EmployerUserAccesses.Where(x => x.UserId == user.UserId).Select(x => x.OrganizationId);
+                query = query.Where(x => membershipIds.Contains(x.Id) || employerAccessIds.Contains(x.Id));
             }
             return Results.Ok(await query.OrderBy(x => x.Name).ToListAsync(ct));
         });
@@ -49,9 +50,10 @@ public static class OrganizationEndpoints
         group.MapGet("/{organizationId:guid}/capabilities", async (Guid organizationId,
             OrganizationAccessService access, CancellationToken ct) =>
         {
-            if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            if (!await access.CanAccessOrganizationScopeAsync(organizationId, ct)) return Results.Forbid();
             return Results.Ok(new
             {
+                canManageOrganization = await access.CanManageOrganizationAsync(organizationId, ct),
                 canCreateEmployer = await access.CanCreateEmployerAsync(organizationId, ct)
             });
         });
@@ -88,7 +90,7 @@ public static class OrganizationEndpoints
             if (await db.EmployerUserAccesses.AnyAsync(x => x.UserId == userId && x.EmployerId == employerId, ct))
                 return Results.NoContent();
 
-            var grant = new EmployerUserAccess(userId, organizationId, employerId);
+            var grant = new EmployerUserAccess(userId, organizationId, employerId, EmployerRole.User);
             db.EmployerUserAccesses.Add(grant);
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "employer.access.granted", nameof(EmployerUserAccess),
                 grant.Id, organizationId, employerId, JsonSerializer.Serialize(new { userId, employerId }), http.TraceIdentifier));
