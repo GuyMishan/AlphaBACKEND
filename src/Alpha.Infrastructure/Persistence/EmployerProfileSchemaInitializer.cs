@@ -73,7 +73,7 @@ public static class EmployerProfileSchemaInitializer
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_bank_debit_mandates_EmployerPaymentAccountId"
                 ON employers.bank_debit_mandates ("EmployerPaymentAccountId");
 
-            DO $
+            DO $$
             BEGIN
                 IF to_regclass('employers.employer_pension_payment_accounts') IS NOT NULL THEN
                     INSERT INTO employers.employer_payment_accounts (
@@ -107,7 +107,7 @@ public static class EmployerProfileSchemaInitializer
                         WHERE m."EmployerPaymentAccountId" = old."Id"
                     );
                 END IF;
-            END $;
+            END $$;
             """;
 
         await db.Database.ExecuteSqlRawAsync(sql, ct);
