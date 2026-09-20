@@ -18,7 +18,8 @@ public interface IAlphaDbContext
     DbSet<Employer> Employers { get; }
     DbSet<EmployerUserAccess> EmployerUserAccesses { get; }
     DbSet<EmployerProfileSettings> EmployerProfileSettings { get; }
-    DbSet<EmployerPensionPaymentAccount> EmployerPensionPaymentAccounts { get; }
+    DbSet<EmployerPaymentAccount> EmployerPaymentAccounts { get; }
+    DbSet<BankDebitMandate> BankDebitMandates { get; }
     DbSet<Person> People { get; }
     DbSet<Employment> Employments { get; }
     DbSet<EmployeePensionProduct> EmployeePensionProducts { get; }
