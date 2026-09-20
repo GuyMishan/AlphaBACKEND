@@ -25,7 +25,7 @@ public static class ReportTransmissionEndpoints
 
     private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid reportId, SendReportRequest? request, IAlphaDbContext db, OrganizationAccessService access, IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter, CancellationToken ct)
     {
-        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanTransmitReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.FirstOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
         if (report.Status != ManualReportStatus.Validated) return Results.Conflict(new { error = "Only a report that passed final validation can be transmitted.", status = report.Status.ToString() });
