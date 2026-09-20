@@ -42,7 +42,7 @@ public static class EmployerInterfaceEndpoints
     private static async Task<IResult> ImportAsync(Guid organizationId, Guid employerId, HttpRequest request,
         OrganizationAccessService access, EmployerInterfaceService service, CancellationToken ct)
     {
-        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var read = await ReadXmlAsync(request, ct);
         if (read.Error is not null) return Results.BadRequest(new { error = read.Error });
         var result = await service.IngestAsync(organizationId, employerId, read.FileName!, read.Bytes!, ct);
