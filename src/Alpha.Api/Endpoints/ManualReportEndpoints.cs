@@ -20,6 +20,7 @@ public static class ManualReportEndpoints
         group.MapGet("/", GetOpenReportsAsync);
         group.MapGet("/{reportId:guid}", GetReportAsync);
         group.MapPut("/{reportId:guid}/details", UpdateDetailsAsync);
+        group.MapPut("/{reportId:guid}/payment-account", UpdatePaymentAccountAsync);
         group.MapPut("/{reportId:guid}/selection", SyncSelectionAsync);
         group.MapGet("/{reportId:guid}/employees", GetEmployeesAsync);
         group.MapGet("/{reportId:guid}/employees/{reportEmployeeId:guid}", GetEmployeeAsync);
@@ -163,6 +164,31 @@ public static class ManualReportEndpoints
         report.UpdateDetails(request.ReportingMonth, request.SalaryPaymentDate);
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
+    }
+
+    private static async Task<IResult> UpdatePaymentAccountAsync(Guid organizationId, Guid employerId, Guid reportId,
+        UpdateReportPaymentAccountRequest request, IAlphaDbContext db, OrganizationAccessService access,
+        ReportPaymentAccountService paymentAccounts, CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId &&
+            x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
+
+        var account = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
+        if (account is null) return Results.Conflict(new { error = "payment_account_required" });
+        await paymentAccounts.ApplySnapshotAsync(report, account, ct);
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new
+        {
+            report.PaymentAccountId,
+            report.PaymentBankId,
+            report.PaymentBranchId,
+            report.PaymentAccountNumberMasked,
+            report.PaymentMandateReference
+        });
     }
 
     private static async Task<IResult> SyncSelectionAsync(Guid organizationId, Guid employerId, Guid reportId,
@@ -498,6 +524,7 @@ public static class ManualReportEndpoints
 public sealed record CreateManualReportRequest(DateOnly ReportingMonth, DateOnly? SalaryPaymentDate,
     IReadOnlyCollection<Guid> EmploymentIds, Guid? PaymentAccountId = null);
 public sealed record UpdateManualReportDetailsRequest(DateOnly ReportingMonth, DateOnly? SalaryPaymentDate);
+public sealed record UpdateReportPaymentAccountRequest(Guid PaymentAccountId);
 public sealed record UpdateManualReportSelectionRequest(IReadOnlyCollection<Guid> EmploymentIds);
 public sealed record SaveManualReportEmployeeRequest(decimal MonthlySalary, IReadOnlyCollection<ManualProductInput> Products);
 public sealed record ManualProductInput(PensionProductType ProductType, string PolicyNumber, DateOnly SalaryMonth,
