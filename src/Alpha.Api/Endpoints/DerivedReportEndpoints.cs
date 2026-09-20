@@ -1,6 +1,7 @@
 using System.Globalization;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Reporting;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
 
@@ -106,7 +107,8 @@ public static class DerivedReportEndpoints
     }
 
     private static async Task<IResult> CreateDerivedReportAsync(Guid organizationId, Guid employerId,
-        CreateDerivedManualReportRequest request, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        CreateDerivedManualReportRequest request, IAlphaDbContext db, OrganizationAccessService access,
+        ReportPaymentAccountService paymentAccounts, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.ReportKind is not (ManualReportKind.Differences or ManualReportKind.Negative))
@@ -142,6 +144,9 @@ public static class DerivedReportEndpoints
 
         var report = new ManualReport(organizationId, employerId, request.ReportingMonth, request.SalaryPaymentDate,
             request.ReportKind, source.Id);
+        var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
+        if (paymentAccount is null) return Results.Conflict(new { error = "payment_account_required" });
+        await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, ct);
         db.ManualReports.Add(report);
 
         var employeeMap = new Dictionary<Guid, ManualReportEmployee>(sourceEmployees.Count);
@@ -192,10 +197,15 @@ public static class DerivedReportEndpoints
             report.Status,
             report.ReportKind,
             report.SourceReportId,
+            report.PaymentAccountId,
+            report.PaymentBankId,
+            report.PaymentBranchId,
+            report.PaymentAccountNumberMasked,
+            report.PaymentMandateReference,
             employeeCount = sourceEmployees.Count
         });
     }
 }
 
 public sealed record CreateDerivedManualReportRequest(Guid SourceReportId, ManualReportKind ReportKind,
-    DateOnly ReportingMonth, DateOnly? SalaryPaymentDate);
+    DateOnly ReportingMonth, DateOnly? SalaryPaymentDate, Guid? PaymentAccountId = null);

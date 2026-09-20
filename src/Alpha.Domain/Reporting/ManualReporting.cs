@@ -46,6 +46,24 @@ public sealed class ManualReport : Entity
     public DateTimeOffset? SnapshotTakenAt { get; private set; }
     public DateTimeOffset? ValidatedAt { get; private set; }
     public string ValidationError { get; private set; } = string.Empty;
+    public Guid? PaymentAccountId { get; private set; }
+    public int? PaymentBankId { get; private set; }
+    public int? PaymentBranchId { get; private set; }
+    public string PaymentAccountNumberMasked { get; private set; } = string.Empty;
+    public string PaymentMandateReference { get; private set; } = string.Empty;
+
+    public void SetPaymentAccountSnapshot(Guid paymentAccountId, int bankId, int branchId,
+        string accountNumberMasked, string? mandateReference)
+    {
+        EnsureEditable();
+        if (paymentAccountId == Guid.Empty) throw new ArgumentException("Payment account is required.", nameof(paymentAccountId));
+        PaymentAccountId = paymentAccountId;
+        PaymentBankId = bankId;
+        PaymentBranchId = branchId;
+        PaymentAccountNumberMasked = accountNumberMasked?.Trim() ?? string.Empty;
+        PaymentMandateReference = mandateReference?.Trim() ?? string.Empty;
+        MarkDirty();
+    }
 
     public void UpdateDetails(DateOnly reportingMonth, DateOnly? salaryPaymentDate) { EnsureEditable(); ReportingMonth = new DateOnly(reportingMonth.Year, reportingMonth.Month, 1); SalaryPaymentDate = salaryPaymentDate; MarkDirty(); }
     public void MarkReadyForValidation() { EnsureEditable(); Status = ManualReportStatus.ReadyForValidation; ValidationError = string.Empty; Touch(); }

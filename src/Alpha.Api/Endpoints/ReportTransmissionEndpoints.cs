@@ -2,6 +2,7 @@ using Alpha.Api.Services;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Application.Entitlements;
+using Alpha.Application.Reporting;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,7 +25,7 @@ public static class ReportTransmissionEndpoints
         return Results.Ok(await db.ReportTransmissions.AsNoTracking().Where(x => x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId).OrderByDescending(x => x.AttemptNumber).Select(x => new { x.Id, x.Provider, x.AttemptNumber, x.Status, x.ExternalId, x.PayloadHash, x.ErrorMessage, x.StartedAt, x.SentAt, x.CompletedAt, x.CreatedAt }).ToListAsync(ct));
     }
 
-    private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid reportId, SendReportRequest? request, IAlphaDbContext db, OrganizationAccessService access, EntitlementService entitlements, IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter, CancellationToken ct)
+    private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid reportId, SendReportRequest? request, IAlphaDbContext db, OrganizationAccessService access, EntitlementService entitlements, ReportPaymentAccountService paymentAccounts, IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter, CancellationToken ct)
     {
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
@@ -33,6 +34,10 @@ public static class ReportTransmissionEndpoints
         var report = await db.ManualReports.FirstOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
         if (report.Status != ManualReportStatus.Validated) return Results.Conflict(new { error = "Only a report that passed final validation can be transmitted.", status = report.Status.ToString() });
+
+        var paymentValidation = await paymentAccounts.ValidateForTransmissionAsync(report, ct);
+        if (!paymentValidation.IsValid)
+            return Results.Conflict(new { error = paymentValidation.Error });
 
         var providerName = string.IsNullOrWhiteSpace(request?.Provider) ? "MockClearinghouse" : request.Provider.Trim();
         var provider = providers.FirstOrDefault(x => string.Equals(x.Name, providerName, StringComparison.OrdinalIgnoreCase));

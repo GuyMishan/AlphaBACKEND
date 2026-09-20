@@ -73,6 +73,11 @@ CREATE TABLE IF NOT EXISTS reporting.manual_reports (
 );
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "ReportKind" varchar(30) NOT NULL DEFAULT 'Current';
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "SourceReportId" uuid NULL;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentAccountId" uuid NULL;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentBankId" integer NULL;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentBranchId" integer NULL;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentAccountNumberMasked" varchar(40) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentMandateReference" varchar(200) NOT NULL DEFAULT '';
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_manual_reports_source') THEN
