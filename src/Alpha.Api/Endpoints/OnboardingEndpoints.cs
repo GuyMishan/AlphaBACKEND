@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Alpha.Api.Contracts;
 using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
 using Alpha.Domain.Auditing;
@@ -9,16 +10,6 @@ using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Endpoints;
-
-public sealed record SelfServiceOnboardingRequest(
-    string LegalName,
-    string RegistrationNumber,
-    string WithholdingFileNumber,
-    string ContactFirstName,
-    string ContactLastName,
-    string ContactPhone,
-    string ContactEmail,
-    string ContactMobile);
 
 public static class OnboardingEndpoints
 {
@@ -42,22 +33,15 @@ public static class OnboardingEndpoints
             return Results.Ok(new { needsOnboarding = !hasAccess, hasAccess });
         });
 
-        group.MapPost("/self-service", async (SelfServiceOnboardingRequest request, AlphaDbContext db,
+        group.MapPost("/self-service", async (CreateEmployerRequest request, AlphaDbContext db,
             ICurrentUser currentUser, HttpContext http, CancellationToken ct) =>
         {
             if (!currentUser.IsAuthenticated || currentUser.IsPlatformAdmin) return Results.Forbid();
 
             var validationError = ApiInputValidation.Employer(
-                request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber);
+                request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber,
+                request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
             if (validationError is not null) return Results.BadRequest(new { error = validationError });
-
-            if (string.IsNullOrWhiteSpace(request.ContactFirstName) ||
-                string.IsNullOrWhiteSpace(request.ContactLastName) ||
-                string.IsNullOrWhiteSpace(request.ContactEmail) ||
-                !request.ContactEmail.Contains('@') ||
-                string.IsNullOrWhiteSpace(request.ContactPhone) ||
-                string.IsNullOrWhiteSpace(request.ContactMobile))
-                return Results.BadRequest(new { error = "Employer contact details are required." });
 
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             await db.Database.ExecuteSqlInterpolatedAsync(
