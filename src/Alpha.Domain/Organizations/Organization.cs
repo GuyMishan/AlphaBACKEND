@@ -21,6 +21,15 @@ public sealed class Organization : Entity
     public OrganizationType Type { get; private set; }
     public OrganizationStatus Status { get; private set; } = OrganizationStatus.Onboarding;
 
+    public void Update(string name, OrganizationType type)
+    {
+        Name = string.IsNullOrWhiteSpace(name)
+            ? throw new ArgumentException("Organization name is required.", nameof(name))
+            : name.Trim();
+        Type = type;
+        Touch();
+    }
+
     public void Activate()
     {
         Status = OrganizationStatus.Active;
