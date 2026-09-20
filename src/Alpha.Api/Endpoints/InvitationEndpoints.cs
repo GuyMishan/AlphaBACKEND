@@ -9,6 +9,7 @@ using Alpha.Domain.Auditing;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Identity;
 using Alpha.Domain.Organizations;
+using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Endpoints;
