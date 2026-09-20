@@ -136,6 +136,14 @@ public static class EmployerProfileCenterEndpoints
         if (settings is not null) return settings;
 
         settings = new EmployerProfileSettings(employerId);
+        var organization = await db.Organizations.AsNoTracking()
+            .SingleAsync(x => x.Id == organizationId, ct);
+        var employerCount = await db.Employers.AsNoTracking()
+            .CountAsync(x => x.OrganizationId == organizationId, ct);
+        var defaultMode = organization.Type == Alpha.Domain.Organizations.OrganizationType.SelfService || employerCount <= 1
+            ? EmployerBillingMode.EmployerDirect
+            : EmployerBillingMode.InheritOrganization;
+        settings.ApplyDefaultBillingMode(defaultMode);
         db.EmployerProfileSettings.Add(settings);
         return settings;
     }
