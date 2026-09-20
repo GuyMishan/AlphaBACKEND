@@ -55,9 +55,9 @@ public static class EmployerEndpoints
             if (!await access.CanCreateEmployerAsync(organizationId, ct)) return Results.Forbid();
             var entitlement = await entitlements.CanCreateEmployer(organizationId, ct);
             if (!entitlement.Allowed) return EntitlementError(entitlement);
-            var validationError = ApiInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber);
+            var validationError = ApiInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber, request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
             if (validationError is not null) return Results.BadRequest(new { error = validationError });
-            var item = new Employer(organizationId, request.LegalName.Trim(), request.RegistrationNumber.Trim(), request.WithholdingFileNumber.Trim());
+            var item = new Employer(organizationId, request.LegalName.Trim(), request.RegistrationNumber.Trim(), request.WithholdingFileNumber.Trim(), request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
             db.Employers.Add(item);
             await billingInheritance.ApplyDefaultsForNewEmployerAsync(organizationId, item.Id, ct);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.created", nameof(Employer), item.Id,
@@ -95,12 +95,13 @@ public static class EmployerEndpoints
             HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-            var validationError = ApiInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber);
+            var validationError = ApiInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber, request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
             if (validationError is not null) return Results.BadRequest(new { error = validationError });
             var item = await db.Employers.SingleOrDefaultAsync(x =>
                 x.Id == employerId && x.OrganizationId == organizationId, ct);
             if (item is null) return Results.NotFound();
             item.Update(request.LegalName.Trim(), request.RegistrationNumber.Trim(), request.WithholdingFileNumber.Trim());
+            item.UpdateInterfaceContact(request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.updated", nameof(Employer), item.Id,
                 organizationId, item.Id, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
