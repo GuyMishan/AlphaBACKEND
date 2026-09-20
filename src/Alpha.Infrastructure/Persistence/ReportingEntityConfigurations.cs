@@ -55,6 +55,8 @@ public sealed class ManualReportConfiguration : IEntityTypeConfiguration<ManualR
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(40);
         b.Property(x => x.ReportKind).HasConversion<string>().HasMaxLength(30);
         b.Property(x => x.ValidationError).HasMaxLength(2000);
+        b.Property(x => x.PaymentAccountNumberMasked).HasMaxLength(40);
+        b.Property(x => x.PaymentMandateReference).HasMaxLength(200);
         b.HasIndex(x => new { x.OrganizationId, x.EmployerId, x.ReportingMonth });
         b.HasIndex(x => x.SourceReportId);
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
