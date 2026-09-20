@@ -54,7 +54,9 @@ public static class EmployerProfileCenterEndpoints
             billing = new
             {
                 mode = settings?.BillingMode ?? EmployerBillingMode.EmployerDirect,
-                status = settings?.BillingStatus ?? EmployerBillingStatus.NotConfigured
+                modeOverridden = settings?.BillingModeOverridden ?? false,
+                status = settings?.BillingStatus ?? EmployerBillingStatus.NotConfigured,
+                canChangeMode = await access.CanManageOrganizationAsync(organizationId, ct)
             },
             reporting = new
             {
@@ -86,7 +88,7 @@ public static class EmployerProfileCenterEndpoints
         EmployerBillingSettingsRequest request, IAlphaDbContext db, ICurrentUser currentUser,
         OrganizationAccessService access, HttpContext http, CancellationToken ct)
     {
-        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         if (!Enum.IsDefined(request.BillingMode)) return Results.BadRequest(new { error = "Invalid billing mode." });
         if (request.BillingStatus.HasValue && !Enum.IsDefined(request.BillingStatus.Value))
             return Results.BadRequest(new { error = "Invalid billing status." });
