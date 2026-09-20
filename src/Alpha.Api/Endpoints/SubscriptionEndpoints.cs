@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Entitlements;
 using Alpha.Domain.Auditing;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,6 +13,16 @@ public static class SubscriptionEndpoints
 {
     public static IEndpointRouteBuilder MapSubscriptionEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/api/organizations/{organizationId:guid}/entitlements", async (
+            Guid organizationId,
+            OrganizationAccessService access,
+            EntitlementService entitlements,
+            CancellationToken ct) =>
+        {
+            if (!await access.CanAccessOrganizationScopeAsync(organizationId, ct)) return Results.Forbid();
+            return Results.Ok(await entitlements.GetSnapshot(organizationId, ct));
+        }).RequireAuthorization().WithTags("Subscriptions");
+
         endpoints.MapGet("/api/organizations/{organizationId:guid}/subscription", async (
             Guid organizationId,
             IAlphaDbContext db,
