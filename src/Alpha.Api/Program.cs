@@ -7,6 +7,7 @@ using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Application.Billing;
 using Alpha.Application.Entitlements;
+using Alpha.Application.Identity;
 using Alpha.Application.Reporting;
 using Alpha.Infrastructure;
 using Alpha.Infrastructure.Persistence;
@@ -24,6 +25,7 @@ builder.Services.AddScoped<OrganizationAccessService>();
 builder.Services.AddScoped<BillingInheritanceService>();
 builder.Services.AddScoped<BillingGateService>();
 builder.Services.AddScoped<EntitlementService>();
+builder.Services.AddScoped<InvitationService>();
 builder.Services.AddScoped<ReportPaymentAccountService>();
 builder.Services.Configure<EmployerInterface006Options>(builder.Configuration.GetSection(EmployerInterface006Options.SectionName));
 builder.Services.AddSingleton<EmployerInterfaceSchemaRegistry>();
@@ -48,5 +50,5 @@ app.UseExceptionHandler(); app.UseHttpsRedirection(); app.UseAuthentication(); a
 if (app.Environment.IsDevelopment()) { app.MapOpenApi(); app.UseSwagger(); app.UseSwaggerUI(); }
 app.MapHealthChecks("/health", new HealthCheckOptions { AllowCachingResponses = false }).AllowAnonymous();
 app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) => await db.Database.CanConnectAsync(ct) ? Results.Ok(new { status = "healthy", database = "postgresql" }) : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable)).AllowAnonymous().WithTags("Health");
-app.MapAuthEndpoints(); app.MapOnboardingEndpoints(); app.MapPlatformEndpoints(); app.MapSubscriptionEndpoints(); app.MapReferenceDataEndpoints(); app.MapPublicReferenceDataEndpoints(); app.MapOrganizationEndpoints(); app.MapOrganizationProfileEndpoints(); app.MapBillingAccountEndpoints(); app.MapEmployerEndpoints(); app.MapAccessEndpoints(); app.MapUserPreferencesEndpoints(); app.MapEmployeePensionMixEndpoints(); app.MapManualReportEndpoints(); app.MapDerivedReportEndpoints(); app.MapReportValidationEndpoints(); app.MapEmployerInterfaceEndpoints(); app.MapEmployerInterfaceProfileEndpoints(); app.MapEmployerProfileCenterEndpoints(); app.MapEmployerPaymentAccountEndpoints(); app.MapEmployerInterfacePreviousReferenceEndpoints(); app.MapReportTransmissionEndpoints(); app.MapReportFeedbackEndpoints(); app.Run();
+app.MapAuthEndpoints(); app.MapInvitationEndpoints(); app.MapOnboardingEndpoints(); app.MapPlatformEndpoints(); app.MapSubscriptionEndpoints(); app.MapReferenceDataEndpoints(); app.MapPublicReferenceDataEndpoints(); app.MapOrganizationEndpoints(); app.MapOrganizationProfileEndpoints(); app.MapBillingAccountEndpoints(); app.MapEmployerEndpoints(); app.MapAccessEndpoints(); app.MapUserPreferencesEndpoints(); app.MapEmployeePensionMixEndpoints(); app.MapManualReportEndpoints(); app.MapDerivedReportEndpoints(); app.MapReportValidationEndpoints(); app.MapEmployerInterfaceEndpoints(); app.MapEmployerInterfaceProfileEndpoints(); app.MapEmployerProfileCenterEndpoints(); app.MapEmployerPaymentAccountEndpoints(); app.MapEmployerInterfacePreviousReferenceEndpoints(); app.MapReportTransmissionEndpoints(); app.MapReportFeedbackEndpoints(); app.Run();
 public partial class Program;
