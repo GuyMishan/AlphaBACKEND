@@ -3,6 +3,7 @@ using Alpha.Api.Contracts;
 using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Entitlements;
 using Alpha.Domain.Auditing;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
@@ -47,9 +48,11 @@ public static class EmployerEndpoints
         });
 
         group.MapPost("/", async (Guid organizationId, CreateEmployerRequest request, IAlphaDbContext db,
-            ICurrentUser user, OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
+            ICurrentUser user, OrganizationAccessService access, EntitlementService entitlements, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanCreateEmployerAsync(organizationId, ct)) return Results.Forbid();
+            var entitlement = await entitlements.CanCreateEmployer(organizationId, ct);
+            if (!entitlement.Allowed) return EntitlementError(entitlement);
             var validationError = ApiInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber);
             if (validationError is not null) return Results.BadRequest(new { error = validationError });
             var item = new Employer(organizationId, request.LegalName.Trim(), request.RegistrationNumber.Trim(), request.WithholdingFileNumber.Trim());
@@ -132,9 +135,11 @@ public static class EmployerEndpoints
 
         group.MapPost("/{employerId:guid}/employees", async (Guid organizationId, Guid employerId,
             CreateEmployeeRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access,
-            HttpContext http, CancellationToken ct) =>
+            EntitlementService entitlements, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanCreateEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var entitlement = await entitlements.CanCreateEmployee(organizationId, ct);
+            if (!entitlement.Allowed) return EntitlementError(entitlement);
             var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate)
                 ?? ValidateEmployeeProfile(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City, request.Street,
                     request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
@@ -197,6 +202,16 @@ public static class EmployerEndpoints
         });
         return endpoints;
     }
+
+    private static IResult EntitlementError(EntitlementDecision decision) =>
+        Results.Json(new
+        {
+            error = decision.Error,
+            limit = decision.Limit,
+            current = decision.Current,
+            maximum = decision.Maximum,
+            feature = decision.Feature
+        }, statusCode: StatusCodes.Status409Conflict);
 
     private static string? ValidateEmployeeProfile(DateOnly birthDate, PersonGender gender, string? email, string? mobile,
         string? city, string? street, string? houseNumber, string? apartment, string? postalCode, string? postOfficeBox)

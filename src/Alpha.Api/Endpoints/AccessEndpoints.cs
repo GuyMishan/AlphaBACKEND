@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Entitlements;
 using Alpha.Domain.Auditing;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Organizations;
@@ -72,9 +73,11 @@ public static class AccessEndpoints
 
         group.MapPost("/users", async (Guid organizationId, AddAccessUserRequest request,
             IAlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
-            HttpContext http, CancellationToken ct) =>
+            EntitlementService entitlements, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            var entitlement = await entitlements.CanInviteUser(organizationId, request.UserId, ct);
+            if (!entitlement.Allowed) return EntitlementError(entitlement);
             if (!await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsActive, ct))
                 return Results.BadRequest(new { error = "User does not exist or is inactive." });
 
@@ -242,4 +245,14 @@ public static class AccessEndpoints
 
         return endpoints;
     }
+
+    private static IResult EntitlementError(EntitlementDecision decision) =>
+        Results.Json(new
+        {
+            error = decision.Error,
+            limit = decision.Limit,
+            current = decision.Current,
+            maximum = decision.Maximum,
+            feature = decision.Feature
+        }, statusCode: StatusCodes.Status409Conflict);
 }
