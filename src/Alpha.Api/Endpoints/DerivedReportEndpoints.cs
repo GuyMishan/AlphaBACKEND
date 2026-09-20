@@ -108,7 +108,7 @@ public static class DerivedReportEndpoints
     private static async Task<IResult> CreateDerivedReportAsync(Guid organizationId, Guid employerId,
         CreateDerivedManualReportRequest request, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.ReportKind is not (ManualReportKind.Differences or ManualReportKind.Negative))
             return Results.BadRequest(new { error = "Derived reports must be Differences or Negative." });
 

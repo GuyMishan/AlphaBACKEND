@@ -42,7 +42,7 @@ public static class ReportValidationEndpoints
     private static async Task<IResult> CommitValidationAsync(Guid organizationId, Guid employerId, Guid reportId,
         string? stage, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var normalizedStage = NormalizeStage(stage);
         var result = await ValidateReportAsync(organizationId, employerId, reportId, normalizedStage, db, true, ct);
         if (result is null) return Results.NotFound();

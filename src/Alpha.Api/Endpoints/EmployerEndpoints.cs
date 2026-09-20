@@ -21,7 +21,7 @@ public static class EmployerEndpoints
         group.MapGet("/", async (Guid organizationId, IAlphaDbContext db, ICurrentUser user,
             OrganizationAccessService access, CancellationToken ct) =>
         {
-            if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            if (!await access.CanAccessOrganizationScopeAsync(organizationId, ct)) return Results.Forbid();
             var query = ApplyEmployerAccess(db.Employers.AsNoTracking().Where(x => x.OrganizationId == organizationId), organizationId, db, user, await access.GetMembershipAsync(organizationId, ct));
             return Results.Ok(await query.OrderBy(x => x.LegalName).Take(500).ToListAsync(ct));
         });
@@ -29,7 +29,7 @@ public static class EmployerEndpoints
         group.MapGet("/search", async (Guid organizationId, string? search, int skip, int take,
             IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access, CancellationToken ct) =>
         {
-            if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            if (!await access.CanAccessOrganizationScopeAsync(organizationId, ct)) return Results.Forbid();
             skip = Math.Max(0, skip);
             take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
             var query = ApplyEmployerAccess(db.Employers.AsNoTracking().Where(x => x.OrganizationId == organizationId), organizationId, db, user, await access.GetMembershipAsync(organizationId, ct));
@@ -75,9 +75,12 @@ public static class EmployerEndpoints
             if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
             return Results.Ok(new
             {
+                canManageEmployer = await access.CanManageEmployerAsync(organizationId, employerId, ct),
                 canEditEmployer = await access.CanEditEmployerAsync(organizationId, employerId, ct),
                 canCreateEmployee = await access.CanCreateEmployeeAsync(organizationId, employerId, ct),
-                canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct)
+                canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct),
+                canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct),
+                canTransmitReport = await access.CanTransmitReportAsync(organizationId, employerId, ct)
             });
         });
 
@@ -213,12 +216,13 @@ public static class EmployerEndpoints
 
     private static IQueryable<Employer> ApplyEmployerAccess(IQueryable<Employer> query, Guid organizationId, IAlphaDbContext db, ICurrentUser user, OrganizationMembership? membership)
     {
-        if (!user.IsPlatformAdmin && membership?.EmployerAccessMode == EmployerAccessMode.SelectedEmployers)
-        {
-            var ids = db.EmployerUserAccesses.Where(x => x.UserId == user.UserId).Select(x => x.EmployerId);
-            query = query.Where(x => ids.Contains(x.Id));
-        }
-        return query;
+        if (user.IsPlatformAdmin) return query;
+        if (membership?.EmployerAccessMode == EmployerAccessMode.AllEmployers) return query;
+
+        var ids = db.EmployerUserAccesses
+            .Where(x => x.UserId == user.UserId && x.OrganizationId == organizationId)
+            .Select(x => x.EmployerId);
+        return query.Where(x => ids.Contains(x.Id));
     }
 
     private static IQueryable<EmployeeListRow> EmployeeQuery(IAlphaDbContext db, Guid organizationId, Guid employerId) =>

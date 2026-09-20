@@ -10,6 +10,7 @@ namespace Alpha.Api.Endpoints;
 
 public sealed record AddAccessUserRequest(Guid UserId, OrganizationRole Role, EmployerAccessMode EmployerAccessMode);
 public sealed record UpdateAccessUserRequest(OrganizationRole Role, EmployerAccessMode EmployerAccessMode);
+public sealed record UpdateEmployerAccessRoleRequest(EmployerRole Role);
 
 public static class AccessEndpoints
 {
@@ -150,7 +151,7 @@ public static class AccessEndpoints
             var query = from grant in db.EmployerUserAccesses.AsNoTracking()
                         join employer in db.Employers.AsNoTracking() on grant.EmployerId equals employer.Id
                         where grant.OrganizationId == organizationId && grant.UserId == userId
-                        select new { employer.Id, employer.LegalName, employer.RegistrationNumber };
+                        select new { employer.Id, employer.LegalName, employer.RegistrationNumber, grant.Role };
             if (!string.IsNullOrWhiteSpace(term))
                 query = query.Where(x => x.LegalName.StartsWith(term) || x.RegistrationNumber.StartsWith(term));
             var rows = await query.OrderBy(x => x.LegalName).ThenBy(x => x.Id)
@@ -198,10 +199,28 @@ public static class AccessEndpoints
             if (await db.EmployerUserAccesses.AnyAsync(x => x.OrganizationId == organizationId &&
                 x.UserId == userId && x.EmployerId == employerId, ct)) return Results.NoContent();
 
-            var grant = new EmployerUserAccess(userId, organizationId, employerId);
+            var grant = new EmployerUserAccess(userId, organizationId, employerId, EmployerRole.User);
             db.EmployerUserAccesses.Add(grant);
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "employer.access.granted", nameof(EmployerUserAccess),
                 grant.Id, organizationId, employerId, JsonSerializer.Serialize(new { userId, employerId }), http.TraceIdentifier));
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+
+        group.MapPut("/users/{userId:guid}/employers/{employerId:guid}/role", async (Guid organizationId, Guid userId,
+            Guid employerId, UpdateEmployerAccessRoleRequest request, IAlphaDbContext db, ICurrentUser currentUser,
+            OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
+        {
+            if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            if (!Enum.IsDefined(request.Role)) return Results.BadRequest(new { error = "Invalid employer role." });
+
+            var grant = await db.EmployerUserAccesses.SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId && x.UserId == userId && x.EmployerId == employerId, ct);
+            if (grant is null) return Results.NotFound();
+
+            grant.ChangeRole(request.Role);
+            db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "employer.access.role.updated", nameof(EmployerUserAccess),
+                grant.Id, organizationId, employerId, JsonSerializer.Serialize(new { userId, employerId, request.Role }), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });

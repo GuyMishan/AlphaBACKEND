@@ -76,6 +76,7 @@ public sealed class EmployerUserAccessConfiguration : IEntityTypeConfiguration<E
     {
         b.ToTable("employer_user_access", "employers");
         b.HasKey(x => x.Id);
+        b.Property(x => x.Role).HasConversion<string>().HasMaxLength(40).IsRequired();
         b.HasIndex(x => new { x.UserId, x.EmployerId }).IsUnique();
         b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
