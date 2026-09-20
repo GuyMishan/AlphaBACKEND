@@ -13,10 +13,6 @@ public sealed record EmployerBillingSettingsRequest(EmployerBillingMode BillingM
 public sealed record EmployerReportingSettingsRequest(
     int? DefaultSalaryPaymentDay, int? DefaultPaymentMethodCode, int? DefaultEmployerAccountType,
     int? DefaultReceiverAccountType, string? ReportingNotes);
-public sealed record EmployerPensionPaymentAccountRequest(
-    string AccountName, int BankCode, int BranchCode, string AccountNumber, string AccountHolderName,
-    bool IsDefault, DebitAuthorizationStatus DebitAuthorizationStatus);
-
 public static class EmployerProfileCenterEndpoints
 {
     public static IEndpointRouteBuilder MapEmployerProfileCenterEndpoints(this IEndpointRouteBuilder endpoints)
@@ -28,11 +24,6 @@ public static class EmployerProfileCenterEndpoints
         group.MapPut("/address", UpdateAddressAsync);
         group.MapPut("/billing", UpdateBillingAsync);
         group.MapPut("/reporting", UpdateReportingAsync);
-
-        group.MapGet("/pension-payment-accounts", GetPaymentAccountsAsync);
-        group.MapPost("/pension-payment-accounts", CreatePaymentAccountAsync);
-        group.MapPut("/pension-payment-accounts/{accountId:guid}", UpdatePaymentAccountAsync);
-        group.MapDelete("/pension-payment-accounts/{accountId:guid}", DeletePaymentAccountAsync);
 
         return endpoints;
     }
@@ -133,112 +124,6 @@ public static class EmployerProfileCenterEndpoints
         return Results.NoContent();
     }
 
-    private static async Task<IResult> GetPaymentAccountsAsync(Guid organizationId, Guid employerId,
-        IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
-    {
-        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-        return Results.Ok(await db.EmployerPensionPaymentAccounts.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId)
-            .OrderByDescending(x => x.IsDefault).ThenBy(x => x.AccountName)
-            .ToListAsync(ct));
-    }
-
-    private static async Task<IResult> CreatePaymentAccountAsync(Guid organizationId, Guid employerId,
-        EmployerPensionPaymentAccountRequest request, IAlphaDbContext db, ICurrentUser currentUser,
-        OrganizationAccessService access, HttpContext http, CancellationToken ct)
-    {
-        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-        if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
-            return Results.NotFound();
-
-        EmployerPensionPaymentAccount item;
-        try
-        {
-            item = new EmployerPensionPaymentAccount(organizationId, employerId, request.AccountName,
-                request.BankCode, request.BranchCode, request.AccountNumber, request.AccountHolderName);
-            item.SetDebitAuthorizationStatus(request.DebitAuthorizationStatus);
-        }
-        catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
-
-        if (request.IsDefault || !await db.EmployerPensionPaymentAccounts.AnyAsync(x => x.EmployerId == employerId, ct))
-        {
-            await ClearDefaultAsync(db, employerId, null, ct);
-            item.SetDefault(true);
-        }
-
-        db.EmployerPensionPaymentAccounts.Add(item);
-        AddAudit(db, currentUser, http, "employer.pension-payment-account.created", item.Id, organizationId, employerId,
-            new { item.AccountName, item.BankCode, item.BranchCode, item.IsDefault, item.DebitAuthorizationStatus });
-        await db.SaveChangesAsync(ct);
-        return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/profile-center/pension-payment-accounts/{item.Id}", item);
-    }
-
-    private static async Task<IResult> UpdatePaymentAccountAsync(Guid organizationId, Guid employerId, Guid accountId,
-        EmployerPensionPaymentAccountRequest request, IAlphaDbContext db, ICurrentUser currentUser,
-        OrganizationAccessService access, HttpContext http, CancellationToken ct)
-    {
-        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-        var item = await db.EmployerPensionPaymentAccounts.SingleOrDefaultAsync(x =>
-            x.Id == accountId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
-        if (item is null) return Results.NotFound();
-
-        try
-        {
-            item.Update(request.AccountName, request.BankCode, request.BranchCode, request.AccountNumber, request.AccountHolderName);
-            item.SetDebitAuthorizationStatus(request.DebitAuthorizationStatus);
-        }
-        catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
-
-        if (request.IsDefault)
-        {
-            await ClearDefaultAsync(db, employerId, item.Id, ct);
-            item.SetDefault(true);
-        }
-        else if (item.IsDefault)
-        {
-            var hasOther = await db.EmployerPensionPaymentAccounts.AnyAsync(x => x.EmployerId == employerId && x.Id != item.Id, ct);
-            if (!hasOther) item.SetDefault(true);
-        }
-
-        AddAudit(db, currentUser, http, "employer.pension-payment-account.updated", item.Id, organizationId, employerId,
-            new { item.AccountName, item.BankCode, item.BranchCode, request.IsDefault, item.DebitAuthorizationStatus });
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(item);
-    }
-
-    private static async Task<IResult> DeletePaymentAccountAsync(Guid organizationId, Guid employerId, Guid accountId,
-        IAlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
-        HttpContext http, CancellationToken ct)
-    {
-        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-        var item = await db.EmployerPensionPaymentAccounts.SingleOrDefaultAsync(x =>
-            x.Id == accountId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
-        if (item is null) return Results.NoContent();
-
-        var wasDefault = item.IsDefault;
-        db.EmployerPensionPaymentAccounts.Remove(item);
-        AddAudit(db, currentUser, http, "employer.pension-payment-account.deleted", item.Id, organizationId, employerId,
-            new { item.AccountName, item.BankCode, item.BranchCode });
-
-        if (wasDefault)
-        {
-            var replacement = await db.EmployerPensionPaymentAccounts
-                .Where(x => x.EmployerId == employerId && x.Id != accountId)
-                .OrderBy(x => x.CreatedAt)
-                .FirstOrDefaultAsync(ct);
-            replacement?.SetDefault(true);
-        }
-
-        await db.SaveChangesAsync(ct);
-        return Results.NoContent();
-    }
-
     private static async Task<EmployerProfileSettings?> GetOrCreateSettingsAsync(Guid organizationId, Guid employerId,
         IAlphaDbContext db, CancellationToken ct)
     {
@@ -251,14 +136,6 @@ public static class EmployerProfileCenterEndpoints
         settings = new EmployerProfileSettings(employerId);
         db.EmployerProfileSettings.Add(settings);
         return settings;
-    }
-
-    private static async Task ClearDefaultAsync(IAlphaDbContext db, Guid employerId, Guid? exceptId, CancellationToken ct)
-    {
-        var defaults = await db.EmployerPensionPaymentAccounts
-            .Where(x => x.EmployerId == employerId && x.IsDefault && (!exceptId.HasValue || x.Id != exceptId.Value))
-            .ToListAsync(ct);
-        foreach (var item in defaults) item.SetDefault(false);
     }
 
     private static void AddAudit(IAlphaDbContext db, ICurrentUser currentUser, HttpContext http,
