@@ -8,6 +8,7 @@ public sealed class RegistrationOtpChallenge
     public string NationalId { get; set; } = "";
     public string Phone { get; set; } = "";
     public string CodeHash { get; set; } = "";
+    public string? InvitationTokenHash { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
     public DateTime? ConsumedAt { get; set; }
