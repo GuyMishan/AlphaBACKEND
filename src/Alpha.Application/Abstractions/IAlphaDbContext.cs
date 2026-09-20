@@ -14,6 +14,7 @@ public interface IAlphaDbContext
     DbSet<User> Users { get; }
     DbSet<Organization> Organizations { get; }
     DbSet<OrganizationMembership> OrganizationMemberships { get; }
+    DbSet<OrganizationProfileSettings> OrganizationProfileSettings { get; }
     DbSet<Employer> Employers { get; }
     DbSet<EmployerUserAccess> EmployerUserAccesses { get; }
     DbSet<EmployerProfileSettings> EmployerProfileSettings { get; }

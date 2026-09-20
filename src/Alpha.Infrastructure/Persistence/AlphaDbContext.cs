@@ -17,6 +17,7 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<RegistrationOtpChallenge> RegistrationOtpChallenges => Set<RegistrationOtpChallenge>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
+    public DbSet<OrganizationProfileSettings> OrganizationProfileSettings => Set<OrganizationProfileSettings>();
     public DbSet<Employer> Employers => Set<Employer>();
     public DbSet<EmployerUserAccess> EmployerUserAccesses => Set<EmployerUserAccess>();
     public DbSet<EmployerProfileSettings> EmployerProfileSettings => Set<EmployerProfileSettings>();
