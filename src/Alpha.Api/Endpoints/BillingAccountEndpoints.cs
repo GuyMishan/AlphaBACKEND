@@ -39,6 +39,7 @@ public static class BillingAccountEndpoints
             .RequireAuthorization().WithTags("Alpha Billing");
         employer.MapGet("/", GetEmployerBillingAsync);
         employer.MapGet("/resolution", GetEmployerBillingResolutionAsync);
+        employer.MapGet("/gate", GetEmployerBillingGateAsync);
         employer.MapPut("/", UpsertEmployerBillingAsync);
         employer.MapPut("/provider-metadata", UpdateEmployerProviderMetadataAsync);
 
@@ -111,6 +112,25 @@ public static class BillingAccountEndpoints
             effectiveAccount = ToResponse(resolution.Account,
                 resolution.Source == "Organization" ? resolution.OrganizationId : null,
                 resolution.Source == "Employer" ? resolution.EmployerId : null)
+        });
+    }
+
+    private static async Task<IResult> GetEmployerBillingGateAsync(Guid organizationId, Guid employerId,
+        OrganizationAccessService access, BillingGateService billingGate, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+
+        var decision = await billingGate.CanTransmitAsync(employerId, ct);
+        return Results.Ok(new
+        {
+            canTransmit = decision.Allowed,
+            error = decision.Error,
+            decision.BillingMode,
+            decision.Source,
+            decision.BilledThroughName,
+            decision.PaymentMethodType,
+            decision.PaymentMethodStatus,
+            decision.Configured
         });
     }
 
