@@ -12,6 +12,7 @@ namespace Alpha.Infrastructure.Persistence;
 public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : DbContext(options), IAlphaDbContext
 {
     public DbSet<User> Users => Set<User>();
+    public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
     public DbSet<Employer> Employers => Set<Employer>();
@@ -34,6 +35,12 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AlphaDbContext).Assembly);
+        var otp = modelBuilder.Entity<OtpChallenge>();
+        otp.ToTable("otp_challenges", "identity");
+        otp.HasKey(x => x.Id);
+        otp.Property(x => x.Channel).HasMaxLength(10);
+        otp.Property(x => x.CodeHash).HasMaxLength(64);
+        otp.HasIndex(x => new { x.UserId, x.CreatedAt });
         var limits = modelBuilder.Entity<ContributionPercentageLimit>();
         limits.ToTable("contribution_percentage_limits", "reporting");
         limits.HasKey(x => x.Id);
