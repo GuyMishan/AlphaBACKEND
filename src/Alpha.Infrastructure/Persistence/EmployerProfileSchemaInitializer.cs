@@ -56,10 +56,6 @@ public static class EmployerProfileSchemaInitializer
                 ON employers.employer_payment_accounts ("EmployerId", "BankId", "BranchId", "AccountNumber");
             CREATE INDEX IF NOT EXISTS "IX_employer_payment_accounts_EmployerId"
                 ON employers.employer_payment_accounts ("EmployerId");
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_employer_payment_accounts_one_default"
-                ON employers.employer_payment_accounts ("EmployerId")
-                WHERE "IsDefault" = true AND "IsActive" = true;
-
             CREATE TABLE IF NOT EXISTS employers.bank_debit_mandates (
                 "Id" uuid NOT NULL PRIMARY KEY,
                 "EmployerPaymentAccountId" uuid NOT NULL,
