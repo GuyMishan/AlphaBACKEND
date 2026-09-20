@@ -22,6 +22,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<OrganizationAccessService>();
 builder.Services.AddScoped<BillingInheritanceService>();
+builder.Services.AddScoped<BillingGateService>();
 builder.Services.AddScoped<EntitlementService>();
 builder.Services.AddScoped<ReportPaymentAccountService>();
 builder.Services.Configure<EmployerInterface006Options>(builder.Configuration.GetSection(EmployerInterface006Options.SectionName));
