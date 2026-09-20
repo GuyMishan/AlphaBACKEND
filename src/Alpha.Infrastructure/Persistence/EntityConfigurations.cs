@@ -25,6 +25,26 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
     }
 }
 
+public sealed class UserInvitationConfiguration : IEntityTypeConfiguration<UserInvitation>
+{
+    public void Configure(EntityTypeBuilder<UserInvitation> b)
+    {
+        b.ToTable("user_invitations", "identity");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Email).HasMaxLength(320).IsRequired();
+        b.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
+        b.Property(x => x.Status).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.OrganizationRole).HasConversion<string>().HasMaxLength(40);
+        b.Property(x => x.EmployerRole).HasConversion<string>().HasMaxLength(40);
+        b.HasIndex(x => x.TokenHash).IsUnique();
+        b.HasIndex(x => new { x.OrganizationId, x.Status, x.ExpiresAt });
+        b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<User>().WithMany().HasForeignKey(x => x.AcceptedByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
 {
     public void Configure(EntityTypeBuilder<Organization> b)

@@ -14,6 +14,7 @@ public interface IAlphaDbContext
 {
     DbSet<BillingAccount> BillingAccounts { get; }
     DbSet<User> Users { get; }
+    DbSet<UserInvitation> UserInvitations { get; }
     DbSet<Organization> Organizations { get; }
     DbSet<OrganizationMembership> OrganizationMemberships { get; }
     DbSet<OrganizationProfileSettings> OrganizationProfileSettings { get; }

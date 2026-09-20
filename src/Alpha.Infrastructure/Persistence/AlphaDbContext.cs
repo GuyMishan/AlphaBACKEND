@@ -17,6 +17,7 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<User> Users => Set<User>();
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
     public DbSet<RegistrationOtpChallenge> RegistrationOtpChallenges => Set<RegistrationOtpChallenge>();
+    public DbSet<UserInvitation> UserInvitations => Set<UserInvitation>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
     public DbSet<OrganizationProfileSettings> OrganizationProfileSettings => Set<OrganizationProfileSettings>();
@@ -59,6 +60,7 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
         registrationOtp.Property(x => x.NationalId).HasMaxLength(9);
         registrationOtp.Property(x => x.Phone).HasMaxLength(10);
         registrationOtp.Property(x => x.CodeHash).HasMaxLength(64);
+        registrationOtp.Property(x => x.InvitationTokenHash).HasMaxLength(64);
         registrationOtp.HasIndex(x => new { x.Email, x.CreatedAt });
         var limits = modelBuilder.Entity<ContributionPercentageLimit>();
         limits.ToTable("contribution_percentage_limits", "reporting");
