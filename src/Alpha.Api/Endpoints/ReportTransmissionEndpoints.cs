@@ -1,6 +1,7 @@
 using Alpha.Api.Services;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Billing;
 using Alpha.Application.Entitlements;
 using Alpha.Application.Reporting;
 using Alpha.Domain.Reporting;
@@ -25,7 +26,7 @@ public static class ReportTransmissionEndpoints
         return Results.Ok(await db.ReportTransmissions.AsNoTracking().Where(x => x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId).OrderByDescending(x => x.AttemptNumber).Select(x => new { x.Id, x.Provider, x.AttemptNumber, x.Status, x.ExternalId, x.PayloadHash, x.ErrorMessage, x.StartedAt, x.SentAt, x.CompletedAt, x.CreatedAt }).ToListAsync(ct));
     }
 
-    private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid reportId, SendReportRequest? request, IAlphaDbContext db, OrganizationAccessService access, EntitlementService entitlements, ReportPaymentAccountService paymentAccounts, IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter, CancellationToken ct)
+    private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid reportId, SendReportRequest? request, IAlphaDbContext db, OrganizationAccessService access, EntitlementService entitlements, ReportPaymentAccountService paymentAccounts, BillingGateService billingGate, IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter, CancellationToken ct)
     {
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
@@ -38,6 +39,19 @@ public static class ReportTransmissionEndpoints
         var paymentValidation = await paymentAccounts.ValidateForTransmissionAsync(report, ct);
         if (!paymentValidation.IsValid)
             return Results.Conflict(new { error = paymentValidation.Error });
+
+        var billingDecision = await billingGate.CanTransmitAsync(employerId, ct);
+        if (!billingDecision.Allowed)
+            return Results.Conflict(new
+            {
+                error = billingDecision.Error,
+                billingMode = billingDecision.BillingMode,
+                source = billingDecision.Source,
+                billedThroughName = billingDecision.BilledThroughName,
+                paymentMethodType = billingDecision.PaymentMethodType,
+                paymentMethodStatus = billingDecision.PaymentMethodStatus,
+                configured = billingDecision.Configured
+            });
 
         var providerName = string.IsNullOrWhiteSpace(request?.Provider) ? "MockClearinghouse" : request.Provider.Trim();
         var provider = providers.FirstOrDefault(x => string.Equals(x.Name, providerName, StringComparison.OrdinalIgnoreCase));
