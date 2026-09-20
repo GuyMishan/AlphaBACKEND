@@ -96,7 +96,7 @@ public static class ManualReportEndpoints
     private static async Task<IResult> CreateDraftAsync(Guid organizationId, Guid employerId,
         CreateManualReportRequest request, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.EmploymentIds.Count > MaxEmployeesPerDraft)
             return Results.BadRequest(new { error = $"Manual reports are limited to {MaxEmployeesPerDraft} employees per draft." });
         if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
@@ -140,7 +140,7 @@ public static class ManualReportEndpoints
     private static async Task<IResult> UpdateDetailsAsync(Guid organizationId, Guid employerId, Guid reportId,
         UpdateManualReportDetailsRequest request, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
         report.UpdateDetails(request.ReportingMonth, request.SalaryPaymentDate);
@@ -151,7 +151,7 @@ public static class ManualReportEndpoints
     private static async Task<IResult> SyncSelectionAsync(Guid organizationId, Guid employerId, Guid reportId,
         UpdateManualReportSelectionRequest request, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.EmploymentIds.Count > MaxEmployeesPerDraft)
             return Results.BadRequest(new { error = $"Manual reports are limited to {MaxEmployeesPerDraft} employees per draft." });
         var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
@@ -297,7 +297,7 @@ public static class ManualReportEndpoints
         Guid reportProductId, SaveManualReportPaymentRequest request, IAlphaDbContext db,
         OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var exists = await (from product in db.ManualReportProducts.AsNoTracking()
                             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
                             where product.Id == reportProductId && employee.ReportId == reportId
@@ -346,7 +346,7 @@ public static class ManualReportEndpoints
         Guid reportEmployeeId, SaveManualReportEmployeeRequest request, IAlphaDbContext db,
         OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.Products.Count > MaxProductsPerEmployee)
             return Results.BadRequest(new { error = $"An employee can have up to {MaxProductsPerEmployee} products in a report." });
 
