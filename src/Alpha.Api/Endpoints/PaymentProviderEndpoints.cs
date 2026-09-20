@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Alpha.Api.Endpoints;
 
 public sealed record BillingChargeRequest(decimal Amount, string? Description, bool CreateInvoice = true);
+public sealed record PaymentMethodSetupApiRequest(string? ReturnPath);
 
 public static class PaymentProviderEndpoints
 {
@@ -35,7 +36,7 @@ public static class PaymentProviderEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> StartOrganizationSetupAsync(Guid organizationId,
+    private static async Task<IResult> StartOrganizationSetupAsync(Guid organizationId, PaymentMethodSetupApiRequest request,
         IAlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
         IPaymentProvider provider, IConfiguration config, HttpContext http, CancellationToken ct)
     {
@@ -43,10 +44,10 @@ public static class PaymentProviderEndpoints
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.OrganizationId == organizationId && x.EmployerId == null, ct);
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
-        return await StartSetupAsync(account, organizationId, null, db, currentUser, provider, config, http, ct);
+        return await StartSetupAsync(account, organizationId, null, request.ReturnPath, db, currentUser, provider, config, http, ct);
     }
 
-    private static async Task<IResult> StartEmployerSetupAsync(Guid organizationId, Guid employerId,
+    private static async Task<IResult> StartEmployerSetupAsync(Guid organizationId, Guid employerId, PaymentMethodSetupApiRequest request,
         IAlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
         IPaymentProvider provider, IConfiguration config, HttpContext http, CancellationToken ct)
     {
@@ -54,11 +55,11 @@ public static class PaymentProviderEndpoints
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.EmployerId == employerId && x.OrganizationId == null, ct);
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
-        return await StartSetupAsync(account, organizationId, employerId, db, currentUser, provider, config, http, ct);
+        return await StartSetupAsync(account, organizationId, employerId, request.ReturnPath, db, currentUser, provider, config, http, ct);
     }
 
     private static async Task<IResult> StartSetupAsync(BillingAccount account, Guid organizationId, Guid? employerId,
-        IAlphaDbContext db, ICurrentUser currentUser, IPaymentProvider provider,
+        string? returnPath, IAlphaDbContext db, ICurrentUser currentUser, IPaymentProvider provider,
         IConfiguration config, HttpContext http, CancellationToken ct)
     {
         if (account.PaymentMethodType != BillingPaymentMethodType.CreditCard)
@@ -84,15 +85,20 @@ public static class PaymentProviderEndpoints
             if (string.IsNullOrWhiteSpace(frontend))
                 frontend = $"{http.Request.Scheme}://{http.Request.Host}";
 
+            var safeReturnPath = !string.IsNullOrWhiteSpace(returnPath) && returnPath.StartsWith('/') && !returnPath.StartsWith("//")
+                ? returnPath
+                : "/settings";
+            var returnSeparator = safeReturnPath.Contains('?') ? "&" : "?";
+
             var callbackBase = config["Payments:PublicApiBaseUrl"]?.TrimEnd('/');
             if (string.IsNullOrWhiteSpace(callbackBase))
                 callbackBase = $"{http.Request.Scheme}://{http.Request.Host}";
 
             var setup = await provider.CreatePaymentMethod(new PaymentMethodSetupRequest(
                 customerId,
-                $"{frontend}/settings?payment=success",
-                $"{frontend}/settings?payment=failed",
-                $"{frontend}/settings?payment=cancelled",
+                $"{frontend}{safeReturnPath}{returnSeparator}payment=success",
+                $"{frontend}{safeReturnPath}{returnSeparator}payment=failed",
+                $"{frontend}{safeReturnPath}{returnSeparator}payment=cancelled",
                 $"{callbackBase}/api/billing/payplus/callback",
                 account.Id.ToString()), ct);
 
