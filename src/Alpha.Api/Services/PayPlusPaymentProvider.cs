@@ -47,7 +47,7 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
             charge_default = "credit-card",
             hide_other_charge_methods = true,
             language_code = "he",
-            amount = 0,
+            amount = 1,
             currency_code = "ILS",
             sendEmailApproval = false,
             sendEmailFailure = false,
