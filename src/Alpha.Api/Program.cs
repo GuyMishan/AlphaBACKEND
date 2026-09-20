@@ -5,6 +5,7 @@ using Alpha.Api.Services;
 using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Billing;
 using Alpha.Application.Entitlements;
 using Alpha.Application.Reporting;
 using Alpha.Infrastructure;
@@ -20,6 +21,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<OrganizationAccessService>();
+builder.Services.AddScoped<BillingInheritanceService>();
 builder.Services.AddScoped<EntitlementService>();
 builder.Services.AddScoped<ReportPaymentAccountService>();
 builder.Services.Configure<EmployerInterface006Options>(builder.Configuration.GetSection(EmployerInterface006Options.SectionName));
@@ -38,7 +40,7 @@ else builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).
 builder.Services.AddAuthorization();
 var app = builder.Build();
 if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations")) { await using var scope = app.Services.CreateAsyncScope(); var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await db.Database.MigrateAsync(); }
-await using (var scope = app.Services.CreateAsyncScope()) { var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await IdentitySchemaInitializer.EnsureUpdatedAsync(db); await EmployerAccessSchemaInitializer.EnsureUpdatedAsync(db); await EmployerProfileSchemaInitializer.EnsureCreatedAsync(db); await OrganizationProfileSchemaInitializer.EnsureCreatedAsync(db); await BillingSchemaInitializer.EnsureCreatedAsync(db); await SubscriptionSchemaInitializer.EnsureCreatedAsync(db); await OtpSchemaInitializer.EnsureCreatedAsync(db); await RegistrationOtpSchemaInitializer.EnsureCreatedAsync(db); await ReportingSchemaInitializer.EnsureCreatedAsync(db); await Section14SchemaInitializer.EnsureUpdatedAsync(db); await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db); await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db); await ReportLifecycleSchemaInitializer.EnsureUpdatedAsync(db); await ReportTransmissionSchemaInitializer.EnsureUpdatedAsync(db); await EmployerInterfaceFeedbackSchemaInitializer.EnsureCreatedAsync(db); await EmployerInterface006SchemaInitializer.EnsureUpdatedAsync(db); await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db); await SelectOptionsSchemaInitializer.EnsureCreatedAsync(db); await EmployerInterface006CodebookInitializer.EnsureUpdatedAsync(db); await EmployerInterface006ReferenceRulesInitializer.EnsureUpdatedAsync(db); await EmployerInterface006ErrorCodeInitializer.EnsureUpdatedAsync(db); await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db); }
+await using (var scope = app.Services.CreateAsyncScope()) { var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await IdentitySchemaInitializer.EnsureUpdatedAsync(db); await EmployerAccessSchemaInitializer.EnsureUpdatedAsync(db); await EmployerProfileSchemaInitializer.EnsureCreatedAsync(db); await OrganizationProfileSchemaInitializer.EnsureCreatedAsync(db); await BillingSchemaInitializer.EnsureCreatedAsync(db); await BillingInheritanceSchemaInitializer.EnsureUpdatedAsync(db); await SubscriptionSchemaInitializer.EnsureCreatedAsync(db); await OtpSchemaInitializer.EnsureCreatedAsync(db); await RegistrationOtpSchemaInitializer.EnsureCreatedAsync(db); await ReportingSchemaInitializer.EnsureCreatedAsync(db); await Section14SchemaInitializer.EnsureUpdatedAsync(db); await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db); await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db); await ReportLifecycleSchemaInitializer.EnsureUpdatedAsync(db); await ReportTransmissionSchemaInitializer.EnsureUpdatedAsync(db); await EmployerInterfaceFeedbackSchemaInitializer.EnsureCreatedAsync(db); await EmployerInterface006SchemaInitializer.EnsureUpdatedAsync(db); await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db); await SelectOptionsSchemaInitializer.EnsureCreatedAsync(db); await EmployerInterface006CodebookInitializer.EnsureUpdatedAsync(db); await EmployerInterface006ReferenceRulesInitializer.EnsureUpdatedAsync(db); await EmployerInterface006ErrorCodeInitializer.EnsureUpdatedAsync(db); await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db); }
 var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]); var demoDataEnabled = builder.Configuration.GetValue("DemoData:Enabled", true);
 if (prototypeAuthEnabled && demoDataEnabled) { await using var scope = app.Services.CreateAsyncScope(); var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await DemoDataSeeder.SeedAsync(db); }
 app.UseExceptionHandler(); app.UseHttpsRedirection(); app.UseAuthentication(); app.UseAuthorization(); app.UseReportingInputValidation();
