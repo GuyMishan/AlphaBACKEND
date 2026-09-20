@@ -12,6 +12,8 @@ namespace Alpha.Infrastructure.Persistence;
 public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : DbContext(options), IAlphaDbContext
 {
     public DbSet<User> Users => Set<User>();
+    public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
+    public DbSet<RegistrationOtpChallenge> RegistrationOtpChallenges => Set<RegistrationOtpChallenge>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
     public DbSet<Employer> Employers => Set<Employer>();
@@ -34,6 +36,21 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AlphaDbContext).Assembly);
+        var otp = modelBuilder.Entity<OtpChallenge>();
+        otp.ToTable("otp_challenges", "identity");
+        otp.HasKey(x => x.Id);
+        otp.Property(x => x.Channel).HasMaxLength(10);
+        otp.Property(x => x.CodeHash).HasMaxLength(64);
+        otp.HasIndex(x => new { x.UserId, x.CreatedAt });
+        var registrationOtp = modelBuilder.Entity<RegistrationOtpChallenge>();
+        registrationOtp.ToTable("registration_otp_challenges", "identity");
+        registrationOtp.HasKey(x => x.Id);
+        registrationOtp.Property(x => x.DisplayName).HasMaxLength(120);
+        registrationOtp.Property(x => x.Email).HasMaxLength(320);
+        registrationOtp.Property(x => x.NationalId).HasMaxLength(9);
+        registrationOtp.Property(x => x.Phone).HasMaxLength(10);
+        registrationOtp.Property(x => x.CodeHash).HasMaxLength(64);
+        registrationOtp.HasIndex(x => new { x.Email, x.CreatedAt });
         var limits = modelBuilder.Entity<ContributionPercentageLimit>();
         limits.ToTable("contribution_percentage_limits", "reporting");
         limits.HasKey(x => x.Id);
