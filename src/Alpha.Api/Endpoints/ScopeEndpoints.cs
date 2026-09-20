@@ -85,6 +85,7 @@ public static class ScopeEndpoints
                     x.OrganizationId,
                     x.LegalName,
                     x.RegistrationNumber,
+                    x.WithholdingFileNumber,
                     x.Status
                 })
                 .ToListAsync(ct);
@@ -101,17 +102,28 @@ public static class ScopeEndpoints
             });
         }
 
-        var employerCount = result.Sum(item =>
+        var employerCount = 0;
+        foreach (var organization in organizations)
         {
-            var employersProperty = item.GetType().GetProperty("employers");
-            return employersProperty?.GetValue(item) is System.Collections.ICollection collection ? collection.Count : 0;
-        });
+            if (currentUser.IsPlatformAdmin)
+            {
+                employerCount += await db.Employers.AsNoTracking().CountAsync(x => x.OrganizationId == organization.Id, ct);
+                continue;
+            }
 
-        return Results.Ok(new
-        {
-            organizations = result,
-            organizationCount = organizations.Count,
-            employerCount
-        });
+            var membership = await db.OrganizationMemberships.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.UserId == currentUser.UserId &&
+                    x.OrganizationId == organization.Id && x.IsActive &&
+                    (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow), ct);
+
+            if (membership?.EmployerAccessMode == EmployerAccessMode.AllEmployers)
+                employerCount += await db.Employers.AsNoTracking().CountAsync(x => x.OrganizationId == organization.Id, ct);
+            else
+                employerCount += await db.EmployerUserAccesses.AsNoTracking()
+                    .Where(x => x.UserId == currentUser.UserId && x.OrganizationId == organization.Id)
+                    .Select(x => x.EmployerId).Distinct().CountAsync(ct);
+        }
+
+        return Results.Ok(new { organizations = result, organizationCount = organizations.Count, employerCount });
     }
 }
