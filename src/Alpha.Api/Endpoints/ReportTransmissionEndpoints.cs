@@ -1,6 +1,7 @@
 using Alpha.Api.Services;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Entitlements;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
 
@@ -23,9 +24,12 @@ public static class ReportTransmissionEndpoints
         return Results.Ok(await db.ReportTransmissions.AsNoTracking().Where(x => x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId).OrderByDescending(x => x.AttemptNumber).Select(x => new { x.Id, x.Provider, x.AttemptNumber, x.Status, x.ExternalId, x.PayloadHash, x.ErrorMessage, x.StartedAt, x.SentAt, x.CompletedAt, x.CreatedAt }).ToListAsync(ct));
     }
 
-    private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid reportId, SendReportRequest? request, IAlphaDbContext db, OrganizationAccessService access, IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter, CancellationToken ct)
+    private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid reportId, SendReportRequest? request, IAlphaDbContext db, OrganizationAccessService access, EntitlementService entitlements, IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter, CancellationToken ct)
     {
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
+        if (!entitlement.Allowed)
+            return Results.Json(new { error = entitlement.Error, feature = entitlement.Feature }, statusCode: StatusCodes.Status409Conflict);
         var report = await db.ManualReports.FirstOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
         if (report.Status != ManualReportStatus.Validated) return Results.Conflict(new { error = "Only a report that passed final validation can be transmitted.", status = report.Status.ToString() });
