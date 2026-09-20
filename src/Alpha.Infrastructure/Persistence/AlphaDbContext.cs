@@ -1,5 +1,6 @@
 using Alpha.Application.Abstractions;
 using Alpha.Domain.Auditing;
+using Alpha.Domain.Billing;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Identity;
@@ -12,6 +13,7 @@ namespace Alpha.Infrastructure.Persistence;
 
 public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : DbContext(options), IAlphaDbContext
 {
+    public DbSet<BillingAccount> BillingAccounts => Set<BillingAccount>();
     public DbSet<User> Users => Set<User>();
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
     public DbSet<RegistrationOtpChallenge> RegistrationOtpChallenges => Set<RegistrationOtpChallenge>();

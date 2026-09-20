@@ -1,4 +1,5 @@
 using Alpha.Domain.Auditing;
+using Alpha.Domain.Billing;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Identity;
@@ -11,6 +12,7 @@ namespace Alpha.Application.Abstractions;
 
 public interface IAlphaDbContext
 {
+    DbSet<BillingAccount> BillingAccounts { get; }
     DbSet<User> Users { get; }
     DbSet<Organization> Organizations { get; }
     DbSet<OrganizationMembership> OrganizationMemberships { get; }
