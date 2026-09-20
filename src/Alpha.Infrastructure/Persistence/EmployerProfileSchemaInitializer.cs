@@ -18,6 +18,7 @@ public static class EmployerProfileSchemaInitializer
                 "PostalCode" character varying(10) NOT NULL DEFAULT '',
                 "PostOfficeBox" character varying(20) NOT NULL DEFAULT '',
                 "BillingMode" character varying(40) NOT NULL DEFAULT 'EmployerDirect',
+                "BillingModeOverridden" boolean NOT NULL DEFAULT false,
                 "BillingStatus" character varying(40) NOT NULL DEFAULT 'NotConfigured',
                 "DefaultSalaryPaymentDay" integer NULL,
                 "DefaultPaymentMethodCode" integer NULL,
@@ -32,6 +33,9 @@ public static class EmployerProfileSchemaInitializer
 
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_employer_profile_settings_EmployerId"
                 ON employers.employer_profile_settings ("EmployerId");
+
+            ALTER TABLE employers.employer_profile_settings
+                ADD COLUMN IF NOT EXISTS "BillingModeOverridden" boolean NOT NULL DEFAULT false;
 
             CREATE TABLE IF NOT EXISTS employers.employer_payment_accounts (
                 "Id" uuid NOT NULL PRIMARY KEY,
