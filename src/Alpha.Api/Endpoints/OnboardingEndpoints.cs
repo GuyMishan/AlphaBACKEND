@@ -103,7 +103,7 @@ public static class OnboardingEndpoints
                 employer.Id,
                 organization.Id,
                 employer.Id,
-                JsonSerializer.Serialize(new { organization.Id, employer.Id, role = EmployerRole.Owner }),
+                JsonSerializer.Serialize(new { organizationId = organization.Id, employerId = employer.Id, role = EmployerRole.Owner }),
                 http.TraceIdentifier));
 
             await db.SaveChangesAsync(ct);
