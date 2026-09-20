@@ -57,12 +57,14 @@ Run `dotnet build AlphaBackend.slnx` and `dotnet test AlphaBackend.slnx`.
 
 ### One-time login codes
 
-Login requests `POST /api/auth/otp/request` with `{ "nationalId": "...", "phone": "...", "channel": "sms" }` (or `"email"`), then verifies `{ "challengeId": "...", "code": "123456" }` at `POST /api/auth/otp/verify`. Only verification issues a JWT. Codes expire after five minutes, accept at most five attempts, can be used once, and may be resent after 60 seconds. The prototype login endpoint has been removed.
+Login requests `POST /api/auth/otp/request` with `{ "nationalId": "...", "phone": "...", "channel": "email" }`, then verifies `{ "challengeId": "...", "code": "123456" }` at `POST /api/auth/otp/verify`. Only verification issues a JWT. Codes expire after five minutes, accept at most five attempts, can be used once, and may be resent after 60 seconds. The prototype login endpoint has been removed.
 
 Configure a JWT signing key of at least 32 characters in `PrototypeAuth__SigningKey` and real delivery providers before using login:
 
-- SMS: `Otp__Sms__Url` (provider HTTPS endpoint), `Otp__Sms__Token` (Bearer token). The server posts JSON `{ "to": "05...", "message": "..." }`; use an adapter if your SMS provider has a different contract.
-- Email: `Otp__Email__Host`, `Otp__Email__Port` (default 587), `Otp__Email__From`, `Otp__Email__Username`, `Otp__Email__Password`, and optionally `Otp__Email__EnableSsl` (default true).
-- To retain the prototype platform administrator, explicitly set `PrototypeAuth__NationalId`, `PrototypeAuth__Phone`, and `PrototypeAuth__AdminEmail` to real, controlled destinations. Otherwise that account cannot log in. Existing ordinary users need a registered phone and email for both delivery choices.
+- SMS is disabled by default. To enable later, set `Otp__Sms__Enabled=true`, plus `Otp__Sms__Url` (provider HTTPS endpoint), `Otp__Sms__Token` (Bearer token). The server posts JSON `{ "to": "05...", "message": "..." }`; use an adapter if your SMS provider has a different contract.
+- Email (Resend free tier): set `Otp__Email__ResendApiKey` and `Otp__Email__From` (an address on a verified domain). Alternatively configure SMTP with `Otp__Email__Host`, `Otp__Email__Port` (default 587), `Otp__Email__From`, `Otp__Email__Username`, `Otp__Email__Password`, and optionally `Otp__Email__EnableSsl` (default true).
+- To retain the prototype platform administrator, explicitly set `PrototypeAuth__NationalId`, `PrototypeAuth__Phone`, and `PrototypeAuth__AdminEmail` to real, controlled destinations. Otherwise that account cannot log in. Existing ordinary users need a registered phone for lookup and a registered email for delivery.
+
+The email-only login UI has no SMS option. The API rejects SMS requests and verification while `Otp__Sms__Enabled` is false, regardless of clients sending their own HTTP requests.
 
 Delivery failures return 503 and invalidate the challenge. Keep the signing key and delivery credentials in environment secrets. The SMS provider contract must be adapted to the provider selected for production.

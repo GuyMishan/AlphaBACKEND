@@ -9,7 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Alpha.Api.Endpoints;
 
-public sealed record RequestOtp(string NationalId, string Phone, string Channel = "sms");
+public sealed record RequestOtp(string NationalId, string Phone, string Channel = "email");
 public sealed record VerifyOtp(Guid ChallengeId, string Code);
 
 public static class AuthEndpoints
@@ -25,6 +25,8 @@ public static class AuthEndpoints
             var channel = request.Channel?.ToLowerInvariant();
             if (!IsIsraeliId(nationalId) || !IsIsraeliMobile(phone) || channel is not ("sms" or "email"))
                 return Results.BadRequest(new { error = "invalid_input" });
+            if (channel == "sms" && !config.GetValue<bool>("Otp:Sms:Enabled"))
+                return Results.BadRequest(new { error = "channel_unavailable" });
             if ((config["PrototypeAuth:SigningKey"]?.Length ?? 0) < 32)
                 return Results.Problem("Authentication is not configured.", statusCode: 503);
 
@@ -72,6 +74,7 @@ public static class AuthEndpoints
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.Attempts, x => x.Attempts + 1), ct);
             if (attempts == 0) return Results.Unauthorized();
             var challenge = await db.OtpChallenges.AsNoTracking().SingleAsync(x => x.Id == request.ChallengeId, ct);
+            if (challenge.Channel == "sms" && !config.GetValue<bool>("Otp:Sms:Enabled")) return Results.Unauthorized();
             var expected = Convert.FromHexString(challenge.CodeHash);
             var supplied = Convert.FromHexString(HashCode(config, request.Code));
             if (!CryptographicOperations.FixedTimeEquals(expected, supplied)) return Results.Unauthorized();

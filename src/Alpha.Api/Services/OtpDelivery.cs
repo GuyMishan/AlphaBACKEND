@@ -21,8 +21,20 @@ public sealed class OtpDelivery(IConfiguration configuration, IHttpClientFactory
             using var response = await clients.CreateClient("otp-sms").SendAsync(request, ct);
             response.EnsureSuccessStatusCode();
         }
-        else
+        else if (channel == "email")
         {
+            var apiKey = configuration["Otp:Email:ResendApiKey"];
+            var fromAddress = configuration["Otp:Email:From"];
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                if (string.IsNullOrWhiteSpace(fromAddress)) throw new InvalidOperationException("Email sender is not configured.");
+                using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                request.Content = JsonContent.Create(new { from = fromAddress, to = new[] { destination }, subject = "קוד כניסה למערכת Alpha", text = $"קוד הכניסה שלך: {code}\nהקוד תקף ל-5 דקות." });
+                using var response = await clients.CreateClient("otp-email").SendAsync(request, ct);
+                response.EnsureSuccessStatusCode();
+                return;
+            }
             var host = configuration["Otp:Email:Host"];
             var from = configuration["Otp:Email:From"];
             if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(from))
@@ -35,5 +47,6 @@ public sealed class OtpDelivery(IConfiguration configuration, IHttpClientFactory
             };
             await smtp.SendMailAsync(message, ct);
         }
+        else throw new ArgumentOutOfRangeException(nameof(channel));
     }
 }
