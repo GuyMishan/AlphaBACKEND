@@ -4,6 +4,7 @@ using Alpha.Domain.Employers;
 using Alpha.Domain.Identity;
 using Alpha.Domain.Organizations;
 using Alpha.Domain.Reporting;
+using Alpha.Domain.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Application.Abstractions;
@@ -29,5 +30,7 @@ public interface IAlphaDbContext
     DbSet<EmployerInterfaceFeedback> EmployerInterfaceFeedback { get; }
     DbSet<ContributionPercentageLimit> ContributionPercentageLimits { get; }
     DbSet<AuditEvent> AuditEvents { get; }
+    DbSet<Plan> Plans { get; }
+    DbSet<Subscription> Subscriptions { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
