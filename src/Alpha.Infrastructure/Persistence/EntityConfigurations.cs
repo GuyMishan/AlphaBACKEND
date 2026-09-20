@@ -163,3 +163,40 @@ public sealed class SubscriptionConfiguration : IEntityTypeConfiguration<Subscri
         b.HasOne<Plan>().WithMany().HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+
+public sealed class EmployerProfileSettingsConfiguration : IEntityTypeConfiguration<EmployerProfileSettings>
+{
+    public void Configure(EntityTypeBuilder<EmployerProfileSettings> b)
+    {
+        b.ToTable("employer_profile_settings", "employers");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.City).HasMaxLength(100);
+        b.Property(x => x.Street).HasMaxLength(100);
+        b.Property(x => x.HouseNumber).HasMaxLength(20);
+        b.Property(x => x.Apartment).HasMaxLength(20);
+        b.Property(x => x.PostalCode).HasMaxLength(10);
+        b.Property(x => x.PostOfficeBox).HasMaxLength(20);
+        b.Property(x => x.BillingMode).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.BillingStatus).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.ReportingNotes).HasMaxLength(500);
+        b.HasIndex(x => x.EmployerId).IsUnique();
+        b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class EmployerPensionPaymentAccountConfiguration : IEntityTypeConfiguration<EmployerPensionPaymentAccount>
+{
+    public void Configure(EntityTypeBuilder<EmployerPensionPaymentAccount> b)
+    {
+        b.ToTable("employer_pension_payment_accounts", "employers");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.AccountName).HasMaxLength(100).IsRequired();
+        b.Property(x => x.AccountNumber).HasMaxLength(30).IsRequired();
+        b.Property(x => x.AccountHolderName).HasMaxLength(150).IsRequired();
+        b.Property(x => x.DebitAuthorizationStatus).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.HasIndex(x => new { x.EmployerId, x.AccountNumber });
+        b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
