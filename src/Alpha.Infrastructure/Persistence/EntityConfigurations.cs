@@ -185,22 +185,36 @@ public sealed class EmployerProfileSettingsConfiguration : IEntityTypeConfigurat
     }
 }
 
-public sealed class EmployerPensionPaymentAccountConfiguration : IEntityTypeConfiguration<EmployerPensionPaymentAccount>
+public sealed class EmployerPaymentAccountConfiguration : IEntityTypeConfiguration<EmployerPaymentAccount>
 {
-    public void Configure(EntityTypeBuilder<EmployerPensionPaymentAccount> b)
+    public void Configure(EntityTypeBuilder<EmployerPaymentAccount> b)
     {
-        b.ToTable("employer_pension_payment_accounts", "employers");
+        b.ToTable("employer_payment_accounts", "employers");
         b.HasKey(x => x.Id);
-        b.Property(x => x.AccountName).HasMaxLength(100).IsRequired();
         b.Property(x => x.AccountNumber).HasMaxLength(30).IsRequired();
         b.Property(x => x.AccountHolderName).HasMaxLength(150).IsRequired();
-        b.Property(x => x.DebitAuthorizationStatus).HasConversion<string>().HasMaxLength(40).IsRequired();
-        b.HasIndex(x => new { x.EmployerId, x.AccountNumber });
+        b.Property(x => x.AccountHolderId).HasMaxLength(20).IsRequired();
+        b.HasIndex(x => new { x.EmployerId, x.BankId, x.BranchId, x.AccountNumber }).IsUnique();
+        b.HasIndex(x => x.EmployerId);
         b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
+public sealed class BankDebitMandateConfiguration : IEntityTypeConfiguration<BankDebitMandate>
+{
+    public void Configure(EntityTypeBuilder<BankDebitMandate> b)
+    {
+        b.ToTable("bank_debit_mandates", "employers");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Status).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.ExternalMandateId).HasMaxLength(120);
+        b.Property(x => x.DocumentId).HasMaxLength(200);
+        b.Ignore(x => x.IsActive);
+        b.HasIndex(x => x.EmployerPaymentAccountId).IsUnique();
+        b.HasOne<EmployerPaymentAccount>().WithOne().HasForeignKey<BankDebitMandate>(x => x.EmployerPaymentAccountId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
 
 public sealed class OrganizationProfileSettingsConfiguration : IEntityTypeConfiguration<OrganizationProfileSettings>
 {
