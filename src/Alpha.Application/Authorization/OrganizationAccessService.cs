@@ -63,15 +63,15 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
     {
         if (currentUser.IsPlatformAdmin) return true;
 
+        var membership = await GetMembershipAsync(organizationId, cancellationToken);
+        if (membership is not null && membership.Role != OrganizationRole.Viewer &&
+            membership.EmployerAccessMode == EmployerAccessMode.AllEmployers) return true;
+
         var directRole = (await GetEmployerAccessAsync(organizationId, employerId, cancellationToken))?.Role;
         if (directRole is EmployerRole.Owner or EmployerRole.Admin) return true;
 
-        var membership = await GetMembershipAsync(organizationId, cancellationToken);
         if (membership is null || membership.Role == OrganizationRole.Viewer) return false;
-        return membership.EmployerAccessMode == EmployerAccessMode.AllEmployers ||
-               await db.EmployerUserAccesses.AsNoTracking().AnyAsync(x =>
-                   x.UserId == currentUser.UserId && x.OrganizationId == organizationId && x.EmployerId == employerId,
-                   cancellationToken);
+        return directRole is not null;
     }
 
     public Task<bool> CanEditEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
@@ -93,12 +93,14 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
     {
         if (currentUser.IsPlatformAdmin) return true;
 
+        var membership = await GetMembershipAsync(organizationId, cancellationToken);
+        if (membership is not null && membership.Role != OrganizationRole.Viewer &&
+            membership.EmployerAccessMode == EmployerAccessMode.AllEmployers) return true;
+
         var directRole = (await GetEmployerAccessAsync(organizationId, employerId, cancellationToken))?.Role;
         if (directRole is EmployerRole.Owner or EmployerRole.Admin or EmployerRole.User) return true;
         if (directRole == EmployerRole.Viewer) return false;
 
-        var membership = await GetMembershipAsync(organizationId, cancellationToken);
-        if (membership is null || membership.Role == OrganizationRole.Viewer) return false;
-        return membership.EmployerAccessMode == EmployerAccessMode.AllEmployers;
+        return false;
     }
 }
