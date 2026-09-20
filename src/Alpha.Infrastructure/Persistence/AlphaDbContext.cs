@@ -5,6 +5,7 @@ using Alpha.Domain.Employers;
 using Alpha.Domain.Identity;
 using Alpha.Domain.Organizations;
 using Alpha.Domain.Reporting;
+using Alpha.Domain.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Infrastructure.Persistence;
@@ -32,6 +33,8 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<EmployerInterfaceFeedback> EmployerInterfaceFeedback => Set<EmployerInterfaceFeedback>();
     public DbSet<ContributionPercentageLimit> ContributionPercentageLimits => Set<ContributionPercentageLimit>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<Plan> Plans => Set<Plan>();
+    public DbSet<Subscription> Subscriptions => Set<Subscription>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
