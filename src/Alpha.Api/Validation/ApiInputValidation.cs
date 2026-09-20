@@ -9,14 +9,24 @@ public static class ApiInputValidation
 {
     private static readonly Regex Digits = new("^[0-9]+$", RegexOptions.Compiled);
 
-    public static string? Employer(string legalName, string registrationNumber, string withholdingFileNumber)
+    public static string? Employer(string legalName, string registrationNumber, string withholdingFileNumber,
+        string? contactFirstName, string? contactLastName, string? contactPhone, string? contactEmail, string? contactMobile)
     {
         if (string.IsNullOrWhiteSpace(legalName)) return "שם משפטי הוא שדה חובה.";
         if (legalName.Trim().Length is < 2 or > 200) return "שם משפטי חייב להכיל בין 2 ל-200 תווים.";
         if (string.IsNullOrWhiteSpace(registrationNumber) || !Digits.IsMatch(registrationNumber.Trim())) return "מספר חברה / עוסק חייב להכיל ספרות בלבד.";
         if (registrationNumber.Trim().Length is < 5 or > 15) return "מספר חברה / עוסק אינו באורך תקין.";
         if (string.IsNullOrWhiteSpace(withholdingFileNumber) || !Digits.IsMatch(withholdingFileNumber.Trim())) return "מספר תיק ניכויים חייב להכיל ספרות בלבד.";
-        if (withholdingFileNumber.Trim().Length is < 5 or > 15) return "מספר תיק ניכויים אינו באורך תקין.";
+        if (withholdingFileNumber.Trim().Length is < 5 or > 9) return "מספר תיק ניכויים חייב להכיל 5-9 ספרות.";
+        if (string.IsNullOrWhiteSpace(contactFirstName)) return "שם פרטי של איש הקשר הוא שדה חובה.";
+        if (string.IsNullOrWhiteSpace(contactLastName)) return "שם משפחה של איש הקשר הוא שדה חובה.";
+        if (string.IsNullOrWhiteSpace(contactEmail) || !contactEmail.Contains('@')) return "כתובת האימייל של איש הקשר אינה תקינה.";
+
+        var phone = new string((contactPhone ?? string.Empty).Where(char.IsDigit).ToArray());
+        var mobile = new string((contactMobile ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (phone.Length == 0 && mobile.Length == 0) return "יש להזין לפחות טלפון או נייד אחד של איש הקשר.";
+        if (phone.Length > 11) return "טלפון איש הקשר יכול להכיל עד 11 ספרות.";
+        if (mobile.Length > 15) return "מספר הנייד יכול להכיל עד 15 ספרות.";
         return null;
     }
 
