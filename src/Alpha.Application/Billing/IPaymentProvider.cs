@@ -30,7 +30,9 @@ public sealed record PaymentMethodStatusResult(
     string Last4,
     int? ExpiryMonth,
     int? ExpiryYear,
-    string? BankDebitMandateReference);
+    string? BankDebitMandateReference,
+    string? CustomerId = null,
+    string? ExternalReference = null);
 
 public sealed record PaymentChargeRequest(
     string CustomerId,
