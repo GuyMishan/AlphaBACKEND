@@ -116,6 +116,8 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
             last4,
             month,
             year,
+            null,
+            customerId,
             null);
     }
 
@@ -154,7 +156,9 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
             last4,
             month,
             year,
-            null);
+            null,
+            FirstString(root, "customer_uid", "customer_id"),
+            FirstString(root, "more_info", "external_reference"));
     }
 
     private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, object? payload, CancellationToken ct, bool throwOnFailure = true)
