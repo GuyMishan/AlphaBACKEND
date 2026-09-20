@@ -3,6 +3,8 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Alpha.Api.Services;
+using Alpha.Application.Entitlements;
+using Alpha.Application.Identity;
 using Alpha.Domain.Identity;
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +14,7 @@ namespace Alpha.Api.Endpoints;
 
 public sealed record RequestOtp(string NationalId, string Phone, string Channel = "email");
 public sealed record VerifyOtp(Guid ChallengeId, string Code);
-public sealed record RequestRegistrationOtp(string DisplayName, string Email, string NationalId, string Phone);
+public sealed record RequestRegistrationOtp(string DisplayName, string Email, string NationalId, string Phone, string? InvitationToken = null);
 public sealed record VerifyRegistrationOtp(Guid ChallengeId, string Code);
 
 public static class AuthEndpoints
@@ -86,6 +88,22 @@ public static class AuthEndpoints
                     x.Email == email || x.NationalId == nationalId || x.Phone == phone, ct))
                 return Results.Conflict(new { error = "user_exists" });
 
+            string? invitationTokenHash = null;
+            if (!string.IsNullOrWhiteSpace(request.InvitationToken))
+            {
+                invitationTokenHash = InvitationService.HashToken(request.InvitationToken.Trim());
+                var invitation = await db.UserInvitations.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.TokenHash == invitationTokenHash, ct);
+                if (invitation is null)
+                    return Results.BadRequest(new { error = "invitation_not_found" });
+                if (invitation.Status != UserInvitationStatus.Pending)
+                    return Results.Conflict(new { error = "invitation_not_pending", status = invitation.Status });
+                if (invitation.ExpiresAt <= DateTimeOffset.UtcNow)
+                    return Results.Json(new { error = "invitation_expired" }, statusCode: StatusCodes.Status410Gone);
+                if (!string.Equals(invitation.Email, email, StringComparison.OrdinalIgnoreCase))
+                    return Results.BadRequest(new { error = "invitation_email_mismatch" });
+            }
+
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({email}))", ct);
             var now = DateTime.UtcNow;
@@ -106,6 +124,7 @@ public static class AuthEndpoints
                 NationalId = nationalId,
                 Phone = phone,
                 CodeHash = HashCode(config, code),
+                InvitationTokenHash = invitationTokenHash,
                 CreatedAt = now,
                 ExpiresAt = now.AddMinutes(5)
             };
@@ -127,7 +146,8 @@ public static class AuthEndpoints
             return Results.Ok(new { challengeId = challenge.Id, expiresInSeconds = 300, resendAfterSeconds = 60 });
         }).AllowAnonymous().WithTags("Authentication");
 
-        endpoints.MapPost("/api/auth/register/verify", async (VerifyRegistrationOtp request, IConfiguration config, AlphaDbContext db, CancellationToken ct) =>
+        endpoints.MapPost("/api/auth/register/verify", async (VerifyRegistrationOtp request, IConfiguration config,
+            AlphaDbContext db, EntitlementService entitlements, InvitationService invitations, CancellationToken ct) =>
         {
             if (request.ChallengeId == Guid.Empty || request.Code is null || request.Code.Length != 6 || !request.Code.All(char.IsAsciiDigit))
                 return Results.BadRequest(new { error = "invalid_code" });
@@ -149,6 +169,53 @@ public static class AuthEndpoints
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({challenge.NationalId}))", ct);
 
+            UserInvitation? invitation = null;
+            if (!string.IsNullOrWhiteSpace(challenge.InvitationTokenHash))
+            {
+                invitation = await db.UserInvitations.SingleOrDefaultAsync(x =>
+                    x.TokenHash == challenge.InvitationTokenHash, ct);
+                if (invitation is null)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return Results.BadRequest(new { error = "invitation_not_found" });
+                }
+
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"SELECT pg_advisory_xact_lock(hashtext({invitation.Id.ToString()}))", ct);
+
+                await db.Entry(invitation).ReloadAsync(ct);
+                if (invitation.Status != UserInvitationStatus.Pending)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return Results.Conflict(new { error = "invitation_not_pending", status = invitation.Status });
+                }
+                if (invitation.ExpiresAt <= DateTimeOffset.UtcNow)
+                {
+                    invitation.Expire();
+                    await db.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+                    return Results.Json(new { error = "invitation_expired" }, statusCode: StatusCodes.Status410Gone);
+                }
+                if (!string.Equals(invitation.Email, challenge.Email, StringComparison.OrdinalIgnoreCase))
+                {
+                    await transaction.RollbackAsync(ct);
+                    return Results.BadRequest(new { error = "invitation_email_mismatch" });
+                }
+
+                var entitlement = await entitlements.CanAcceptInvitation(invitation.OrganizationId, ct);
+                if (!entitlement.Allowed)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return Results.Json(new
+                    {
+                        error = entitlement.Error,
+                        limit = entitlement.Limit,
+                        current = entitlement.Current,
+                        maximum = entitlement.Maximum
+                    }, statusCode: StatusCodes.Status409Conflict);
+                }
+            }
+
             var claimed = await db.RegistrationOtpChallenges
                 .Where(x => x.Id == challenge.Id && x.ConsumedAt == null && x.ExpiresAt > DateTime.UtcNow && x.Attempts <= 5)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.ConsumedAt, DateTime.UtcNow), ct);
@@ -167,6 +234,13 @@ public static class AuthEndpoints
 
             var user = new User($"national-id:{challenge.NationalId}", challenge.Email, challenge.DisplayName, challenge.NationalId, challenge.Phone);
             db.Users.Add(user);
+
+            if (invitation is not null)
+            {
+                await invitations.ApplyAccessAsync(invitation, user.Id, ct);
+                invitation.Accept(user.Id);
+            }
+
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 
