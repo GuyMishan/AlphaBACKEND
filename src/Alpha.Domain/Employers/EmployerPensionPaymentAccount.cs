@@ -2,47 +2,39 @@ using Alpha.Domain.Common;
 
 namespace Alpha.Domain.Employers;
 
-public enum DebitAuthorizationStatus
+public sealed class EmployerPaymentAccount : Entity
 {
-    NotConfigured = 1,
-    Pending = 2,
-    Active = 3,
-    Revoked = 4
-}
+    private EmployerPaymentAccount() { }
 
-public sealed class EmployerPensionPaymentAccount : Entity
-{
-    private EmployerPensionPaymentAccount() { }
-
-    public EmployerPensionPaymentAccount(Guid organizationId, Guid employerId, string accountName,
-        int bankCode, int branchCode, string accountNumber, string accountHolderName)
+    public EmployerPaymentAccount(Guid organizationId, Guid employerId, int bankId, int branchId,
+        string accountNumber, string accountHolderName, string accountHolderId)
     {
         if (organizationId == Guid.Empty) throw new ArgumentException("Organization is required.", nameof(organizationId));
         if (employerId == Guid.Empty) throw new ArgumentException("Employer is required.", nameof(employerId));
         OrganizationId = organizationId;
         EmployerId = employerId;
-        Update(accountName, bankCode, branchCode, accountNumber, accountHolderName);
+        Update(bankId, branchId, accountNumber, accountHolderName, accountHolderId);
     }
 
     public Guid OrganizationId { get; private set; }
     public Guid EmployerId { get; private set; }
-    public string AccountName { get; private set; } = string.Empty;
-    public int BankCode { get; private set; }
-    public int BranchCode { get; private set; }
+    public int BankId { get; private set; }
+    public int BranchId { get; private set; }
     public string AccountNumber { get; private set; } = string.Empty;
     public string AccountHolderName { get; private set; } = string.Empty;
+    public string AccountHolderId { get; private set; } = string.Empty;
     public bool IsDefault { get; private set; }
-    public DebitAuthorizationStatus DebitAuthorizationStatus { get; private set; } = DebitAuthorizationStatus.NotConfigured;
+    public bool IsActive { get; private set; } = true;
 
-    public void Update(string accountName, int bankCode, int branchCode, string accountNumber, string accountHolderName)
+    public void Update(int bankId, int branchId, string accountNumber, string accountHolderName, string accountHolderId)
     {
-        if (bankCode <= 0) throw new ArgumentOutOfRangeException(nameof(bankCode));
-        if (branchCode <= 0) throw new ArgumentOutOfRangeException(nameof(branchCode));
-        AccountName = Require(accountName, nameof(accountName), 100);
+        if (bankId <= 0) throw new ArgumentOutOfRangeException(nameof(bankId));
+        if (branchId <= 0) throw new ArgumentOutOfRangeException(nameof(branchId));
+        BankId = bankId;
+        BranchId = branchId;
         AccountNumber = RequireDigits(accountNumber, nameof(accountNumber), 30);
         AccountHolderName = Require(accountHolderName, nameof(accountHolderName), 150);
-        BankCode = bankCode;
-        BranchCode = branchCode;
+        AccountHolderId = RequireDigits(accountHolderId, nameof(accountHolderId), 20);
         Touch();
     }
 
@@ -52,9 +44,16 @@ public sealed class EmployerPensionPaymentAccount : Entity
         Touch();
     }
 
-    public void SetDebitAuthorizationStatus(DebitAuthorizationStatus status)
+    public void Deactivate()
     {
-        DebitAuthorizationStatus = status;
+        IsActive = false;
+        IsDefault = false;
+        Touch();
+    }
+
+    public void Activate()
+    {
+        IsActive = true;
         Touch();
     }
 
@@ -70,5 +69,60 @@ public sealed class EmployerPensionPaymentAccount : Entity
         var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
         if (string.IsNullOrEmpty(digits)) throw new ArgumentException("Value is required.", name);
         return digits[..Math.Min(digits.Length, max)];
+    }
+}
+
+public enum BankDebitMandateStatus
+{
+    Pending = 1,
+    Active = 2,
+    Rejected = 3,
+    Cancelled = 4,
+    Expired = 5
+}
+
+public sealed class BankDebitMandate : Entity
+{
+    private BankDebitMandate() { }
+
+    public BankDebitMandate(Guid employerPaymentAccountId)
+    {
+        if (employerPaymentAccountId == Guid.Empty)
+            throw new ArgumentException("Payment account is required.", nameof(employerPaymentAccountId));
+        EmployerPaymentAccountId = employerPaymentAccountId;
+    }
+
+    public Guid EmployerPaymentAccountId { get; private set; }
+    public BankDebitMandateStatus Status { get; private set; } = BankDebitMandateStatus.Pending;
+    public string ExternalMandateId { get; private set; } = string.Empty;
+    public DateTimeOffset? ApprovedAt { get; private set; }
+    public DateTimeOffset? CancelledAt { get; private set; }
+    public string DocumentId { get; private set; } = string.Empty;
+
+    public bool IsActive => Status == BankDebitMandateStatus.Active &&
+                            ApprovedAt.HasValue &&
+                            (!CancelledAt.HasValue || CancelledAt > DateTimeOffset.UtcNow);
+
+    public void Update(BankDebitMandateStatus status, string? externalMandateId, DateTimeOffset? approvedAt,
+        DateTimeOffset? cancelledAt, string? documentId)
+    {
+        Status = status;
+        ExternalMandateId = Clean(externalMandateId, 120);
+        ApprovedAt = approvedAt;
+        CancelledAt = cancelledAt;
+        DocumentId = Clean(documentId, 200);
+
+        if (status == BankDebitMandateStatus.Active && !ApprovedAt.HasValue)
+            ApprovedAt = DateTimeOffset.UtcNow;
+        if (status == BankDebitMandateStatus.Cancelled && !CancelledAt.HasValue)
+            CancelledAt = DateTimeOffset.UtcNow;
+
+        Touch();
+    }
+
+    private static string Clean(string? value, int max)
+    {
+        var trimmed = value?.Trim() ?? string.Empty;
+        return trimmed[..Math.Min(trimmed.Length, max)];
     }
 }
