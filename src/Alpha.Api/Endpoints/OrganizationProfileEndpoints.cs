@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Billing;
 using Alpha.Domain.Auditing;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Organizations;
@@ -79,7 +80,7 @@ public static class OrganizationProfileEndpoints
 
     private static async Task<IResult> UpdateGeneralAsync(Guid organizationId, OrganizationGeneralProfileRequest request,
         IAlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
-        HttpContext http, CancellationToken ct)
+        BillingInheritanceService billingInheritance, HttpContext http, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         if (!Enum.IsDefined(request.Type) || request.Type == OrganizationType.SelfService)
@@ -96,6 +97,8 @@ public static class OrganizationProfileEndpoints
 
         db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "organization.profile.updated", nameof(Organization),
             organization.Id, organizationId, null, JsonSerializer.Serialize(request), http.TraceIdentifier));
+        await db.SaveChangesAsync(ct);
+        await billingInheritance.NormalizeDefaultsAsync(organizationId, ct);
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -152,24 +155,35 @@ public static class OrganizationProfileEndpoints
     }
 
     private static async Task<IResult> GetEmployerBillingAsync(Guid organizationId, IAlphaDbContext db,
-        OrganizationAccessService access, CancellationToken ct)
+        OrganizationAccessService access, BillingInheritanceService billingInheritance, CancellationToken ct)
     {
         if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
 
-        var items = await (
-            from employer in db.Employers.AsNoTracking()
-            where employer.OrganizationId == organizationId
-            join settings in db.EmployerProfileSettings.AsNoTracking()
-                on employer.Id equals settings.EmployerId into settingRows
-            from settings in settingRows.DefaultIfEmpty()
-            orderby employer.LegalName
-            select new
+        var employers = await db.Employers.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId)
+            .OrderBy(x => x.LegalName)
+            .Select(x => new { x.Id, x.LegalName })
+            .ToListAsync(ct);
+
+        var items = new List<object>(employers.Count);
+        foreach (var employer in employers)
+        {
+            var resolution = await billingInheritance.ResolveBillingAccountAsync(employer.Id, ct);
+            var settings = await db.EmployerProfileSettings.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.EmployerId == employer.Id, ct);
+            items.Add(new
             {
                 employerId = employer.Id,
                 employerName = employer.LegalName,
-                billingMode = settings == null ? EmployerBillingMode.EmployerDirect : settings.BillingMode,
-                billingStatus = settings == null ? EmployerBillingStatus.NotConfigured : settings.BillingStatus
-            }).ToListAsync(ct);
+                billingMode = resolution?.BillingMode ?? EmployerBillingMode.EmployerDirect,
+                billingStatus = settings?.BillingStatus ?? EmployerBillingStatus.NotConfigured,
+                billingModeOverridden = settings?.BillingModeOverridden ?? false,
+                billedThroughName = resolution?.BilledThroughName ?? employer.LegalName,
+                billingSource = resolution?.Source ?? "Employer",
+                effectiveBillingConfigured = resolution?.Account is not null,
+                effectivePaymentMethodStatus = resolution?.Account?.PaymentMethodStatus
+            });
+        }
 
         return Results.Ok(items);
     }
