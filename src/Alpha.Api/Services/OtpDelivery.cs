@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Mail;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace Alpha.Api.Services;
 
@@ -23,6 +24,25 @@ public sealed class OtpDelivery(IConfiguration configuration, IHttpClientFactory
         }
         else if (channel == "email")
         {
+            var scriptUrl = configuration["Otp:Email:AppsScript:Url"];
+            if (!string.IsNullOrWhiteSpace(scriptUrl))
+            {
+                var secret = configuration["Otp:Email:AppsScript:Secret"];
+                if (string.IsNullOrWhiteSpace(secret) || secret.Length < 32)
+                    throw new InvalidOperationException("Apps Script secret must contain at least 32 characters.");
+                if (!Uri.TryCreate(scriptUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
+                    uri.Host != "script.google.com" || !uri.AbsolutePath.StartsWith("/macros/s/", StringComparison.Ordinal) ||
+                    !uri.AbsolutePath.EndsWith("/exec", StringComparison.Ordinal))
+                    throw new InvalidOperationException("Apps Script URL must be a Google web app deployment URL.");
+                using var request = new HttpRequestMessage(HttpMethod.Post, uri);
+                request.Content = JsonContent.Create(new { secret, to = destination, code });
+                using var response = await clients.CreateClient("otp-email").SendAsync(request, ct);
+                response.EnsureSuccessStatusCode();
+                using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                if (!result.RootElement.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True)
+                    throw new InvalidOperationException("Apps Script did not confirm email delivery.");
+                return;
+            }
             var apiKey = configuration["Otp:Email:ResendApiKey"];
             var fromAddress = configuration["Otp:Email:From"];
             if (!string.IsNullOrWhiteSpace(apiKey))

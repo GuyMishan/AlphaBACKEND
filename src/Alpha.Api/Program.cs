@@ -24,7 +24,7 @@ builder.Services.AddScoped<EmployerInterfaceService>();
 builder.Services.AddScoped<EmployerInterface006ExportService>();
 builder.Services.AddScoped<IReportTransmissionProvider, MockReportTransmissionProvider>();
 builder.Services.AddHttpClient("otp-sms", c => c.Timeout = TimeSpan.FromSeconds(10));
-builder.Services.AddHttpClient("otp-email", c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient("otp-email", c => c.Timeout = TimeSpan.FromSeconds(25));
 builder.Services.AddScoped<OtpDelivery>();
 builder.Services.AddHttpClient<ReferenceDataSyncService>(client => { client.Timeout = TimeSpan.FromMinutes(5); client.DefaultRequestHeaders.UserAgent.ParseAdd("AlphaReferenceDataSync/1.0"); });
 builder.Services.AddProblemDetails(); builder.Services.AddOpenApi(); builder.Services.AddEndpointsApiExplorer(); builder.Services.AddSwaggerGen(); builder.Services.AddHealthChecks();

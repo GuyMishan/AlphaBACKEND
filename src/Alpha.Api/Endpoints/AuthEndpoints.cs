@@ -23,7 +23,11 @@ public static class AuthEndpoints
             var nationalId = request.NationalId?.Trim() ?? "";
             var phone = request.Phone?.Trim() ?? "";
             var channel = request.Channel?.ToLowerInvariant();
-            if (!IsIsraeliId(nationalId) || !IsIsraeliMobile(phone) || channel is not ("sms" or "email"))
+            var configuredAdmin = !string.IsNullOrWhiteSpace(config["PrototypeAuth:AdminEmail"])
+                && !string.IsNullOrWhiteSpace(config["PrototypeAuth:NationalId"])
+                && !string.IsNullOrWhiteSpace(config["PrototypeAuth:Phone"])
+                && nationalId == config["PrototypeAuth:NationalId"] && phone == config["PrototypeAuth:Phone"];
+            if ((!IsIsraeliId(nationalId) && !configuredAdmin) || !IsIsraeliMobile(phone) || channel is not ("sms" or "email"))
                 return Results.BadRequest(new { error = "invalid_input" });
             if (channel == "sms" && !config.GetValue<bool>("Otp:Sms:Enabled"))
                 return Results.BadRequest(new { error = "channel_unavailable" });
@@ -32,8 +36,7 @@ public static class AuthEndpoints
 
             var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.IsActive && x.NationalId == nationalId && x.Phone == phone, ct);
             // Admin delivery requires explicit configured contact details; demo defaults cannot authenticate.
-            var isAdmin = user is null && !string.IsNullOrWhiteSpace(config["PrototypeAuth:AdminEmail"])
-                && nationalId == config["PrototypeAuth:NationalId"] && phone == config["PrototypeAuth:Phone"];
+            var isAdmin = user is null && configuredAdmin;
             if (user is null && !isAdmin) return Results.Unauthorized();
             var userId = isAdmin ? PrototypeUserId : user!.Id;
             var destination = channel == "sms" ? (isAdmin ? phone : user!.Phone) : (isAdmin ? config["PrototypeAuth:AdminEmail"] : user!.Email);
