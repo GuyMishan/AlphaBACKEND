@@ -35,6 +35,7 @@ public sealed class EmployerProfileSettings : Entity
     public string PostOfficeBox { get; private set; } = string.Empty;
 
     public EmployerBillingMode BillingMode { get; private set; } = EmployerBillingMode.EmployerDirect;
+    public bool BillingModeOverridden { get; private set; }
     public EmployerBillingStatus BillingStatus { get; private set; } = EmployerBillingStatus.NotConfigured;
 
     public int? DefaultSalaryPaymentDay { get; private set; }
@@ -58,7 +59,15 @@ public sealed class EmployerProfileSettings : Entity
     public void UpdateBilling(EmployerBillingMode mode, EmployerBillingStatus? status = null)
     {
         BillingMode = mode;
+        BillingModeOverridden = true;
         if (status.HasValue) BillingStatus = status.Value;
+        Touch();
+    }
+
+    public void ApplyDefaultBillingMode(EmployerBillingMode mode)
+    {
+        if (BillingModeOverridden) return;
+        BillingMode = mode;
         Touch();
     }
 
