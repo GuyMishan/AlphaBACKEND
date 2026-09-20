@@ -200,3 +200,31 @@ public sealed class EmployerPensionPaymentAccountConfiguration : IEntityTypeConf
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+
+public sealed class OrganizationProfileSettingsConfiguration : IEntityTypeConfiguration<OrganizationProfileSettings>
+{
+    public void Configure(EntityTypeBuilder<OrganizationProfileSettings> b)
+    {
+        b.ToTable("organization_profile_settings", "organizations");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.RegistrationNumber).HasMaxLength(30);
+        b.Property(x => x.City).HasMaxLength(100);
+        b.Property(x => x.Street).HasMaxLength(100);
+        b.Property(x => x.HouseNumber).HasMaxLength(20);
+        b.Property(x => x.Apartment).HasMaxLength(20);
+        b.Property(x => x.PostalCode).HasMaxLength(10);
+        b.Property(x => x.PostOfficeBox).HasMaxLength(20);
+        b.Property(x => x.ContactName).HasMaxLength(150);
+        b.Property(x => x.ContactEmail).HasMaxLength(320);
+        b.Property(x => x.ContactPhone).HasMaxLength(20);
+        b.Property(x => x.BillingStatus).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.InvoiceName).HasMaxLength(200);
+        b.Property(x => x.InvoiceRegistrationNumber).HasMaxLength(30);
+        b.Property(x => x.InvoiceEmail).HasMaxLength(320);
+        b.Property(x => x.BillingContactName).HasMaxLength(150);
+        b.Property(x => x.BillingContactPhone).HasMaxLength(20);
+        b.HasIndex(x => x.OrganizationId).IsUnique();
+        b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
