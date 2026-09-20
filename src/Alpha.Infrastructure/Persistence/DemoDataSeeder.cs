@@ -69,9 +69,9 @@ public static class DemoDataSeeder
             new OrganizationMembership(admin.Id, organizations[2].Id, OrganizationRole.Admin, EmployerAccessMode.AllEmployers, admin.Id)
         );
         db.EmployerUserAccesses.AddRange(
-            new EmployerUserAccess(operations.Id, organizations[0].Id, employers[0].Id),
-            new EmployerUserAccess(operations.Id, organizations[0].Id, employers[1].Id),
-            new EmployerUserAccess(viewer.Id, organizations[0].Id, employers[2].Id)
+            new EmployerUserAccess(operations.Id, organizations[0].Id, employers[0].Id, EmployerRole.User),
+            new EmployerUserAccess(operations.Id, organizations[0].Id, employers[1].Id, EmployerRole.User),
+            new EmployerUserAccess(viewer.Id, organizations[0].Id, employers[2].Id, EmployerRole.Viewer)
         );
 
         var firstNames = new[] { "יעל", "אורי", "נועה", "איתי", "מאיה", "דניאל", "שירה", "עומר", "רוני", "יובל", "תמר", "אלון" };
@@ -153,22 +153,23 @@ public static class DemoDataSeeder
                 organizationUser.Id));
         }
 
-        if (!await db.OrganizationMemberships.AnyAsync(x => x.UserId == employerUser.Id && x.OrganizationId == organization.Id, ct))
-        {
-            db.OrganizationMemberships.Add(new OrganizationMembership(
-                employerUser.Id,
-                organization.Id,
-                OrganizationRole.Admin,
-                EmployerAccessMode.SelectedEmployers,
-                organizationUser.Id));
-        }
+        var employerMembership = await db.OrganizationMemberships
+            .SingleOrDefaultAsync(x => x.UserId == employerUser.Id && x.OrganizationId == organization.Id && x.IsActive, ct);
+        employerMembership?.Deactivate();
 
-        if (!await db.EmployerUserAccesses.AnyAsync(x => x.UserId == employerUser.Id && x.EmployerId == employer.Id, ct))
+        var employerAccess = await db.EmployerUserAccesses
+            .SingleOrDefaultAsync(x => x.UserId == employerUser.Id && x.EmployerId == employer.Id, ct);
+        if (employerAccess is null)
         {
             db.EmployerUserAccesses.Add(new EmployerUserAccess(
                 employerUser.Id,
                 organization.Id,
-                employer.Id));
+                employer.Id,
+                EmployerRole.Owner));
+        }
+        else
+        {
+            employerAccess.ChangeRole(EmployerRole.Owner);
         }
 
         await db.SaveChangesAsync(ct);
