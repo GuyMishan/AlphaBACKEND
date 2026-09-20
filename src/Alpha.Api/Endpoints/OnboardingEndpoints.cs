@@ -89,6 +89,9 @@ public static class OnboardingEndpoints
                 request.ContactEmail,
                 request.ContactMobile);
             db.Employers.Add(employer);
+            var employerSettings = new EmployerProfileSettings(employer.Id);
+            employerSettings.ApplyDefaultBillingMode(EmployerBillingMode.EmployerDirect);
+            db.EmployerProfileSettings.Add(employerSettings);
 
             var ownerAccess = new EmployerUserAccess(
                 currentUser.UserId,

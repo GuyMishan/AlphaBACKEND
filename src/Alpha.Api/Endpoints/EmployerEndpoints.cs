@@ -3,6 +3,7 @@ using Alpha.Api.Contracts;
 using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Billing;
 using Alpha.Application.Entitlements;
 using Alpha.Domain.Auditing;
 using Alpha.Domain.Employees;
@@ -48,7 +49,8 @@ public static class EmployerEndpoints
         });
 
         group.MapPost("/", async (Guid organizationId, CreateEmployerRequest request, IAlphaDbContext db,
-            ICurrentUser user, OrganizationAccessService access, EntitlementService entitlements, HttpContext http, CancellationToken ct) =>
+            ICurrentUser user, OrganizationAccessService access, EntitlementService entitlements,
+            BillingInheritanceService billingInheritance, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanCreateEmployerAsync(organizationId, ct)) return Results.Forbid();
             var entitlement = await entitlements.CanCreateEmployer(organizationId, ct);
@@ -57,6 +59,7 @@ public static class EmployerEndpoints
             if (validationError is not null) return Results.BadRequest(new { error = validationError });
             var item = new Employer(organizationId, request.LegalName.Trim(), request.RegistrationNumber.Trim(), request.WithholdingFileNumber.Trim());
             db.Employers.Add(item);
+            await billingInheritance.ApplyDefaultsForNewEmployerAsync(organizationId, item.Id, ct);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.created", nameof(Employer), item.Id,
                 organizationId, item.Id, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);

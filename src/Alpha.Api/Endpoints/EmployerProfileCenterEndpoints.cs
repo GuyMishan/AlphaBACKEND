@@ -54,7 +54,9 @@ public static class EmployerProfileCenterEndpoints
             billing = new
             {
                 mode = settings?.BillingMode ?? EmployerBillingMode.EmployerDirect,
-                status = settings?.BillingStatus ?? EmployerBillingStatus.NotConfigured
+                modeOverridden = settings?.BillingModeOverridden ?? false,
+                status = settings?.BillingStatus ?? EmployerBillingStatus.NotConfigured,
+                canChangeMode = await access.CanManageOrganizationAsync(organizationId, ct)
             },
             reporting = new
             {
@@ -86,7 +88,7 @@ public static class EmployerProfileCenterEndpoints
         EmployerBillingSettingsRequest request, IAlphaDbContext db, ICurrentUser currentUser,
         OrganizationAccessService access, HttpContext http, CancellationToken ct)
     {
-        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         if (!Enum.IsDefined(request.BillingMode)) return Results.BadRequest(new { error = "Invalid billing mode." });
         if (request.BillingStatus.HasValue && !Enum.IsDefined(request.BillingStatus.Value))
             return Results.BadRequest(new { error = "Invalid billing status." });
@@ -134,6 +136,14 @@ public static class EmployerProfileCenterEndpoints
         if (settings is not null) return settings;
 
         settings = new EmployerProfileSettings(employerId);
+        var organization = await db.Organizations.AsNoTracking()
+            .SingleAsync(x => x.Id == organizationId, ct);
+        var employerCount = await db.Employers.AsNoTracking()
+            .CountAsync(x => x.OrganizationId == organizationId, ct);
+        var defaultMode = organization.Type == Alpha.Domain.Organizations.OrganizationType.SelfService || employerCount <= 1
+            ? EmployerBillingMode.EmployerDirect
+            : EmployerBillingMode.InheritOrganization;
+        settings.ApplyDefaultBillingMode(defaultMode);
         db.EmployerProfileSettings.Add(settings);
         return settings;
     }

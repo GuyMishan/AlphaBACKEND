@@ -179,6 +179,7 @@ public sealed class EmployerProfileSettingsConfiguration : IEntityTypeConfigurat
         b.Property(x => x.PostalCode).HasMaxLength(10);
         b.Property(x => x.PostOfficeBox).HasMaxLength(20);
         b.Property(x => x.BillingMode).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.BillingModeOverridden).IsRequired().HasDefaultValue(false);
         b.Property(x => x.BillingStatus).HasConversion<string>().HasMaxLength(40).IsRequired();
         b.Property(x => x.ReportingNotes).HasMaxLength(500);
         b.HasIndex(x => x.EmployerId).IsUnique();

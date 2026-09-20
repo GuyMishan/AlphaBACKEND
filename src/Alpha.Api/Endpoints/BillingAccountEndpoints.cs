@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Billing;
 using Alpha.Domain.Auditing;
 using Alpha.Domain.Billing;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +38,7 @@ public static class BillingAccountEndpoints
         var employer = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/billing-account")
             .RequireAuthorization().WithTags("Alpha Billing");
         employer.MapGet("/", GetEmployerBillingAsync);
+        employer.MapGet("/resolution", GetEmployerBillingResolutionAsync);
         employer.MapPut("/", UpsertEmployerBillingAsync);
         employer.MapPut("/provider-metadata", UpdateEmployerProviderMetadataAsync);
 
@@ -90,6 +92,26 @@ public static class BillingAccountEndpoints
         var account = await db.BillingAccounts.AsNoTracking()
             .SingleOrDefaultAsync(x => x.EmployerId == employerId && x.OrganizationId == null, ct);
         return Results.Ok(ToResponse(account, null, employerId));
+    }
+
+    private static async Task<IResult> GetEmployerBillingResolutionAsync(Guid organizationId, Guid employerId,
+        OrganizationAccessService access, BillingInheritanceService inheritance, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var resolution = await inheritance.ResolveBillingAccountAsync(employerId, ct);
+        if (resolution is null || resolution.OrganizationId != organizationId) return Results.NotFound();
+
+        return Results.Ok(new
+        {
+            resolution.EmployerId,
+            resolution.OrganizationId,
+            resolution.BillingMode,
+            resolution.Source,
+            resolution.BilledThroughName,
+            effectiveAccount = ToResponse(resolution.Account,
+                resolution.Source == "Organization" ? resolution.OrganizationId : null,
+                resolution.Source == "Employer" ? resolution.EmployerId : null)
+        });
     }
 
     private static async Task<IResult> UpsertEmployerBillingAsync(Guid organizationId, Guid employerId,
