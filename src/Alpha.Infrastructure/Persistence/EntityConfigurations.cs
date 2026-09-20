@@ -1,4 +1,5 @@
 using Alpha.Domain.Auditing;
+using Alpha.Domain.Billing;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Identity;
@@ -240,5 +241,30 @@ public sealed class OrganizationProfileSettingsConfiguration : IEntityTypeConfig
         b.Property(x => x.BillingContactPhone).HasMaxLength(20);
         b.HasIndex(x => x.OrganizationId).IsUnique();
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+
+public sealed class BillingAccountConfiguration : IEntityTypeConfiguration<BillingAccount>
+{
+    public void Configure(EntityTypeBuilder<BillingAccount> b)
+    {
+        b.ToTable("billing_accounts", "billing");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.BillingName).HasMaxLength(200);
+        b.Property(x => x.TaxId).HasMaxLength(30);
+        b.Property(x => x.InvoiceEmail).HasMaxLength(320);
+        b.Property(x => x.BillingAddress).HasMaxLength(500);
+        b.Property(x => x.PaymentMethodType).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.PaymentMethodStatus).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.ProviderCustomerId).HasMaxLength(200);
+        b.Property(x => x.ProviderPaymentMethodId).HasMaxLength(200);
+        b.Property(x => x.CardBrand).HasMaxLength(40);
+        b.Property(x => x.CardLast4).HasMaxLength(4);
+        b.Property(x => x.BankDebitMandateReference).HasMaxLength(200);
+        b.HasIndex(x => x.OrganizationId).IsUnique().HasFilter("\"OrganizationId\" IS NOT NULL");
+        b.HasIndex(x => x.EmployerId).IsUnique().HasFilter("\"EmployerId\" IS NOT NULL");
+        b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade);
     }
 }
