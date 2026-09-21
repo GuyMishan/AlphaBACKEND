@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Alpha.Api.Endpoints;
 
 public sealed record ChangeSubscriptionPlanRequest(Guid PlanId);
+public sealed record ChangeOrganizationStatusRequest(Alpha.Domain.Organizations.OrganizationStatus Status);
 
 public static class SubscriptionEndpoints
 {
@@ -87,6 +88,7 @@ public static class SubscriptionEndpoints
                 {
                     organizationId = organization.Id,
                     organizationName = organization.Name,
+                    organizationStatus = organization.Status,
                     subscriptionId = subscription.Id,
                     subscription.Status,
                     subscription.StartedAt,
@@ -148,6 +150,33 @@ public static class SubscriptionEndpoints
                 plan.MaxEmployees,
                 plan.MaxUsers
             });
+        });
+
+        platform.MapPut("/{organizationId:guid}/organization-status", async (
+            Guid organizationId,
+            ChangeOrganizationStatusRequest request,
+            IAlphaDbContext db,
+            ICurrentUser currentUser,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+            if (!Enum.IsDefined(request.Status)) return Results.BadRequest(new { error = "invalid_organization_status" });
+            var organization = await db.Organizations.SingleOrDefaultAsync(x => x.Id == organizationId, ct);
+            if (organization is null) return Results.NotFound();
+            var previousStatus = organization.Status;
+            organization.ChangeStatus(request.Status);
+            db.AuditEvents.Add(new AuditEvent(
+                currentUser.UserId,
+                "organization.status.changed",
+                "Organization",
+                organization.Id,
+                organizationId,
+                null,
+                JsonSerializer.Serialize(new { previousStatus, status = request.Status }),
+                http.TraceIdentifier));
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
         });
 
         return endpoints;
