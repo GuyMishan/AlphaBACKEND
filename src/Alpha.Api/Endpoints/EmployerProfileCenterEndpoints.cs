@@ -43,6 +43,11 @@ public static class EmployerProfileCenterEndpoints
             .SingleOrDefaultAsync(x => x.EmployerId == employerId, ct);
         var hasDirectPensionAccount = await db.EmployerPaymentAccounts.AsNoTracking()
             .AnyAsync(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.IsActive, ct);
+        var organizationType = await db.Organizations.AsNoTracking()
+            .Where(x => x.Id == organizationId).Select(x => x.Type).SingleAsync(ct);
+        var defaultPensionMode = organizationType == Alpha.Domain.Organizations.OrganizationType.SelfService
+            ? EmployerPensionPaymentMode.EmployerDirect
+            : EmployerPensionPaymentMode.InheritOrganization;
 
         return Results.Ok(new
         {
@@ -64,7 +69,7 @@ public static class EmployerProfileCenterEndpoints
             },
             pensionPayment = new
             {
-                mode = settings?.PensionPaymentMode ?? (hasDirectPensionAccount ? EmployerPensionPaymentMode.EmployerDirect : EmployerPensionPaymentMode.InheritOrganization),
+                mode = settings?.PensionPaymentMode ?? (hasDirectPensionAccount ? EmployerPensionPaymentMode.EmployerDirect : defaultPensionMode),
                 modeOverridden = settings?.PensionPaymentModeOverridden ?? false,
                 canChangeMode = await access.CanManageEmployerAsync(organizationId, employerId, ct)
             },
@@ -181,7 +186,7 @@ public static class EmployerProfileCenterEndpoints
         settings.ApplyDefaultBillingMode(defaultMode);
         var hasDirectPensionAccount = await db.EmployerPaymentAccounts.AsNoTracking()
             .AnyAsync(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.IsActive, ct);
-        settings.ApplyDefaultPensionPaymentMode(hasDirectPensionAccount
+        settings.ApplyDefaultPensionPaymentMode(hasDirectPensionAccount || organization.Type == Alpha.Domain.Organizations.OrganizationType.SelfService
             ? EmployerPensionPaymentMode.EmployerDirect
             : EmployerPensionPaymentMode.InheritOrganization);
         db.EmployerProfileSettings.Add(settings);
