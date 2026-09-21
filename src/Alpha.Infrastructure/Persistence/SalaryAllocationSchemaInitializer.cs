@@ -11,6 +11,10 @@ public static class SalaryAllocationSchemaInitializer
 ALTER TABLE employees.employments
     ADD COLUMN IF NOT EXISTS "MonthlySalary" numeric(18,2) NOT NULL DEFAULT 0;
 
+ALTER TABLE employees.employee_pension_contributions
+    ADD COLUMN IF NOT EXISTS "Amount" numeric(18,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "ExemptPayments" numeric(18,2) NOT NULL DEFAULT 0;
+
 CREATE OR REPLACE FUNCTION reporting.seed_employee_mix_into_report()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -103,7 +107,7 @@ BEGIN
                 (md5(random()::text || clock_timestamp()::text || mix_contribution."Id"::text)::uuid,
                  report_product_id, mix_contribution."Party", mix_contribution."Component",
                  round((COALESCE(insured_salary, 0) * mix_contribution."Percentage" / 100.0)::numeric, 2),
-                 mix_contribution."Percentage", 0, now(), now());
+                 mix_contribution."Percentage", COALESCE(mix_contribution."ExemptPayments", 0), now(), now());
         END LOOP;
     END LOOP;
 
