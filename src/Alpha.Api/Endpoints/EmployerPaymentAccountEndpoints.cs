@@ -62,6 +62,15 @@ public static class EmployerPaymentAccountEndpoints
         if (employer is null) return Results.NotFound();
 
         var resolution = await ResolveAccountAsync(organizationId, employerId, db, ct);
+        var organizationAccount = await db.EmployerPaymentAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == null && x.IsActive, ct);
+        var employerAccount = await db.EmployerPaymentAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.IsActive, ct);
+        var organizationMandate = organizationAccount is null ? null : await db.BankDebitMandates.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == organizationAccount.Id, ct);
+        var employerMandate = employerAccount is null ? null : await db.BankDebitMandates.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == employerAccount.Id, ct);
+
         return Results.Ok(new
         {
             employerId,
@@ -69,7 +78,9 @@ public static class EmployerPaymentAccountEndpoints
             mode = resolution.Mode,
             source = resolution.Source,
             inherited = resolution.Source == "Organization",
-            account = resolution.Account is null ? null : AccountSummary(resolution.Account, resolution.Mandate, resolution.Source)
+            account = resolution.Account is null ? null : AccountSummary(resolution.Account, resolution.Mandate, resolution.Source),
+            organizationAccount = organizationAccount is null ? null : AccountSummary(organizationAccount, organizationMandate, "Organization"),
+            employerAccount = employerAccount is null ? null : AccountSummary(employerAccount, employerMandate, "Employer")
         });
     }
 
