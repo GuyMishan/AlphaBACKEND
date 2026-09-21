@@ -64,14 +64,16 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
         if (currentUser.IsPlatformAdmin) return true;
 
         var membership = await GetMembershipAsync(organizationId, cancellationToken);
-        if (membership is not null && membership.CanEditEmployer &&
-            membership.EmployerAccessMode == EmployerAccessMode.AllEmployers) return true;
-
         var directRole = (await GetEmployerAccessAsync(organizationId, employerId, cancellationToken))?.Role;
-        if (directRole is EmployerRole.Owner or EmployerRole.Admin) return true;
 
-        if (membership is null || membership.Role == OrganizationRole.Viewer) return false;
-        return directRole is not null;
+        if (membership is not null)
+        {
+            if (!membership.CanEditEmployer) return false;
+            if (membership.EmployerAccessMode == EmployerAccessMode.AllEmployers) return true;
+            return directRole is EmployerRole.Owner or EmployerRole.Admin or EmployerRole.User;
+        }
+
+        return directRole is EmployerRole.Owner or EmployerRole.Admin;
     }
 
     public Task<bool> CanEditEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
@@ -95,13 +97,15 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
         if (currentUser.IsPlatformAdmin) return true;
 
         var membership = await GetMembershipAsync(organizationId, cancellationToken);
-        if (membership is not null && permission(membership) &&
-            membership.EmployerAccessMode == EmployerAccessMode.AllEmployers) return true;
-
         var directRole = (await GetEmployerAccessAsync(organizationId, employerId, cancellationToken))?.Role;
-        if (directRole is EmployerRole.Owner or EmployerRole.Admin or EmployerRole.User) return true;
-        if (directRole == EmployerRole.Viewer) return false;
 
-        return false;
+        if (membership is not null)
+        {
+            if (!permission(membership)) return false;
+            if (membership.EmployerAccessMode == EmployerAccessMode.AllEmployers) return true;
+            return directRole is EmployerRole.Owner or EmployerRole.Admin or EmployerRole.User;
+        }
+
+        return directRole is EmployerRole.Owner or EmployerRole.Admin or EmployerRole.User;
     }
 }
