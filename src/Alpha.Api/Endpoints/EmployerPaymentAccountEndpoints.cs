@@ -32,6 +32,7 @@ public static class EmployerPaymentAccountEndpoints
             .RequireAuthorization().WithTags("Employer Payment Accounts");
 
         group.MapGet("/", ListAsync);
+        group.MapGet("/resolution", ResolveAsync);
         group.MapGet("/{accountId:guid}", GetForEditAsync);
         group.MapPost("/", CreateAsync);
         group.MapPut("/{accountId:guid}", UpdateAsync);
@@ -46,23 +47,30 @@ public static class EmployerPaymentAccountEndpoints
         OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var resolution = await ResolveAccountAsync(organizationId, employerId, db, ct);
+        return Results.Ok(resolution.Account is null
+            ? Array.Empty<object>()
+            : new[] { AccountSummary(resolution.Account, resolution.Mandate, resolution.Source) });
+    }
 
-        var accounts = await db.EmployerPaymentAccounts.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.IsActive)
-            .OrderByDescending(x => x.IsDefault).ThenBy(x => x.CreatedAt)
-            .ToListAsync(ct);
-        var accountIds = accounts.Select(x => x.Id).ToList();
-        var mandates = await db.BankDebitMandates.AsNoTracking()
-            .Where(x => accountIds.Contains(x.EmployerPaymentAccountId))
-            .ToDictionaryAsync(x => x.EmployerPaymentAccountId, ct);
+    private static async Task<IResult> ResolveAsync(Guid organizationId, Guid employerId, AlphaDbContext db,
+        OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var employer = await db.Employers.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
+        if (employer is null) return Results.NotFound();
 
-        var result = accounts.Select(x =>
+        var resolution = await ResolveAccountAsync(organizationId, employerId, db, ct);
+        return Results.Ok(new
         {
-            mandates.TryGetValue(x.Id, out var mandate);
-            return AccountSummary(x, mandate);
+            employerId,
+            organizationId,
+            mode = resolution.Mode,
+            source = resolution.Source,
+            inherited = resolution.Source == "Organization",
+            account = resolution.Account is null ? null : AccountSummary(resolution.Account, resolution.Mandate, resolution.Source)
         });
-
-        return Results.Ok(result);
     }
 
     private static async Task<IResult> GetForEditAsync(Guid organizationId, Guid employerId, Guid accountId,
@@ -271,7 +279,7 @@ public static class EmployerPaymentAccountEndpoints
         return Results.Ok(MandateDto(mandate));
     }
 
-    private static object AccountSummary(EmployerPaymentAccount account, BankDebitMandate? mandate) => new
+    private static object AccountSummary(EmployerPaymentAccount account, BankDebitMandate? mandate, string source = "Employer") => new
     {
         account.Id,
         account.OrganizationId,
@@ -283,9 +291,49 @@ public static class EmployerPaymentAccountEndpoints
         maskedAccountHolderId = MaskIdentity(account.AccountHolderId),
         account.IsDefault,
         account.IsActive,
+        source,
         mandate = MandateDto(mandate),
         mandateIsActive = mandate?.IsActive ?? false
     };
+
+    private sealed record PaymentAccountResolution(
+        EmployerPensionPaymentMode Mode,
+        string Source,
+        EmployerPaymentAccount? Account,
+        BankDebitMandate? Mandate);
+
+    private static async Task<PaymentAccountResolution> ResolveAccountAsync(
+        Guid organizationId, Guid employerId, AlphaDbContext db, CancellationToken ct)
+    {
+        var settings = await db.EmployerProfileSettings.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.EmployerId == employerId, ct);
+        var directAccount = await db.EmployerPaymentAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.IsActive, ct);
+
+        var mode = settings?.PensionPaymentMode
+            ?? (directAccount is not null ? EmployerPensionPaymentMode.EmployerDirect : EmployerPensionPaymentMode.InheritOrganization);
+
+        EmployerPaymentAccount? account;
+        string source;
+        if (mode == EmployerPensionPaymentMode.EmployerDirect)
+        {
+            account = directAccount;
+            source = "Employer";
+        }
+        else
+        {
+            account = await db.EmployerPaymentAccounts.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == null && x.IsActive, ct);
+            source = "Organization";
+        }
+
+        BankDebitMandate? mandate = null;
+        if (account is not null)
+            mandate = await db.BankDebitMandates.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == account.Id, ct);
+
+        return new PaymentAccountResolution(mode, source, account, mandate);
+    }
 
     private static object? MandateDto(BankDebitMandate? mandate) => mandate is null ? null : new
     {
