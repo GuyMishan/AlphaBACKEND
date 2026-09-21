@@ -20,6 +20,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         b.Property(x => x.Email).HasMaxLength(320).IsRequired();
         b.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
         b.Property(x => x.Appearance).HasMaxLength(16).IsRequired().HasDefaultValue("system");
+        b.Property(x => x.IsPlatformAdmin).IsRequired().HasDefaultValue(false);
         b.HasIndex(x => x.ExternalSubject).IsUnique();
         b.HasIndex(x => x.Email);
     }
