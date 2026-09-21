@@ -10,7 +10,7 @@ public static class EmployerProfileSchemaInitializer
         const string sql = """
             CREATE TABLE IF NOT EXISTS employers.employer_profile_settings (
                 "Id" uuid NOT NULL PRIMARY KEY,
-                "EmployerId" uuid NOT NULL,
+                "EmployerId" uuid NULL,
                 "City" character varying(100) NOT NULL DEFAULT '',
                 "Street" character varying(100) NOT NULL DEFAULT '',
                 "HouseNumber" character varying(20) NOT NULL DEFAULT '',
@@ -20,6 +20,8 @@ public static class EmployerProfileSchemaInitializer
                 "BillingMode" character varying(40) NOT NULL DEFAULT 'EmployerDirect',
                 "BillingModeOverridden" boolean NOT NULL DEFAULT false,
                 "BillingStatus" character varying(40) NOT NULL DEFAULT 'NotConfigured',
+                "PensionPaymentMode" character varying(40) NOT NULL DEFAULT 'InheritOrganization',
+                "PensionPaymentModeOverridden" boolean NOT NULL DEFAULT false,
                 "DefaultSalaryPaymentDay" integer NULL,
                 "DefaultPaymentMethodCode" integer NULL,
                 "DefaultEmployerAccountType" integer NULL,
@@ -36,6 +38,10 @@ public static class EmployerProfileSchemaInitializer
 
             ALTER TABLE employers.employer_profile_settings
                 ADD COLUMN IF NOT EXISTS "BillingModeOverridden" boolean NOT NULL DEFAULT false;
+            ALTER TABLE employers.employer_profile_settings
+                ADD COLUMN IF NOT EXISTS "PensionPaymentMode" character varying(40) NOT NULL DEFAULT 'InheritOrganization';
+            ALTER TABLE employers.employer_profile_settings
+                ADD COLUMN IF NOT EXISTS "PensionPaymentModeOverridden" boolean NOT NULL DEFAULT false;
 
             CREATE TABLE IF NOT EXISTS employers.employer_payment_accounts (
                 "Id" uuid NOT NULL PRIMARY KEY,
@@ -60,6 +66,21 @@ public static class EmployerProfileSchemaInitializer
                 ON employers.employer_payment_accounts ("EmployerId", "BankId", "BranchId", "AccountNumber");
             CREATE INDEX IF NOT EXISTS "IX_employer_payment_accounts_EmployerId"
                 ON employers.employer_payment_accounts ("EmployerId");
+            ALTER TABLE employers.employer_payment_accounts ALTER COLUMN "EmployerId" DROP NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_employer_payment_accounts_one_org_active"
+                ON employers.employer_payment_accounts ("OrganizationId")
+                WHERE "EmployerId" IS NULL AND "IsActive" = true;
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_employer_payment_accounts_one_employer_active"
+                ON employers.employer_payment_accounts ("EmployerId")
+                WHERE "EmployerId" IS NOT NULL AND "IsActive" = true;
+
+            UPDATE employers.employer_profile_settings s
+            SET "PensionPaymentMode" = 'EmployerDirect',
+                "PensionPaymentModeOverridden" = true
+            WHERE EXISTS (
+                SELECT 1 FROM employers.employer_payment_accounts a
+                WHERE a."EmployerId" = s."EmployerId" AND a."IsActive" = true
+            ) AND s."PensionPaymentModeOverridden" = false;
             CREATE TABLE IF NOT EXISTS employers.bank_debit_mandates (
                 "Id" uuid NOT NULL PRIMARY KEY,
                 "EmployerPaymentAccountId" uuid NOT NULL,
