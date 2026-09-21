@@ -109,8 +109,8 @@ public static class InvitationEndpoints
         var existingUser = await db.Users.SingleOrDefaultAsync(x => x.Email == email, ct);
         if (existingUser is not null)
         {
-            var entitlement = await entitlements.CanInviteUser(organizationId, existingUser.Id, ct);
-            if (!entitlement.Allowed) return EntitlementError(entitlement);
+            var existingUserEntitlement = await entitlements.CanInviteUser(organizationId, existingUser.Id, ct);
+            if (!existingUserEntitlement.Allowed) return EntitlementError(existingUserEntitlement);
 
             if (request.OrganizationRole.HasValue)
             {
