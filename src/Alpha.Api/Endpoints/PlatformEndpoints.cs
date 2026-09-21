@@ -37,14 +37,11 @@ public static class PlatformEndpoints
             if (phone.Length != 10 || !phone.StartsWith("05", StringComparison.Ordinal) || !phone.All(char.IsDigit))
                 return Results.BadRequest(new { error = "Phone must be a 10-digit Israeli mobile number." });
 
-            var externalSubject = $"national-id:{nationalId}";
+            var externalSubject = $"national-id-phone:{nationalId}:{phone}";
             if (await db.Users.AnyAsync(x =>
-                    x.ExternalSubject == externalSubject ||
-                    x.Email == email ||
-                    x.NationalId == nationalId ||
-                    x.Phone == phone,
+                    x.NationalId == nationalId && x.Phone == phone,
                 ct))
-                return Results.Conflict(new { error = "A user with this email, national ID or phone already exists." });
+                return Results.Conflict(new { error = "A user with this national ID and phone already exists." });
 
             var user = new User(externalSubject, email, displayName, nationalId, phone);
             db.Users.Add(user);
