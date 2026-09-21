@@ -46,12 +46,17 @@ public sealed class ReportPaymentAccountService(IAlphaDbContext db)
         if (!report.PaymentAccountId.HasValue)
             return (false, "payment_account_required");
 
-        var effective = await ResolveForReportAsync(report.EmployerId, report.PaymentAccountId, ct);
-        if (effective is null || effective.OrganizationId != report.OrganizationId)
+        var snapshotAccount = await db.EmployerPaymentAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x =>
+                x.Id == report.PaymentAccountId.Value &&
+                x.OrganizationId == report.OrganizationId &&
+                x.IsActive &&
+                (x.EmployerId == report.EmployerId || x.EmployerId == null), ct);
+        if (snapshotAccount is null)
             return (false, "payment_account_required");
 
         var mandate = await db.BankDebitMandates.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == effective.Id, ct);
+            .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == snapshotAccount.Id, ct);
         if (mandate is null || !mandate.IsActive)
             return (false, "bank_mandate_required");
 
