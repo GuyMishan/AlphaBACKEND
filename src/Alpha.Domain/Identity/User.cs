@@ -39,10 +39,28 @@ public sealed class User : Entity
         Touch();
     }
 
+    public void UpdateProfile(string displayName, string email)
+    {
+        DisplayName = Require(displayName, nameof(displayName));
+        Email = Require(email, nameof(email)).ToLowerInvariant();
+        Touch();
+    }
+
+    public void SetPlatformAdmin(bool isPlatformAdmin)
+    {
+        IsPlatformAdmin = isPlatformAdmin;
+        Touch();
+    }
+
+    public void SetActive(bool isActive)
+    {
+        IsActive = isActive;
+        Touch();
+    }
+
     public void Deactivate()
     {
-        IsActive = false;
-        Touch();
+        SetActive(false);
     }
 
     private static string Require(string value, string name) =>
