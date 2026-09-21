@@ -55,7 +55,7 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
     {
         if (currentUser.IsPlatformAdmin) return true;
         var membership = await GetMembershipAsync(organizationId, cancellationToken);
-        return membership?.Role == OrganizationRole.Admin &&
+        return membership?.CanCreateEmployer == true &&
                membership.EmployerAccessMode == EmployerAccessMode.AllEmployers;
     }
 
@@ -64,7 +64,7 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
         if (currentUser.IsPlatformAdmin) return true;
 
         var membership = await GetMembershipAsync(organizationId, cancellationToken);
-        if (membership is not null && membership.Role != OrganizationRole.Viewer &&
+        if (membership is not null && membership.CanEditEmployer &&
             membership.EmployerAccessMode == EmployerAccessMode.AllEmployers) return true;
 
         var directRole = (await GetEmployerAccessAsync(organizationId, employerId, cancellationToken))?.Role;
@@ -78,23 +78,24 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
         CanManageEmployerAsync(organizationId, employerId, cancellationToken);
 
     public async Task<bool> CanCreateEmployeeAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
-        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken);
+        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken, m => m.CanCreateEmployee);
 
     public async Task<bool> CanEditEmployeeAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
-        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken);
+        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken, m => m.CanEditEmployee);
 
     public async Task<bool> CanCreateReportAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
-        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken);
+        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken, m => m.CanCreateEmployee);
 
     public async Task<bool> CanTransmitReportAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
-        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken);
+        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken, m => m.CanCreateEmployee);
 
-    private async Task<bool> CanOperateEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken)
+    private async Task<bool> CanOperateEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken,
+        Func<OrganizationMembership, bool> permission)
     {
         if (currentUser.IsPlatformAdmin) return true;
 
         var membership = await GetMembershipAsync(organizationId, cancellationToken);
-        if (membership is not null && membership.Role != OrganizationRole.Viewer &&
+        if (membership is not null && permission(membership) &&
             membership.EmployerAccessMode == EmployerAccessMode.AllEmployers) return true;
 
         var directRole = (await GetEmployerAccessAsync(organizationId, employerId, cancellationToken))?.Role;
