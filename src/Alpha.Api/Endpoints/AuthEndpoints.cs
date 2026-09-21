@@ -78,7 +78,7 @@ public static class AuthEndpoints
                 return Results.Problem("Authentication is not configured.", statusCode: 503);
 
             if (await db.Users.AsNoTracking().AnyAsync(x =>
-                    x.NationalId == nationalId || x.Phone == phone, ct))
+                    x.NationalId == nationalId && x.Phone == phone, ct))
                 return Results.Conflict(new { error = "user_exists" });
 
             string? invitationTokenHash = null;
@@ -219,7 +219,7 @@ public static class AuthEndpoints
             }
 
             if (await db.Users.AnyAsync(x =>
-                    x.NationalId == challenge.NationalId || x.Phone == challenge.Phone, ct))
+                    x.NationalId == challenge.NationalId && x.Phone == challenge.Phone, ct))
             {
                 await transaction.RollbackAsync(ct);
                 return Results.Conflict(new { error = "user_exists" });
