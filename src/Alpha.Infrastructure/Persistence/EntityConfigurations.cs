@@ -201,6 +201,8 @@ public sealed class EmployerProfileSettingsConfiguration : IEntityTypeConfigurat
         b.Property(x => x.BillingMode).HasConversion<string>().HasMaxLength(40).IsRequired();
         b.Property(x => x.BillingModeOverridden).IsRequired().HasDefaultValue(false);
         b.Property(x => x.BillingStatus).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.PensionPaymentMode).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.PensionPaymentModeOverridden).IsRequired().HasDefaultValue(false);
         b.Property(x => x.ReportingNotes).HasMaxLength(500);
         b.HasIndex(x => x.EmployerId).IsUnique();
         b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade);
@@ -218,7 +220,7 @@ public sealed class EmployerPaymentAccountConfiguration : IEntityTypeConfigurati
         b.Property(x => x.AccountHolderId).HasMaxLength(20).IsRequired();
         b.HasIndex(x => new { x.EmployerId, x.BankId, x.BranchId, x.AccountNumber }).IsUnique();
         b.HasIndex(x => x.EmployerId);
-        b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade).IsRequired(false);
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
     }
 }
