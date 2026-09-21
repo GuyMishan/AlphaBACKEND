@@ -9,15 +9,23 @@ public sealed class ReportPaymentAccountService(IAlphaDbContext db)
 {
     public async Task<EmployerPaymentAccount?> ResolveForReportAsync(Guid employerId, Guid? requestedAccountId, CancellationToken ct)
     {
-        if (requestedAccountId.HasValue)
-            return await db.EmployerPaymentAccounts.AsNoTracking().SingleOrDefaultAsync(x =>
-                x.Id == requestedAccountId.Value && x.EmployerId == employerId && x.IsActive, ct);
+        var employer = await db.Employers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == employerId, ct);
+        if (employer is null) return null;
 
-        return await db.EmployerPaymentAccounts.AsNoTracking()
-            .Where(x => x.EmployerId == employerId && x.IsActive)
-            .OrderByDescending(x => x.IsDefault)
-            .ThenBy(x => x.CreatedAt)
-            .FirstOrDefaultAsync(ct);
+        var settings = await db.EmployerProfileSettings.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.EmployerId == employerId, ct);
+        var directAccount = await db.EmployerPaymentAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == employer.OrganizationId && x.EmployerId == employerId && x.IsActive, ct);
+        var mode = settings?.PensionPaymentMode
+            ?? (directAccount is not null ? EmployerPensionPaymentMode.EmployerDirect : EmployerPensionPaymentMode.InheritOrganization);
+
+        var effective = mode == EmployerPensionPaymentMode.EmployerDirect
+            ? directAccount
+            : await db.EmployerPaymentAccounts.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.OrganizationId == employer.OrganizationId && x.EmployerId == null && x.IsActive, ct);
+
+        if (!requestedAccountId.HasValue) return effective;
+        return effective?.Id == requestedAccountId.Value ? effective : null;
     }
 
     public async Task ApplySnapshotAsync(ManualReport report, EmployerPaymentAccount account, CancellationToken ct)
@@ -38,16 +46,12 @@ public sealed class ReportPaymentAccountService(IAlphaDbContext db)
         if (!report.PaymentAccountId.HasValue)
             return (false, "payment_account_required");
 
-        var account = await db.EmployerPaymentAccounts.AsNoTracking().SingleOrDefaultAsync(x =>
-            x.Id == report.PaymentAccountId.Value &&
-            x.EmployerId == report.EmployerId &&
-            x.OrganizationId == report.OrganizationId &&
-            x.IsActive, ct);
-        if (account is null)
+        var effective = await ResolveForReportAsync(report.EmployerId, report.PaymentAccountId, ct);
+        if (effective is null || effective.OrganizationId != report.OrganizationId)
             return (false, "payment_account_required");
 
         var mandate = await db.BankDebitMandates.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == account.Id, ct);
+            .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == effective.Id, ct);
         if (mandate is null || !mandate.IsActive)
             return (false, "bank_mandate_required");
 
