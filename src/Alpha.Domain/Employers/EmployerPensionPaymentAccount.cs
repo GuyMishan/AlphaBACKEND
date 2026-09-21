@@ -6,18 +6,18 @@ public sealed class EmployerPaymentAccount : Entity
 {
     private EmployerPaymentAccount() { }
 
-    public EmployerPaymentAccount(Guid organizationId, Guid employerId, int bankId, int branchId,
+    public EmployerPaymentAccount(Guid organizationId, Guid? employerId, int bankId, int branchId,
         string accountNumber, string accountHolderName, string accountHolderId)
     {
         if (organizationId == Guid.Empty) throw new ArgumentException("Organization is required.", nameof(organizationId));
-        if (employerId == Guid.Empty) throw new ArgumentException("Employer is required.", nameof(employerId));
+        if (employerId == Guid.Empty) throw new ArgumentException("Employer must be null or a valid id.", nameof(employerId));
         OrganizationId = organizationId;
         EmployerId = employerId;
         Update(bankId, branchId, accountNumber, accountHolderName, accountHolderId);
     }
 
     public Guid OrganizationId { get; private set; }
-    public Guid EmployerId { get; private set; }
+    public Guid? EmployerId { get; private set; }
     public int BankId { get; private set; }
     public int BranchId { get; private set; }
     public string AccountNumber { get; private set; } = string.Empty;
