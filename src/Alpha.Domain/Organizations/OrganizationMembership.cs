@@ -17,6 +17,7 @@ public sealed class OrganizationMembership : Entity
         Role = role;
         EmployerAccessMode = employerAccessMode;
         CreatedBy = createdBy;
+        ApplyRoleDefaults(role, employerAccessMode);
     }
 
     public Guid UserId { get; private set; }
@@ -24,6 +25,10 @@ public sealed class OrganizationMembership : Entity
     public OrganizationRole Role { get; private set; }
     public EmployerAccessMode EmployerAccessMode { get; private set; }
     public bool IsActive { get; private set; } = true;
+    public bool CanCreateEmployer { get; private set; }
+    public bool CanEditEmployer { get; private set; }
+    public bool CanCreateEmployee { get; private set; }
+    public bool CanEditEmployee { get; private set; }
     public Guid CreatedBy { get; private set; }
     public DateTimeOffset? ExpiresAt { get; private set; }
 
@@ -33,7 +38,25 @@ public sealed class OrganizationMembership : Entity
     {
         Role = role;
         EmployerAccessMode = employerAccessMode;
+        ApplyRoleDefaults(role, employerAccessMode);
         Touch();
+    }
+
+    public void ChangePermissions(bool canCreateEmployer, bool canEditEmployer, bool canCreateEmployee, bool canEditEmployee)
+    {
+        CanCreateEmployer = canCreateEmployer;
+        CanEditEmployer = canEditEmployer;
+        CanCreateEmployee = canCreateEmployee;
+        CanEditEmployee = canEditEmployee;
+        Touch();
+    }
+
+    private void ApplyRoleDefaults(OrganizationRole role, EmployerAccessMode employerAccessMode)
+    {
+        CanCreateEmployer = role == OrganizationRole.Admin && employerAccessMode == EmployerAccessMode.AllEmployers;
+        CanEditEmployer = role != OrganizationRole.Viewer;
+        CanCreateEmployee = role != OrganizationRole.Viewer;
+        CanEditEmployee = role != OrganizationRole.Viewer;
     }
 
     public void Deactivate()
@@ -46,6 +69,7 @@ public sealed class OrganizationMembership : Entity
     {
         Role = role;
         EmployerAccessMode = employerAccessMode;
+        ApplyRoleDefaults(role, employerAccessMode);
         IsActive = true;
         ExpiresAt = null;
         Touch();
