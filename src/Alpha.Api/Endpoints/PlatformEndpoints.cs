@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Alpha.Api.Endpoints;
 
 public sealed record CreateUserRequest(string Email, string DisplayName, string NationalId, string Phone);
+public sealed record UpdatePlatformUserRequest(string Email, string DisplayName, bool IsActive, bool IsPlatformAdmin);
 
 public static class PlatformEndpoints
 {
@@ -49,6 +50,31 @@ public static class PlatformEndpoints
             db.Users.Add(user);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/platform/users/{user.Id}", user);
+        });
+
+        group.MapPut("/users/{userId:guid}", async (Guid userId, UpdatePlatformUserRequest request,
+            IAlphaDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
+        {
+            if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+            var user = await db.Users.SingleOrDefaultAsync(x => x.Id == userId, ct);
+            if (user is null) return Results.NotFound();
+
+            var displayName = request.DisplayName.Trim();
+            var email = request.Email.Trim().ToLowerInvariant();
+            if (displayName.Length is < 2 or > 120)
+                return Results.BadRequest(new { error = "Display name must contain 2-120 characters." });
+            if (!email.Contains('@') || email.Length > 320)
+                return Results.BadRequest(new { error = "Email is invalid." });
+            if (await db.Users.AnyAsync(x => x.Id != userId && x.Email == email, ct))
+                return Results.Conflict(new { error = "A user with this email already exists." });
+            if (currentUser.UserId == userId && (!request.IsActive || !request.IsPlatformAdmin))
+                return Results.BadRequest(new { error = "You cannot remove your own platform admin access or deactivate yourself." });
+
+            user.UpdateProfile(displayName, email);
+            user.SetActive(request.IsActive);
+            user.SetPlatformAdmin(request.IsPlatformAdmin);
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
         });
         return endpoints;
     }
