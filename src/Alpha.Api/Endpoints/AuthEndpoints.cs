@@ -19,7 +19,6 @@ public sealed record VerifyRegistrationOtp(Guid ChallengeId, string Code);
 
 public static class AuthEndpoints
 {
-    private static readonly Guid PrototypeUserId = Guid.Parse("00000000-0000-0000-0000-000000000001");
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/api/auth/otp/request", async (RequestOtp request, IConfiguration config, AlphaDbContext db,
@@ -28,11 +27,7 @@ public static class AuthEndpoints
             var nationalId = request.NationalId?.Trim() ?? "";
             var phone = request.Phone?.Trim() ?? "";
             var channel = request.Channel?.ToLowerInvariant();
-            var configuredAdmin = !string.IsNullOrWhiteSpace(config["PrototypeAuth:AdminEmail"])
-                && !string.IsNullOrWhiteSpace(config["PrototypeAuth:NationalId"])
-                && !string.IsNullOrWhiteSpace(config["PrototypeAuth:Phone"])
-                && nationalId == config["PrototypeAuth:NationalId"] && phone == config["PrototypeAuth:Phone"];
-            if ((!IsIsraeliId(nationalId) && !configuredAdmin) || !IsIsraeliMobile(phone) || channel is not ("sms" or "email"))
+            if (nationalId.Length is < 1 or > 9 || !nationalId.All(char.IsAsciiDigit) || !IsIsraeliMobile(phone) || channel is not ("sms" or "email"))
                 return Results.BadRequest(new { error = "invalid_input" });
             if (channel == "sms" && !config.GetValue<bool>("Otp:Sms:Enabled"))
                 return Results.BadRequest(new { error = "channel_unavailable" });
@@ -40,11 +35,9 @@ public static class AuthEndpoints
                 return Results.Problem("Authentication is not configured.", statusCode: 503);
 
             var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.IsActive && x.NationalId == nationalId && x.Phone == phone, ct);
-            // Admin delivery requires explicit configured contact details; demo defaults cannot authenticate.
-            var isAdmin = user is null && configuredAdmin;
-            if (user is null && !isAdmin) return Results.Unauthorized();
-            var userId = isAdmin ? PrototypeUserId : user!.Id;
-            var destination = channel == "sms" ? (isAdmin ? phone : user!.Phone) : (isAdmin ? config["PrototypeAuth:AdminEmail"] : user!.Email);
+            if (user is null) return Results.Unauthorized();
+            var userId = user.Id;
+            var destination = channel == "sms" ? user.Phone : user.Email;
             if (string.IsNullOrWhiteSpace(destination)) return Results.BadRequest(new { error = "channel_unavailable" });
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({userId.ToString()}))", ct);
@@ -265,10 +258,8 @@ public static class AuthEndpoints
             var claimed = await db.OtpChallenges.Where(x => x.Id == challenge.Id && x.ConsumedAt == null && x.ExpiresAt > DateTime.UtcNow && x.Attempts <= 5)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.ConsumedAt, DateTime.UtcNow), ct);
             if (claimed != 1) return Results.Unauthorized();
-            if (challenge.UserId == PrototypeUserId)
-                return CreateTokenResult(config, PrototypeUserId, "מנהל מערכת", true);
             var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == challenge.UserId && x.IsActive, ct);
-            return user is null ? Results.Unauthorized() : CreateTokenResult(config, user.Id, user.DisplayName, false);
+            return user is null ? Results.Unauthorized() : CreateTokenResult(config, user.Id, user.DisplayName, user.IsPlatformAdmin);
         }).AllowAnonymous().WithTags("Authentication");
         return endpoints;
     }
