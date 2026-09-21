@@ -108,23 +108,29 @@ public sealed class EmployeePensionContribution : Entity
     private EmployeePensionContribution() { }
 
     public EmployeePensionContribution(Guid employeePensionProductId, ContributionParty party,
-        ContributionComponent component, decimal percentage)
+        ContributionComponent component, decimal percentage, decimal amount = 0, decimal exemptPayments = 0)
     {
         EmployeePensionProductId = employeePensionProductId;
         Party = party;
         Component = component;
-        Update(percentage);
+        Update(percentage, amount, exemptPayments);
     }
 
     public Guid EmployeePensionProductId { get; private set; }
     public ContributionParty Party { get; private set; }
     public ContributionComponent Component { get; private set; }
     public decimal Percentage { get; private set; }
+    public decimal Amount { get; private set; }
+    public decimal ExemptPayments { get; private set; }
 
-    public void Update(decimal percentage)
+    public void Update(decimal percentage, decimal amount = 0, decimal exemptPayments = 0)
     {
         if (percentage < 0 || percentage > 100) throw new ArgumentOutOfRangeException(nameof(percentage));
+        if (amount < 0) throw new ArgumentOutOfRangeException(nameof(amount));
+        if (exemptPayments < 0) throw new ArgumentOutOfRangeException(nameof(exemptPayments));
         Percentage = percentage;
+        Amount = amount;
+        ExemptPayments = exemptPayments;
         Touch();
     }
 }
