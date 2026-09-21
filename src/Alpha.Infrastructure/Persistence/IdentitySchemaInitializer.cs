@@ -11,6 +11,8 @@ public static class IdentitySchemaInitializer
             ALTER TABLE identity.users ADD COLUMN IF NOT EXISTS "Phone" character varying(30) NULL;
             ALTER TABLE identity.users ADD COLUMN IF NOT EXISTS "Appearance" character varying(16) NOT NULL DEFAULT 'system';
             UPDATE identity.users SET "Appearance" = 'system' WHERE "Appearance" IS NULL OR "Appearance" NOT IN ('system', 'light', 'dark');
+            DROP INDEX IF EXISTS identity."IX_users_Email";
+            CREATE INDEX IF NOT EXISTS "IX_users_Email" ON identity.users ("Email");
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_users_NationalId" ON identity.users ("NationalId") WHERE "NationalId" IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_users_Phone" ON identity.users ("Phone") WHERE "Phone" IS NOT NULL;
             """;
