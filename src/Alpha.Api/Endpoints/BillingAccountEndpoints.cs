@@ -102,6 +102,11 @@ public static class BillingAccountEndpoints
         var resolution = await inheritance.ResolveBillingAccountAsync(employerId, ct);
         if (resolution is null || resolution.OrganizationId != organizationId) return Results.NotFound();
 
+        var organizationAccount = await db.BillingAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == resolution.OrganizationId && x.EmployerId == null, ct);
+        var employerAccount = await db.BillingAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.EmployerId == resolution.EmployerId && x.OrganizationId == null, ct);
+
         return Results.Ok(new
         {
             resolution.EmployerId,
@@ -111,7 +116,9 @@ public static class BillingAccountEndpoints
             resolution.BilledThroughName,
             effectiveAccount = ToResponse(resolution.Account,
                 resolution.Source == "Organization" ? resolution.OrganizationId : null,
-                resolution.Source == "Employer" ? resolution.EmployerId : null)
+                resolution.Source == "Employer" ? resolution.EmployerId : null),
+            organizationAccount = ToResponse(organizationAccount, resolution.OrganizationId, null),
+            employerAccount = ToResponse(employerAccount, null, resolution.EmployerId)
         });
     }
 
