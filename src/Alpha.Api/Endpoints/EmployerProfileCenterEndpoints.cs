@@ -41,6 +41,8 @@ public static class EmployerProfileCenterEndpoints
 
         var settings = await db.EmployerProfileSettings.AsNoTracking()
             .SingleOrDefaultAsync(x => x.EmployerId == employerId, ct);
+        var hasDirectPensionAccount = await db.EmployerPaymentAccounts.AsNoTracking()
+            .AnyAsync(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.IsActive, ct);
 
         return Results.Ok(new
         {
@@ -62,7 +64,7 @@ public static class EmployerProfileCenterEndpoints
             },
             pensionPayment = new
             {
-                mode = settings?.PensionPaymentMode ?? EmployerPensionPaymentMode.InheritOrganization,
+                mode = settings?.PensionPaymentMode ?? (hasDirectPensionAccount ? EmployerPensionPaymentMode.EmployerDirect : EmployerPensionPaymentMode.InheritOrganization),
                 modeOverridden = settings?.PensionPaymentModeOverridden ?? false,
                 canChangeMode = await access.CanManageOrganizationAsync(organizationId, ct)
             },
@@ -177,6 +179,11 @@ public static class EmployerProfileCenterEndpoints
             ? EmployerBillingMode.EmployerDirect
             : EmployerBillingMode.InheritOrganization;
         settings.ApplyDefaultBillingMode(defaultMode);
+        var hasDirectPensionAccount = await db.EmployerPaymentAccounts.AsNoTracking()
+            .AnyAsync(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.IsActive, ct);
+        settings.ApplyDefaultPensionPaymentMode(hasDirectPensionAccount
+            ? EmployerPensionPaymentMode.EmployerDirect
+            : EmployerPensionPaymentMode.InheritOrganization);
         db.EmployerProfileSettings.Add(settings);
         return settings;
     }
