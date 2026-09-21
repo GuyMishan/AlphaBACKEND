@@ -85,7 +85,7 @@ public static class AuthEndpoints
                 return Results.Problem("Authentication is not configured.", statusCode: 503);
 
             if (await db.Users.AsNoTracking().AnyAsync(x =>
-                    x.Email == email || x.NationalId == nationalId || x.Phone == phone, ct))
+                    x.NationalId == nationalId || x.Phone == phone, ct))
                 return Results.Conflict(new { error = "user_exists" });
 
             string? invitationTokenHash = null;
@@ -105,7 +105,7 @@ public static class AuthEndpoints
             }
 
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
-            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({email}))", ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({nationalId + ":" + phone}))", ct);
             var now = DateTime.UtcNow;
             var last = await db.RegistrationOtpChallenges
                 .Where(x => x.Email == email && x.ExpiresAt > now)
@@ -226,7 +226,7 @@ public static class AuthEndpoints
             }
 
             if (await db.Users.AnyAsync(x =>
-                    x.Email == challenge.Email || x.NationalId == challenge.NationalId || x.Phone == challenge.Phone, ct))
+                    x.NationalId == challenge.NationalId || x.Phone == challenge.Phone, ct))
             {
                 await transaction.RollbackAsync(ct);
                 return Results.Conflict(new { error = "user_exists" });
