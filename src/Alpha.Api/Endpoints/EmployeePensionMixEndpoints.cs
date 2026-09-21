@@ -199,7 +199,7 @@ public static class EmployeePensionMixEndpoints
         if (items.GroupBy(x => x.Component).Any(g => g.Count() > 1))
             throw new ArgumentException("Each contribution component may appear only once per party.");
         foreach (var item in items)
-            db.EmployeePensionContributions.Add(new EmployeePensionContribution(productId, party, item.Component, item.Percentage));
+            db.EmployeePensionContributions.Add(new EmployeePensionContribution(productId, party, item.Component, item.Percentage, item.Amount ?? 0, item.ExemptPayments ?? 0));
     }
 
     private sealed record ResolvedProductInput(EmployeePensionProductInput Input, bool IsActive, DateOnly EffectiveFrom,
@@ -216,4 +216,4 @@ public sealed record EmployeePensionProductInput(PensionProductType ProductType,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployerContributions,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployeeContributions);
-public sealed record EmployeePensionContributionInput(ContributionComponent Component, decimal Percentage);
+public sealed record EmployeePensionContributionInput(ContributionComponent Component, decimal Percentage, decimal? Amount, decimal? ExemptPayments);
