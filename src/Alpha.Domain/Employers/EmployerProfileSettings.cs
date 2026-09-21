@@ -15,6 +15,12 @@ public enum EmployerBillingStatus
     Suspended = 3
 }
 
+public enum EmployerPensionPaymentMode
+{
+    EmployerDirect = 1,
+    InheritOrganization = 2
+}
+
 public sealed class EmployerProfileSettings : Entity
 {
     private EmployerProfileSettings() { }
@@ -37,6 +43,8 @@ public sealed class EmployerProfileSettings : Entity
     public EmployerBillingMode BillingMode { get; private set; } = EmployerBillingMode.EmployerDirect;
     public bool BillingModeOverridden { get; private set; }
     public EmployerBillingStatus BillingStatus { get; private set; } = EmployerBillingStatus.NotConfigured;
+    public EmployerPensionPaymentMode PensionPaymentMode { get; private set; } = EmployerPensionPaymentMode.InheritOrganization;
+    public bool PensionPaymentModeOverridden { get; private set; }
 
     public int? DefaultSalaryPaymentDay { get; private set; }
     public int? DefaultPaymentMethodCode { get; private set; }
@@ -68,6 +76,20 @@ public sealed class EmployerProfileSettings : Entity
     {
         if (BillingModeOverridden) return;
         BillingMode = mode;
+        Touch();
+    }
+
+    public void UpdatePensionPaymentMode(EmployerPensionPaymentMode mode)
+    {
+        PensionPaymentMode = mode;
+        PensionPaymentModeOverridden = true;
+        Touch();
+    }
+
+    public void ApplyDefaultPensionPaymentMode(EmployerPensionPaymentMode mode)
+    {
+        if (PensionPaymentModeOverridden) return;
+        PensionPaymentMode = mode;
         Touch();
     }
 
