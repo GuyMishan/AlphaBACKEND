@@ -26,6 +26,7 @@ public sealed class User : Entity
     public string? NationalId { get; private set; }
     public string? Phone { get; private set; }
     public string Appearance { get; private set; } = "system";
+    public bool IsPlatformAdmin { get; private set; }
     public bool IsActive { get; private set; } = true;
 
     public void SetAppearance(string appearance)
