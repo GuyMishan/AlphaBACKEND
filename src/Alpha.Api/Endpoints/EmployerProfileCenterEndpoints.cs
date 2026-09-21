@@ -10,6 +10,7 @@ namespace Alpha.Api.Endpoints;
 public sealed record EmployerAddressRequest(
     string? City, string? Street, string? HouseNumber, string? Apartment, string? PostalCode, string? PostOfficeBox);
 public sealed record EmployerBillingSettingsRequest(EmployerBillingMode BillingMode, EmployerBillingStatus? BillingStatus = null);
+public sealed record EmployerPensionPaymentSettingsRequest(EmployerPensionPaymentMode Mode);
 public sealed record EmployerReportingSettingsRequest(
     int? DefaultSalaryPaymentDay, int? DefaultPaymentMethodCode, int? DefaultEmployerAccountType,
     int? DefaultReceiverAccountType, string? ReportingNotes);
@@ -23,6 +24,7 @@ public static class EmployerProfileCenterEndpoints
         group.MapGet("/settings", GetSettingsAsync);
         group.MapPut("/address", UpdateAddressAsync);
         group.MapPut("/billing", UpdateBillingAsync);
+        group.MapPut("/pension-payment", UpdatePensionPaymentAsync);
         group.MapPut("/reporting", UpdateReportingAsync);
 
         return endpoints;
@@ -56,6 +58,12 @@ public static class EmployerProfileCenterEndpoints
                 mode = settings?.BillingMode ?? EmployerBillingMode.EmployerDirect,
                 modeOverridden = settings?.BillingModeOverridden ?? false,
                 status = settings?.BillingStatus ?? EmployerBillingStatus.NotConfigured,
+                canChangeMode = await access.CanManageOrganizationAsync(organizationId, ct)
+            },
+            pensionPayment = new
+            {
+                mode = settings?.PensionPaymentMode ?? EmployerPensionPaymentMode.InheritOrganization,
+                modeOverridden = settings?.PensionPaymentModeOverridden ?? false,
                 canChangeMode = await access.CanManageOrganizationAsync(organizationId, ct)
             },
             reporting = new
@@ -101,6 +109,31 @@ public static class EmployerProfileCenterEndpoints
             new { request.BillingMode, BillingStatus = currentUser.IsPlatformAdmin ? request.BillingStatus : null });
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { settings.BillingMode, settings.BillingStatus });
+    }
+
+    private static async Task<IResult> UpdatePensionPaymentAsync(Guid organizationId, Guid employerId,
+        EmployerPensionPaymentSettingsRequest request, IAlphaDbContext db, ICurrentUser currentUser,
+        OrganizationAccessService access, HttpContext http, CancellationToken ct)
+    {
+        if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        if (!Enum.IsDefined(request.Mode)) return Results.BadRequest(new { error = "invalid_pension_payment_mode" });
+
+        var settings = await GetOrCreateSettingsAsync(organizationId, employerId, db, ct);
+        if (settings is null) return Results.NotFound();
+
+        if (request.Mode == EmployerPensionPaymentMode.EmployerDirect)
+        {
+            var directAccountExists = await db.EmployerPaymentAccounts.AsNoTracking()
+                .AnyAsync(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.IsActive, ct);
+            if (!directAccountExists)
+                return Results.Conflict(new { error = "employer_payment_account_required" });
+        }
+
+        settings.UpdatePensionPaymentMode(request.Mode);
+        AddAudit(db, currentUser, http, "employer.pension-payment-mode.updated", settings.Id,
+            organizationId, employerId, new { request.Mode });
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { mode = settings.PensionPaymentMode, modeOverridden = settings.PensionPaymentModeOverridden });
     }
 
     private static async Task<IResult> UpdateReportingAsync(Guid organizationId, Guid employerId,
