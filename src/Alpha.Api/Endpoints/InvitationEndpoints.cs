@@ -16,6 +16,8 @@ namespace Alpha.Api.Endpoints;
 
 public sealed record CreateInvitationRequest(
     string Email,
+    string NationalId,
+    string Phone,
     Guid? EmployerId,
     OrganizationRole? OrganizationRole,
     EmployerRole? EmployerRole,
@@ -86,7 +88,11 @@ public static class InvitationEndpoints
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
 
         var email = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        var nationalId = request.NationalId?.Trim() ?? string.Empty;
+        var phone = request.Phone?.Trim() ?? string.Empty;
         if (!IsValidEmail(email)) return Results.BadRequest(new { error = "invalid_email" });
+        if (!IsIsraeliId(nationalId)) return Results.BadRequest(new { error = "invalid_national_id" });
+        if (!IsIsraeliMobile(phone)) return Results.BadRequest(new { error = "invalid_phone" });
         if (request.OrganizationRole.HasValue && !Enum.IsDefined(request.OrganizationRole.Value))
             return Results.BadRequest(new { error = "invalid_organization_role" });
         if (request.EmployerRole.HasValue && !Enum.IsDefined(request.EmployerRole.Value))
@@ -106,44 +112,8 @@ public static class InvitationEndpoints
                 .AnyAsync(x => x.Id == request.EmployerId.Value && x.OrganizationId == organizationId, ct))
             return Results.BadRequest(new { error = "employer_not_in_organization" });
 
-        var existingUser = await db.Users.SingleOrDefaultAsync(x => x.Email == email, ct);
-        if (existingUser is not null)
-        {
-            var existingUserEntitlement = await entitlements.CanInviteUser(organizationId, existingUser.Id, ct);
-            if (!existingUserEntitlement.Allowed) return EntitlementError(existingUserEntitlement);
-
-            if (request.OrganizationRole.HasValue)
-            {
-                var membership = await db.OrganizationMemberships.SingleOrDefaultAsync(x =>
-                    x.OrganizationId == organizationId && x.UserId == existingUser.Id, ct);
-                var accessMode = request.EmployerId.HasValue
-                    ? EmployerAccessMode.SelectedEmployers
-                    : EmployerAccessMode.AllEmployers;
-
-                if (membership is null)
-                    db.OrganizationMemberships.Add(new OrganizationMembership(existingUser.Id, organizationId, request.OrganizationRole.Value, accessMode, currentUser.UserId));
-                else if (!membership.IsActive)
-                    membership.Reactivate(request.OrganizationRole.Value, accessMode);
-                else
-                    membership.ChangeAccess(request.OrganizationRole.Value, accessMode);
-            }
-
-            if (request.EmployerId.HasValue && request.EmployerRole.HasValue)
-            {
-                var grant = await db.EmployerUserAccesses.SingleOrDefaultAsync(x =>
-                    x.OrganizationId == organizationId && x.UserId == existingUser.Id && x.EmployerId == request.EmployerId.Value, ct);
-                if (grant is null)
-                    db.EmployerUserAccesses.Add(new EmployerUserAccess(existingUser.Id, organizationId, request.EmployerId.Value, request.EmployerRole.Value));
-                else
-                    grant.ChangeRole(request.EmployerRole.Value);
-            }
-
-            db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "membership.created.existing-user", nameof(User),
-                existingUser.Id, organizationId, request.EmployerId,
-                JsonSerializer.Serialize(new { email, request.OrganizationRole, request.EmployerRole, request.EmployerId }), http.TraceIdentifier));
-            await db.SaveChangesAsync(ct);
-            return Results.Ok(new { addedExistingUser = true, userId = existingUser.Id });
-        }
+        if (await db.Users.AsNoTracking().AnyAsync(x => x.NationalId == nationalId || x.Phone == phone, ct))
+            return Results.Conflict(new { error = "existing_identity_or_phone_not_supported_yet" });
 
         var now = DateTimeOffset.UtcNow;
         var existing = await db.UserInvitations.SingleOrDefaultAsync(x =>
@@ -172,6 +142,8 @@ public static class InvitationEndpoints
             JsonSerializer.Serialize(new
             {
                 email,
+                nationalId,
+                phone,
                 request.EmployerId,
                 request.OrganizationRole,
                 request.EmployerRole,
@@ -286,5 +258,21 @@ public static class InvitationEndpoints
         if (string.IsNullOrWhiteSpace(value) || value.Length > 320) return false;
         try { return new System.Net.Mail.MailAddress(value).Address.Equals(value, StringComparison.OrdinalIgnoreCase); }
         catch { return false; }
+    }
+
+    private static bool IsIsraeliMobile(string value) =>
+        value.Length == 10 && value.StartsWith("05", StringComparison.Ordinal) && value.All(char.IsAsciiDigit);
+
+    private static bool IsIsraeliId(string value)
+    {
+        if (value.Length is < 1 or > 9 || !value.All(char.IsAsciiDigit)) return false;
+        var id = value.PadLeft(9, '0');
+        var sum = 0;
+        for (var i = 0; i < id.Length; i++)
+        {
+            var n = (id[i] - '0') * (i % 2 == 0 ? 1 : 2);
+            sum += n > 9 ? n - 9 : n;
+        }
+        return sum % 10 == 0;
     }
 }
