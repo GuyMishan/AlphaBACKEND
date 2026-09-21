@@ -106,8 +106,44 @@ public static class InvitationEndpoints
                 .AnyAsync(x => x.Id == request.EmployerId.Value && x.OrganizationId == organizationId, ct))
             return Results.BadRequest(new { error = "employer_not_in_organization" });
 
-        if (await db.Users.AsNoTracking().AnyAsync(x => x.Email == email, ct))
-            return Results.Conflict(new { error = "user_exists_use_existing_access" });
+        var existingUser = await db.Users.SingleOrDefaultAsync(x => x.Email == email, ct);
+        if (existingUser is not null)
+        {
+            var entitlement = await entitlements.CanInviteUser(organizationId, existingUser.Id, ct);
+            if (!entitlement.Allowed) return EntitlementError(entitlement);
+
+            if (request.OrganizationRole.HasValue)
+            {
+                var membership = await db.OrganizationMemberships.SingleOrDefaultAsync(x =>
+                    x.OrganizationId == organizationId && x.UserId == existingUser.Id, ct);
+                var accessMode = request.EmployerId.HasValue
+                    ? EmployerAccessMode.SelectedEmployers
+                    : EmployerAccessMode.AllEmployers;
+
+                if (membership is null)
+                    db.OrganizationMemberships.Add(new OrganizationMembership(existingUser.Id, organizationId, request.OrganizationRole.Value, accessMode, currentUser.UserId));
+                else if (!membership.IsActive)
+                    membership.Reactivate(request.OrganizationRole.Value, accessMode);
+                else
+                    membership.ChangeAccess(request.OrganizationRole.Value, accessMode);
+            }
+
+            if (request.EmployerId.HasValue && request.EmployerRole.HasValue)
+            {
+                var grant = await db.EmployerUserAccesses.SingleOrDefaultAsync(x =>
+                    x.OrganizationId == organizationId && x.UserId == existingUser.Id && x.EmployerId == request.EmployerId.Value, ct);
+                if (grant is null)
+                    db.EmployerUserAccesses.Add(new EmployerUserAccess(existingUser.Id, organizationId, request.EmployerId.Value, request.EmployerRole.Value));
+                else
+                    grant.ChangeRole(request.EmployerRole.Value);
+            }
+
+            db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "membership.created.existing-user", nameof(User),
+                existingUser.Id, organizationId, request.EmployerId,
+                JsonSerializer.Serialize(new { email, request.OrganizationRole, request.EmployerRole, request.EmployerId }), http.TraceIdentifier));
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { addedExistingUser = true, userId = existingUser.Id });
+        }
 
         var now = DateTimeOffset.UtcNow;
         var existing = await db.UserInvitations.SingleOrDefaultAsync(x =>
