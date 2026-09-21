@@ -67,6 +67,21 @@ public static class EmployerProfileSchemaInitializer
             CREATE INDEX IF NOT EXISTS "IX_employer_payment_accounts_EmployerId"
                 ON employers.employer_payment_accounts ("EmployerId");
             ALTER TABLE employers.employer_payment_accounts ALTER COLUMN "EmployerId" DROP NOT NULL;
+
+            WITH ranked AS (
+                SELECT "Id",
+                       row_number() OVER (
+                           PARTITION BY "EmployerId"
+                           ORDER BY "IsDefault" DESC, "CreatedAt" ASC
+                       ) AS rn
+                FROM employers.employer_payment_accounts
+                WHERE "EmployerId" IS NOT NULL AND "IsActive" = true
+            )
+            UPDATE employers.employer_payment_accounts a
+            SET "IsActive" = false, "IsDefault" = false, "UpdatedAt" = now()
+            FROM ranked r
+            WHERE a."Id" = r."Id" AND r.rn > 1;
+
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_employer_payment_accounts_one_org_active"
                 ON employers.employer_payment_accounts ("OrganizationId")
                 WHERE "EmployerId" IS NULL AND "IsActive" = true;
