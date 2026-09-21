@@ -103,6 +103,10 @@ public static class EmployerPaymentAccountEndpoints
         if (!await BankBranchExistsAsync(db, request.BankId, request.BranchId, ct))
             return Results.BadRequest(new { error = "bank_or_branch_not_found" });
 
+        if (await db.EmployerPaymentAccounts.AnyAsync(x =>
+                x.OrganizationId == organizationId && x.EmployerId == employerId && x.IsActive, ct))
+            return Results.Conflict(new { error = "employer_payment_account_already_exists" });
+
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await LockEmployerAsync(db, employerId, ct);
 
