@@ -35,4 +35,10 @@ public sealed class Organization : Entity
         Status = OrganizationStatus.Active;
         Touch();
     }
+
+    public void ChangeStatus(OrganizationStatus status)
+    {
+        Status = status;
+        Touch();
+    }
 }
