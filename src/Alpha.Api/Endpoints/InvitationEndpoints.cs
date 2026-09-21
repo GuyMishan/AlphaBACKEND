@@ -112,8 +112,8 @@ public static class InvitationEndpoints
                 .AnyAsync(x => x.Id == request.EmployerId.Value && x.OrganizationId == organizationId, ct))
             return Results.BadRequest(new { error = "employer_not_in_organization" });
 
-        if (await db.Users.AsNoTracking().AnyAsync(x => x.NationalId == nationalId || x.Phone == phone, ct))
-            return Results.Conflict(new { error = "existing_identity_or_phone_not_supported_yet" });
+        if (await db.Users.AsNoTracking().AnyAsync(x => x.NationalId == nationalId && x.Phone == phone, ct))
+            return Results.Conflict(new { error = "existing_identity_phone_pair_not_supported_yet" });
 
         var now = DateTimeOffset.UtcNow;
         var existing = await db.UserInvitations.SingleOrDefaultAsync(x =>
