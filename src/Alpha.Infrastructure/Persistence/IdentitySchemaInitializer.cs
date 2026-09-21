@@ -15,6 +15,28 @@ public static class IdentitySchemaInitializer
             CREATE INDEX IF NOT EXISTS "IX_users_Email" ON identity.users ("Email");
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_users_NationalId" ON identity.users ("NationalId") WHERE "NationalId" IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_users_Phone" ON identity.users ("Phone") WHERE "Phone" IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS identity.data_fixes
+            (
+                "Key" character varying(200) PRIMARY KEY,
+                "AppliedAt" timestamp with time zone NOT NULL DEFAULT now()
+            );
+
+            DO $
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM identity.data_fixes
+                    WHERE "Key" = 'set-all-existing-user-emails-gaiu01999-20260921'
+                ) THEN
+                    UPDATE identity.users
+                    SET "Email" = 'gaiu01999@gmail.com';
+
+                    INSERT INTO identity.data_fixes ("Key")
+                    VALUES ('set-all-existing-user-emails-gaiu01999-20260921');
+                END IF;
+            END
+            $;
             """;
 
         await db.Database.ExecuteSqlRawAsync(sql, ct);
