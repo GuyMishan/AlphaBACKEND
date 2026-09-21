@@ -10,7 +10,13 @@ using Microsoft.EntityFrameworkCore;
 namespace Alpha.Api.Endpoints;
 
 public sealed record AddAccessUserRequest(Guid UserId, OrganizationRole Role, EmployerAccessMode EmployerAccessMode);
-public sealed record UpdateAccessUserRequest(OrganizationRole Role, EmployerAccessMode EmployerAccessMode);
+public sealed record UpdateAccessUserRequest(
+    OrganizationRole Role,
+    EmployerAccessMode EmployerAccessMode,
+    bool CanCreateEmployer,
+    bool CanEditEmployer,
+    bool CanCreateEmployee,
+    bool CanEditEmployee);
 public sealed record UpdateEmployerAccessRoleRequest(EmployerRole Role);
 
 public static class AccessEndpoints
@@ -39,7 +45,11 @@ public static class AccessEndpoints
                             user.Email,
                             user.IsActive,
                             membership.Role,
-                            membership.EmployerAccessMode
+                            membership.EmployerAccessMode,
+                            membership.CanCreateEmployer,
+                            membership.CanEditEmployer,
+                            membership.CanCreateEmployee,
+                            membership.CanEditEmployee
                         };
 
             if (!string.IsNullOrWhiteSpace(term))
@@ -114,6 +124,7 @@ public static class AccessEndpoints
             if (membership is null) return Results.NotFound();
 
             membership.ChangeAccess(request.Role, request.EmployerAccessMode);
+            membership.ChangePermissions(request.CanCreateEmployer, request.CanEditEmployer, request.CanCreateEmployee, request.CanEditEmployee);
             if (request.EmployerAccessMode == EmployerAccessMode.AllEmployers)
                 await db.EmployerUserAccesses.Where(x => x.OrganizationId == organizationId && x.UserId == userId)
                     .ExecuteDeleteAsync(ct);
