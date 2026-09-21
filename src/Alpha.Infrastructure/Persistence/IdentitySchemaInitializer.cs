@@ -22,21 +22,15 @@ public static class IdentitySchemaInitializer
                 "AppliedAt" timestamp with time zone NOT NULL DEFAULT now()
             );
 
-            DO $
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1
-                    FROM identity.data_fixes
-                    WHERE "Key" = 'set-all-existing-user-emails-gaiu01999-20260921'
-                ) THEN
-                    UPDATE identity.users
-                    SET "Email" = 'gaiu01999@gmail.com';
-
-                    INSERT INTO identity.data_fixes ("Key")
-                    VALUES ('set-all-existing-user-emails-gaiu01999-20260921');
-                END IF;
-            END
-            $;
+            WITH applied AS (
+                INSERT INTO identity.data_fixes ("Key")
+                VALUES ('set-all-existing-user-emails-gaiu01999-20260921')
+                ON CONFLICT ("Key") DO NOTHING
+                RETURNING 1
+            )
+            UPDATE identity.users
+            SET "Email" = 'gaiu01999@gmail.com'
+            WHERE EXISTS (SELECT 1 FROM applied);
             """;
 
         await db.Database.ExecuteSqlRawAsync(sql, ct);
