@@ -96,7 +96,7 @@ public static class BillingAccountEndpoints
     }
 
     private static async Task<IResult> GetEmployerBillingResolutionAsync(Guid organizationId, Guid employerId,
-        OrganizationAccessService access, BillingInheritanceService inheritance, CancellationToken ct)
+        IAlphaDbContext db, OrganizationAccessService access, BillingInheritanceService inheritance, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var resolution = await inheritance.ResolveBillingAccountAsync(employerId, ct);
