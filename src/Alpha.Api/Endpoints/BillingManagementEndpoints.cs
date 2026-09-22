@@ -63,11 +63,13 @@ public static class BillingManagementEndpoints
 
         var organization = endpoints.MapGroup("/api/organizations/{organizationId:guid}/billing")
             .RequireAuthorization().WithTags("Alpha Billing");
+        organization.MapGet("/context", GetOrganizationBillingContextAsync);
         organization.MapGet("/periods", GetOrganizationPeriodsAsync);
         organization.MapGet("/payments", GetOrganizationPaymentsAsync);
 
         var employer = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/billing")
             .RequireAuthorization().WithTags("Alpha Billing");
+        employer.MapGet("/context", GetEmployerBillingContextAsync);
         employer.MapGet("/periods", GetEmployerPeriodsAsync);
         employer.MapGet("/payments", GetEmployerPaymentsAsync);
 
@@ -305,6 +307,66 @@ public static class BillingManagementEndpoints
             : Results.Json(new { refund.Id, refund.Status, result.ErrorCode, result.ErrorMessage },
                 statusCode: StatusCodes.Status502BadGateway);
     }
+
+    private static async Task<IResult> GetOrganizationBillingContextAsync(
+        Guid organizationId, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        if (!await db.Organizations.AsNoTracking().AnyAsync(x => x.Id == organizationId, ct))
+            return Results.NotFound();
+
+        var account = await db.BillingAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == null, ct);
+        var canManage = await access.CanManageOrganizationAsync(organizationId, ct);
+
+        return Results.Ok(new
+        {
+            organizationId,
+            employerId = (Guid?)null,
+            source = "Organization",
+            billedThroughName = account?.BillingName ?? string.Empty,
+            canManageBilling = canManage,
+            account = ToSafeBillingAccount(account)
+        });
+    }
+
+    private static async Task<IResult> GetEmployerBillingContextAsync(
+        Guid organizationId, Guid employerId, IAlphaDbContext db, OrganizationAccessService access,
+        BillingInheritanceService inheritance, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var resolution = await inheritance.ResolveBillingAccountAsync(employerId, ct);
+        if (resolution is null || resolution.OrganizationId != organizationId) return Results.NotFound();
+
+        var canManage = resolution.Source == "Organization"
+            ? await access.CanManageOrganizationAsync(organizationId, ct)
+            : await access.CanManageEmployerAsync(organizationId, employerId, ct);
+
+        return Results.Ok(new
+        {
+            organizationId,
+            employerId,
+            resolution.Source,
+            resolution.BilledThroughName,
+            canManageBilling = canManage,
+            account = ToSafeBillingAccount(resolution.Account)
+        });
+    }
+
+    private static object ToSafeBillingAccount(BillingAccount? account) => new
+    {
+        id = account?.Id,
+        billingMode = account?.BillingMode,
+        status = account?.Status ?? BillingAccountStatus.PendingSetup,
+        paymentMethodType = account?.PaymentMethodType ?? BillingPaymentMethodType.CreditCard,
+        paymentMethodStatus = account?.PaymentMethodStatus ?? BillingPaymentMethodStatus.NotConfigured,
+        cardBrand = account?.CardBrand ?? string.Empty,
+        cardLast4 = account?.CardLast4 ?? string.Empty,
+        cardExpiryMonth = account?.CardExpiryMonth,
+        cardExpiryYear = account?.CardExpiryYear,
+        hasBankDebitMandate = !string.IsNullOrWhiteSpace(account?.BankDebitMandateReference),
+        configured = account is not null
+    };
 
     private static async Task<IResult> GetOrganizationPeriodsAsync(
         Guid organizationId, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
