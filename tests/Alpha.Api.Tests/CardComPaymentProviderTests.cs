@@ -29,7 +29,7 @@ public sealed class CardComPaymentProviderTests
         Assert.Equal(HttpMethod.Post, captured!.Method);
         Assert.EndsWith("/Interface/LowProfile.aspx", captured.RequestUri!.AbsolutePath);
 
-        var form = CardComPaymentProvider.ParseNameValue(await captured.Content!.ReadAsStringAsync());
+        var form = ParseNameValue(await captured.Content!.ReadAsStringAsync());
         Assert.Equal("3", form["Operation"]);
         Assert.Equal("account-id", form["ReturnValue"]);
         Assert.Equal("https://api.alpha.test/callback", form["IndicatorUrl"]);
@@ -93,7 +93,7 @@ public sealed class CardComPaymentProviderTests
         Assert.Equal("4", result.ErrorCode);
         Assert.Equal("Declined", result.ErrorMessage);
 
-        var form = CardComPaymentProvider.ParseNameValue(posted!);
+        var form = ParseNameValue(posted!);
         Assert.Equal("tok-123", form["TokenToCharge.Token"]);
         Assert.Equal("99.90", form["TokenToCharge.SumToBill"]);
         Assert.Equal("12", form["TokenToCharge.CardValidityMonth"]);
@@ -117,7 +117,7 @@ public sealed class CardComPaymentProviderTests
         Assert.True(result.Success);
         Assert.Equal("refund-uid", result.RefundId);
 
-        var form = CardComPaymentProvider.ParseNameValue(posted!);
+        var form = ParseNameValue(posted!);
         Assert.Equal("25.50", form["TokenToCharge.SumToBill"]);
         Assert.Equal("True", form["TokenToCharge.RefundInsteadOfCharge"]);
         Assert.Equal("refund-secret", form["TokenToCharge.UserPassword"]);
@@ -144,6 +144,15 @@ public sealed class CardComPaymentProviderTests
 
     private static HttpResponseMessage Text(HttpStatusCode status, string value) =>
         new(status) { Content = new StringContent(value) };
+
+    private static Dictionary<string, string> ParseNameValue(string raw) =>
+        raw.Trim().TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Split('=', 2))
+            .Where(x => x.Length == 2)
+            .ToDictionary(
+                x => WebUtility.UrlDecode(x[0]),
+                x => WebUtility.UrlDecode(x[1].Replace("+", " ")),
+                StringComparer.OrdinalIgnoreCase);
 
     private static async Task<HttpRequestMessage> CloneRequestAsync(HttpRequestMessage source)
     {
