@@ -32,6 +32,7 @@ builder.Services.AddScoped<IPaymentProviderResolver>(sp => sp.GetRequiredService
 builder.Services.AddScoped<IPaymentProvider>(sp => sp.GetRequiredService<PaymentProviderResolver>());
 builder.Services.AddScoped<IBillingCalculator, BillingCalculator>();
 builder.Services.AddScoped<IBillingUsageCollector, BillingUsageCollector>();
+builder.Services.AddScoped<IBillingCycleService, BillingCycleService>();
 builder.Services.AddHttpClient("cardcom", c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient("payplus", c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddScoped<EntitlementService>();
