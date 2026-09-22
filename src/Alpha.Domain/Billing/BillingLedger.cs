@@ -204,19 +204,24 @@ public sealed class PaymentMethod : Entity
     public void Activate(string? customerId, string paymentMethodId, string? cardBrand, string? cardLast4,
         int? expiryMonth, int? expiryYear, string? mandateReference)
     {
-        ProviderCustomerId = customerId?.Trim() ?? string.Empty;
-        ProviderPaymentMethodId = Require(paymentMethodId);
-        CardBrand = cardBrand?.Trim() ?? string.Empty;
-        CardLast4 = cardLast4?.Trim() ?? string.Empty;
+        ProviderCustomerId = Truncate(customerId, 200);
+        ProviderPaymentMethodId = Truncate(Require(paymentMethodId), 200);
+        CardBrand = Truncate(cardBrand, 40);
+        CardLast4 = Truncate(cardLast4, 4);
         CardExpiryMonth = expiryMonth;
         CardExpiryYear = expiryYear;
-        MandateReference = mandateReference?.Trim() ?? string.Empty;
+        MandateReference = Truncate(mandateReference, 200);
         Status = BillingPaymentMethodStatus.Active;
         Touch();
     }
 
     public void MarkStatus(BillingPaymentMethodStatus status) { Status = status; Touch(); }
     private static string Require(string? value) => string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value is required.") : value.Trim();
+    private static string Truncate(string? value, int max)
+    {
+        var clean = value?.Trim() ?? string.Empty;
+        return clean[..Math.Min(clean.Length, max)];
+    }
 }
 
 public sealed class Payment : Entity
@@ -361,5 +366,11 @@ public sealed class ProviderWebhookEvent : Entity
         ErrorMessage = Truncate(error, 1000);
         ProcessedAt = DateTimeOffset.UtcNow;
         Touch();
+    }
+
+    private static string Truncate(string? value, int max)
+    {
+        var clean = value?.Trim() ?? string.Empty;
+        return clean[..Math.Min(clean.Length, max)];
     }
 }
