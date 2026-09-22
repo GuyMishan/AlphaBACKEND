@@ -15,6 +15,8 @@ public interface IAlphaDbContext
     DbSet<BillingAccount> BillingAccounts { get; }
     DbSet<PlanPricingComponent> PlanPricingComponents { get; }
     DbSet<PlanPricingTier> PlanPricingTiers { get; }
+    DbSet<BillingAccountPricingComponent> BillingAccountPricingComponents { get; }
+    DbSet<BillingAccountPricingTier> BillingAccountPricingTiers { get; }
     DbSet<BillingPeriod> BillingPeriods { get; }
     DbSet<BillingUsage> BillingUsages { get; }
     DbSet<PaymentMethod> PaymentMethods { get; }
