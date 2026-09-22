@@ -4,21 +4,46 @@ using Alpha.Application.Billing;
 
 namespace Alpha.Api.Services;
 
-public sealed class PaymentProviderResolver(IEnumerable<IPaymentProvider> providers, IConfiguration configuration)
-    : IPaymentProviderResolver
+public sealed class PaymentProviderResolver(
+    FakePaymentProvider fake,
+    CardComPaymentProvider cardCom,
+    PayPlusPaymentProvider payPlus,
+    IConfiguration configuration) : IPaymentProviderResolver, IPaymentProvider
 {
-    private readonly IReadOnlyDictionary<string, IPaymentProvider> _providers =
-        providers.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyDictionary<string, IPaymentProvider> Providers => new Dictionary<string, IPaymentProvider>(StringComparer.OrdinalIgnoreCase)
+    {
+        [fake.Name] = fake,
+        [cardCom.Name] = cardCom,
+        [payPlus.Name] = payPlus
+    };
+
+    public string Name => Resolve().Name;
 
     public IPaymentProvider Resolve(string? providerName = null)
     {
         var selected = string.IsNullOrWhiteSpace(providerName)
             ? configuration["Payments:DefaultProvider"] ?? "Fake"
             : providerName;
-        return _providers.TryGetValue(selected, out var provider)
+        return Providers.TryGetValue(selected, out var provider)
             ? provider
             : throw new InvalidOperationException($"Payment provider '{selected}' is not registered.");
     }
+
+    public Task<PaymentProviderCustomerResult> CreateCustomer(PaymentProviderCustomerRequest request, CancellationToken ct = default) =>
+        Resolve().CreateCustomer(request, ct);
+    public Task<PaymentMethodSetupResult> CreatePaymentMethod(PaymentMethodSetupRequest request, CancellationToken ct = default) =>
+        Resolve().CreatePaymentMethod(request, ct);
+    public Task<PaymentChargeResult> Charge(PaymentChargeRequest request, CancellationToken ct = default) =>
+        Resolve().Charge(request, ct);
+    public Task<PaymentRefundResult> Refund(PaymentRefundRequest request, CancellationToken ct = default) =>
+        Resolve().Refund(request, ct);
+    public Task<PaymentMethodStatusResult> GetPaymentMethodStatus(string customerId, string paymentMethodId, CancellationToken ct = default) =>
+        Resolve().GetPaymentMethodStatus(customerId, paymentMethodId, ct);
+    public Task CancelPaymentMethod(string customerId, string paymentMethodId, CancellationToken ct = default) =>
+        Resolve().CancelPaymentMethod(customerId, paymentMethodId, ct);
+    public Task<PaymentMethodStatusResult> ResolvePaymentMethodFromCallback(string rawBody,
+        IReadOnlyDictionary<string, string> headers, CancellationToken ct = default) =>
+        Resolve().ResolvePaymentMethodFromCallback(rawBody, headers, ct);
 }
 
 public sealed class FakePaymentProvider : IPaymentProvider
