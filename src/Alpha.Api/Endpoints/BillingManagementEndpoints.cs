@@ -49,6 +49,7 @@ public sealed record PricingSimulationRequest(
 public sealed record RunBillingPeriodRequest(DateTimeOffset PeriodStart, DateTimeOffset PeriodEnd, bool Charge = true);
 public sealed record RefundPaymentRequest(decimal Amount, string? Reason, string IdempotencyKey);
 public sealed record BillingAccountPricingRequest(string BillingType, decimal? UnitPrice);
+public sealed record BillingCustomerPricingRequest(string PayerType, Guid PayerId, string BillingType, decimal? UnitPrice);
 
 public static class BillingManagementEndpoints
 {
@@ -61,6 +62,8 @@ public static class BillingManagementEndpoints
         platform.MapPost("/plans", CreatePlanAsync);
         platform.MapPut("/plans/{planId:guid}", UpdatePlanAsync);
         platform.MapPost("/plans/{planId:guid}/simulate", SimulateAsync);
+        platform.MapGet("/customers", GetBillingCustomersAsync);
+        platform.MapPut("/customers/pricing", UpdateBillingCustomerPricingAsync);
         platform.MapGet("/summary", GetPlatformBillingSummaryAsync);
         platform.MapGet("/periods", GetPlatformPeriodsAsync);
         platform.MapGet("/payments", GetPlatformPaymentsAsync);
@@ -204,6 +207,155 @@ public static class BillingManagementEndpoints
             new BillingUsageSnapshot(request.Employers, request.Employees, request.ReportRows,
                 request.Corrections, request.CorrectedRows));
         return Results.Ok(calculation);
+    }
+
+    private static async Task<IResult> GetBillingCustomersAsync(
+        IAlphaDbContext db, ICurrentUser currentUser, CancellationToken ct)
+    {
+        if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+
+        var organizations = await db.Organizations.AsNoTracking()
+            .OrderBy(x => x.Name)
+            .Select(x => new { x.Id, x.Name })
+            .ToListAsync(ct);
+
+        var employers = await db.Employers.AsNoTracking()
+            .OrderBy(x => x.LegalName)
+            .Select(x => new { x.Id, x.OrganizationId, x.LegalName })
+            .ToListAsync(ct);
+
+        var employerIds = employers.Select(x => x.Id).ToArray();
+        var employerSettings = await db.EmployerProfileSettings.AsNoTracking()
+            .Where(x => employerIds.Contains(x.EmployerId))
+            .Select(x => new { x.EmployerId, x.BillingMode })
+            .ToListAsync(ct);
+        var employerModes = employerSettings.ToDictionary(x => x.EmployerId, x => x.BillingMode);
+
+        var accounts = await db.BillingAccounts.AsNoTracking().ToListAsync(ct);
+        var accountIds = accounts.Select(x => x.Id).ToArray();
+        var pricing = await db.BillingAccountPricingComponents.AsNoTracking()
+            .Where(x => accountIds.Contains(x.BillingAccountId) && x.EffectiveTo == null && x.IsEnabled)
+            .ToListAsync(ct);
+
+        static object Pricing(Guid? accountId, IReadOnlyCollection<BillingAccountPricingComponent> components)
+        {
+            if (!accountId.HasValue)
+                return new { billingType = "Free", unitPrice = 0m };
+
+            var employee = components.FirstOrDefault(x =>
+                x.BillingAccountId == accountId.Value && x.MetricType == BillingMetricType.Employee);
+            var row = components.FirstOrDefault(x =>
+                x.BillingAccountId == accountId.Value && x.MetricType == BillingMetricType.ReportRow);
+            return employee is not null
+                ? new { billingType = "PerEmployee", unitPrice = employee.UnitPrice }
+                : row is not null
+                    ? new { billingType = "PerReportRow", unitPrice = row.UnitPrice }
+                    : new { billingType = "Free", unitPrice = 0m };
+        }
+
+        var result = new List<object>();
+        foreach (var organization in organizations)
+        {
+            var account = accounts.SingleOrDefault(x =>
+                x.OrganizationId == organization.Id && x.EmployerId == null);
+            var p = Pricing(account?.Id, pricing);
+            result.Add(new
+            {
+                payerType = "Organization",
+                payerId = organization.Id,
+                payerName = organization.Name,
+                organizationId = organization.Id,
+                organizationName = organization.Name,
+                employerId = (Guid?)null,
+                employerName = (string?)null,
+                billingAccountId = account?.Id,
+                paymentMethodStatus = account?.PaymentMethodStatus ?? BillingPaymentMethodStatus.NotConfigured,
+                paymentMethodType = account?.PaymentMethodType ?? BillingPaymentMethodType.CreditCard,
+                cardBrand = account?.CardBrand ?? string.Empty,
+                cardLast4 = account?.CardLast4 ?? string.Empty,
+                configured = account is not null,
+                p
+            });
+        }
+
+        foreach (var employer in employers)
+        {
+            if (!employerModes.TryGetValue(employer.Id, out var mode) ||
+                mode != Alpha.Domain.Employers.EmployerBillingMode.IndependentEmployerBilling)
+                continue;
+
+            var account = accounts.SingleOrDefault(x =>
+                x.EmployerId == employer.Id && x.OrganizationId == null);
+            var p = Pricing(account?.Id, pricing);
+            var organizationName = organizations.FirstOrDefault(x => x.Id == employer.OrganizationId)?.Name ?? string.Empty;
+            result.Add(new
+            {
+                payerType = "Employer",
+                payerId = employer.Id,
+                payerName = employer.LegalName,
+                organizationId = employer.OrganizationId,
+                organizationName,
+                employerId = (Guid?)employer.Id,
+                employerName = employer.LegalName,
+                billingAccountId = account?.Id,
+                paymentMethodStatus = account?.PaymentMethodStatus ?? BillingPaymentMethodStatus.NotConfigured,
+                paymentMethodType = account?.PaymentMethodType ?? BillingPaymentMethodType.CreditCard,
+                cardBrand = account?.CardBrand ?? string.Empty,
+                cardLast4 = account?.CardLast4 ?? string.Empty,
+                configured = account is not null,
+                p
+            });
+        }
+
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> UpdateBillingCustomerPricingAsync(
+        BillingCustomerPricingRequest request, IAlphaDbContext db,
+        ICurrentUser currentUser, CancellationToken ct)
+    {
+        if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+
+        var payerType = (request.PayerType ?? string.Empty).Trim();
+        BillingAccount? account;
+        if (payerType == "Organization")
+        {
+            if (!await db.Organizations.AsNoTracking().AnyAsync(x => x.Id == request.PayerId, ct))
+                return Results.NotFound();
+            account = await db.BillingAccounts.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.PayerId && x.EmployerId == null, ct);
+            if (account is null)
+            {
+                account = new BillingAccount(request.PayerId, null);
+                db.BillingAccounts.Add(account);
+                await db.SaveChangesAsync(ct);
+            }
+        }
+        else if (payerType == "Employer")
+        {
+            var employer = await db.Employers.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == request.PayerId, ct);
+            if (employer is null) return Results.NotFound();
+            account = await db.BillingAccounts.SingleOrDefaultAsync(
+                x => x.EmployerId == request.PayerId && x.OrganizationId == null, ct);
+            if (account is null)
+            {
+                account = new BillingAccount(null, request.PayerId);
+                db.BillingAccounts.Add(account);
+                await db.SaveChangesAsync(ct);
+            }
+        }
+        else
+        {
+            return Results.BadRequest(new { error = "invalid_payer_type" });
+        }
+
+        return await UpdateAccountPricingAsync(
+            account.Id,
+            new BillingAccountPricingRequest(request.BillingType, request.UnitPrice),
+            db,
+            currentUser,
+            ct);
     }
 
     private static async Task<IResult> GetPlatformBillingSummaryAsync(
