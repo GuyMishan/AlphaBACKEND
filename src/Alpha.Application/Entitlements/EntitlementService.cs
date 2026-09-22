@@ -10,34 +10,20 @@ public sealed class EntitlementService(IAlphaDbContext db)
 {
     public const string ReportTransmissionFeature = "report_transmission";
 
-    public async Task<int> GetEmployerLimit(Guid organizationId, CancellationToken ct = default) =>
-        (await GetPlanAsync(organizationId, ct)).MaxEmployers;
+    public Task<int> GetEmployerLimit(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult(int.MaxValue);
 
-    public async Task<int> GetEmployeeLimit(Guid organizationId, CancellationToken ct = default) =>
-        (await GetPlanAsync(organizationId, ct)).MaxEmployees;
+    public Task<int> GetEmployeeLimit(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult(int.MaxValue);
 
     public async Task<int> GetUserLimit(Guid organizationId, CancellationToken ct = default) =>
         (await GetPlanAsync(organizationId, ct)).MaxUsers;
 
-    public async Task<EntitlementDecision> CanCreateEmployer(Guid organizationId, CancellationToken ct = default)
-    {
-        var plan = await GetPlanAsync(organizationId, ct);
-        var current = await db.Employers.AsNoTracking()
-            .CountAsync(x => x.OrganizationId == organizationId && x.Status != EmployerStatus.Closed, ct);
-        return current < plan.MaxEmployers
-            ? EntitlementDecision.Allow()
-            : EntitlementDecision.LimitReached("employers", current, plan.MaxEmployers);
-    }
+    public Task<EntitlementDecision> CanCreateEmployer(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult(EntitlementDecision.Allow());
 
-    public async Task<EntitlementDecision> CanCreateEmployee(Guid organizationId, CancellationToken ct = default)
-    {
-        var plan = await GetPlanAsync(organizationId, ct);
-        var current = await db.Employments.AsNoTracking()
-            .CountAsync(x => x.OrganizationId == organizationId && x.Status == EmploymentStatus.Active, ct);
-        return current < plan.MaxEmployees
-            ? EntitlementDecision.Allow()
-            : EntitlementDecision.LimitReached("active_employees", current, plan.MaxEmployees);
-    }
+    public Task<EntitlementDecision> CanCreateEmployee(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult(EntitlementDecision.Allow());
 
     public async Task<EntitlementDecision> CanInviteNewUser(Guid organizationId, CancellationToken ct = default)
     {
@@ -148,8 +134,8 @@ public sealed class EntitlementService(IAlphaDbContext db)
         return new
         {
             plan = new { plan.Id, plan.Code, plan.Name },
-            employers = new { current = employers, maximum = plan.MaxEmployers },
-            activeEmployees = new { current = employees, maximum = plan.MaxEmployees },
+            employers = new { current = employers, maximum = int.MaxValue },
+            activeEmployees = new { current = employees, maximum = int.MaxValue },
             users = new { current = users, maximum = plan.MaxUsers }
         };
     }
