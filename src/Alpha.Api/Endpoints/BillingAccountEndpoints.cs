@@ -250,6 +250,9 @@ public static class BillingAccountEndpoints
                 cardExpiryMonth = (int?)null,
                 cardExpiryYear = (int?)null,
                 bankDebitMandateReference = string.Empty,
+                billingMode = organizationId.HasValue ? BillingMode.OrganizationBilling : BillingMode.IndependentEmployerBilling,
+                status = BillingAccountStatus.PendingSetup,
+                defaultPaymentMethodId = (Guid?)null,
                 configured = false
             };
         }
@@ -272,6 +275,9 @@ public static class BillingAccountEndpoints
             account.CardExpiryMonth,
             account.CardExpiryYear,
             account.BankDebitMandateReference,
+            account.BillingMode,
+            account.Status,
+            account.DefaultPaymentMethodId,
             configured = true,
             account.CreatedAt,
             account.UpdatedAt
