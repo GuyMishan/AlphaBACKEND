@@ -237,20 +237,21 @@ public static class BillingManagementEndpoints
             .Where(x => accountIds.Contains(x.BillingAccountId) && x.EffectiveTo == null && x.IsEnabled)
             .ToListAsync(ct);
 
-        static object Pricing(Guid? accountId, IReadOnlyCollection<BillingAccountPricingComponent> components)
+        static (string BillingType, decimal UnitPrice) Pricing(
+            Guid? accountId, IReadOnlyCollection<BillingAccountPricingComponent> components)
         {
             if (!accountId.HasValue)
-                return new { billingType = "Free", unitPrice = 0m };
+                return ("Free", 0m);
 
             var employee = components.FirstOrDefault(x =>
                 x.BillingAccountId == accountId.Value && x.MetricType == BillingMetricType.Employee);
             var row = components.FirstOrDefault(x =>
                 x.BillingAccountId == accountId.Value && x.MetricType == BillingMetricType.ReportRow);
             return employee is not null
-                ? new { billingType = "PerEmployee", unitPrice = employee.UnitPrice }
+                ? ("PerEmployee", employee.UnitPrice)
                 : row is not null
-                    ? new { billingType = "PerReportRow", unitPrice = row.UnitPrice }
-                    : new { billingType = "Free", unitPrice = 0m };
+                    ? ("PerReportRow", row.UnitPrice)
+                    : ("Free", 0m);
         }
 
         var result = new List<object>();
@@ -274,7 +275,8 @@ public static class BillingManagementEndpoints
                 cardBrand = account?.CardBrand ?? string.Empty,
                 cardLast4 = account?.CardLast4 ?? string.Empty,
                 configured = account is not null,
-                p
+                billingType = p.BillingType,
+                unitPrice = p.UnitPrice
             });
         }
 
@@ -303,7 +305,8 @@ public static class BillingManagementEndpoints
                 cardBrand = account?.CardBrand ?? string.Empty,
                 cardLast4 = account?.CardLast4 ?? string.Empty,
                 configured = account is not null,
-                p
+                billingType = p.BillingType,
+                unitPrice = p.UnitPrice
             });
         }
 
