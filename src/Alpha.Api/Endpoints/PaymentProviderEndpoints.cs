@@ -48,7 +48,7 @@ public static class PaymentProviderEndpoints
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.OrganizationId == organizationId && x.EmployerId == null, ct);
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
-        return await StartSetupAsync(account, organizationId, null, request.ReturnPath, db, currentUser, provider, config, http, ct);
+        return await StartSetupAsync(account, organizationId, null, request.ReturnPath, db, currentUser, resolver.Resolve(), config, http, ct);
     }
 
     private static async Task<IResult> StartEmployerSetupAsync(Guid organizationId, Guid employerId, PaymentMethodSetupApiRequest request,
@@ -59,7 +59,7 @@ public static class PaymentProviderEndpoints
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.EmployerId == employerId && x.OrganizationId == null, ct);
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
-        return await StartSetupAsync(account, organizationId, employerId, request.ReturnPath, db, currentUser, provider, config, http, ct);
+        return await StartSetupAsync(account, organizationId, employerId, request.ReturnPath, db, currentUser, resolver.Resolve(), config, http, ct);
     }
 
     private static async Task<IResult> StartSetupAsync(BillingAccount account, Guid organizationId, Guid? employerId,
@@ -137,16 +137,16 @@ public static class PaymentProviderEndpoints
     }
 
     private static async Task<IResult> SyncOrganizationAsync(Guid organizationId, IAlphaDbContext db,
-        OrganizationAccessService access, IPaymentProvider provider, CancellationToken ct)
+        OrganizationAccessService access, IPaymentProviderResolver resolver, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.OrganizationId == organizationId && x.EmployerId == null, ct);
-        return await SyncAsync(account, db, provider, ct);
+        return await SyncAsync(account, db, resolver, ct);
     }
 
     private static async Task<IResult> SyncEmployerAsync(Guid organizationId, Guid employerId, IAlphaDbContext db,
-        OrganizationAccessService access, IPaymentProvider provider, CancellationToken ct)
+        OrganizationAccessService access, IPaymentProviderResolver resolver, CancellationToken ct)
     {
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
@@ -155,7 +155,7 @@ public static class PaymentProviderEndpoints
     }
 
     private static async Task<IResult> SyncAsync(BillingAccount? account, IAlphaDbContext db,
-        IPaymentProvider provider, CancellationToken ct)
+        IPaymentProviderResolver resolver, CancellationToken ct)
     {
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
         if (string.IsNullOrWhiteSpace(account.ProviderCustomerId) ||
@@ -164,8 +164,17 @@ public static class PaymentProviderEndpoints
 
         try
         {
+            var method = account.DefaultPaymentMethodId.HasValue
+                ? await db.PaymentMethods.SingleOrDefaultAsync(
+                    x => x.Id == account.DefaultPaymentMethodId.Value &&
+                         x.BillingAccountId == account.Id, ct)
+                : null;
+            if (method is null)
+                return Results.Conflict(new { error = "default_payment_method_not_found" });
+
+            var provider = resolver.Resolve(method.Provider);
             var status = await provider.GetPaymentMethodStatus(
-                account.ProviderCustomerId, account.ProviderPaymentMethodId, ct);
+                method.ProviderCustomerId, method.ProviderPaymentMethodId, ct);
 
             account.UpdateProviderMetadata(
                 status.Active ? BillingPaymentMethodStatus.Active : BillingPaymentMethodStatus.Failed,
@@ -198,16 +207,16 @@ public static class PaymentProviderEndpoints
     }
 
     private static async Task<IResult> CancelOrganizationAsync(Guid organizationId, IAlphaDbContext db,
-        OrganizationAccessService access, IPaymentProvider provider, CancellationToken ct)
+        OrganizationAccessService access, IPaymentProviderResolver resolver, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.OrganizationId == organizationId && x.EmployerId == null, ct);
-        return await CancelAsync(account, db, provider, ct);
+        return await CancelAsync(account, db, resolver, ct);
     }
 
     private static async Task<IResult> CancelEmployerAsync(Guid organizationId, Guid employerId, IAlphaDbContext db,
-        OrganizationAccessService access, IPaymentProvider provider, CancellationToken ct)
+        OrganizationAccessService access, IPaymentProviderResolver resolver, CancellationToken ct)
     {
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
@@ -216,7 +225,7 @@ public static class PaymentProviderEndpoints
     }
 
     private static async Task<IResult> CancelAsync(BillingAccount? account, IAlphaDbContext db,
-        IPaymentProvider provider, CancellationToken ct)
+        IPaymentProviderResolver resolver, CancellationToken ct)
     {
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
         if (string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId))
@@ -224,8 +233,18 @@ public static class PaymentProviderEndpoints
 
         try
         {
+            var method = account.DefaultPaymentMethodId.HasValue
+                ? await db.PaymentMethods.SingleOrDefaultAsync(
+                    x => x.Id == account.DefaultPaymentMethodId.Value &&
+                         x.BillingAccountId == account.Id, ct)
+                : null;
+            if (method is null)
+                return Results.NoContent();
+
+            var provider = resolver.Resolve(method.Provider);
             await provider.CancelPaymentMethod(
-                account.ProviderCustomerId, account.ProviderPaymentMethodId, ct);
+                method.ProviderCustomerId, method.ProviderPaymentMethodId, ct);
+            method.MarkStatus(BillingPaymentMethodStatus.Cancelled);
             account.UpdateProviderMetadata(
                 BillingPaymentMethodStatus.Cancelled,
                 account.ProviderCustomerId,
@@ -246,7 +265,7 @@ public static class PaymentProviderEndpoints
     }
 
     private static async Task<IResult> ChargeAsync(Guid billingAccountId, BillingChargeRequest request,
-        IAlphaDbContext db, ICurrentUser currentUser, IPaymentProvider provider, CancellationToken ct)
+        IAlphaDbContext db, ICurrentUser currentUser, IPaymentProviderResolver resolver, CancellationToken ct)
     {
         if (!currentUser.IsPlatformAdmin) return Results.Forbid();
         if (request.Amount <= 0) return Results.BadRequest(new { error = "invalid_amount" });
@@ -254,23 +273,28 @@ public static class PaymentProviderEndpoints
         var account = await db.BillingAccounts.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == billingAccountId, ct);
         if (account is null) return Results.NotFound();
-        if (account.PaymentMethodStatus != BillingPaymentMethodStatus.Active ||
-            string.IsNullOrWhiteSpace(account.ProviderCustomerId) ||
-            string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId))
+        var method = account.DefaultPaymentMethodId.HasValue
+            ? await db.PaymentMethods.AsNoTracking().SingleOrDefaultAsync(
+                x => x.Id == account.DefaultPaymentMethodId.Value &&
+                     x.BillingAccountId == account.Id &&
+                     x.Status == BillingPaymentMethodStatus.Active, ct)
+            : null;
+        if (account.PaymentMethodStatus != BillingPaymentMethodStatus.Active || method is null)
             return Results.Conflict(new { error = "payment_method_not_active" });
 
         try
         {
+            var provider = resolver.Resolve(method.Provider);
             var charge = await provider.Charge(new PaymentChargeRequest(
-                account.ProviderCustomerId,
-                account.ProviderPaymentMethodId,
+                method.ProviderCustomerId,
+                method.ProviderPaymentMethodId,
                 request.Amount,
                 "ILS",
                 request.Description?.Trim() ?? "Alpha subscription charge",
                 $"alpha:{account.Id}:{Guid.NewGuid():N}",
                 request.CreateInvoice,
-                account.CardExpiryMonth,
-                account.CardExpiryYear), ct);
+                method.CardExpiryMonth,
+                method.CardExpiryYear), ct);
 
             return charge.Success
                 ? Results.Ok(charge)
@@ -374,6 +398,14 @@ public static class PaymentProviderEndpoints
             method = new PaymentMethod(account.Id, provider.Name, account.PaymentMethodType);
             db.PaymentMethods.Add(method);
         }
+
+        var previouslyActive = await db.PaymentMethods
+            .Where(x => x.BillingAccountId == account.Id &&
+                        x.Id != method.Id &&
+                        x.Status == BillingPaymentMethodStatus.Active)
+            .ToListAsync(ct);
+        foreach (var oldMethod in previouslyActive)
+            oldMethod.MarkStatus(BillingPaymentMethodStatus.Cancelled);
 
         method.Activate(customerId, result.PaymentMethodId, result.Brand, result.Last4,
             result.ExpiryMonth, result.ExpiryYear, result.BankDebitMandateReference);
