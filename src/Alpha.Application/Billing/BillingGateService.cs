@@ -40,6 +40,7 @@ public sealed class BillingGateService(BillingInheritanceService inheritance)
     public const string BillingAccountRequired = "billing_account_required";
     public const string BillingPaymentMethodNotActive = "billing_payment_method_not_active";
     public const string BillingPaymentMethodReferenceRequired = "billing_payment_method_reference_required";
+    public const string BillingAccountSuspended = "billing_account_suspended";
 
     public async Task<BillingGateDecision> CanTransmitAsync(Guid employerId, CancellationToken ct = default)
     {
@@ -48,6 +49,9 @@ public sealed class BillingGateService(BillingInheritanceService inheritance)
             return BillingGateDecision.Deny(BillingAccountRequired, resolution);
 
         var account = resolution.Account;
+        if (account.Status is BillingAccountStatus.Suspended or BillingAccountStatus.Cancelled)
+            return BillingGateDecision.Deny(BillingAccountSuspended, resolution);
+
         if (account.PaymentMethodStatus != BillingPaymentMethodStatus.Active)
             return BillingGateDecision.Deny(BillingPaymentMethodNotActive, resolution);
 
