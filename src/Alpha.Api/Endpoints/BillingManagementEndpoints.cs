@@ -388,7 +388,7 @@ public static class BillingManagementEndpoints
     {
         foreach (var component in request.Components)
         {
-            var correctionMode = component.MetricType == BillingMetricType.Correction
+            CorrectionBillingMode? correctionMode = component.MetricType == BillingMetricType.Correction
                 ? component.CorrectionMode ?? request.CorrectionBillingMode
                 : null;
             db.PlanPricingComponents.Add(new PlanPricingComponent(
