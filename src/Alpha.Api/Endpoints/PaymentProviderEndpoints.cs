@@ -262,7 +262,9 @@ public static class PaymentProviderEndpoints
                 "ILS",
                 request.Description?.Trim() ?? "Alpha subscription charge",
                 $"alpha:{account.Id}:{Guid.NewGuid():N}",
-                request.CreateInvoice), ct);
+                request.CreateInvoice,
+                account.CardExpiryMonth,
+                account.CardExpiryYear), ct);
 
             return charge.Success
                 ? Results.Ok(charge)
