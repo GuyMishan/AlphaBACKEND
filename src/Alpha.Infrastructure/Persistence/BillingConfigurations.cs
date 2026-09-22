@@ -13,12 +13,13 @@ public sealed class PlanPricingComponentConfiguration : IEntityTypeConfiguration
         b.ToTable("plan_pricing_components", "billing");
         b.HasKey(x => x.Id);
         b.Property(x => x.MetricType).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.CorrectionMode).HasConversion<string>().HasMaxLength(40);
         b.Property(x => x.PricingType).HasConversion<string>().HasMaxLength(40).IsRequired();
         b.Property(x => x.UnitPrice).HasPrecision(18, 4);
         b.Property(x => x.IncludedQuantity).HasPrecision(18, 4);
         b.Property(x => x.MinimumCharge).HasPrecision(18, 2);
         b.Property(x => x.MaximumCharge).HasPrecision(18, 2);
-        b.HasIndex(x => new { x.PlanId, x.MetricType }).IsUnique();
+        b.HasIndex(x => new { x.PlanId, x.Version, x.MetricType }).IsUnique();
         b.HasOne<Plan>().WithMany().HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Cascade);
     }
 }
