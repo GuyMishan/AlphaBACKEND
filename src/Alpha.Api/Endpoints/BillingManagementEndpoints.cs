@@ -7,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Endpoints;
 
+public sealed record PricingTierRequest(decimal FromQuantity, decimal? ToQuantity, decimal UnitPrice);
+
 public sealed record PricingComponentRequest(
     BillingMetricType MetricType,
     BillingPricingType PricingType,
@@ -15,7 +17,8 @@ public sealed record PricingComponentRequest(
     decimal? MinimumCharge,
     decimal? MaximumCharge,
     bool IsEnabled,
-    CorrectionBillingMode? CorrectionMode = null);
+    CorrectionBillingMode? CorrectionMode = null,
+    IReadOnlyList<PricingTierRequest>? Tiers = null);
 
 public sealed record PlanBillingRequest(
     string Code,
@@ -57,6 +60,7 @@ public static class BillingManagementEndpoints
         platform.MapPost("/plans/{planId:guid}/simulate", SimulateAsync);
         platform.MapGet("/periods", GetPlatformPeriodsAsync);
         platform.MapGet("/payments", GetPlatformPaymentsAsync);
+        platform.MapGet("/refunds", GetPlatformRefundsAsync);
         platform.MapGet("/usage", GetPlatformUsageAsync);
         platform.MapPost("/accounts/{billingAccountId:guid}/run", RunPeriodAsync);
         platform.MapPost("/payments/{paymentId:guid}/refunds", RefundAsync);
@@ -87,9 +91,16 @@ public static class BillingManagementEndpoints
             .Where(x => planIds.Contains(x.PlanId) && x.EffectiveTo == null)
             .OrderBy(x => x.MetricType)
             .ToListAsync(ct);
+        var componentIds = components.Select(x => x.Id).ToArray();
+        var tiers = await db.PlanPricingTiers.AsNoTracking()
+            .Where(x => componentIds.Contains(x.ComponentId))
+            .OrderBy(x => x.FromQuantity)
+            .ToListAsync(ct);
 
         return Results.Ok(plans.Select(plan => ToPlanResponse(
-            plan, components.Where(x => x.PlanId == plan.Id).ToArray())));
+            plan,
+            components.Where(x => x.PlanId == plan.Id).ToArray(),
+            tiers)));
     }
 
     private static async Task<IResult> CreatePlanAsync(
@@ -115,7 +126,10 @@ public static class BillingManagementEndpoints
 
         var components = await db.PlanPricingComponents.AsNoTracking()
             .Where(x => x.PlanId == plan.Id && x.EffectiveTo == null).ToListAsync(ct);
-        return Results.Created($"/api/platform/billing/plans/{plan.Id}", ToPlanResponse(plan, components));
+        var componentIds = components.Select(x => x.Id).ToArray();
+        var tiers = await db.PlanPricingTiers.AsNoTracking()
+            .Where(x => componentIds.Contains(x.ComponentId)).ToListAsync(ct);
+        return Results.Created($"/api/platform/billing/plans/{plan.Id}", ToPlanResponse(plan, components, tiers));
     }
 
     private static async Task<IResult> UpdatePlanAsync(
@@ -153,7 +167,10 @@ public static class BillingManagementEndpoints
 
         var components = await db.PlanPricingComponents.AsNoTracking()
             .Where(x => x.PlanId == plan.Id && x.EffectiveTo == null).ToListAsync(ct);
-        return Results.Ok(ToPlanResponse(plan, components));
+        var componentIds = components.Select(x => x.Id).ToArray();
+        var tiers = await db.PlanPricingTiers.AsNoTracking()
+            .Where(x => componentIds.Contains(x.ComponentId)).ToListAsync(ct);
+        return Results.Ok(ToPlanResponse(plan, components, tiers));
     }
 
     private static async Task<IResult> SimulateAsync(
@@ -211,6 +228,22 @@ public static class BillingManagementEndpoints
                 x.Id, x.BillingAccountId, x.BillingPeriodId, x.Amount, x.Currency,
                 x.Status, x.Provider, x.ProviderTransactionId, x.InvoiceReference,
                 x.FailureCode, x.FailureMessage, x.PaidAt, x.CreatedAt
+            }).ToListAsync(ct);
+        return Results.Ok(rows);
+    }
+
+    private static async Task<IResult> GetPlatformRefundsAsync(
+        IAlphaDbContext db, ICurrentUser currentUser, int take = 100, CancellationToken ct = default)
+    {
+        if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+        take = Math.Clamp(take, 1, 500);
+        var rows = await db.Refunds.AsNoTracking()
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(take)
+            .Select(x => new
+            {
+                x.Id, x.PaymentId, x.Amount, x.Reason, x.Status,
+                x.ProviderRefundId, x.ErrorMessage, x.IdempotencyKey, x.CreatedAt
             }).ToListAsync(ct);
         return Results.Ok(rows);
     }
@@ -438,7 +471,10 @@ public static class BillingManagementEndpoints
                 x.CalculatedAt, x.ChargedAt
             }).ToListAsync(ct);
 
-    private static object ToPlanResponse(Plan plan, IReadOnlyCollection<PlanPricingComponent> components) => new
+    private static object ToPlanResponse(
+        Plan plan,
+        IReadOnlyCollection<PlanPricingComponent> components,
+        IReadOnlyCollection<PlanPricingTier> tiers) => new
     {
         plan.Id,
         plan.Code,
@@ -461,7 +497,10 @@ public static class BillingManagementEndpoints
         {
             x.Id, x.Version, x.EffectiveFrom, x.EffectiveTo, x.MetricType,
             x.PricingType, x.UnitPrice, x.IncludedQuantity, x.MinimumCharge,
-            x.MaximumCharge, x.IsEnabled, x.CorrectionMode
+            x.MaximumCharge, x.IsEnabled, x.CorrectionMode,
+            tiers = tiers.Where(t => t.ComponentId == x.Id)
+                .OrderBy(t => t.FromQuantity)
+                .Select(t => new { t.Id, t.FromQuantity, t.ToQuantity, t.UnitPrice })
         })
     };
 
@@ -479,6 +518,30 @@ public static class BillingManagementEndpoints
                                         x.MinimumCharge < 0 || x.MaximumCharge < 0 ||
                                         x.MinimumCharge > x.MaximumCharge))
             return "invalid_pricing_component";
+
+        foreach (var component in request.Components.Where(x => x.PricingType == BillingPricingType.Tiered && x.IsEnabled))
+        {
+            var tiers = (component.Tiers ?? []).OrderBy(x => x.FromQuantity).ToArray();
+            if (tiers.Length == 0 || tiers[0].FromQuantity != 0)
+                return "tiered_pricing_requires_tiers_starting_at_zero";
+
+            for (var index = 0; index < tiers.Length; index++)
+            {
+                var tier = tiers[index];
+                if (tier.FromQuantity < 0 || tier.ToQuantity < 0 || tier.UnitPrice < 0 ||
+                    (tier.ToQuantity.HasValue && tier.ToQuantity <= tier.FromQuantity))
+                    return "invalid_pricing_tier";
+
+                if (index < tiers.Length - 1)
+                {
+                    if (!tier.ToQuantity.HasValue || tier.ToQuantity.Value != tiers[index + 1].FromQuantity)
+                        return "pricing_tiers_must_be_contiguous";
+                }
+                else if (tier.ToQuantity.HasValue)
+                    return "last_pricing_tier_must_be_open_ended";
+            }
+        }
+
         return null;
     }
 
@@ -490,10 +553,18 @@ public static class BillingManagementEndpoints
             CorrectionBillingMode? correctionMode = component.MetricType == BillingMetricType.Correction
                 ? component.CorrectionMode ?? request.CorrectionBillingMode
                 : null;
-            db.PlanPricingComponents.Add(new PlanPricingComponent(
+            var entity = new PlanPricingComponent(
                 plan.Id, component.MetricType, component.PricingType, component.UnitPrice,
                 component.IncludedQuantity, component.MinimumCharge, component.MaximumCharge,
-                component.IsEnabled, plan.Version, effectiveFrom, correctionMode));
+                component.IsEnabled, plan.Version, effectiveFrom, correctionMode);
+            db.PlanPricingComponents.Add(entity);
+
+            if (component.PricingType == BillingPricingType.Tiered)
+            {
+                foreach (var tier in (component.Tiers ?? []).OrderBy(x => x.FromQuantity))
+                    db.PlanPricingTiers.Add(new PlanPricingTier(
+                        entity.Id, tier.FromQuantity, tier.ToQuantity, tier.UnitPrice));
+            }
         }
 
         if (!request.Components.Any(x => x.MetricType == BillingMetricType.Correction))
