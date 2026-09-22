@@ -84,21 +84,23 @@ public sealed class BillingCalculator : IBillingCalculator
         IReadOnlyCollection<PlanPricingComponent> components, IReadOnlyCollection<PlanPricingTier> tiers,
         BillingUsageSnapshot usage)
     {
-        if (plan.CorrectionBillingMode == CorrectionBillingMode.Free)
+        var configured = components.FirstOrDefault(x => x.IsEnabled && x.MetricType == BillingMetricType.Correction);
+        var correctionMode = configured?.CorrectionMode ?? plan.CorrectionBillingMode;
+        if (correctionMode == CorrectionBillingMode.Free)
             return new BillingCalculationLine(BillingMetricType.Correction, usage.Corrections, 0, 0, 0, 0);
 
-        var configured = components.FirstOrDefault(x => x.IsEnabled && x.MetricType == BillingMetricType.Correction);
         var reportRows = components.FirstOrDefault(x => x.IsEnabled && x.MetricType == BillingMetricType.ReportRow);
 
-        var quantity = plan.CorrectionBillingMode == CorrectionBillingMode.PerCorrection
+        var quantity = correctionMode == CorrectionBillingMode.PerCorrection
             ? usage.Corrections
             : usage.CorrectedRows;
-        var included = plan.CorrectionBillingMode == CorrectionBillingMode.PerCorrection
-            ? plan.IncludedCorrections
-            : plan.IncludedCorrectionRows;
-        var price = plan.CorrectionBillingMode == CorrectionBillingMode.SameAsRegularRows
+        var included = configured?.IncludedQuantity ??
+            (correctionMode == CorrectionBillingMode.PerCorrection
+                ? plan.IncludedCorrections
+                : plan.IncludedCorrectionRows);
+        var price = correctionMode == CorrectionBillingMode.SameAsRegularRows
             ? reportRows?.UnitPrice ?? 0
-            : plan.CorrectionUnitPrice ?? configured?.UnitPrice ?? 0;
+            : configured?.UnitPrice ?? plan.CorrectionUnitPrice ?? 0;
 
         var synthetic = configured is null
             ? new PricingDefinition(BillingPricingType.PerUnit, price, included, null, null)
