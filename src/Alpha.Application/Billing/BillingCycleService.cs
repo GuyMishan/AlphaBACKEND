@@ -20,7 +20,7 @@ public interface IBillingCycleService
 {
     Task<BillingRunResult> RunPeriodAsync(Guid billingAccountId, DateTimeOffset periodStart,
         DateTimeOffset periodEnd, bool charge, CancellationToken ct = default);
-    Task<int> RetryPastDueAsync(TimeSpan gracePeriod, CancellationToken ct = default);
+    Task<int> RetryPastDueAsync(TimeSpan gracePeriod, TimeSpan retryDelay, CancellationToken ct = default);
 }
 
 public sealed class BillingCycleService(
@@ -178,11 +178,12 @@ public sealed class BillingCycleService(
             period.Currency, currentCalculation, payment.Id, payment.Status, result.ErrorMessage);
     }
 
-    public async Task<int> RetryPastDueAsync(TimeSpan gracePeriod, CancellationToken ct = default)
+    public async Task<int> RetryPastDueAsync(TimeSpan gracePeriod, TimeSpan retryDelay, CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var retryBefore = now - retryDelay;
         var due = await db.BillingPeriods.AsNoTracking()
-            .Where(x => x.Status == BillingPeriodStatus.PastDue)
+            .Where(x => x.Status == BillingPeriodStatus.PastDue && x.UpdatedAt <= retryBefore)
             .OrderBy(x => x.PeriodEnd)
             .Select(x => new { x.BillingAccountId, x.PeriodStart, x.PeriodEnd })
             .ToListAsync(ct);
@@ -201,6 +202,12 @@ public sealed class BillingCycleService(
                 current.MarkSuspended();
                 var account = await db.BillingAccounts.SingleAsync(x => x.Id == item.BillingAccountId, ct);
                 account.MarkStatus(BillingAccountStatus.Suspended);
+                var organizationId = account.OrganizationId ??
+                    await db.Employers.AsNoTracking().Where(x => x.Id == account.EmployerId)
+                        .Select(x => x.OrganizationId).SingleAsync(ct);
+                var subscription = await db.Subscriptions.SingleOrDefaultAsync(
+                    x => x.OrganizationId == organizationId && x.Status != SubscriptionStatus.Cancelled, ct);
+                subscription?.ChangeStatus(SubscriptionStatus.Suspended);
                 await db.SaveChangesAsync(ct);
             }
         }
