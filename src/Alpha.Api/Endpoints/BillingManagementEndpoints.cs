@@ -64,10 +64,12 @@ public static class BillingManagementEndpoints
         var organization = endpoints.MapGroup("/api/organizations/{organizationId:guid}/billing")
             .RequireAuthorization().WithTags("Alpha Billing");
         organization.MapGet("/periods", GetOrganizationPeriodsAsync);
+        organization.MapGet("/payments", GetOrganizationPaymentsAsync);
 
         var employer = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/billing")
             .RequireAuthorization().WithTags("Alpha Billing");
         employer.MapGet("/periods", GetEmployerPeriodsAsync);
+        employer.MapGet("/payments", GetEmployerPaymentsAsync);
 
         return endpoints;
     }
@@ -327,6 +329,41 @@ public static class BillingManagementEndpoints
             ? []
             : await PeriodRows(db, resolution.Account.Id, ct));
     }
+
+    private static async Task<IResult> GetOrganizationPaymentsAsync(
+        Guid organizationId, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        var accountId = await db.BillingAccounts.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == null)
+            .Select(x => (Guid?)x.Id).SingleOrDefaultAsync(ct);
+        return Results.Ok(accountId.HasValue
+            ? await PaymentRows(db, accountId.Value, ct)
+            : []);
+    }
+
+    private static async Task<IResult> GetEmployerPaymentsAsync(
+        Guid organizationId, Guid employerId, IAlphaDbContext db, OrganizationAccessService access,
+        BillingInheritanceService inheritance, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var resolution = await inheritance.ResolveBillingAccountAsync(employerId, ct);
+        if (resolution is null || resolution.OrganizationId != organizationId) return Results.NotFound();
+        return Results.Ok(resolution.Account is null
+            ? []
+            : await PaymentRows(db, resolution.Account.Id, ct));
+    }
+
+    private static Task<List<object>> PaymentRows(IAlphaDbContext db, Guid accountId, CancellationToken ct) =>
+        db.Payments.AsNoTracking()
+            .Where(x => x.BillingAccountId == accountId)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => (object)new
+            {
+                x.Id, x.BillingAccountId, x.BillingPeriodId, x.Amount, x.Currency,
+                x.Status, x.Provider, x.ProviderTransactionId, x.InvoiceReference,
+                x.FailureCode, x.FailureMessage, x.PaidAt, x.CreatedAt
+            }).ToListAsync(ct);
 
     private static Task<List<object>> PeriodRows(IAlphaDbContext db, Guid accountId, CancellationToken ct) =>
         db.BillingPeriods.AsNoTracking()
