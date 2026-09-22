@@ -21,6 +21,17 @@ public static class AuthEndpoints
 {
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/api/auth/session", async (IConfiguration config, AlphaDbContext db,
+            Alpha.Application.Abstractions.ICurrentUser currentUser, CancellationToken ct) =>
+        {
+            if (!currentUser.IsAuthenticated) return Results.Unauthorized();
+            var user = await db.Users.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == currentUser.UserId && x.IsActive, ct);
+            return user is null
+                ? Results.Unauthorized()
+                : CreateTokenResult(config, user.Id, user.DisplayName, user.IsPlatformAdmin);
+        }).RequireAuthorization().WithTags("Authentication");
+
         endpoints.MapPost("/api/auth/otp/request", async (RequestOtp request, IConfiguration config, AlphaDbContext db,
             OtpDelivery delivery, ILogger<OtpDelivery> logger, CancellationToken ct) =>
         {
