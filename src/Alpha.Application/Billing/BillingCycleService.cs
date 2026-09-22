@@ -100,8 +100,16 @@ public sealed class BillingCycleService(
                 period.Currency, currentCalculation, null, null, null);
         }
 
+        var paymentMethod = account.DefaultPaymentMethodId.HasValue
+            ? await db.PaymentMethods.SingleOrDefaultAsync(
+                x => x.Id == account.DefaultPaymentMethodId.Value &&
+                     x.BillingAccountId == account.Id &&
+                     x.Status == BillingPaymentMethodStatus.Active, ct)
+            : null;
+
         if (account.PaymentMethodStatus != BillingPaymentMethodStatus.Active ||
-            string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId))
+            paymentMethod is null ||
+            string.IsNullOrWhiteSpace(paymentMethod.ProviderPaymentMethodId))
         {
             period.MarkPastDue();
             account.MarkStatus(BillingAccountStatus.PastDue);
@@ -129,7 +137,7 @@ public sealed class BillingCycleService(
                 period.Currency, currentCalculation, payment.Id, payment.Status, null);
         }
 
-        var provider = providers.Resolve();
+        var provider = providers.Resolve(paymentMethod.Provider);
         var attemptNumber = (await db.PaymentAttempts
             .Where(x => x.PaymentId == payment.Id)
             .MaxAsync(x => (int?)x.AttemptNumber, ct) ?? 0) + 1;
@@ -144,15 +152,15 @@ public sealed class BillingCycleService(
         try
         {
             result = await provider.Charge(new PaymentChargeRequest(
-                account.ProviderCustomerId,
-                account.ProviderPaymentMethodId,
+                paymentMethod.ProviderCustomerId,
+                paymentMethod.ProviderPaymentMethodId,
                 payment.Amount,
                 payment.Currency,
                 $"ALPHA {period.PeriodStart:yyyy-MM-dd} - {period.PeriodEnd:yyyy-MM-dd}",
                 payment.IdempotencyKey,
                 true,
-                account.CardExpiryMonth,
-                account.CardExpiryYear), ct);
+                paymentMethod.CardExpiryMonth,
+                paymentMethod.CardExpiryYear), ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
