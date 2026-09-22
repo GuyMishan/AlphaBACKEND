@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Alpha.Api.Services;
 using Alpha.Application.Billing;
 using Microsoft.Extensions.Configuration;
@@ -9,14 +10,19 @@ namespace Alpha.Api.Tests;
 public sealed class CardComPaymentProviderTests
 {
     [Fact]
-    public async Task Setup_creates_operation_3_low_profile_request()
+    public async Task Setup_uses_api_11_json_create_token_only()
     {
         HttpRequestMessage? captured = null;
         var provider = CreateProvider(async request =>
         {
             captured = await CloneRequestAsync(request);
-            return Text(HttpStatusCode.OK,
-                "ResponseCode=0&Description=OK&LowProfileCode=LP-123&url=https%3A%2F%2Ftest.cardcom.solutions%2Fpay%2FLP-123");
+            return Json(HttpStatusCode.OK, new
+            {
+                ResponseCode = 0,
+                Description = "OK",
+                LowProfileId = "LP-123",
+                Url = "https://secure.cardcom.solutions/pay/LP-123"
+            });
         });
 
         var result = await provider.CreatePaymentMethod(new PaymentMethodSetupRequest(
@@ -24,116 +30,147 @@ public sealed class CardComPaymentProviderTests
             "https://alpha.test/cancel", "https://api.alpha.test/callback", "account-id"));
 
         Assert.Equal("LP-123", result.SetupRequestId);
-        Assert.Equal("https://test.cardcom.solutions/pay/LP-123", result.RedirectUrl);
         Assert.NotNull(captured);
         Assert.Equal(HttpMethod.Post, captured!.Method);
-        Assert.EndsWith("/Interface/LowProfile.aspx", captured.RequestUri!.AbsolutePath);
+        Assert.EndsWith("/api/v11/LowProfile/Create", captured.RequestUri!.AbsolutePath);
+        Assert.Equal("application/json", captured.Content!.Headers.ContentType!.MediaType);
 
-        var form = ParseNameValue(await captured.Content!.ReadAsStringAsync());
-        Assert.Equal("3", form["Operation"]);
-        Assert.Equal("account-id", form["ReturnValue"]);
-        Assert.Equal("https://api.alpha.test/callback", form["IndicatorUrl"]);
+        using var json = JsonDocument.Parse(await captured.Content.ReadAsStringAsync());
+        Assert.Equal("CreateTokenOnly", json.RootElement.GetProperty("Operation").GetString());
+        Assert.Equal("account-id", json.RootElement.GetProperty("ReturnValue").GetString());
+        Assert.Equal("https://api.alpha.test/callback", json.RootElement.GetProperty("WebHookUrl").GetString());
     }
 
     [Fact]
-    public async Task Callback_is_verified_server_to_server_before_token_is_accepted()
+    public async Task Webhook_is_verified_with_api_11_get_lp_result_before_token_is_accepted()
     {
-        var provider = CreateProvider(request =>
+        var provider = CreateProvider(async request =>
         {
-            Assert.Equal(HttpMethod.Get, request.Method);
-            Assert.Contains("BillGoldGetLowProfileIndicator.aspx", request.RequestUri!.AbsoluteUri);
-            Assert.Contains("LowProfileCode=LP-123", request.RequestUri.AbsoluteUri);
-            return Task.FromResult(Text(HttpStatusCode.OK,
-                "ResponseCode=0&Description=Low+Profile+Code+Found&LowProfileCode=LP-123&Operation=3&" +
-                "OperationResponse=0&TokenResponse=0&Token=tok-123&TokenExDate=20301201&" +
-                "CardValidityYear=2030&CardValidityMonth=12&ExtShvaParams.CardNumber5=4242&" +
-                "ExtShvaParams.CardName=VISA&ReturnValue=11111111-1111-1111-1111-111111111111"));
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.EndsWith("/api/v11/LowProfile/GetLpResult", request.RequestUri!.AbsolutePath);
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            Assert.Equal("LP-123", body.RootElement.GetProperty("LowProfileId").GetString());
+
+            return Json(HttpStatusCode.OK, new
+            {
+                ResponseCode = 0,
+                Description = "OK",
+                LowProfileId = "LP-123",
+                ReturnValue = "11111111-1111-1111-1111-111111111111",
+                Operation = "CreateTokenOnly",
+                TokenInfo = new
+                {
+                    Token = "tok-123",
+                    TokenExDate = "20301201",
+                    CardYear = 2030,
+                    CardMonth = 12
+                },
+                TranzactionInfo = new
+                {
+                    ResponseCode = 0,
+                    Last4CardDigitsString = "4242",
+                    Brand = "Visa"
+                }
+            });
         });
 
         var result = await provider.ResolvePaymentMethodFromCallback(
-            "LowProfileCode=LP-123", new Dictionary<string, string>());
+            """{"LowProfileId":"LP-123"}""", new Dictionary<string, string>());
 
         Assert.True(result.Active);
         Assert.Equal("tok-123", result.PaymentMethodId);
         Assert.Equal("4242", result.Last4);
+        Assert.Equal("Visa", result.Brand);
         Assert.Equal(12, result.ExpiryMonth);
         Assert.Equal(2030, result.ExpiryYear);
-        Assert.Equal("11111111-1111-1111-1111-111111111111", result.ExternalReference);
     }
 
     [Fact]
-    public async Task Callback_rejects_failed_token_creation()
+    public async Task Webhook_rejects_unverified_or_mismatched_low_profile_id()
     {
-        var provider = CreateProvider(_ => Task.FromResult(Text(HttpStatusCode.OK,
-            "ResponseCode=0&LowProfileCode=LP-123&Operation=3&OperationResponse=0&TokenResponse=5&" +
-            "ReturnValue=11111111-1111-1111-1111-111111111111")));
+        var provider = CreateProvider(_ => Task.FromResult(Json(HttpStatusCode.OK, new
+        {
+            ResponseCode = 0,
+            LowProfileId = "OTHER",
+            ReturnValue = "11111111-1111-1111-1111-111111111111",
+            Operation = "CreateTokenOnly",
+            TokenInfo = new { Token = "tok", CardYear = 2030, CardMonth = 12 }
+        })));
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             provider.ResolvePaymentMethodFromCallback(
-                "LowProfileCode=LP-123", new Dictionary<string, string>()));
+                """{"LowProfileId":"LP-123"}""", new Dictionary<string, string>()));
 
-        Assert.Contains("TokenResponse=5", error.Message);
+        Assert.Contains("verification mismatch", error.Message);
     }
 
     [Fact]
-    public async Task Charge_posts_token_and_returns_decline_without_throwing()
+    public async Task Charge_uses_api_11_transaction_and_maps_decline()
     {
-        string? posted = null;
+        HttpRequestMessage? captured = null;
         var provider = CreateProvider(async request =>
         {
-            posted = await request.Content!.ReadAsStringAsync();
-            return Text(HttpStatusCode.OK, "ResponseCode=4&Description=Declined");
+            captured = await CloneRequestAsync(request);
+            return Json(HttpStatusCode.OK, new { ResponseCode = 4, Description = "Declined" });
         });
 
         var result = await provider.Charge(new PaymentChargeRequest(
             "customer", "tok-123", 99.90m, "ILS", "ALPHA monthly charge",
-            "billing:key", true, 12, 2030));
+            "billing:key:that-is-longer-than-cardcom-limit", true, 12, 2030));
 
         Assert.False(result.Success);
         Assert.Equal("4", result.ErrorCode);
         Assert.Equal("Declined", result.ErrorMessage);
+        Assert.EndsWith("/api/v11/Transactions/Transaction", captured!.RequestUri!.AbsolutePath);
 
-        var form = ParseNameValue(posted!);
-        Assert.Equal("tok-123", form["TokenToCharge.Token"]);
-        Assert.Equal("99.90", form["TokenToCharge.SumToBill"]);
-        Assert.Equal("12", form["TokenToCharge.CardValidityMonth"]);
-        Assert.Equal("2030", form["TokenToCharge.CardValidityYear"]);
-        Assert.Equal("False", form["TokenToCharge.RefundInsteadOfCharge"]);
+        using var json = JsonDocument.Parse(await captured.Content!.ReadAsStringAsync());
+        Assert.Equal("tok-123", json.RootElement.GetProperty("Token").GetString());
+        Assert.Equal(99.90m, json.RootElement.GetProperty("Amount").GetDecimal());
+        Assert.Equal("1230", json.RootElement.GetProperty("CardExpirationMMYY").GetString());
+        Assert.True(json.RootElement.GetProperty("ExternalUniqTranId").GetString()!.Length <= 25);
     }
 
     [Fact]
-    public async Task Refund_supports_partial_amount_and_refund_password()
+    public async Task Refund_uses_api_11_refund_by_transaction_id_for_partial_refund()
     {
-        string? posted = null;
+        HttpRequestMessage? captured = null;
         var provider = CreateProvider(async request =>
         {
-            posted = await request.Content!.ReadAsStringAsync();
-            return Text(HttpStatusCode.OK, "ResponseCode=0&Description=OK&Uid=refund-uid");
-        }, refundPassword: "refund-secret");
+            captured = await CloneRequestAsync(request);
+            return Json(HttpStatusCode.OK, new
+            {
+                ResponseCode = 0,
+                Description = "Refunded",
+                NewTranzactionId = 204972703
+            });
+        }, apiPassword: "refund-secret");
 
         var result = await provider.Refund(new PaymentRefundRequest(
-            "charge-uid", "tok-123", 25.50m, "ILS", "refund:key", 12, 2030));
+            "204966999", "tok-123", 25.50m, "ILS", "refund:key", 12, 2030));
 
         Assert.True(result.Success);
-        Assert.Equal("refund-uid", result.RefundId);
+        Assert.Equal("204972703", result.RefundId);
+        Assert.EndsWith("/api/v11/Transactions/RefundByTransactionId", captured!.RequestUri!.AbsolutePath);
 
-        var form = ParseNameValue(posted!);
-        Assert.Equal("25.50", form["TokenToCharge.SumToBill"]);
-        Assert.Equal("True", form["TokenToCharge.RefundInsteadOfCharge"]);
-        Assert.Equal("refund-secret", form["TokenToCharge.UserPassword"]);
+        using var json = JsonDocument.Parse(await captured.Content!.ReadAsStringAsync());
+        Assert.Equal("refund-secret", json.RootElement.GetProperty("ApiPassword").GetString());
+        Assert.Equal(204966999, json.RootElement.GetProperty("TransactionId").GetInt64());
+        Assert.Equal(25.50m, json.RootElement.GetProperty("PartialSum").GetDecimal());
+        Assert.False(json.RootElement.GetProperty("CancelOnly").GetBoolean());
+        Assert.True(json.RootElement.GetProperty("AllowMultipleRefunds").GetBoolean());
     }
 
     private static CardComPaymentProvider CreateProvider(
         Func<HttpRequestMessage, Task<HttpResponseMessage>> handler,
-        string refundPassword = "")
+        string apiPassword = "")
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Payments:CardCom:BaseUrl"] = "https://test.cardcom.solutions",
-                ["Payments:CardCom:TerminalNumber"] = "131719",
-                ["Payments:CardCom:UserName"] = "test-user",
-                ["Payments:CardCom:RefundPassword"] = refundPassword
+                ["Payments:CardCom:BaseUrl"] = "https://secure.cardcom.solutions",
+                ["Payments:CardCom:TerminalNumber"] = "1000",
+                ["Payments:CardCom:ApiName"] = "test2025",
+                ["Payments:CardCom:ApiPassword"] = apiPassword
             })
             .Build();
 
@@ -142,23 +179,23 @@ public sealed class CardComPaymentProviderTests
             configuration);
     }
 
-    private static HttpResponseMessage Text(HttpStatusCode status, string value) =>
-        new(status) { Content = new StringContent(value) };
-
-    private static Dictionary<string, string> ParseNameValue(string raw) =>
-        raw.Trim().TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .Select(x => x.Split('=', 2))
-            .Where(x => x.Length == 2)
-            .ToDictionary(
-                x => WebUtility.UrlDecode(x[0]),
-                x => WebUtility.UrlDecode(x[1].Replace("+", " ")),
-                StringComparer.OrdinalIgnoreCase);
+    private static HttpResponseMessage Json(HttpStatusCode status, object value) =>
+        new(status)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(value),
+                System.Text.Encoding.UTF8,
+                "application/json")
+        };
 
     private static async Task<HttpRequestMessage> CloneRequestAsync(HttpRequestMessage source)
     {
         var clone = new HttpRequestMessage(source.Method, source.RequestUri);
         if (source.Content is not null)
-            clone.Content = new StringContent(await source.Content.ReadAsStringAsync());
+            clone.Content = new StringContent(
+                await source.Content.ReadAsStringAsync(),
+                System.Text.Encoding.UTF8,
+                source.Content.Headers.ContentType?.MediaType ?? "application/json");
         return clone;
     }
 
@@ -169,7 +206,7 @@ public sealed class CardComPaymentProviderTests
 
     private sealed class DelegateHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            handler(request);
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) => handler(request);
     }
 }
