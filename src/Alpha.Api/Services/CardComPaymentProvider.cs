@@ -1,5 +1,8 @@
 using System.Globalization;
-using System.Net;
+using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Alpha.Application.Billing;
 
 namespace Alpha.Api.Services;
@@ -8,254 +11,290 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
 {
     public string Name => "CardCom";
 
-    private string BaseUrl => (configuration["Payments:CardCom:BaseUrl"] ?? "https://test.cardcom.solutions").TrimEnd('/');
-    private string TerminalNumber => Required("Payments:CardCom:TerminalNumber");
-    private string UserName => Required("Payments:CardCom:UserName");
-    private string? RefundPassword => configuration["Payments:CardCom:RefundPassword"]?.Trim();
+    private string BaseUrl => (configuration["Payments:CardCom:BaseUrl"] ?? "https://secure.cardcom.solutions").TrimEnd('/');
+    private int TerminalNumber => int.TryParse(Required("Payments:CardCom:TerminalNumber"), out var value)
+        ? value
+        : throw new InvalidOperationException("CardCom TerminalNumber must be numeric.");
+    private string ApiName => Required("Payments:CardCom:ApiName");
+    private string? ApiPassword => configuration["Payments:CardCom:ApiPassword"]?.Trim();
 
     public Task<PaymentProviderCustomerResult> CreateCustomer(
         PaymentProviderCustomerRequest request, CancellationToken ct = default) =>
+        // API 11 tokenization does not require a separate CardCom customer entity.
         Task.FromResult(new PaymentProviderCustomerResult(request.ExternalReference));
 
     public async Task<PaymentMethodSetupResult> CreatePaymentMethod(
         PaymentMethodSetupRequest request, CancellationToken ct = default)
     {
-        var values = new Dictionary<string, string>
+        var payload = new
         {
-            ["Operation"] = "3",
-            ["TerminalNumber"] = TerminalNumber,
-            ["UserName"] = UserName,
-            ["SumToBill"] = "1",
-            ["CoinID"] = "1",
-            ["Language"] = "he",
-            ["ProductName"] = "ALPHA payment method",
-            ["APILevel"] = "10",
-            ["codepage"] = "65001",
-            ["SuccessRedirectUrl"] = request.SuccessUrl,
-            ["ErrorRedirectUrl"] = request.FailureUrl,
-            ["IndicatorUrl"] = request.CallbackUrl,
-            ["ReturnValue"] = request.ExternalReference,
-            ["AutoRedirect"] = "true"
+            TerminalNumber,
+            ApiName,
+            Amount = 1m,
+            Operation = "CreateTokenOnly",
+            ReturnValue = request.ExternalReference,
+            SuccessRedirectUrl = request.SuccessUrl,
+            FailedRedirectUrl = request.FailureUrl,
+            WebHookUrl = request.CallbackUrl,
+            ProductName = "ALPHA payment method",
+            Language = "he",
+            ISOCoinId = 1
         };
 
-        using var response = await PostForm("/Interface/LowProfile.aspx", values, ct);
-        var parsed = ParseNameValue(await response.Content.ReadAsStringAsync(ct));
-        EnsureHttpAndResponseSuccess(response, parsed, "CardCom low profile setup");
+        using var response = await PostJson("/api/v11/LowProfile/Create", payload, ct);
+        using var json = await ReadJson(response, "CardCom API 11 LowProfile/Create", ct);
+        EnsureSuccess(response, json.RootElement, "CardCom API 11 LowProfile/Create");
 
-        var code = RequiredValue(parsed, "LowProfileCode", "CardCom response did not include LowProfileCode.");
-        var url = Get(parsed, "url") ?? Get(parsed, "Url");
-        if (string.IsNullOrWhiteSpace(url))
-            throw new InvalidOperationException("CardCom response did not include redirect url.");
+        var id = StringValue(json.RootElement, "LowProfileId")
+            ?? throw new InvalidOperationException("CardCom API 11 response did not include LowProfileId.");
+        var url = StringValue(json.RootElement, "Url")
+            ?? throw new InvalidOperationException("CardCom API 11 response did not include Url.");
 
-        return new PaymentMethodSetupResult(code, url);
+        return new PaymentMethodSetupResult(id, url);
     }
 
     public async Task<PaymentChargeResult> Charge(PaymentChargeRequest request, CancellationToken ct = default)
     {
         if (!ValidExpiry(request.ExpiryMonth, request.ExpiryYear))
             return new PaymentChargeResult(false, string.Empty, null, "expiry_required",
-                "CardCom token charge requires a valid token expiry.");
+                "CardCom API 11 token charge requires a valid token expiry.");
+        if (string.IsNullOrWhiteSpace(request.PaymentMethodId))
+            return new PaymentChargeResult(false, string.Empty, null, "token_required",
+                "CardCom API 11 token charge requires a token.");
 
-        var values = TokenOperationValues(
-            request.PaymentMethodId,
-            request.Amount,
-            request.ExpiryMonth!.Value,
-            request.ExpiryYear!.Value,
-            refund: false,
-            request.Description);
+        var payload = new
+        {
+            TerminalNumber,
+            ApiName,
+            Amount = request.Amount,
+            Token = request.PaymentMethodId,
+            CardExpirationMMYY = ExpiryMmYy(request.ExpiryMonth!.Value, request.ExpiryYear!.Value),
+            ExternalUniqTranId = ExternalTransactionId(request.ExternalReference),
+            ExternalUniqUniqTranIdResponse = false,
+            NumOfPayments = 1
+        };
 
-        using var response = await PostForm("/interface/ChargeToken.aspx", values, ct);
-        var parsed = ParseNameValue(await response.Content.ReadAsStringAsync(ct));
-        var responseCode = Get(parsed, "ResponseCode");
-        var ok = response.IsSuccessStatusCode && responseCode == "0";
+        using var response = await PostJson("/api/v11/Transactions/Transaction", payload, ct);
+        using var json = await ReadJson(response, "CardCom API 11 Transactions/Transaction", ct);
+        var root = json.RootElement;
+        var responseCode = IntValue(root, "ResponseCode");
+        var success = response.IsSuccessStatusCode && responseCode == 0;
 
         return new PaymentChargeResult(
-            ok,
-            Get(parsed, "Uid") ?? Get(parsed, "InternalDealNumber") ?? string.Empty,
-            Get(parsed, "InvoiceNumber") ?? Get(parsed, "InvoiceDocumentNumber"),
-            ok ? null : responseCode ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
-            ok ? null : Get(parsed, "Description") ?? $"CardCom charge failed ({(int)response.StatusCode}).");
+            success,
+            NumberOrStringValue(root, "TranzactionId") ?? NumberOrStringValue(root, "TransactionId") ?? string.Empty,
+            null,
+            success ? null : responseCode?.ToString(CultureInfo.InvariantCulture) ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
+            success ? null : StringValue(root, "Description") ?? $"CardCom API 11 charge failed ({(int)response.StatusCode}).");
     }
 
     public async Task<PaymentRefundResult> Refund(PaymentRefundRequest request, CancellationToken ct = default)
     {
-        if (!ValidExpiry(request.ExpiryMonth, request.ExpiryYear))
-            return new PaymentRefundResult(false, string.Empty, "expiry_required",
-                "CardCom token refund requires a valid token expiry.");
-        if (string.IsNullOrWhiteSpace(RefundPassword))
-            return new PaymentRefundResult(false, string.Empty, "refund_password_missing",
-                "CardCom refund password is not configured.");
+        if (string.IsNullOrWhiteSpace(ApiPassword))
+            return new PaymentRefundResult(false, string.Empty, "api_password_missing",
+                "CardCom API 11 ApiPassword is not configured.");
+        if (!long.TryParse(request.TransactionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var transactionId))
+            return new PaymentRefundResult(false, string.Empty, "invalid_transaction_id",
+                "CardCom API 11 refund requires the original CardCom transaction id.");
 
-        var values = TokenOperationValues(
-            request.PaymentMethodId,
-            request.Amount,
-            request.ExpiryMonth!.Value,
-            request.ExpiryYear!.Value,
-            refund: true,
-            description: $"ALPHA refund {request.ExternalReference}");
-        values["TokenToCharge.UserPassword"] = RefundPassword!;
+        var payload = new
+        {
+            ApiName,
+            ApiPassword,
+            TransactionId = transactionId,
+            PartialSum = request.Amount,
+            CancelOnly = false,
+            AllowMultipleRefunds = true
+        };
 
-        using var response = await PostForm("/interface/ChargeToken.aspx", values, ct);
-        var parsed = ParseNameValue(await response.Content.ReadAsStringAsync(ct));
-        var responseCode = Get(parsed, "ResponseCode");
-        var ok = response.IsSuccessStatusCode && responseCode == "0";
+        using var response = await PostJson("/api/v11/Transactions/RefundByTransactionId", payload, ct);
+        using var json = await ReadJson(response, "CardCom API 11 RefundByTransactionId", ct);
+        var root = json.RootElement;
+        var responseCode = IntValue(root, "ResponseCode");
+        var success = response.IsSuccessStatusCode && responseCode == 0;
 
         return new PaymentRefundResult(
-            ok,
-            Get(parsed, "Uid") ?? Get(parsed, "InternalDealNumber") ?? string.Empty,
-            ok ? null : responseCode ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
-            ok ? null : Get(parsed, "Description") ?? $"CardCom refund failed ({(int)response.StatusCode}).");
+            success,
+            NumberOrStringValue(root, "NewTranzactionId") ?? string.Empty,
+            success ? null : responseCode?.ToString(CultureInfo.InvariantCulture) ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
+            success ? null : StringValue(root, "Description") ?? $"CardCom API 11 refund failed ({(int)response.StatusCode}).");
     }
 
     public Task<PaymentMethodStatusResult> GetPaymentMethodStatus(
         string customerId, string paymentMethodId, CancellationToken ct = default)
     {
-        // CardCom API 10 tokenization does not expose a harmless "ping token" endpoint.
-        // A token that was server-verified through GetLowProfileIndicator remains active
-        // locally until it is replaced/cancelled or its stored expiry passes.
-        if (string.IsNullOrWhiteSpace(paymentMethodId))
-            return Task.FromResult(new PaymentMethodStatusResult(
-                false, string.Empty, string.Empty, string.Empty, null, null, null, customerId));
-
+        // API 11 has no harmless token-status request. The token was verified by GetLpResult
+        // before being persisted; ALPHA treats it as active until locally cancelled/replaced.
         return Task.FromResult(new PaymentMethodStatusResult(
-            true, paymentMethodId, string.Empty, string.Empty, null, null, null, customerId));
+            !string.IsNullOrWhiteSpace(paymentMethodId),
+            paymentMethodId,
+            string.Empty,
+            string.Empty,
+            null,
+            null,
+            null,
+            customerId));
     }
 
-    public Task CancelPaymentMethod(string customerId, string paymentMethodId, CancellationToken ct = default)
-    {
-        // CardCom tokens are not a recurring instruction owned by CardCom in this integration.
-        // ALPHA stops using the token by clearing it locally; no remote cancellation is required.
-        return Task.CompletedTask;
-    }
+    public Task CancelPaymentMethod(string customerId, string paymentMethodId, CancellationToken ct = default) =>
+        // This integration stores a reusable token, not a CardCom standing-order object.
+        // Cancellation means ALPHA stops using and clears the token locally.
+        Task.CompletedTask;
 
     public async Task<PaymentMethodStatusResult> ResolvePaymentMethodFromCallback(
         string rawBody, IReadOnlyDictionary<string, string> headers, CancellationToken ct = default)
     {
-        var callback = ParseNameValue(rawBody);
-        var lowProfileCode = Get(callback, "LowProfileCode")
-            ?? Get(callback, "lowprofilecode");
-        if (string.IsNullOrWhiteSpace(lowProfileCode))
-            throw new InvalidOperationException("CardCom callback did not include LowProfileCode.");
+        var lowProfileId = ExtractLowProfileId(rawBody);
+        if (string.IsNullOrWhiteSpace(lowProfileId))
+            throw new InvalidOperationException("CardCom API 11 webhook did not include LowProfileId.");
 
-        var query = new Dictionary<string, string>
+        var payload = new
         {
-            ["TerminalNumber"] = TerminalNumber,
-            ["UserName"] = UserName,
-            ["codepage"] = "65001",
-            ["LowProfileCode"] = lowProfileCode
+            TerminalNumber,
+            ApiName,
+            LowProfileId = lowProfileId
         };
 
-        var client = clients.CreateClient("cardcom");
-        using var response = await client.GetAsync(
-            $"{BaseUrl}/Interface/BillGoldGetLowProfileIndicator.aspx?{ToQuery(query)}", ct);
-        var parsed = ParseNameValue(await response.Content.ReadAsStringAsync(ct));
+        // CardCom explicitly requires server-to-server verification after receiving WebHookUrl.
+        using var response = await PostJson("/api/v11/LowProfile/GetLpResult", payload, ct);
+        using var json = await ReadJson(response, "CardCom API 11 LowProfile/GetLpResult", ct);
+        var root = json.RootElement;
+        EnsureSuccess(response, root, "CardCom API 11 LowProfile/GetLpResult");
 
-        EnsureHttpAndResponseSuccess(response, parsed, "CardCom low profile indicator");
-        EnsureCode(parsed, "OperationResponse", "0", "CardCom low profile operation was not successful.");
+        var verifiedId = StringValue(root, "LowProfileId");
+        if (!string.Equals(lowProfileId, verifiedId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("CardCom API 11 LowProfileId verification mismatch.");
 
-        var operation = Get(parsed, "Operation");
-        if (!string.IsNullOrWhiteSpace(operation) && operation != "3")
-            throw new InvalidOperationException($"Unexpected CardCom low profile operation '{operation}'.");
+        var operation = StringValue(root, "Operation");
+        if (!string.Equals(operation, "CreateTokenOnly", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(operation, "ChargeAndCreateToken", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Unexpected CardCom API 11 operation '{operation}'.");
 
-        EnsureCode(parsed, "TokenResponse", "0", "CardCom token creation failed.");
+        var returnValue = StringValue(root, "ReturnValue");
+        if (string.IsNullOrWhiteSpace(returnValue))
+            throw new InvalidOperationException("CardCom API 11 result did not include ReturnValue.");
 
-        var token = Get(parsed, "Token") ?? Get(parsed, "ExtShvaParams.CardToken");
+        var tokenInfo = ObjectValue(root, "TokenInfo")
+            ?? throw new InvalidOperationException("CardCom API 11 result did not include TokenInfo.");
+        var token = StringValue(tokenInfo.Value, "Token");
         if (string.IsNullOrWhiteSpace(token))
-            throw new InvalidOperationException("CardCom indicator did not include a token.");
+            throw new InvalidOperationException("CardCom API 11 TokenInfo did not include Token.");
 
-        var externalReference = Get(parsed, "ReturnValue");
-        if (string.IsNullOrWhiteSpace(externalReference))
-            throw new InvalidOperationException("CardCom indicator did not include ReturnValue.");
+        var month = IntValue(tokenInfo.Value, "CardMonth");
+        var year = NormalizeYear(IntValue(tokenInfo.Value, "CardYear"));
+        if (!ValidExpiry(month, year))
+            throw new InvalidOperationException("CardCom API 11 returned an invalid token expiry.");
 
-        var returnedLowProfileCode = Get(parsed, "LowProfileCode") ?? Get(parsed, "lowprofilecode");
-        if (!string.IsNullOrWhiteSpace(returnedLowProfileCode) &&
-            !string.Equals(returnedLowProfileCode, lowProfileCode, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("CardCom LowProfileCode verification mismatch.");
-
-        var last4 = Get(parsed, "ExtShvaParams.CardNumber5") ?? Get(parsed, "CardNumEnd") ?? string.Empty;
-        last4 = new string(last4.Where(char.IsDigit).TakeLast(4).ToArray());
-
-        var expiryMonth = ParseInt(Get(parsed, "CardValidityMonth"));
-        var expiryYear = NormalizeYear(ParseInt(Get(parsed, "CardValidityYear")));
-        if ((!expiryMonth.HasValue || !expiryYear.HasValue) && TryParseTokenExpiry(Get(parsed, "TokenExDate"), out var tokenMonth, out var tokenYear))
+        var transactionInfo = ObjectValue(root, "TranzactionInfo");
+        if (transactionInfo.HasValue)
         {
-            expiryMonth ??= tokenMonth;
-            expiryYear ??= tokenYear;
+            var transactionResponse = IntValue(transactionInfo.Value, "ResponseCode");
+            if (transactionResponse.HasValue && transactionResponse is not 0 and not 700 and not 701)
+                throw new InvalidOperationException(
+                    $"CardCom API 11 token verification transaction failed. ResponseCode={transactionResponse.Value}");
         }
 
-        if (!ValidExpiry(expiryMonth, expiryYear))
-            throw new InvalidOperationException("CardCom indicator returned an invalid token expiry.");
+        var last4 = transactionInfo.HasValue
+            ? StringValue(transactionInfo.Value, "Last4CardDigitsString") ?? string.Empty
+            : string.Empty;
+        var brand = transactionInfo.HasValue
+            ? StringValue(transactionInfo.Value, "Brand") ?? StringValue(transactionInfo.Value, "CardName") ?? string.Empty
+            : string.Empty;
 
         return new PaymentMethodStatusResult(
             true,
             token,
-            Get(parsed, "ExtShvaParams.CardName") ?? Get(parsed, "CardName104") ?? string.Empty,
+            brand,
             last4,
-            expiryMonth,
-            expiryYear,
+            month,
+            year,
             null,
             null,
-            externalReference);
+            returnValue);
     }
 
-    private Dictionary<string, string> TokenOperationValues(
-        string token, decimal amount, int month, int year, bool refund, string? description)
-    {
-        if (string.IsNullOrWhiteSpace(token))
-            throw new InvalidOperationException("CardCom token is required.");
-        if (amount <= 0)
-            throw new InvalidOperationException("CardCom amount must be positive.");
-
-        var values = new Dictionary<string, string>
-        {
-            ["terminalnumber"] = TerminalNumber,
-            ["username"] = UserName,
-            ["codepage"] = "65001",
-            ["TokenToCharge.Token"] = token,
-            ["TokenToCharge.CardValidityMonth"] = month.ToString("00", CultureInfo.InvariantCulture),
-            ["TokenToCharge.CardValidityYear"] = NormalizeYear(year)!.Value.ToString("0000", CultureInfo.InvariantCulture),
-            ["TokenToCharge.SumToBill"] = amount.ToString("0.00", CultureInfo.InvariantCulture),
-            ["TokenToCharge.CoinID"] = "1",
-            ["TokenToCharge.APILevel"] = "10",
-            ["TokenToCharge.RefundInsteadOfCharge"] = refund ? "True" : "False"
-        };
-
-        if (!string.IsNullOrWhiteSpace(description))
-            values["TokenToCharge.DealDescription"] = description.Trim()[..Math.Min(description.Trim().Length, 200)];
-
-        return values;
-    }
-
-    private async Task<HttpResponseMessage> PostForm(
-        string path, IReadOnlyDictionary<string, string> values, CancellationToken ct)
+    private async Task<HttpResponseMessage> PostJson(string path, object payload, CancellationToken ct)
     {
         var client = clients.CreateClient("cardcom");
-        using var content = new FormUrlEncodedContent(values);
-        return await client.PostAsync($"{BaseUrl}{path}", content, ct);
+        return await client.PostAsJsonAsync($"{BaseUrl}{path}", payload, cancellationToken: ct);
     }
 
-    private static Dictionary<string, string> ParseNameValue(string raw) =>
-        raw.Trim().TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .Select(x => x.Split('=', 2))
-            .Where(x => x.Length == 2)
-            .GroupBy(x => WebUtility.UrlDecode(x[0]), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                x => x.Key,
-                x => WebUtility.UrlDecode(x.Last()[1].Replace("+", " ")),
-                StringComparer.OrdinalIgnoreCase);
+    private static async Task<JsonDocument> ReadJson(HttpResponseMessage response, string operation, CancellationToken ct)
+    {
+        var raw = await response.Content.ReadAsStringAsync(ct);
+        try
+        {
+            return JsonDocument.Parse(raw);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"{operation} returned invalid JSON.", ex);
+        }
+    }
 
-    private static string ToQuery(IReadOnlyDictionary<string, string> values) =>
-        string.Join("&", values.Select(x =>
-            $"{WebUtility.UrlEncode(x.Key)}={WebUtility.UrlEncode(x.Value)}"));
+    private static void EnsureSuccess(HttpResponseMessage response, JsonElement root, string operation)
+    {
+        var code = IntValue(root, "ResponseCode");
+        if (!response.IsSuccessStatusCode || code != 0)
+            throw new InvalidOperationException(
+                $"{operation} failed: {StringValue(root, "Description") ?? $"HTTP {(int)response.StatusCode}"} (ResponseCode={code?.ToString() ?? "<missing>"}).");
+    }
 
-    private static string? Get(IReadOnlyDictionary<string, string> values, string key) =>
-        values.TryGetValue(key, out var value) ? value : null;
+    private static string? ExtractLowProfileId(string rawBody)
+    {
+        if (string.IsNullOrWhiteSpace(rawBody)) return null;
+        try
+        {
+            using var json = JsonDocument.Parse(rawBody);
+            return StringValue(json.RootElement, "LowProfileId");
+        }
+        catch (JsonException)
+        {
+            // Defensive compatibility for providers/proxies that append the id as a query/form value.
+            var pairs = rawBody.Trim().TrimStart('?')
+                .Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Split('=', 2))
+                .Where(x => x.Length == 2);
+            foreach (var pair in pairs)
+                if (string.Equals(Uri.UnescapeDataString(pair[0]), "LowProfileId", StringComparison.OrdinalIgnoreCase))
+                    return Uri.UnescapeDataString(pair[1].Replace("+", " "));
+            return null;
+        }
+    }
 
-    private static string RequiredValue(IReadOnlyDictionary<string, string> values, string key, string message) =>
-        Get(values, key) is { Length: > 0 } value ? value : throw new InvalidOperationException(message);
+    private static JsonElement? ObjectValue(JsonElement root, string name) =>
+        TryProperty(root, name, out var value) && value.ValueKind == JsonValueKind.Object ? value : null;
 
-    private static int? ParseInt(string? value) =>
-        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+    private static string? StringValue(JsonElement root, string name)
+    {
+        if (!TryProperty(root, name, out var value) || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return null;
+        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+    }
+
+    private static string? NumberOrStringValue(JsonElement root, string name) =>
+        StringValue(root, name);
+
+    private static int? IntValue(JsonElement root, string name)
+    {
+        if (!TryProperty(root, name, out var value)) return null;
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number;
+        return int.TryParse(value.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out number) ? number : null;
+    }
+
+    private static bool TryProperty(JsonElement root, string name, out JsonElement value)
+    {
+        foreach (var property in root.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+        value = default;
+        return false;
+    }
 
     private static int? NormalizeYear(int? year)
     {
@@ -271,45 +310,21 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
         return year > now.Year || (year == now.Year && month >= now.Month);
     }
 
-    private static bool TryParseTokenExpiry(string? value, out int month, out int year)
+    private static string ExpiryMmYy(int month, int year)
     {
-        month = 0;
-        year = 0;
-        if (string.IsNullOrWhiteSpace(value)) return false;
-
-        var digits = new string(value.Where(char.IsDigit).ToArray());
-        if (digits.Length < 6) return false;
-
-        // CardCom examples use yyyyMMdd (e.g. 20241101). Month/year are all ALPHA needs.
-        if (digits.Length >= 8 &&
-            int.TryParse(digits[..4], out year) &&
-            int.TryParse(digits.Substring(4, 2), out month))
-            return month is >= 1 and <= 12;
-
-        return false;
+        year = NormalizeYear(year) ?? year;
+        return $"{month:00}{year % 100:00}";
     }
 
-    private static void EnsureHttpAndResponseSuccess(
-        HttpResponseMessage response, IReadOnlyDictionary<string, string> values, string operation)
+    private static string ExternalTransactionId(string source)
     {
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"{operation} failed with HTTP {(int)response.StatusCode}.");
-
-        EnsureCode(values, "ResponseCode", "0",
-            $"{operation} failed: {Get(values, "Description") ?? "unknown CardCom error"}.");
-    }
-
-    private static void EnsureCode(
-        IReadOnlyDictionary<string, string> values, string key, string expected, string message)
-    {
-        var actual = Get(values, key);
-        if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"{message} {key}={actual ?? "<missing>"}");
+        // CardCom documents ExternalUniqTranId as max 25 characters.
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(source ?? string.Empty));
+        return Convert.ToHexString(bytes)[..25].ToLowerInvariant();
     }
 
     private string Required(string key) =>
         configuration[key]?.Trim() is { Length: > 0 } value
             ? value
-            : throw new InvalidOperationException(
-                $"Payment provider configuration '{key}' is missing.");
+            : throw new InvalidOperationException($"Payment provider configuration '{key}' is missing.");
 }
