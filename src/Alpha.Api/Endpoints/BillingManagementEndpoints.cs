@@ -48,6 +48,9 @@ public sealed record PricingSimulationRequest(
 
 public sealed record RunBillingPeriodRequest(DateTimeOffset PeriodStart, DateTimeOffset PeriodEnd, bool Charge = true);
 public sealed record RefundPaymentRequest(decimal Amount, string? Reason, string IdempotencyKey);
+public sealed record BillingAccountPricingRequest(
+    DateTimeOffset? EffectiveFrom,
+    IReadOnlyList<PricingComponentRequest> Components);
 
 public static class BillingManagementEndpoints
 {
@@ -65,6 +68,9 @@ public static class BillingManagementEndpoints
         platform.MapGet("/payments", GetPlatformPaymentsAsync);
         platform.MapGet("/refunds", GetPlatformRefundsAsync);
         platform.MapGet("/usage", GetPlatformUsageAsync);
+        platform.MapGet("/accounts/{billingAccountId:guid}/pricing", GetAccountPricingAsync);
+        platform.MapPut("/accounts/{billingAccountId:guid}/pricing", UpdateAccountPricingAsync);
+        platform.MapDelete("/accounts/{billingAccountId:guid}/pricing", ResetAccountPricingAsync);
         platform.MapPost("/accounts/{billingAccountId:guid}/run", RunPeriodAsync);
         platform.MapPost("/payments/{paymentId:guid}/refunds", RefundAsync);
 
@@ -306,6 +312,140 @@ public static class BillingManagementEndpoints
         }).ToArray();
 
         return Results.Ok(rows);
+    }
+
+    private static async Task<IResult> GetAccountPricingAsync(
+        Guid billingAccountId, IAlphaDbContext db, ICurrentUser currentUser, CancellationToken ct)
+    {
+        if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+        var account = await db.BillingAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == billingAccountId, ct);
+        if (account is null) return Results.NotFound();
+
+        var organizationId = account.OrganizationId ??
+            await db.Employers.AsNoTracking().Where(x => x.Id == account.EmployerId)
+                .Select(x => x.OrganizationId).SingleAsync(ct);
+        var subscription = await db.Subscriptions.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId &&
+                                       x.Status != SubscriptionStatus.Cancelled &&
+                                       x.Status != SubscriptionStatus.Expired, ct);
+        if (subscription is null) return Results.Conflict(new { error = "subscription_not_found" });
+        var plan = await db.Plans.AsNoTracking().SingleAsync(x => x.Id == subscription.PlanId, ct);
+
+        var accountComponents = await db.BillingAccountPricingComponents.AsNoTracking()
+            .Where(x => x.BillingAccountId == billingAccountId && x.EffectiveTo == null)
+            .OrderBy(x => x.MetricType)
+            .ToListAsync(ct);
+
+        if (accountComponents.Count > 0)
+        {
+            var ids = accountComponents.Select(x => x.Id).ToArray();
+            var tiers = await db.BillingAccountPricingTiers.AsNoTracking()
+                .Where(x => ids.Contains(x.ComponentId)).OrderBy(x => x.FromQuantity).ToListAsync(ct);
+            return Results.Ok(new
+            {
+                billingAccountId,
+                source = "Account",
+                planId = plan.Id,
+                planName = plan.Name,
+                effectiveFrom = accountComponents.Min(x => x.EffectiveFrom),
+                components = accountComponents.Select(x => new
+                {
+                    x.Id, x.MetricType, x.PricingType, x.UnitPrice, x.IncludedQuantity,
+                    x.MinimumCharge, x.MaximumCharge, x.IsEnabled, x.CorrectionMode,
+                    tiers = tiers.Where(t => t.ComponentId == x.Id)
+                        .Select(t => new { t.Id, t.FromQuantity, t.ToQuantity, t.UnitPrice })
+                })
+            });
+        }
+
+        var planComponents = await db.PlanPricingComponents.AsNoTracking()
+            .Where(x => x.PlanId == plan.Id && x.EffectiveTo == null)
+            .OrderBy(x => x.MetricType)
+            .ToListAsync(ct);
+        var planIds = planComponents.Select(x => x.Id).ToArray();
+        var planTiers = await db.PlanPricingTiers.AsNoTracking()
+            .Where(x => planIds.Contains(x.ComponentId)).OrderBy(x => x.FromQuantity).ToListAsync(ct);
+
+        return Results.Ok(new
+        {
+            billingAccountId,
+            source = "Plan",
+            planId = plan.Id,
+            planName = plan.Name,
+            effectiveFrom = plan.EffectiveFrom,
+            components = planComponents.Select(x => new
+            {
+                x.Id, x.MetricType, x.PricingType, x.UnitPrice, x.IncludedQuantity,
+                x.MinimumCharge, x.MaximumCharge, x.IsEnabled, x.CorrectionMode,
+                tiers = planTiers.Where(t => t.ComponentId == x.Id)
+                    .Select(t => new { t.Id, t.FromQuantity, t.ToQuantity, t.UnitPrice })
+            })
+        });
+    }
+
+    private static async Task<IResult> UpdateAccountPricingAsync(
+        Guid billingAccountId, BillingAccountPricingRequest request,
+        IAlphaDbContext db, ICurrentUser currentUser, CancellationToken ct)
+    {
+        if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+        if (!await db.BillingAccounts.AsNoTracking().AnyAsync(x => x.Id == billingAccountId, ct))
+            return Results.NotFound();
+
+        var fakePlanRequest = new PlanBillingRequest(
+            "ACCOUNT", "ACCOUNT", null, "ILS", "Monthly", 0, 0, 0, true,
+            request.Components.FirstOrDefault(x => x.MetricType == BillingMetricType.Correction)?.CorrectionMode ?? CorrectionBillingMode.Free,
+            request.Components.FirstOrDefault(x => x.MetricType == BillingMetricType.Correction)?.UnitPrice,
+            0, 0, request.EffectiveFrom, request.Components);
+        var validation = ValidatePlanRequest(fakePlanRequest);
+        if (validation is not null) return Results.BadRequest(new { error = validation });
+
+        var effectiveFrom = request.EffectiveFrom ?? DateTimeOffset.UtcNow;
+        var current = await db.BillingAccountPricingComponents
+            .Where(x => x.BillingAccountId == billingAccountId && x.EffectiveTo == null)
+            .ToListAsync(ct);
+        var nextVersion = current.Count == 0
+            ? 1
+            : current.Max(x => x.Version) + 1;
+
+        foreach (var item in current)
+        {
+            if (effectiveFrom <= item.EffectiveFrom)
+                return Results.BadRequest(new { error = "effective_from_must_be_after_current_version" });
+            item.Close(effectiveFrom);
+        }
+
+        foreach (var component in request.Components)
+        {
+            var entity = new BillingAccountPricingComponent(
+                billingAccountId, component.MetricType, component.PricingType, component.UnitPrice,
+                component.IncludedQuantity, component.MinimumCharge, component.MaximumCharge,
+                component.IsEnabled, nextVersion, effectiveFrom,
+                component.MetricType == BillingMetricType.Correction ? component.CorrectionMode : null);
+            db.BillingAccountPricingComponents.Add(entity);
+            if (component.PricingType == BillingPricingType.Tiered)
+            {
+                foreach (var tier in (component.Tiers ?? []).OrderBy(x => x.FromQuantity))
+                    db.BillingAccountPricingTiers.Add(new BillingAccountPricingTier(
+                        entity.Id, tier.FromQuantity, tier.ToQuantity, tier.UnitPrice));
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        return await GetAccountPricingAsync(billingAccountId, db, currentUser, ct);
+    }
+
+    private static async Task<IResult> ResetAccountPricingAsync(
+        Guid billingAccountId, IAlphaDbContext db, ICurrentUser currentUser, CancellationToken ct)
+    {
+        if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+        var current = await db.BillingAccountPricingComponents
+            .Where(x => x.BillingAccountId == billingAccountId && x.EffectiveTo == null)
+            .ToListAsync(ct);
+        var effectiveTo = DateTimeOffset.UtcNow;
+        foreach (var item in current)
+            item.Close(effectiveTo);
+        if (current.Count > 0) await db.SaveChangesAsync(ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> GetPlatformPeriodsAsync(
