@@ -28,6 +28,10 @@ public static class BillingV2SchemaInitializer
             CREATE TABLE IF NOT EXISTS billing.plan_pricing_components (
                 "Id" uuid NOT NULL PRIMARY KEY,
                 "PlanId" uuid NOT NULL REFERENCES subscriptions.plans("Id") ON DELETE CASCADE,
+                "Version" integer NOT NULL DEFAULT 1,
+                "EffectiveFrom" timestamptz NOT NULL DEFAULT now(),
+                "EffectiveTo" timestamptz NULL,
+                "CorrectionMode" varchar(40) NULL,
                 "MetricType" varchar(40) NOT NULL,
                 "PricingType" varchar(40) NOT NULL,
                 "UnitPrice" numeric(18,4) NOT NULL,
@@ -38,8 +42,14 @@ public static class BillingV2SchemaInitializer
                 "CreatedAt" timestamptz NOT NULL,
                 "UpdatedAt" timestamptz NOT NULL
             );
-            CREATE UNIQUE INDEX IF NOT EXISTS "UX_plan_pricing_components_plan_metric"
-                ON billing.plan_pricing_components ("PlanId", "MetricType");
+            ALTER TABLE billing.plan_pricing_components
+                ADD COLUMN IF NOT EXISTS "Version" integer NOT NULL DEFAULT 1,
+                ADD COLUMN IF NOT EXISTS "EffectiveFrom" timestamptz NOT NULL DEFAULT now(),
+                ADD COLUMN IF NOT EXISTS "EffectiveTo" timestamptz NULL,
+                ADD COLUMN IF NOT EXISTS "CorrectionMode" varchar(40) NULL;
+            DROP INDEX IF EXISTS billing."UX_plan_pricing_components_plan_metric";
+            CREATE UNIQUE INDEX IF NOT EXISTS "UX_plan_pricing_components_plan_version_metric"
+                ON billing.plan_pricing_components ("PlanId", "Version", "MetricType");
 
             CREATE TABLE IF NOT EXISTS billing.plan_pricing_tiers (
                 "Id" uuid NOT NULL PRIMARY KEY,
