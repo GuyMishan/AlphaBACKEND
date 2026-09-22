@@ -51,17 +51,46 @@ public sealed class BillingCycleService(
             ?? throw new InvalidOperationException("No billable subscription was found for the billing period.");
 
         var plan = await db.Plans.AsNoTracking().SingleAsync(x => x.Id == subscription.PlanId, ct);
-        var components = await db.PlanPricingComponents.AsNoTracking()
-            .Where(x => x.PlanId == plan.Id && x.IsEnabled &&
+        var accountComponents = await db.BillingAccountPricingComponents.AsNoTracking()
+            .Where(x => x.BillingAccountId == account.Id &&
                         x.EffectiveFrom <= periodStart &&
                         (!x.EffectiveTo.HasValue || x.EffectiveTo > periodStart))
             .ToListAsync(ct);
+
+        List<PlanPricingComponent> components;
+        List<PlanPricingTier> tiers;
+        if (accountComponents.Count > 0)
+        {
+            var accountComponentIds = accountComponents.Select(x => x.Id).ToArray();
+            var accountTiers = await db.BillingAccountPricingTiers.AsNoTracking()
+                .Where(x => accountComponentIds.Contains(x.ComponentId))
+                .ToListAsync(ct);
+
+            var map = accountComponents.ToDictionary(
+                x => x.Id,
+                x => new PlanPricingComponent(plan.Id, x.MetricType, x.PricingType, x.UnitPrice,
+                    x.IncludedQuantity, x.MinimumCharge, x.MaximumCharge, x.IsEnabled,
+                    x.Version, x.EffectiveFrom, x.CorrectionMode));
+
+            components = map.Values.ToList();
+            tiers = accountTiers.Select(x => new PlanPricingTier(
+                map[x.ComponentId].Id, x.FromQuantity, x.ToQuantity, x.UnitPrice)).ToList();
+        }
+        else
+        {
+            components = await db.PlanPricingComponents.AsNoTracking()
+                .Where(x => x.PlanId == plan.Id && x.IsEnabled &&
+                            x.EffectiveFrom <= periodStart &&
+                            (!x.EffectiveTo.HasValue || x.EffectiveTo > periodStart))
+                .ToListAsync(ct);
+            var componentIds = components.Select(x => x.Id).ToArray();
+            tiers = await db.PlanPricingTiers.AsNoTracking()
+                .Where(x => componentIds.Contains(x.ComponentId))
+                .ToListAsync(ct);
+        }
+
         if (components.Count == 0)
             throw new InvalidOperationException("No pricing configuration was effective for the billing period.");
-        var componentIds = components.Select(x => x.Id).ToArray();
-        var tiers = await db.PlanPricingTiers.AsNoTracking()
-            .Where(x => componentIds.Contains(x.ComponentId))
-            .ToListAsync(ct);
 
         var period = await db.BillingPeriods.SingleOrDefaultAsync(x =>
             x.BillingAccountId == billingAccountId &&
