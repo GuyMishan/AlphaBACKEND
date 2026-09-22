@@ -234,7 +234,7 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
         return await client.PostAsync($"{BaseUrl}{path}", content, ct);
     }
 
-    internal static Dictionary<string, string> ParseNameValue(string raw) =>
+    private static Dictionary<string, string> ParseNameValue(string raw) =>
         raw.Trim().TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
             .Select(x => x.Split('=', 2))
             .Where(x => x.Length == 2)
