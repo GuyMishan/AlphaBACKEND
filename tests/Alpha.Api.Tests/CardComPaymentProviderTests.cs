@@ -27,7 +27,8 @@ public sealed class CardComPaymentProviderTests
 
         var result = await provider.CreatePaymentMethod(new PaymentMethodSetupRequest(
             "customer", "https://alpha.test/success", "https://alpha.test/fail",
-            "https://alpha.test/cancel", "https://api.alpha.test/callback", "account-id"));
+            "https://alpha.test/cancel", "https://api.alpha.test/callback", "account-id"),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("LP-123", result.SetupRequestId);
         Assert.NotNull(captured);
@@ -35,7 +36,7 @@ public sealed class CardComPaymentProviderTests
         Assert.EndsWith("/api/v11/LowProfile/Create", captured.RequestUri!.AbsolutePath);
         Assert.Equal("application/json", captured.Content!.Headers.ContentType!.MediaType);
 
-        using var json = JsonDocument.Parse(await captured.Content.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await captured.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("CreateTokenOnly", json.RootElement.GetProperty("Operation").GetString());
         Assert.Equal("account-id", json.RootElement.GetProperty("ReturnValue").GetString());
         Assert.Equal("https://api.alpha.test/callback", json.RootElement.GetProperty("WebHookUrl").GetString());
@@ -48,7 +49,7 @@ public sealed class CardComPaymentProviderTests
         {
             Assert.Equal(HttpMethod.Post, request.Method);
             Assert.EndsWith("/api/v11/LowProfile/GetLpResult", request.RequestUri!.AbsolutePath);
-            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(TestContext.Current.CancellationToken));
             Assert.Equal("LP-123", body.RootElement.GetProperty("LowProfileId").GetString());
 
             return Json(HttpStatusCode.OK, new
@@ -75,7 +76,8 @@ public sealed class CardComPaymentProviderTests
         });
 
         var result = await provider.ResolvePaymentMethodFromCallback(
-            """{"LowProfileId":"LP-123"}""", new Dictionary<string, string>());
+            """{"LowProfileId":"LP-123"}""", new Dictionary<string, string>(),
+            TestContext.Current.CancellationToken);
 
         Assert.True(result.Active);
         Assert.Equal("tok-123", result.PaymentMethodId);
@@ -99,7 +101,8 @@ public sealed class CardComPaymentProviderTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             provider.ResolvePaymentMethodFromCallback(
-                """{"LowProfileId":"LP-123"}""", new Dictionary<string, string>()));
+                """{"LowProfileId":"LP-123"}""", new Dictionary<string, string>(),
+                TestContext.Current.CancellationToken));
 
         Assert.Contains("verification mismatch", error.Message);
     }
@@ -116,7 +119,8 @@ public sealed class CardComPaymentProviderTests
 
         var result = await provider.Charge(new PaymentChargeRequest(
             "customer", "tok-123", 99.90m, "ILS", "ALPHA monthly charge",
-            "billing:key:that-is-longer-than-cardcom-limit", true, 12, 2030));
+            "billing:key:that-is-longer-than-cardcom-limit", true, 12, 2030),
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("4", result.ErrorCode);
@@ -146,7 +150,8 @@ public sealed class CardComPaymentProviderTests
         }, apiPassword: "refund-secret");
 
         var result = await provider.Refund(new PaymentRefundRequest(
-            "204966999", "tok-123", 25.50m, "ILS", "refund:key", 12, 2030));
+            "204966999", "tok-123", 25.50m, "ILS", "refund:key", 12, 2030),
+            TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
         Assert.Equal("204972703", result.RefundId);
@@ -193,7 +198,7 @@ public sealed class CardComPaymentProviderTests
         var clone = new HttpRequestMessage(source.Method, source.RequestUri);
         if (source.Content is not null)
             clone.Content = new StringContent(
-                await source.Content.ReadAsStringAsync(),
+                await source.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
                 System.Text.Encoding.UTF8,
                 source.Content.Headers.ContentType?.MediaType ?? "application/json");
         return clone;
