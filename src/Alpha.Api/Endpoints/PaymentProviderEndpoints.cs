@@ -53,7 +53,7 @@ public static class PaymentProviderEndpoints
 
     private static async Task<IResult> StartEmployerSetupAsync(Guid organizationId, Guid employerId, PaymentMethodSetupApiRequest request,
         IAlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
-        IPaymentProvider provider, IConfiguration config, HttpContext http, CancellationToken ct)
+        IPaymentProviderResolver resolver, IConfiguration config, HttpContext http, CancellationToken ct)
     {
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
