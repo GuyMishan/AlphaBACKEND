@@ -115,7 +115,7 @@ public static class BillingV2SchemaInitializer
                 "Currency" varchar(3) NOT NULL,
                 "Subtotal" numeric(18,2) NOT NULL DEFAULT 0,
                 "Total" numeric(18,2) NOT NULL DEFAULT 0,
-                "CalculationSnapshotJson" jsonb NOT NULL DEFAULT '{}'::jsonb,
+                "CalculationSnapshotJson" jsonb NOT NULL DEFAULT '{{}}'::jsonb,
                 "CalculatedAt" timestamptz NULL,
                 "ChargedAt" timestamptz NULL,
                 "CreatedAt" timestamptz NOT NULL,
