@@ -1,6 +1,7 @@
 using Alpha.Application.Billing;
 using Alpha.Domain.Billing;
 using Alpha.Domain.Subscriptions;
+using Xunit;
 
 namespace Alpha.Api.Tests;
 
