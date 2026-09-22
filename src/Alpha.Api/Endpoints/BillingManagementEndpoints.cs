@@ -283,7 +283,7 @@ public static class BillingManagementEndpoints
         foreach (var employer in employers)
         {
             if (!employerModes.TryGetValue(employer.Id, out var mode) ||
-                mode != Alpha.Domain.Employers.EmployerBillingMode.IndependentEmployerBilling)
+                mode != Alpha.Domain.Employers.EmployerBillingMode.EmployerDirect)
                 continue;
 
             var account = accounts.SingleOrDefault(x =>
