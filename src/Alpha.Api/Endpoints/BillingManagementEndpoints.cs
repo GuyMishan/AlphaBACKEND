@@ -255,6 +255,16 @@ public static class BillingManagementEndpoints
             .OrderByDescending(x => x.CreatedAt)
             .ToListAsync(ct);
 
+        var currentAccountPricing = await db.BillingAccountPricingComponents.AsNoTracking()
+            .Where(x => accountIds.Contains(x.BillingAccountId) && x.EffectiveTo == null)
+            .OrderBy(x => x.MetricType)
+            .ToListAsync(ct);
+        var planIdsForSummary = periods.Select(x => x.PlanId).Distinct().ToArray();
+        var currentPlanPricing = await db.PlanPricingComponents.AsNoTracking()
+            .Where(x => planIdsForSummary.Contains(x.PlanId) && x.EffectiveTo == null)
+            .OrderBy(x => x.MetricType)
+            .ToListAsync(ct);
+
         var rows = periods.Select(period =>
         {
             var account = accounts.Single(x => x.Id == period.BillingAccountId);
@@ -307,7 +317,19 @@ public static class BillingManagementEndpoints
                 failureMessage = latestPayment?.FailureMessage ?? string.Empty,
                 paidAt = successfulPayment?.PaidAt,
                 calculatedAt = period.CalculatedAt,
-                chargedAt = period.ChargedAt
+                chargedAt = period.ChargedAt,
+                pricingSource = currentAccountPricing.Any(x => x.BillingAccountId == account.Id) ? "Account" : "Plan",
+                pricingComponents = (currentAccountPricing.Any(x => x.BillingAccountId == account.Id)
+                    ? currentAccountPricing.Where(x => x.BillingAccountId == account.Id).Select(x => new
+                    {
+                        x.MetricType, x.PricingType, x.UnitPrice, x.IncludedQuantity,
+                        x.MinimumCharge, x.MaximumCharge, x.IsEnabled, x.CorrectionMode
+                    })
+                    : currentPlanPricing.Where(x => x.PlanId == period.PlanId).Select(x => new
+                    {
+                        x.MetricType, x.PricingType, x.UnitPrice, x.IncludedQuantity,
+                        x.MinimumCharge, x.MaximumCharge, x.IsEnabled, x.CorrectionMode
+                    })).ToArray()
             };
         }).ToArray();
 
