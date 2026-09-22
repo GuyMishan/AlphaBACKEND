@@ -127,6 +127,7 @@ public sealed class BillingCycleService(
         {
             period.MarkCharged();
             account.MarkStatus(BillingAccountStatus.Active);
+            RestoreOrganizationSubscriptionIfNeeded(account, subscription);
             await db.SaveChangesAsync(ct);
             return new BillingRunResult(period.Id, account.Id, period.Status, period.Total,
                 period.Currency, currentCalculation, payment.Id, payment.Status, null);
