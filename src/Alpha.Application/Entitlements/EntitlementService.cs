@@ -1,4 +1,5 @@
 using Alpha.Application.Abstractions;
+using Alpha.Domain.Billing;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Subscriptions;
@@ -10,17 +11,29 @@ public sealed class EntitlementService(IAlphaDbContext db)
 {
     public const string ReportTransmissionFeature = "report_transmission";
 
-    public Task<int> GetEmployerLimit(Guid organizationId, CancellationToken ct = default) =>
-        Task.FromResult(int.MaxValue);
+    public async Task<int?> GetEmployerLimit(Guid organizationId, CancellationToken ct = default)
+    {
+        var billing = await GetOrganizationBillingTierAsync(organizationId, ct);
+        return billing.IsPaid ? null : 3;
+    }
 
-    public Task<int> GetEmployeeLimit(Guid organizationId, CancellationToken ct = default) =>
-        Task.FromResult(int.MaxValue);
+    public Task<int?> GetEmployeeLimit(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult<int?>(null);
 
     public async Task<int> GetUserLimit(Guid organizationId, CancellationToken ct = default) =>
         (await GetPlanAsync(organizationId, ct)).MaxUsers;
 
-    public Task<EntitlementDecision> CanCreateEmployer(Guid organizationId, CancellationToken ct = default) =>
-        Task.FromResult(EntitlementDecision.Allow());
+    public async Task<EntitlementDecision> CanCreateEmployer(Guid organizationId, CancellationToken ct = default)
+    {
+        var limit = await GetEmployerLimit(organizationId, ct);
+        if (!limit.HasValue) return EntitlementDecision.Allow();
+
+        var current = await db.Employers.AsNoTracking()
+            .CountAsync(x => x.OrganizationId == organizationId && x.Status != EmployerStatus.Closed, ct);
+        return current < limit.Value
+            ? EntitlementDecision.Allow()
+            : EntitlementDecision.LimitReached("employers", current, limit.Value);
+    }
 
     public Task<EntitlementDecision> CanCreateEmployee(Guid organizationId, CancellationToken ct = default) =>
         Task.FromResult(EntitlementDecision.Allow());
@@ -117,7 +130,9 @@ public sealed class EntitlementService(IAlphaDbContext db)
 
     public async Task<object> GetSnapshot(Guid organizationId, CancellationToken ct = default)
     {
-        var plan = await GetPlanAsync(organizationId, ct);
+        var legacyPlan = await GetPlanAsync(organizationId, ct);
+        var billing = await GetOrganizationBillingTierAsync(organizationId, ct);
+        var employerLimit = billing.IsPaid ? (int?)null : 3;
         var employers = await db.Employers.AsNoTracking()
             .CountAsync(x => x.OrganizationId == organizationId && x.Status != EmployerStatus.Closed, ct);
         var employees = await db.Employments.AsNoTracking()
@@ -133,10 +148,43 @@ public sealed class EntitlementService(IAlphaDbContext db)
 
         return new
         {
-            plan = new { plan.Id, plan.Code, plan.Name },
-            employers = new { current = employers, maximum = int.MaxValue },
-            activeEmployees = new { current = employees, maximum = int.MaxValue },
-            users = new { current = users, maximum = plan.MaxUsers }
+            plan = new
+            {
+                id = legacyPlan.Id,
+                code = billing.Code,
+                name = billing.Name
+            },
+            employers = new { current = employers, maximum = employerLimit },
+            activeEmployees = new { current = employees, maximum = (int?)null },
+            users = new { current = users, maximum = legacyPlan.MaxUsers }
+        };
+    }
+
+    private async Task<(bool IsPaid, string Code, string Name)> GetOrganizationBillingTierAsync(
+        Guid organizationId, CancellationToken ct)
+    {
+        var accountId = await db.BillingAccounts.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == null)
+            .Select(x => (Guid?)x.Id)
+            .SingleOrDefaultAsync(ct);
+
+        if (!accountId.HasValue)
+            return (false, "FREE", "Free");
+
+        var component = await db.BillingAccountPricingComponents.AsNoTracking()
+            .Where(x => x.BillingAccountId == accountId.Value &&
+                        x.EffectiveTo == null &&
+                        x.IsEnabled &&
+                        (x.MetricType == BillingMetricType.Employee || x.MetricType == BillingMetricType.ReportRow) &&
+                        x.UnitPrice > 0)
+            .OrderBy(x => x.MetricType)
+            .FirstOrDefaultAsync(ct);
+
+        return component?.MetricType switch
+        {
+            BillingMetricType.Employee => (true, "PER_EMPLOYEE", "פר עובד"),
+            BillingMetricType.ReportRow => (true, "PER_REPORT_ROW", "פר שורה"),
+            _ => (false, "FREE", "Free")
         };
     }
 
