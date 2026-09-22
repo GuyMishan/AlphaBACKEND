@@ -6,6 +6,9 @@ namespace Alpha.Infrastructure.Persistence;
 public static class SubscriptionSchemaInitializer
 {
     public const string FreePlanCode = "FREE";
+    public const string BusinessPlanCode = "BUSINESS";
+    public const string MultiEmployerPlanCode = "MULTI_EMPLOYER";
+    public const string OrganizationPlanCode = "ORGANIZATION";
 
     public static async Task EnsureCreatedAsync(AlphaDbContext db, CancellationToken ct = default)
     {
