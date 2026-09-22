@@ -57,11 +57,7 @@ public sealed class BillingCycleService(
                         (!x.EffectiveTo.HasValue || x.EffectiveTo > periodStart))
             .ToListAsync(ct);
         if (components.Count == 0)
-        {
-            components = await db.PlanPricingComponents.AsNoTracking()
-                .Where(x => x.PlanId == plan.Id && x.IsEnabled && x.EffectiveTo == null)
-                .ToListAsync(ct);
-        }
+            throw new InvalidOperationException("No pricing configuration was effective for the billing period.");
         var componentIds = components.Select(x => x.Id).ToArray();
         var tiers = await db.PlanPricingTiers.AsNoTracking()
             .Where(x => componentIds.Contains(x.ComponentId))
