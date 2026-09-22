@@ -13,6 +13,16 @@ public static class BillingV2SchemaInitializer
                 ADD COLUMN IF NOT EXISTS "Status" varchar(40) NOT NULL DEFAULT 'PendingSetup',
                 ADD COLUMN IF NOT EXISTS "DefaultPaymentMethodId" uuid NULL;
 
+            UPDATE billing.billing_accounts
+            SET "Status" = CASE "PaymentMethodStatus"
+                WHEN 'Active' THEN 'Active'
+                WHEN 'Failed' THEN 'PastDue'
+                WHEN 'Suspended' THEN 'Suspended'
+                WHEN 'Cancelled' THEN 'Cancelled'
+                ELSE "Status"
+            END
+            WHERE "Status" = 'PendingSetup' AND "PaymentMethodStatus" <> 'NotConfigured';
+
             ALTER TABLE subscriptions.plans
                 ADD COLUMN IF NOT EXISTS "Description" varchar(1000) NOT NULL DEFAULT '',
                 ADD COLUMN IF NOT EXISTS "Currency" varchar(3) NOT NULL DEFAULT 'ILS',
