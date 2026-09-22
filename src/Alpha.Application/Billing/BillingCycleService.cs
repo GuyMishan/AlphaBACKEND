@@ -46,9 +46,6 @@ public sealed class BillingCycleService(
             ?? throw new InvalidOperationException("No active subscription was found for the billing account.");
 
         var plan = await db.Plans.AsNoTracking().SingleAsync(x => x.Id == subscription.PlanId, ct);
-        if (plan.EffectiveFrom > periodEnd || (plan.EffectiveTo.HasValue && plan.EffectiveTo <= periodStart))
-            throw new InvalidOperationException("The selected plan version is not effective for this billing period.");
-
         var components = await db.PlanPricingComponents.AsNoTracking()
             .Where(x => x.PlanId == plan.Id && x.IsEnabled &&
                         x.EffectiveFrom <= periodStart &&
