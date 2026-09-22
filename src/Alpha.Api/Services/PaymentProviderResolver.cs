@@ -22,7 +22,9 @@ public sealed class PaymentProviderResolver(
     public IPaymentProvider Resolve(string? providerName = null)
     {
         var selected = string.IsNullOrWhiteSpace(providerName)
-            ? configuration["Payments:DefaultProvider"] ?? "Fake"
+            ? configuration["Payments:DefaultProvider"]
+                ?? configuration["Payments:Provider"]
+                ?? "Fake"
             : providerName;
         return Providers.TryGetValue(selected, out var provider)
             ? provider
