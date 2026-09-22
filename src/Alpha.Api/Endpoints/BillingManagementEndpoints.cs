@@ -60,6 +60,7 @@ public static class BillingManagementEndpoints
         platform.MapPost("/plans", CreatePlanAsync);
         platform.MapPut("/plans/{planId:guid}", UpdatePlanAsync);
         platform.MapPost("/plans/{planId:guid}/simulate", SimulateAsync);
+        platform.MapGet("/summary", GetPlatformBillingSummaryAsync);
         platform.MapGet("/periods", GetPlatformPeriodsAsync);
         platform.MapGet("/payments", GetPlatformPaymentsAsync);
         platform.MapGet("/refunds", GetPlatformRefundsAsync);
@@ -199,6 +200,112 @@ public static class BillingManagementEndpoints
             new BillingUsageSnapshot(request.Employers, request.Employees, request.ReportRows,
                 request.Corrections, request.CorrectedRows));
         return Results.Ok(calculation);
+    }
+
+    private static async Task<IResult> GetPlatformBillingSummaryAsync(
+        IAlphaDbContext db, ICurrentUser currentUser, int take = 500, CancellationToken ct = default)
+    {
+        if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+        take = Math.Clamp(take, 1, 1000);
+
+        var periods = await db.BillingPeriods.AsNoTracking()
+            .OrderByDescending(x => x.PeriodEnd)
+            .Take(take)
+            .ToListAsync(ct);
+
+        if (periods.Count == 0) return Results.Ok(Array.Empty<object>());
+
+        var accountIds = periods.Select(x => x.BillingAccountId).Distinct().ToArray();
+        var accounts = await db.BillingAccounts.AsNoTracking()
+            .Where(x => accountIds.Contains(x.Id))
+            .ToListAsync(ct);
+
+        var organizationIds = accounts.Where(x => x.OrganizationId.HasValue)
+            .Select(x => x.OrganizationId!.Value)
+            .Distinct()
+            .ToArray();
+        var employerIds = accounts.Where(x => x.EmployerId.HasValue)
+            .Select(x => x.EmployerId!.Value)
+            .Distinct()
+            .ToArray();
+
+        var organizations = await db.Organizations.AsNoTracking()
+            .Where(x => organizationIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+
+        var employers = await db.Employers.AsNoTracking()
+            .Where(x => employerIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.OrganizationId, x.LegalName })
+            .ToListAsync(ct);
+
+        var employerOrganizationIds = employers.Select(x => x.OrganizationId).Distinct().ToArray();
+        var employerOrganizations = await db.Organizations.AsNoTracking()
+            .Where(x => employerOrganizationIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+
+        var periodIds = periods.Select(x => x.Id).ToArray();
+        var payments = await db.Payments.AsNoTracking()
+            .Where(x => periodIds.Contains(x.BillingPeriodId))
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync(ct);
+
+        var rows = periods.Select(period =>
+        {
+            var account = accounts.Single(x => x.Id == period.BillingAccountId);
+            var employer = account.EmployerId.HasValue
+                ? employers.SingleOrDefault(x => x.Id == account.EmployerId.Value)
+                : null;
+
+            var organizationId = account.OrganizationId ?? employer?.OrganizationId;
+            var organizationName = account.OrganizationId.HasValue
+                ? organizations.GetValueOrDefault(account.OrganizationId.Value, account.BillingName)
+                : employer is not null
+                    ? employerOrganizations.GetValueOrDefault(employer.OrganizationId, string.Empty)
+                    : string.Empty;
+
+            var periodPayments = payments.Where(x => x.BillingPeriodId == period.Id).ToArray();
+            var successfulPayment = periodPayments.FirstOrDefault(x =>
+                x.Status is BillingPaymentStatus.Succeeded or BillingPaymentStatus.Refunded or BillingPaymentStatus.PartiallyRefunded);
+            var latestPayment = successfulPayment ?? periodPayments.FirstOrDefault();
+            var paid = successfulPayment is not null;
+
+            return (object)new
+            {
+                period.Id,
+                period.BillingAccountId,
+                payerType = account.OrganizationId.HasValue ? "Organization" : "Employer",
+                payerName = account.OrganizationId.HasValue
+                    ? organizationName
+                    : employer?.LegalName ?? account.BillingName,
+                organizationId,
+                organizationName,
+                employerId = account.EmployerId,
+                employerName = employer?.LegalName,
+                month = period.PeriodStart.ToString("yyyy-MM"),
+                period.PeriodStart,
+                period.PeriodEnd,
+                period.Status,
+                accountStatus = account.Status,
+                paymentMethodStatus = account.PaymentMethodStatus,
+                account.PaymentMethodType,
+                account.CardBrand,
+                account.CardLast4,
+                period.Currency,
+                amount = period.Total,
+                paid,
+                paymentId = latestPayment?.Id,
+                paymentStatus = latestPayment?.Status,
+                provider = latestPayment?.Provider ?? string.Empty,
+                providerTransactionId = latestPayment?.ProviderTransactionId ?? string.Empty,
+                failureCode = latestPayment?.FailureCode ?? string.Empty,
+                failureMessage = latestPayment?.FailureMessage ?? string.Empty,
+                paidAt = successfulPayment?.PaidAt,
+                calculatedAt = period.CalculatedAt,
+                chargedAt = period.ChargedAt
+            };
+        }).ToArray();
+
+        return Results.Ok(rows);
     }
 
     private static async Task<IResult> GetPlatformPeriodsAsync(
