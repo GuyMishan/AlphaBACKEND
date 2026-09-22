@@ -158,7 +158,7 @@ public interface IBillingUsageCollector
         DateTimeOffset periodEnd, CancellationToken ct = default);
 }
 
-public sealed class BillingUsageCollector(IAlphaDbContext db) : IBillingUsageCollector
+public sealed class BillingUsageCollector(IAlphaDbContext db, BillingInheritanceService inheritance) : IBillingUsageCollector
 {
     public async Task<BillingUsageSnapshot> CollectAsync(BillingAccount account, DateTimeOffset periodStart,
         DateTimeOffset periodEnd, CancellationToken ct = default)
@@ -181,7 +181,22 @@ public sealed class BillingUsageCollector(IAlphaDbContext db) : IBillingUsageCol
             .Where(x => reportIds.Contains(x.Id))
             .Select(x => new { x.Id, x.EmployerId, x.ReportKind })
             .ToListAsync(ct);
+
+        if (account.OrganizationId.HasValue)
+        {
+            var employerIds = reports.Select(x => x.EmployerId).Distinct().ToArray();
+            var billedThroughAccount = new HashSet<Guid>();
+            foreach (var employerId in employerIds)
+            {
+                var resolution = await inheritance.ResolveBillingAccountAsync(employerId, ct);
+                if (resolution?.Account?.Id == account.Id)
+                    billedThroughAccount.Add(employerId);
+            }
+            reports = reports.Where(x => billedThroughAccount.Contains(x.EmployerId)).ToList();
+        }
+
         var actualReportIds = reports.Select(x => x.Id).ToArray();
+        if (actualReportIds.Length == 0) return new BillingUsageSnapshot(0, 0, 0, 0, 0);
         var correctionReportIds = reports.Where(x => x.ReportKind != ManualReportKind.Current).Select(x => x.Id).ToArray();
 
         var employers = reports.Select(x => x.EmployerId).Distinct().Count();
