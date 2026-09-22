@@ -50,7 +50,9 @@ public sealed class BillingCycleService(
             throw new InvalidOperationException("The selected plan version is not effective for this billing period.");
 
         var components = await db.PlanPricingComponents.AsNoTracking()
-            .Where(x => x.PlanId == plan.Id && x.IsEnabled)
+            .Where(x => x.PlanId == plan.Id && x.IsEnabled &&
+                        x.EffectiveFrom <= periodStart &&
+                        (!x.EffectiveTo.HasValue || x.EffectiveTo > periodStart))
             .ToListAsync(ct);
         var componentIds = components.Select(x => x.Id).ToArray();
         var tiers = await db.PlanPricingTiers.AsNoTracking()
