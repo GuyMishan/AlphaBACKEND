@@ -328,14 +328,24 @@ public static class BillingManagementEndpoints
             var employer = await db.Employers.AsNoTracking()
                 .SingleOrDefaultAsync(x => x.Id == request.PayerId, ct);
             if (employer is null) return Results.NotFound();
+
+            var settings = await db.EmployerProfileSettings
+                .SingleOrDefaultAsync(x => x.EmployerId == request.PayerId, ct);
+            if (settings is null)
+            {
+                settings = new Alpha.Domain.Employers.EmployerProfileSettings(request.PayerId);
+                db.EmployerProfileSettings.Add(settings);
+            }
+            settings.UpdateBilling(Alpha.Domain.Employers.EmployerBillingMode.EmployerDirect);
+
             account = await db.BillingAccounts.SingleOrDefaultAsync(
                 x => x.EmployerId == request.PayerId && x.OrganizationId == null, ct);
             if (account is null)
             {
                 account = new BillingAccount(null, request.PayerId);
                 db.BillingAccounts.Add(account);
-                await db.SaveChangesAsync(ct);
             }
+            await db.SaveChangesAsync(ct);
         }
         else
         {
