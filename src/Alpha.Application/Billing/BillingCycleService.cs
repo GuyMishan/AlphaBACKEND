@@ -53,8 +53,8 @@ public sealed class BillingCycleService(
         var plan = await db.Plans.AsNoTracking().SingleAsync(x => x.Id == subscription.PlanId, ct);
         var accountComponents = await db.BillingAccountPricingComponents.AsNoTracking()
             .Where(x => x.BillingAccountId == account.Id &&
-                        x.EffectiveFrom <= periodStart &&
-                        (!x.EffectiveTo.HasValue || x.EffectiveTo > periodStart))
+                        x.EffectiveFrom < periodEnd &&
+                        (!x.EffectiveTo.HasValue || x.EffectiveTo >= periodEnd))
             .ToListAsync(ct);
 
         List<PlanPricingComponent> components;
