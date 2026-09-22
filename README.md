@@ -79,3 +79,19 @@ Delivery failures return 503 and invalidate the challenge. Keep the signing key 
 5. For the prototype platform administrator, set `PrototypeAuth__AdminEmail` to the account that should receive the code and set `PrototypeAuth__NationalId`/`PrototypeAuth__Phone` to the matching login identity (the existing prototype credentials are supported once an admin email is configured). Verify a real email delivery and successful login before deploying the new frontend.
 
 If you edit the Apps Script code, deploy a **new version** of the web app. On a personal Gmail account, this uses your own mailbox and its daily send quota. The backend stores hashed, expiring codes; the script only delivers them.
+
+
+## Automatic ALPHA billing
+
+ALPHA billing is provider-agnostic. Plans, usage, billing periods, payments, retries and suspension are handled by the ALPHA billing domain; the selected payment provider only executes payment operations.
+
+Automatic monthly billing is disabled by default. Configure it with environment variables (double underscore notation on hosted environments):
+
+- `Billing__AutomaticBillingEnabled=true` enables the hosted billing cycle.
+- `Billing__JobIntervalMinutes=60` controls how often the worker checks for work.
+- `Billing__CatchUpMonths=3` makes the worker also create missing completed monthly periods after downtime.
+- `Billing__RetryDelayHours=24` controls the delay between failed-payment retries.
+- `Billing__MaxPaymentAttempts=4` caps automatic attempts for one payment.
+- `Billing__GracePeriodDays=7` suspends an unpaid billing account after the grace period.
+
+The worker only bills completed calendar months. Existing billing-period, payment and payment-attempt unique indexes provide idempotency/concurrency guards. Historical periods use only pricing components whose effective dates cover that period; current pricing is never retroactively substituted.

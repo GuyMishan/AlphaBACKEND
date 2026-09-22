@@ -100,6 +100,28 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
             success ? null : FirstString(root, "description", "message") ?? "PayPlus charge failed.");
     }
 
+    public async Task<PaymentRefundResult> Refund(PaymentRefundRequest request, CancellationToken ct = default)
+    {
+        var payload = new
+        {
+            terminal_uid = TerminalUid,
+            cashier_uid = CashierUid,
+            amount = request.Amount,
+            currency_code = request.Currency,
+            transaction_uid = request.TransactionId,
+            more_info_1 = request.ExternalReference
+        };
+
+        using var response = await SendAsync(HttpMethod.Post, "/Transactions/Refund", payload, ct, throwOnFailure: false);
+        var root = await ReadJsonAsync(response, ct, allowFailureStatus: true);
+        var success = response.IsSuccessStatusCode && IsSuccess(root);
+        return new PaymentRefundResult(
+            success,
+            FirstString(root, "transaction_uid", "refund_uid", "uid") ?? string.Empty,
+            success ? null : FirstString(root, "code"),
+            success ? null : FirstString(root, "description", "message") ?? "PayPlus refund failed.");
+    }
+
     public async Task<PaymentMethodStatusResult> GetPaymentMethodStatus(string customerId, string paymentMethodId, CancellationToken ct = default)
     {
         using var response = await SendAsync(HttpMethod.Get, $"/Token/View/{Uri.EscapeDataString(paymentMethodId)}?mask=true", null, ct);

@@ -13,6 +13,15 @@ namespace Alpha.Application.Abstractions;
 public interface IAlphaDbContext
 {
     DbSet<BillingAccount> BillingAccounts { get; }
+    DbSet<PlanPricingComponent> PlanPricingComponents { get; }
+    DbSet<PlanPricingTier> PlanPricingTiers { get; }
+    DbSet<BillingPeriod> BillingPeriods { get; }
+    DbSet<BillingUsage> BillingUsages { get; }
+    DbSet<PaymentMethod> PaymentMethods { get; }
+    DbSet<Payment> Payments { get; }
+    DbSet<PaymentAttempt> PaymentAttempts { get; }
+    DbSet<Refund> Refunds { get; }
+    DbSet<ProviderWebhookEvent> ProviderWebhookEvents { get; }
     DbSet<User> Users { get; }
     DbSet<UserInvitation> UserInvitations { get; }
     DbSet<Organization> Organizations { get; }

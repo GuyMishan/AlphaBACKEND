@@ -7,7 +7,8 @@ public enum SubscriptionStatus
     Active = 1,
     Suspended = 2,
     Expired = 3,
-    Cancelled = 4
+    Cancelled = 4,
+    PastDue = 5
 }
 
 public sealed class Subscription : Entity
@@ -29,6 +30,12 @@ public sealed class Subscription : Entity
     public SubscriptionStatus Status { get; private set; } = SubscriptionStatus.Active;
     public DateTimeOffset StartedAt { get; private set; }
     public DateTimeOffset? ExpiresAt { get; private set; }
+
+    public void ChangeStatus(SubscriptionStatus status)
+    {
+        Status = status;
+        Touch();
+    }
 
     public void ChangePlan(Guid planId)
     {

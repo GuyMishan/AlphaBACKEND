@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Alpha.Api.Endpoints;
 
 public sealed record ChangeSubscriptionPlanRequest(Guid PlanId);
+public sealed record ChangeSubscriptionStatusRequest(Alpha.Domain.Subscriptions.SubscriptionStatus Status);
 public sealed record ChangeOrganizationStatusRequest(Alpha.Domain.Organizations.OrganizationStatus Status);
 
 public static class SubscriptionEndpoints
@@ -149,6 +150,47 @@ public static class SubscriptionEndpoints
                 plan.MaxEmployers,
                 plan.MaxEmployees,
                 plan.MaxUsers
+            });
+        });
+
+        platform.MapPut("/{organizationId:guid}/status", async (
+            Guid organizationId,
+            ChangeSubscriptionStatusRequest request,
+            IAlphaDbContext db,
+            ICurrentUser currentUser,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+            if (!Enum.IsDefined(request.Status)) return Results.BadRequest(new { error = "invalid_subscription_status" });
+
+            var subscription = await db.Subscriptions.SingleOrDefaultAsync(x => x.OrganizationId == organizationId, ct);
+            if (subscription is null) return Results.NotFound();
+
+            var previousStatus = subscription.Status;
+            if (previousStatus != request.Status)
+            {
+                subscription.ChangeStatus(request.Status);
+                db.AuditEvents.Add(new AuditEvent(
+                    currentUser.UserId,
+                    "subscription.status.changed",
+                    "Subscription",
+                    subscription.Id,
+                    organizationId,
+                    null,
+                    JsonSerializer.Serialize(new { previousStatus, status = request.Status }),
+                    http.TraceIdentifier));
+                await db.SaveChangesAsync(ct);
+            }
+
+            return Results.Ok(new
+            {
+                subscription.Id,
+                subscription.OrganizationId,
+                subscription.PlanId,
+                subscription.Status,
+                subscription.StartedAt,
+                subscription.ExpiresAt
             });
         });
 

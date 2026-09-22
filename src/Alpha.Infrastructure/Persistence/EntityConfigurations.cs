@@ -169,6 +169,13 @@ public sealed class PlanConfiguration : IEntityTypeConfiguration<Plan>
         b.HasKey(x => x.Id);
         b.Property(x => x.Code).HasMaxLength(50).IsRequired();
         b.Property(x => x.Name).HasMaxLength(120).IsRequired();
+        b.Property(x => x.Description).HasMaxLength(1000);
+        b.Property(x => x.Currency).HasMaxLength(3).IsRequired();
+        b.Property(x => x.BillingInterval).HasMaxLength(30).IsRequired();
+        b.Property(x => x.CorrectionBillingMode).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.CorrectionUnitPrice).HasPrecision(18, 4);
+        b.Property(x => x.IncludedCorrections).HasPrecision(18, 4);
+        b.Property(x => x.IncludedCorrectionRows).HasPrecision(18, 4);
         b.HasIndex(x => x.Code).IsUnique();
     }
 }
@@ -281,6 +288,8 @@ public sealed class BillingAccountConfiguration : IEntityTypeConfiguration<Billi
         b.Property(x => x.BillingAddress).HasMaxLength(500);
         b.Property(x => x.PaymentMethodType).HasConversion<string>().HasMaxLength(40).IsRequired();
         b.Property(x => x.PaymentMethodStatus).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.BillingMode).HasConversion<string>().HasMaxLength(40).IsRequired();
+        b.Property(x => x.Status).HasConversion<string>().HasMaxLength(40).IsRequired();
         b.Property(x => x.ProviderCustomerId).HasMaxLength(200);
         b.Property(x => x.ProviderPaymentMethodId).HasMaxLength(200);
         b.Property(x => x.CardBrand).HasMaxLength(40);
