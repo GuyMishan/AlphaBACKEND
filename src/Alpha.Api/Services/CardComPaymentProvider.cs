@@ -213,10 +213,16 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
             returnValue);
     }
 
+    private static readonly JsonSerializerOptions CardComJson = new()
+    {
+        PropertyNamingPolicy = null
+    };
+
     private async Task<HttpResponseMessage> PostJson(string path, object payload, CancellationToken ct)
     {
         var client = clients.CreateClient("cardcom");
-        return await client.PostAsJsonAsync($"{BaseUrl}{path}", payload, cancellationToken: ct);
+        using var content = JsonContent.Create(payload, options: CardComJson);
+        return await client.PostAsync($"{BaseUrl}{path}", content, ct);
     }
 
     private static async Task<JsonDocument> ReadJson(HttpResponseMessage response, string operation, CancellationToken ct)
