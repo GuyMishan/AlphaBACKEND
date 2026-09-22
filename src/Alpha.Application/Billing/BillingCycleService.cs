@@ -20,7 +20,8 @@ public interface IBillingCycleService
 {
     Task<BillingRunResult> RunPeriodAsync(Guid billingAccountId, DateTimeOffset periodStart,
         DateTimeOffset periodEnd, bool charge, CancellationToken ct = default);
-    Task<int> RetryPastDueAsync(TimeSpan gracePeriod, TimeSpan retryDelay, CancellationToken ct = default);
+    Task<int> RetryPastDueAsync(TimeSpan gracePeriod, TimeSpan retryDelay, int maxAttempts = 4,
+        CancellationToken ct = default);
 }
 
 public sealed class BillingCycleService(
@@ -42,8 +43,12 @@ public sealed class BillingCycleService(
                 .SingleAsync(ct);
 
         var subscription = await db.Subscriptions.SingleOrDefaultAsync(
-            x => x.OrganizationId == organizationId && x.Status != SubscriptionStatus.Cancelled, ct)
-            ?? throw new InvalidOperationException("No active subscription was found for the billing account.");
+            x => x.OrganizationId == organizationId &&
+                 x.Status != SubscriptionStatus.Cancelled &&
+                 x.Status != SubscriptionStatus.Expired &&
+                 x.StartedAt < periodEnd &&
+                 (!x.ExpiresAt.HasValue || x.ExpiresAt > periodStart), ct)
+            ?? throw new InvalidOperationException("No billable subscription was found for the billing period.");
 
         var plan = await db.Plans.AsNoTracking().SingleAsync(x => x.Id == subscription.PlanId, ct);
         var components = await db.PlanPricingComponents.AsNoTracking()
@@ -93,8 +98,7 @@ public sealed class BillingCycleService(
         {
             period.MarkCharged();
             account.MarkStatus(BillingAccountStatus.Active);
-            if (subscription.Status == SubscriptionStatus.PastDue)
-                subscription.ChangeStatus(SubscriptionStatus.Active);
+            RestoreOrganizationSubscriptionIfNeeded(account, subscription);
             await db.SaveChangesAsync(ct);
             return new BillingRunResult(period.Id, account.Id, period.Status, 0,
                 period.Currency, currentCalculation, null, null, null);
@@ -105,7 +109,7 @@ public sealed class BillingCycleService(
         {
             period.MarkPastDue();
             account.MarkStatus(BillingAccountStatus.PastDue);
-            subscription.ChangeStatus(SubscriptionStatus.PastDue);
+            MarkOrganizationSubscriptionPastDueIfNeeded(account, subscription);
             await db.SaveChangesAsync(ct);
             return new BillingRunResult(period.Id, account.Id, period.Status, period.Total,
                 period.Currency, currentCalculation, null, null, "payment_method_not_active");
@@ -168,15 +172,14 @@ public sealed class BillingCycleService(
             payment.Succeed(result.TransactionId, result.InvoiceReference);
             period.MarkCharged();
             account.MarkStatus(BillingAccountStatus.Active);
-            if (subscription.Status == SubscriptionStatus.PastDue)
-                subscription.ChangeStatus(SubscriptionStatus.Active);
+            RestoreOrganizationSubscriptionIfNeeded(account, subscription);
         }
         else
         {
             payment.Fail(result.ErrorCode, result.ErrorMessage);
             period.MarkPastDue();
             account.MarkStatus(BillingAccountStatus.PastDue);
-            subscription.ChangeStatus(SubscriptionStatus.PastDue);
+            MarkOrganizationSubscriptionPastDueIfNeeded(account, subscription);
         }
 
         await db.SaveChangesAsync(ct);
@@ -184,8 +187,10 @@ public sealed class BillingCycleService(
             period.Currency, currentCalculation, payment.Id, payment.Status, result.ErrorMessage);
     }
 
-    public async Task<int> RetryPastDueAsync(TimeSpan gracePeriod, TimeSpan retryDelay, CancellationToken ct = default)
+    public async Task<int> RetryPastDueAsync(TimeSpan gracePeriod, TimeSpan retryDelay, int maxAttempts = 4,
+        CancellationToken ct = default)
     {
+        if (maxAttempts < 1) throw new ArgumentOutOfRangeException(nameof(maxAttempts));
         var now = DateTimeOffset.UtcNow;
         var retryBefore = now - retryDelay;
         var due = await db.BillingPeriods.AsNoTracking()
@@ -197,8 +202,19 @@ public sealed class BillingCycleService(
         var processed = 0;
         foreach (var item in due)
         {
-            await RunPeriodAsync(item.BillingAccountId, item.PeriodStart, item.PeriodEnd, true, ct);
-            processed++;
+            var periodId = await db.BillingPeriods.AsNoTracking()
+                .Where(x => x.BillingAccountId == item.BillingAccountId &&
+                            x.PeriodStart == item.PeriodStart && x.PeriodEnd == item.PeriodEnd)
+                .Select(x => x.Id)
+                .SingleAsync(ct);
+            var attempts = await db.PaymentAttempts.AsNoTracking()
+                .CountAsync(x => db.Payments.Any(p => p.Id == x.PaymentId && p.BillingPeriodId == periodId), ct);
+
+            if (attempts < maxAttempts)
+            {
+                await RunPeriodAsync(item.BillingAccountId, item.PeriodStart, item.PeriodEnd, true, ct);
+                processed++;
+            }
 
             var current = await db.BillingPeriods.SingleAsync(x =>
                 x.BillingAccountId == item.BillingAccountId &&
@@ -213,11 +229,29 @@ public sealed class BillingCycleService(
                         .Select(x => x.OrganizationId).SingleAsync(ct);
                 var subscription = await db.Subscriptions.SingleOrDefaultAsync(
                     x => x.OrganizationId == organizationId && x.Status != SubscriptionStatus.Cancelled, ct);
-                subscription?.ChangeStatus(SubscriptionStatus.Suspended);
+                if (subscription is not null && account.OrganizationId.HasValue)
+                    subscription.ChangeStatus(SubscriptionStatus.Suspended);
                 await db.SaveChangesAsync(ct);
             }
         }
         return processed;
+    }
+
+
+    private static void MarkOrganizationSubscriptionPastDueIfNeeded(
+        BillingAccount account, Subscription subscription)
+    {
+        if (account.OrganizationId.HasValue &&
+            subscription.Status is SubscriptionStatus.Active or SubscriptionStatus.Suspended)
+            subscription.ChangeStatus(SubscriptionStatus.PastDue);
+    }
+
+    private static void RestoreOrganizationSubscriptionIfNeeded(
+        BillingAccount account, Subscription subscription)
+    {
+        if (account.OrganizationId.HasValue &&
+            subscription.Status is SubscriptionStatus.PastDue or SubscriptionStatus.Suspended)
+            subscription.ChangeStatus(SubscriptionStatus.Active);
     }
 
     private async Task<BillingCalculation> RehydrateCalculationAsync(BillingPeriod period, CancellationToken ct)
