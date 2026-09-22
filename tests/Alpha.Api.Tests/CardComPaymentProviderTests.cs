@@ -127,7 +127,7 @@ public sealed class CardComPaymentProviderTests
         Assert.Equal("Declined", result.ErrorMessage);
         Assert.EndsWith("/api/v11/Transactions/Transaction", captured!.RequestUri!.AbsolutePath);
 
-        using var json = JsonDocument.Parse(await captured.Content!.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await captured.Content!.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("tok-123", json.RootElement.GetProperty("Token").GetString());
         Assert.Equal(99.90m, json.RootElement.GetProperty("Amount").GetDecimal());
         Assert.Equal("1230", json.RootElement.GetProperty("CardExpirationMMYY").GetString());
@@ -157,7 +157,7 @@ public sealed class CardComPaymentProviderTests
         Assert.Equal("204972703", result.RefundId);
         Assert.EndsWith("/api/v11/Transactions/RefundByTransactionId", captured!.RequestUri!.AbsolutePath);
 
-        using var json = JsonDocument.Parse(await captured.Content!.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await captured.Content!.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("refund-secret", json.RootElement.GetProperty("ApiPassword").GetString());
         Assert.Equal(204966999, json.RootElement.GetProperty("TransactionId").GetInt64());
         Assert.Equal(25.50m, json.RootElement.GetProperty("PartialSum").GetDecimal());
