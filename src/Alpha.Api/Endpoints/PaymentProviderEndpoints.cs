@@ -32,7 +32,7 @@ public static class PaymentProviderEndpoints
         endpoints.MapPost("/api/platform/billing-accounts/{billingAccountId:guid}/charge", ChargeAsync)
             .RequireAuthorization().WithTags("Alpha Billing Provider");
 
-        endpoints.MapPost("/api/billing/providers/{providerName}/callback", ProviderCallbackAsync)
+        endpoints.MapMethods("/api/billing/providers/{providerName}/callback", new[] { "GET", "POST" }, ProviderCallbackAsync)
             .AllowAnonymous().WithTags("Alpha Billing Provider");
         endpoints.MapPost("/api/billing/payplus/callback", LegacyPayPlusCallbackAsync)
             .AllowAnonymous().WithTags("Alpha Billing Provider");
@@ -296,8 +296,20 @@ public static class PaymentProviderEndpoints
         string providerName, HttpContext http, IAlphaDbContext db,
         IPaymentProviderResolver resolver, CancellationToken ct)
     {
-        using var reader = new StreamReader(http.Request.Body);
-        var rawBody = await reader.ReadToEndAsync(ct);
+        string rawBody;
+        if (HttpMethods.IsGet(http.Request.Method))
+        {
+            rawBody = http.Request.QueryString.HasValue
+                ? http.Request.QueryString.Value!.TrimStart('?')
+                : string.Empty;
+        }
+        else
+        {
+            using var reader = new StreamReader(http.Request.Body);
+            rawBody = await reader.ReadToEndAsync(ct);
+            if (string.IsNullOrWhiteSpace(rawBody) && http.Request.QueryString.HasValue)
+                rawBody = http.Request.QueryString.Value!.TrimStart('?');
+        }
         var headers = http.Request.Headers.ToDictionary(
             x => x.Key.ToLowerInvariant(),
             x => x.Value.ToString(),
