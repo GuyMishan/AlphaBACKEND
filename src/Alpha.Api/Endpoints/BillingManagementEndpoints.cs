@@ -210,7 +210,7 @@ public static class BillingManagementEndpoints
     }
 
     private static async Task<IResult> GetBillingCustomersAsync(
-        IAlphaDbContext db, ICurrentUser currentUser, CancellationToken ct)
+        IAlphaDbContext db, ICurrentUser currentUser, BillingInheritanceService inheritance, CancellationToken ct)
     {
         if (!currentUser.IsPlatformAdmin) return Results.Forbid();
 
@@ -256,6 +256,7 @@ public static class BillingManagementEndpoints
             result.Add(new
             {
                 payerType = "Organization",
+                entityType = "Organization",
                 payerId = organization.Id,
                 payerName = organization.Name,
                 organizationId = organization.Id,
@@ -263,6 +264,9 @@ public static class BillingManagementEndpoints
                 employerId = (Guid?)null,
                 employerName = (string?)null,
                 billingAccountId = account?.Id,
+                billingSource = "Organization",
+                billedThroughName = organization.Name,
+                inherited = false,
                 paymentMethodStatus = account?.PaymentMethodStatus ?? BillingPaymentMethodStatus.NotConfigured,
                 paymentMethodType = account?.PaymentMethodType ?? BillingPaymentMethodType.CreditCard,
                 cardBrand = account?.CardBrand ?? string.Empty,
@@ -275,25 +279,30 @@ public static class BillingManagementEndpoints
 
         foreach (var employer in employers)
         {
-            var account = accounts.SingleOrDefault(x =>
-                x.EmployerId == employer.Id && x.OrganizationId == null);
-            var p = Pricing(account?.Id, pricing);
+            var resolution = await inheritance.ResolveBillingAccountAsync(employer.Id, ct);
+            var effectiveAccount = resolution?.Account;
+            var p = Pricing(effectiveAccount?.Id, pricing);
             var organizationName = organizations.FirstOrDefault(x => x.Id == employer.OrganizationId)?.Name ?? string.Empty;
+            var inherited = string.Equals(resolution?.Source, "Organization", StringComparison.Ordinal);
             result.Add(new
             {
                 payerType = "Employer",
+                entityType = "Employer",
                 payerId = employer.Id,
                 payerName = employer.LegalName,
                 organizationId = employer.OrganizationId,
                 organizationName,
                 employerId = (Guid?)employer.Id,
                 employerName = employer.LegalName,
-                billingAccountId = account?.Id,
-                paymentMethodStatus = account?.PaymentMethodStatus ?? BillingPaymentMethodStatus.NotConfigured,
-                paymentMethodType = account?.PaymentMethodType ?? BillingPaymentMethodType.CreditCard,
-                cardBrand = account?.CardBrand ?? string.Empty,
-                cardLast4 = account?.CardLast4 ?? string.Empty,
-                configured = account is not null,
+                billingAccountId = effectiveAccount?.Id,
+                billingSource = resolution?.Source ?? "Employer",
+                billedThroughName = resolution?.BilledThroughName ?? employer.LegalName,
+                inherited,
+                paymentMethodStatus = effectiveAccount?.PaymentMethodStatus ?? BillingPaymentMethodStatus.NotConfigured,
+                paymentMethodType = effectiveAccount?.PaymentMethodType ?? BillingPaymentMethodType.CreditCard,
+                cardBrand = effectiveAccount?.CardBrand ?? string.Empty,
+                cardLast4 = effectiveAccount?.CardLast4 ?? string.Empty,
+                configured = effectiveAccount is not null,
                 billingType = p.BillingType,
                 unitPrice = p.UnitPrice
             });
