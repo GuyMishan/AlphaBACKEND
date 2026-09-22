@@ -73,6 +73,38 @@ public static class BillingV2SchemaInitializer
             CREATE UNIQUE INDEX IF NOT EXISTS "UX_plan_pricing_tiers_component_from"
                 ON billing.plan_pricing_tiers ("ComponentId", "FromQuantity");
 
+            CREATE TABLE IF NOT EXISTS billing.billing_account_pricing_components (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "BillingAccountId" uuid NOT NULL REFERENCES billing.billing_accounts("Id") ON DELETE CASCADE,
+                "Version" integer NOT NULL DEFAULT 1,
+                "EffectiveFrom" timestamptz NOT NULL DEFAULT now(),
+                "EffectiveTo" timestamptz NULL,
+                "CorrectionMode" varchar(40) NULL,
+                "MetricType" varchar(40) NOT NULL,
+                "PricingType" varchar(40) NOT NULL,
+                "UnitPrice" numeric(18,4) NOT NULL,
+                "IncludedQuantity" numeric(18,4) NOT NULL DEFAULT 0,
+                "MinimumCharge" numeric(18,2) NULL,
+                "MaximumCharge" numeric(18,2) NULL,
+                "IsEnabled" boolean NOT NULL DEFAULT true,
+                "CreatedAt" timestamptz NOT NULL,
+                "UpdatedAt" timestamptz NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "UX_account_pricing_components_account_version_metric"
+                ON billing.billing_account_pricing_components ("BillingAccountId", "Version", "MetricType");
+
+            CREATE TABLE IF NOT EXISTS billing.billing_account_pricing_tiers (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "ComponentId" uuid NOT NULL REFERENCES billing.billing_account_pricing_components("Id") ON DELETE CASCADE,
+                "FromQuantity" numeric(18,4) NOT NULL,
+                "ToQuantity" numeric(18,4) NULL,
+                "UnitPrice" numeric(18,4) NOT NULL,
+                "CreatedAt" timestamptz NOT NULL,
+                "UpdatedAt" timestamptz NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "UX_account_pricing_tiers_component_from"
+                ON billing.billing_account_pricing_tiers ("ComponentId", "FromQuantity");
+
             CREATE TABLE IF NOT EXISTS billing.billing_periods (
                 "Id" uuid NOT NULL PRIMARY KEY,
                 "BillingAccountId" uuid NOT NULL REFERENCES billing.billing_accounts("Id") ON DELETE RESTRICT,
