@@ -71,7 +71,7 @@ public sealed class BillingUsageConfiguration : IEntityTypeConfiguration<Billing
         b.Property(x => x.SourceId).HasMaxLength(160);
         b.HasIndex(x => new { x.BillingPeriodId, x.MetricType, x.EmployerId });
         b.HasIndex(x => new { x.BillingAccountId, x.SourceType, x.SourceId, x.MetricType })
-            .IsUnique().HasFilter(""SourceId" <> ''");
+            .IsUnique().HasFilter("\"SourceId\" <> ''");
         b.HasOne<BillingAccount>().WithMany().HasForeignKey(x => x.BillingAccountId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<BillingPeriod>().WithMany().HasForeignKey(x => x.BillingPeriodId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Restrict);
@@ -92,7 +92,7 @@ public sealed class BillingPaymentMethodConfiguration : IEntityTypeConfiguration
         b.Property(x => x.CardBrand).HasMaxLength(40);
         b.Property(x => x.CardLast4).HasMaxLength(4);
         b.Property(x => x.MandateReference).HasMaxLength(200);
-        b.HasIndex(x => new { x.Provider, x.ProviderPaymentMethodId }).IsUnique().HasFilter(""ProviderPaymentMethodId" <> ''");
+        b.HasIndex(x => new { x.Provider, x.ProviderPaymentMethodId }).IsUnique().HasFilter("\"ProviderPaymentMethodId\" <> ''");
         b.HasOne<BillingAccount>().WithMany().HasForeignKey(x => x.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
     }
 }
