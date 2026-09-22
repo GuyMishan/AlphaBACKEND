@@ -14,6 +14,15 @@ namespace Alpha.Infrastructure.Persistence;
 public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : DbContext(options), IAlphaDbContext
 {
     public DbSet<BillingAccount> BillingAccounts => Set<BillingAccount>();
+    public DbSet<PlanPricingComponent> PlanPricingComponents => Set<PlanPricingComponent>();
+    public DbSet<PlanPricingTier> PlanPricingTiers => Set<PlanPricingTier>();
+    public DbSet<BillingPeriod> BillingPeriods => Set<BillingPeriod>();
+    public DbSet<BillingUsage> BillingUsages => Set<BillingUsage>();
+    public DbSet<PaymentMethod> PaymentMethods => Set<PaymentMethod>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentAttempt> PaymentAttempts => Set<PaymentAttempt>();
+    public DbSet<Refund> Refunds => Set<Refund>();
+    public DbSet<ProviderWebhookEvent> ProviderWebhookEvents => Set<ProviderWebhookEvent>();
     public DbSet<User> Users => Set<User>();
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
     public DbSet<RegistrationOtpChallenge> RegistrationOtpChallenges => Set<RegistrationOtpChallenge>();
