@@ -52,7 +52,7 @@ public sealed record BillingCalculation(decimal Subtotal, decimal Total, IReadOn
         subtotal = Subtotal,
         total = Total,
         components = Components
-    });
+    }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 }
 
 public interface IBillingCalculator
@@ -168,8 +168,9 @@ public sealed class BillingUsageCollector(IAlphaDbContext db, BillingInheritance
         if (periodEnd <= periodStart) throw new ArgumentException("Billing period end must be after start.");
 
         var accepted = db.ReportTransmissions.AsNoTracking()
-            .Where(x => x.Status == ReportTransmissionStatus.Accepted &&
-                        x.CompletedAt >= periodStart && x.CompletedAt < periodEnd);
+            .Where(x => (x.Status == ReportTransmissionStatus.Sent || x.Status == ReportTransmissionStatus.Accepted) &&
+                        ((x.SentAt ?? x.CompletedAt) >= periodStart) &&
+                        ((x.SentAt ?? x.CompletedAt) < periodEnd));
 
         accepted = account.EmployerId.HasValue
             ? accepted.Where(x => x.EmployerId == account.EmployerId.Value)
