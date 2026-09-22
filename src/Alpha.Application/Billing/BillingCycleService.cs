@@ -54,43 +54,29 @@ public sealed class BillingCycleService(
         var accountComponents = await db.BillingAccountPricingComponents.AsNoTracking()
             .Where(x => x.BillingAccountId == account.Id &&
                         x.EffectiveFrom < periodEnd &&
-                        (!x.EffectiveTo.HasValue || x.EffectiveTo >= periodEnd))
+                        (!x.EffectiveTo.HasValue || x.EffectiveTo >= periodEnd) &&
+                        x.IsEnabled)
             .ToListAsync(ct);
 
         List<PlanPricingComponent> components;
-        List<PlanPricingTier> tiers;
-        if (accountComponents.Count > 0)
+        List<PlanPricingTier> tiers = [];
+        if (accountComponents.Count == 0)
         {
-            var accountComponentIds = accountComponents.Select(x => x.Id).ToArray();
-            var accountTiers = await db.BillingAccountPricingTiers.AsNoTracking()
-                .Where(x => accountComponentIds.Contains(x.ComponentId))
-                .ToListAsync(ct);
-
-            var map = accountComponents.ToDictionary(
-                x => x.Id,
-                x => new PlanPricingComponent(plan.Id, x.MetricType, x.PricingType, x.UnitPrice,
-                    x.IncludedQuantity, x.MinimumCharge, x.MaximumCharge, x.IsEnabled,
-                    x.Version, x.EffectiveFrom, x.CorrectionMode));
-
-            components = map.Values.ToList();
-            tiers = accountTiers.Select(x => new PlanPricingTier(
-                map[x.ComponentId].Id, x.FromQuantity, x.ToQuantity, x.UnitPrice)).ToList();
+            components =
+            [
+                new PlanPricingComponent(plan.Id, BillingMetricType.Correction, BillingPricingType.PerUnit,
+                    0m, 0m, null, null, true, 1, periodStart, CorrectionBillingMode.Free)
+            ];
         }
         else
         {
-            components = await db.PlanPricingComponents.AsNoTracking()
-                .Where(x => x.PlanId == plan.Id && x.IsEnabled &&
-                            x.EffectiveFrom <= periodStart &&
-                            (!x.EffectiveTo.HasValue || x.EffectiveTo > periodStart))
-                .ToListAsync(ct);
-            var componentIds = components.Select(x => x.Id).ToArray();
-            tiers = await db.PlanPricingTiers.AsNoTracking()
-                .Where(x => componentIds.Contains(x.ComponentId))
-                .ToListAsync(ct);
+            components = accountComponents.Select(x => new PlanPricingComponent(
+                plan.Id, x.MetricType, BillingPricingType.PerUnit, x.UnitPrice,
+                0m, null, null, true, x.Version, x.EffectiveFrom, null)).ToList();
+            components.Add(new PlanPricingComponent(
+                plan.Id, BillingMetricType.Correction, BillingPricingType.PerUnit,
+                0m, 0m, null, null, true, 1, periodStart, CorrectionBillingMode.Free));
         }
-
-        if (components.Count == 0)
-            throw new InvalidOperationException("No pricing configuration was effective for the billing period.");
 
         var period = await db.BillingPeriods.SingleOrDefaultAsync(x =>
             x.BillingAccountId == billingAccountId &&
