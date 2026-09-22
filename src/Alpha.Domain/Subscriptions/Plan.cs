@@ -37,6 +37,18 @@ public sealed class Plan : Entity
     public int MaxUsers { get; private set; }
     public bool IsActive { get; private set; } = true;
 
+    public void UpdateDefinition(string name, int maxEmployers, int maxEmployees, int maxUsers, bool isActive)
+    {
+        Name = Require(name, nameof(name));
+        if (maxEmployers < 0 || maxEmployees < 0 || maxUsers < 0)
+            throw new ArgumentOutOfRangeException(nameof(maxEmployers), "Plan limits cannot be negative.");
+        MaxEmployers = maxEmployers;
+        MaxEmployees = maxEmployees;
+        MaxUsers = maxUsers;
+        IsActive = isActive;
+        Touch();
+    }
+
     public void UpdateBillingDefinition(string? description, string? currency, string? billingInterval,
         CorrectionBillingMode correctionBillingMode, decimal? correctionUnitPrice,
         decimal includedCorrections, decimal includedCorrectionRows,
