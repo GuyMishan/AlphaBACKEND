@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
@@ -30,7 +32,9 @@ public static class PaymentProviderEndpoints
         endpoints.MapPost("/api/platform/billing-accounts/{billingAccountId:guid}/charge", ChargeAsync)
             .RequireAuthorization().WithTags("Alpha Billing Provider");
 
-        endpoints.MapPost("/api/billing/payplus/callback", PayPlusCallbackAsync)
+        endpoints.MapPost("/api/billing/providers/{providerName}/callback", ProviderCallbackAsync)
+            .AllowAnonymous().WithTags("Alpha Billing Provider");
+        endpoints.MapPost("/api/billing/payplus/callback", LegacyPayPlusCallbackAsync)
             .AllowAnonymous().WithTags("Alpha Billing Provider");
 
         return endpoints;
@@ -99,7 +103,7 @@ public static class PaymentProviderEndpoints
                 $"{frontend}{safeReturnPath}{returnSeparator}payment=success",
                 $"{frontend}{safeReturnPath}{returnSeparator}payment=failed",
                 $"{frontend}{safeReturnPath}{returnSeparator}payment=cancelled",
-                $"{callbackBase}/api/billing/payplus/callback",
+                $"{callbackBase}/api/billing/providers/{Uri.EscapeDataString(provider.Name)}/callback",
                 account.Id.ToString()), ct);
 
             account.UpdateProviderMetadata(
@@ -167,11 +171,13 @@ public static class PaymentProviderEndpoints
                 status.Active ? BillingPaymentMethodStatus.Active : BillingPaymentMethodStatus.Failed,
                 account.ProviderCustomerId,
                 status.PaymentMethodId,
-                status.Brand,
-                status.Last4,
-                status.ExpiryMonth,
-                status.ExpiryYear,
-                status.BankDebitMandateReference);
+                string.IsNullOrWhiteSpace(status.Brand) ? account.CardBrand : status.Brand,
+                string.IsNullOrWhiteSpace(status.Last4) ? account.CardLast4 : status.Last4,
+                status.ExpiryMonth ?? account.CardExpiryMonth,
+                status.ExpiryYear ?? account.CardExpiryYear,
+                string.IsNullOrWhiteSpace(status.BankDebitMandateReference)
+                    ? account.BankDebitMandateReference
+                    : status.BankDebitMandateReference);
             await db.SaveChangesAsync(ct);
 
             return Results.Ok(new
@@ -277,8 +283,18 @@ public static class PaymentProviderEndpoints
         }
     }
 
-    private static async Task<IResult> PayPlusCallbackAsync(HttpContext http, IAlphaDbContext db,
-        IPaymentProvider provider, CancellationToken ct)
+    private static Task<IResult> LegacyPayPlusCallbackAsync(
+        HttpContext http, IAlphaDbContext db, IPaymentProviderResolver resolver, CancellationToken ct) =>
+        ProcessProviderCallbackAsync("PayPlus", http, db, resolver, ct);
+
+    private static Task<IResult> ProviderCallbackAsync(
+        string providerName, HttpContext http, IAlphaDbContext db,
+        IPaymentProviderResolver resolver, CancellationToken ct) =>
+        ProcessProviderCallbackAsync(providerName, http, db, resolver, ct);
+
+    private static async Task<IResult> ProcessProviderCallbackAsync(
+        string providerName, HttpContext http, IAlphaDbContext db,
+        IPaymentProviderResolver resolver, CancellationToken ct)
     {
         using var reader = new StreamReader(http.Request.Body);
         var rawBody = await reader.ReadToEndAsync(ct);
@@ -287,21 +303,52 @@ public static class PaymentProviderEndpoints
             x => x.Value.ToString(),
             StringComparer.OrdinalIgnoreCase);
 
+        IPaymentProvider provider;
+        try
+        {
+            provider = resolver.Resolve(providerName);
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.NotFound();
+        }
+
+        var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawBody))).ToLowerInvariant();
+        var eventKey = $"{provider.Name}:{payloadHash}";
+        if (await db.ProviderWebhookEvents.AsNoTracking()
+            .AnyAsync(x => x.Provider == provider.Name && x.EventKey == eventKey, ct))
+            return Results.Ok(new { ok = true, duplicate = true });
+
+        var webhook = new ProviderWebhookEvent(provider.Name, eventKey, payloadHash, rawBody);
+        db.ProviderWebhookEvents.Add(webhook);
+        await db.SaveChangesAsync(ct);
+
         PaymentMethodStatusResult result;
         try
         {
             result = await provider.ResolvePaymentMethodFromCallback(rawBody, headers, ct);
         }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            webhook.Complete(ProviderWebhookStatus.Failed, ex.Message);
+            await db.SaveChangesAsync(ct);
             return Results.Unauthorized();
         }
 
         if (!Guid.TryParse(result.ExternalReference, out var billingAccountId))
+        {
+            webhook.Complete(ProviderWebhookStatus.Failed, "billing_account_reference_missing");
+            await db.SaveChangesAsync(ct);
             return Results.BadRequest(new { error = "billing_account_reference_missing" });
+        }
 
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x => x.Id == billingAccountId, ct);
-        if (account is null) return Results.NotFound();
+        if (account is null)
+        {
+            webhook.Complete(ProviderWebhookStatus.Failed, "billing_account_not_found");
+            await db.SaveChangesAsync(ct);
+            return Results.NotFound();
+        }
 
         var customerId = !string.IsNullOrWhiteSpace(result.CustomerId)
             ? result.CustomerId
@@ -316,8 +363,25 @@ public static class PaymentProviderEndpoints
             result.ExpiryMonth,
             result.ExpiryYear,
             result.BankDebitMandateReference);
-        await db.SaveChangesAsync(ct);
 
+        var method = await db.PaymentMethods.SingleOrDefaultAsync(x =>
+            x.BillingAccountId == account.Id &&
+            x.Provider == provider.Name &&
+            x.ProviderPaymentMethodId == result.PaymentMethodId, ct);
+
+        if (method is null)
+        {
+            method = new PaymentMethod(account.Id, provider.Name, account.PaymentMethodType);
+            db.PaymentMethods.Add(method);
+        }
+
+        method.Activate(customerId, result.PaymentMethodId, result.Brand, result.Last4,
+            result.ExpiryMonth, result.ExpiryYear, result.BankDebitMandateReference);
+        account.SetDefaultPaymentMethod(method.Id);
+        webhook.Complete(ProviderWebhookStatus.Processed);
+
+        await db.SaveChangesAsync(ct);
         return Results.Ok(new { ok = true });
-    }
+    }}
+
 }
