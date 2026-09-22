@@ -96,6 +96,82 @@ public sealed class PlanPricingTier : Entity
     public decimal UnitPrice { get; private set; }
 }
 
+public sealed class BillingAccountPricingComponent : Entity
+{
+    private BillingAccountPricingComponent() { }
+
+    public BillingAccountPricingComponent(Guid billingAccountId, BillingMetricType metricType, BillingPricingType pricingType,
+        decimal unitPrice, decimal includedQuantity = 0, decimal? minimumCharge = null, decimal? maximumCharge = null,
+        bool isEnabled = true, int version = 1, DateTimeOffset? effectiveFrom = null,
+        CorrectionBillingMode? correctionMode = null)
+    {
+        if (billingAccountId == Guid.Empty) throw new ArgumentException("Billing account is required.", nameof(billingAccountId));
+        if (version <= 0) throw new ArgumentOutOfRangeException(nameof(version));
+        BillingAccountId = billingAccountId;
+        Version = version;
+        EffectiveFrom = effectiveFrom ?? DateTimeOffset.UtcNow;
+        CorrectionMode = correctionMode;
+        Update(metricType, pricingType, unitPrice, includedQuantity, minimumCharge, maximumCharge, isEnabled);
+    }
+
+    public Guid BillingAccountId { get; private set; }
+    public int Version { get; private set; } = 1;
+    public DateTimeOffset EffectiveFrom { get; private set; }
+    public DateTimeOffset? EffectiveTo { get; private set; }
+    public CorrectionBillingMode? CorrectionMode { get; private set; }
+    public BillingMetricType MetricType { get; private set; }
+    public BillingPricingType PricingType { get; private set; }
+    public decimal UnitPrice { get; private set; }
+    public decimal IncludedQuantity { get; private set; }
+    public decimal? MinimumCharge { get; private set; }
+    public decimal? MaximumCharge { get; private set; }
+    public bool IsEnabled { get; private set; }
+
+    public void Close(DateTimeOffset effectiveTo)
+    {
+        if (effectiveTo <= EffectiveFrom) throw new ArgumentOutOfRangeException(nameof(effectiveTo));
+        EffectiveTo = effectiveTo;
+        Touch();
+    }
+
+    public void Update(BillingMetricType metricType, BillingPricingType pricingType, decimal unitPrice,
+        decimal includedQuantity, decimal? minimumCharge, decimal? maximumCharge, bool isEnabled)
+    {
+        if (unitPrice < 0 || includedQuantity < 0) throw new ArgumentOutOfRangeException(nameof(unitPrice));
+        if (minimumCharge < 0 || maximumCharge < 0 || minimumCharge > maximumCharge)
+            throw new ArgumentOutOfRangeException(nameof(minimumCharge));
+        MetricType = metricType;
+        PricingType = pricingType;
+        UnitPrice = unitPrice;
+        IncludedQuantity = includedQuantity;
+        MinimumCharge = minimumCharge;
+        MaximumCharge = maximumCharge;
+        IsEnabled = isEnabled;
+        Touch();
+    }
+}
+
+public sealed class BillingAccountPricingTier : Entity
+{
+    private BillingAccountPricingTier() { }
+
+    public BillingAccountPricingTier(Guid componentId, decimal fromQuantity, decimal? toQuantity, decimal unitPrice)
+    {
+        if (componentId == Guid.Empty) throw new ArgumentException("Component is required.", nameof(componentId));
+        if (fromQuantity < 0 || toQuantity < 0 || unitPrice < 0 || (toQuantity.HasValue && toQuantity < fromQuantity))
+            throw new ArgumentOutOfRangeException(nameof(fromQuantity));
+        ComponentId = componentId;
+        FromQuantity = fromQuantity;
+        ToQuantity = toQuantity;
+        UnitPrice = unitPrice;
+    }
+
+    public Guid ComponentId { get; private set; }
+    public decimal FromQuantity { get; private set; }
+    public decimal? ToQuantity { get; private set; }
+    public decimal UnitPrice { get; private set; }
+}
+
 public sealed class BillingPeriod : Entity
 {
     private BillingPeriod() { }
