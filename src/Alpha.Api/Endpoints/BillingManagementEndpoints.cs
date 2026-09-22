@@ -282,6 +282,10 @@ public static class BillingManagementEndpoints
         {
             return Results.Conflict(new { error = ex.Message });
         }
+        catch (DbUpdateException)
+        {
+            return Results.Conflict(new { error = "billing_operation_already_in_progress" });
+        }
     }
 
     private static async Task<IResult> RefundAsync(
@@ -301,11 +305,12 @@ public static class BillingManagementEndpoints
         if (payment.Status is not BillingPaymentStatus.Succeeded and not BillingPaymentStatus.PartiallyRefunded)
             return Results.Conflict(new { error = "payment_not_refundable" });
 
-        var refunded = await db.Refunds.AsNoTracking()
-            .Where(x => x.PaymentId == paymentId && x.Status == BillingRefundStatus.Succeeded)
+        var reservedOrRefunded = await db.Refunds.AsNoTracking()
+            .Where(x => x.PaymentId == paymentId &&
+                        (x.Status == BillingRefundStatus.Pending || x.Status == BillingRefundStatus.Succeeded))
             .SumAsync(x => (decimal?)x.Amount, ct) ?? 0;
-        if (refunded + request.Amount > payment.Amount)
-            return Results.BadRequest(new { error = "refund_exceeds_remaining_amount", remaining = payment.Amount - refunded });
+        if (reservedOrRefunded + request.Amount > payment.Amount)
+            return Results.BadRequest(new { error = "refund_exceeds_remaining_amount", remaining = payment.Amount - reservedOrRefunded });
 
         var account = await db.BillingAccounts.SingleAsync(x => x.Id == payment.BillingAccountId, ct);
         var provider = providers.Resolve(payment.Provider);
@@ -332,7 +337,12 @@ public static class BillingManagementEndpoints
 
         refund.Complete(result.Success, result.RefundId, result.ErrorMessage);
         if (result.Success)
-            payment.MarkRefunded(refunded + request.Amount < payment.Amount);
+        {
+            var succeededRefunded = await db.Refunds.AsNoTracking()
+                .Where(x => x.PaymentId == paymentId && x.Status == BillingRefundStatus.Succeeded)
+                .SumAsync(x => (decimal?)x.Amount, ct) ?? 0;
+            payment.MarkRefunded(succeededRefunded + request.Amount < payment.Amount);
+        }
 
         await db.SaveChangesAsync(ct);
         return result.Success
