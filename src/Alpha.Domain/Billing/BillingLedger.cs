@@ -67,6 +67,12 @@ public sealed class PlanPricingComponent : Entity
         IsEnabled = isEnabled;
         Touch();
     }
+
+    private static string Truncate(string? value, int max)
+    {
+        var clean = value?.Trim() ?? string.Empty;
+        return clean[..Math.Min(clean.Length, max)];
+    }
 }
 
 public sealed class PlanPricingTier : Entity
@@ -241,10 +247,16 @@ public sealed class Payment : Entity
     public string IdempotencyKey { get; private set; } = string.Empty;
     public DateTimeOffset? PaidAt { get; private set; }
 
-    public void MarkProcessing(string provider) { Provider = provider?.Trim() ?? string.Empty; Status = BillingPaymentStatus.Processing; Touch(); }
-    public void Succeed(string transactionId, string? invoiceReference) { ProviderTransactionId = transactionId?.Trim() ?? string.Empty; InvoiceReference = invoiceReference?.Trim() ?? string.Empty; Status = BillingPaymentStatus.Succeeded; PaidAt = DateTimeOffset.UtcNow; FailureCode = FailureMessage = string.Empty; Touch(); }
-    public void Fail(string? code, string? message) { Status = BillingPaymentStatus.Failed; FailureCode = code?.Trim() ?? string.Empty; FailureMessage = message?.Trim() ?? string.Empty; Touch(); }
+    public void MarkProcessing(string provider) { Provider = Truncate(provider, 40); Status = BillingPaymentStatus.Processing; Touch(); }
+    public void Succeed(string transactionId, string? invoiceReference) { ProviderTransactionId = Truncate(transactionId, 200); InvoiceReference = Truncate(invoiceReference, 200); Status = BillingPaymentStatus.Succeeded; PaidAt = DateTimeOffset.UtcNow; FailureCode = FailureMessage = string.Empty; Touch(); }
+    public void Fail(string? code, string? message) { Status = BillingPaymentStatus.Failed; FailureCode = Truncate(code, 120); FailureMessage = Truncate(message, 1000); Touch(); }
     public void MarkRefunded(bool partial) { Status = partial ? BillingPaymentStatus.PartiallyRefunded : BillingPaymentStatus.Refunded; Touch(); }
+
+    private static string Truncate(string? value, int max)
+    {
+        var clean = value?.Trim() ?? string.Empty;
+        return clean[..Math.Min(clean.Length, max)];
+    }
 }
 
 public sealed class PaymentAttempt : Entity
@@ -273,11 +285,17 @@ public sealed class PaymentAttempt : Entity
     public void Complete(bool success, string? transactionId, string? errorCode, string? errorMessage)
     {
         Status = success ? BillingPaymentAttemptStatus.Succeeded : BillingPaymentAttemptStatus.Failed;
-        ProviderTransactionId = transactionId?.Trim() ?? string.Empty;
-        ErrorCode = errorCode?.Trim() ?? string.Empty;
-        ErrorMessage = errorMessage?.Trim() ?? string.Empty;
+        ProviderTransactionId = Truncate(transactionId, 200);
+        ErrorCode = Truncate(errorCode, 120);
+        ErrorMessage = Truncate(errorMessage, 1000);
         CompletedAt = DateTimeOffset.UtcNow;
         Touch();
+    }
+
+    private static string Truncate(string? value, int max)
+    {
+        var clean = value?.Trim() ?? string.Empty;
+        return clean[..Math.Min(clean.Length, max)];
     }
 }
 
@@ -305,9 +323,15 @@ public sealed class Refund : Entity
     public void Complete(bool success, string? providerRefundId, string? errorMessage)
     {
         Status = success ? BillingRefundStatus.Succeeded : BillingRefundStatus.Failed;
-        ProviderRefundId = providerRefundId?.Trim() ?? string.Empty;
-        ErrorMessage = errorMessage?.Trim() ?? string.Empty;
+        ProviderRefundId = Truncate(providerRefundId, 200);
+        ErrorMessage = Truncate(errorMessage, 1000);
         Touch();
+    }
+
+    private static string Truncate(string? value, int max)
+    {
+        var clean = value?.Trim() ?? string.Empty;
+        return clean[..Math.Min(clean.Length, max)];
     }
 }
 
@@ -334,7 +358,7 @@ public sealed class ProviderWebhookEvent : Entity
     public void Complete(ProviderWebhookStatus status, string? error = null)
     {
         Status = status;
-        ErrorMessage = error?.Trim() ?? string.Empty;
+        ErrorMessage = Truncate(error, 1000);
         ProcessedAt = DateTimeOffset.UtcNow;
         Touch();
     }
