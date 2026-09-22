@@ -176,9 +176,10 @@ public static class PaymentProviderEndpoints
             var status = await provider.GetPaymentMethodStatus(
                 method.ProviderCustomerId, method.ProviderPaymentMethodId, ct);
 
+            method.MarkStatus(status.Active ? BillingPaymentMethodStatus.Active : BillingPaymentMethodStatus.Failed);
             account.UpdateProviderMetadata(
                 status.Active ? BillingPaymentMethodStatus.Active : BillingPaymentMethodStatus.Failed,
-                account.ProviderCustomerId,
+                method.ProviderCustomerId,
                 status.PaymentMethodId,
                 string.IsNullOrWhiteSpace(status.Brand) ? account.CardBrand : status.Brand,
                 string.IsNullOrWhiteSpace(status.Last4) ? account.CardLast4 : status.Last4,
@@ -245,9 +246,10 @@ public static class PaymentProviderEndpoints
             await provider.CancelPaymentMethod(
                 method.ProviderCustomerId, method.ProviderPaymentMethodId, ct);
             method.MarkStatus(BillingPaymentMethodStatus.Cancelled);
+            account.SetDefaultPaymentMethod(null);
             account.UpdateProviderMetadata(
                 BillingPaymentMethodStatus.Cancelled,
-                account.ProviderCustomerId,
+                method.ProviderCustomerId,
                 string.Empty,
                 string.Empty,
                 string.Empty,
@@ -320,8 +322,14 @@ public static class PaymentProviderEndpoints
         string providerName, HttpContext http, IAlphaDbContext db,
         IPaymentProviderResolver resolver, CancellationToken ct)
     {
+        const int maxWebhookBytes = 64 * 1024;
+        if (http.Request.ContentLength is > maxWebhookBytes)
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
         using var reader = new StreamReader(http.Request.Body);
         var rawBody = await reader.ReadToEndAsync(ct);
+        if (Encoding.UTF8.GetByteCount(rawBody) > maxWebhookBytes)
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
         var headers = http.Request.Headers.ToDictionary(
             x => x.Key.ToLowerInvariant(),
             x => x.Value.ToString(),
@@ -345,7 +353,15 @@ public static class PaymentProviderEndpoints
 
         var webhook = new ProviderWebhookEvent(provider.Name, eventKey, payloadHash, rawBody);
         db.ProviderWebhookEvents.Add(webhook);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // Concurrent delivery of the same event is guarded by the unique provider/event key.
+            return Results.Ok(new { ok = true, duplicate = true });
+        }
 
         PaymentMethodStatusResult result;
         try
