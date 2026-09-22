@@ -176,12 +176,12 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
 
         var tokenInfo = ObjectValue(root, "TokenInfo")
             ?? throw new InvalidOperationException("CardCom API 11 result did not include TokenInfo.");
-        var token = StringValue(tokenInfo.Value, "Token");
+        var token = StringValue(tokenInfo, "Token");
         if (string.IsNullOrWhiteSpace(token))
             throw new InvalidOperationException("CardCom API 11 TokenInfo did not include Token.");
 
-        var month = IntValue(tokenInfo.Value, "CardMonth");
-        var year = NormalizeYear(IntValue(tokenInfo.Value, "CardYear"));
+        var month = IntValue(tokenInfo, "CardMonth");
+        var year = NormalizeYear(IntValue(tokenInfo, "CardYear"));
         if (!ValidExpiry(month, year))
             throw new InvalidOperationException("CardCom API 11 returned an invalid token expiry.");
 
