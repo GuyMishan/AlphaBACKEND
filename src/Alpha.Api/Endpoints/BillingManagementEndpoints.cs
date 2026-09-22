@@ -224,13 +224,6 @@ public static class BillingManagementEndpoints
             .Select(x => new { x.Id, x.OrganizationId, x.LegalName })
             .ToListAsync(ct);
 
-        var employerIds = employers.Select(x => x.Id).ToArray();
-        var employerSettings = await db.EmployerProfileSettings.AsNoTracking()
-            .Where(x => employerIds.Contains(x.EmployerId))
-            .Select(x => new { x.EmployerId, x.BillingMode })
-            .ToListAsync(ct);
-        var employerModes = employerSettings.ToDictionary(x => x.EmployerId, x => x.BillingMode);
-
         var accounts = await db.BillingAccounts.AsNoTracking().ToListAsync(ct);
         var accountIds = accounts.Select(x => x.Id).ToArray();
         var pricing = await db.BillingAccountPricingComponents.AsNoTracking()
@@ -282,10 +275,6 @@ public static class BillingManagementEndpoints
 
         foreach (var employer in employers)
         {
-            if (!employerModes.TryGetValue(employer.Id, out var mode) ||
-                mode != Alpha.Domain.Employers.EmployerBillingMode.EmployerDirect)
-                continue;
-
             var account = accounts.SingleOrDefault(x =>
                 x.EmployerId == employer.Id && x.OrganizationId == null);
             var p = Pricing(account?.Id, pricing);
