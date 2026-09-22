@@ -1,8 +1,10 @@
+using System.Data;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Application.Billing;
 using Alpha.Domain.Billing;
 using Alpha.Domain.Subscriptions;
+using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Endpoints;
@@ -289,34 +291,59 @@ public static class BillingManagementEndpoints
     }
 
     private static async Task<IResult> RefundAsync(
-        Guid paymentId, RefundPaymentRequest request, IAlphaDbContext db, ICurrentUser currentUser,
+        Guid paymentId, RefundPaymentRequest request, AlphaDbContext db, ICurrentUser currentUser,
         IPaymentProviderResolver providers, CancellationToken ct)
     {
         if (!currentUser.IsPlatformAdmin) return Results.Forbid();
         if (request.Amount <= 0 || string.IsNullOrWhiteSpace(request.IdempotencyKey))
             return Results.BadRequest(new { error = "amount_and_idempotency_key_required" });
 
-        var existing = await db.Refunds.SingleOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, ct);
-        if (existing is not null)
-            return Results.Ok(new { existing.Id, existing.PaymentId, existing.Amount, existing.Status, existing.ProviderRefundId, existing.ErrorMessage });
+        Refund refund;
+        Payment payment;
 
-        var payment = await db.Payments.SingleOrDefaultAsync(x => x.Id == paymentId, ct);
-        if (payment is null) return Results.NotFound();
-        if (payment.Status is not BillingPaymentStatus.Succeeded and not BillingPaymentStatus.PartiallyRefunded)
-            return Results.Conflict(new { error = "payment_not_refundable" });
+        await using (var reservation = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct))
+        {
+            var existing = await db.Refunds.SingleOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, ct);
+            if (existing is not null)
+            {
+                await reservation.RollbackAsync(ct);
+                return Results.Ok(new
+                {
+                    existing.Id, existing.PaymentId, existing.Amount, existing.Status,
+                    existing.ProviderRefundId, existing.ErrorMessage
+                });
+            }
 
-        var reservedOrRefunded = await db.Refunds.AsNoTracking()
-            .Where(x => x.PaymentId == paymentId &&
-                        (x.Status == BillingRefundStatus.Pending || x.Status == BillingRefundStatus.Succeeded))
-            .SumAsync(x => (decimal?)x.Amount, ct) ?? 0;
-        if (reservedOrRefunded + request.Amount > payment.Amount)
-            return Results.BadRequest(new { error = "refund_exceeds_remaining_amount", remaining = payment.Amount - reservedOrRefunded });
+            payment = await db.Payments.SingleOrDefaultAsync(x => x.Id == paymentId, ct)
+                ?? throw new InvalidOperationException("payment_not_found");
+            if (payment.Status is not BillingPaymentStatus.Succeeded and not BillingPaymentStatus.PartiallyRefunded)
+            {
+                await reservation.RollbackAsync(ct);
+                return Results.Conflict(new { error = "payment_not_refundable" });
+            }
+
+            var reservedOrRefunded = await db.Refunds.AsNoTracking()
+                .Where(x => x.PaymentId == paymentId &&
+                            (x.Status == BillingRefundStatus.Pending || x.Status == BillingRefundStatus.Succeeded))
+                .SumAsync(x => (decimal?)x.Amount, ct) ?? 0;
+            if (reservedOrRefunded + request.Amount > payment.Amount)
+            {
+                await reservation.RollbackAsync(ct);
+                return Results.BadRequest(new
+                {
+                    error = "refund_exceeds_remaining_amount",
+                    remaining = payment.Amount - reservedOrRefunded
+                });
+            }
+
+            refund = new Refund(payment.Id, request.Amount, request.Reason ?? string.Empty, request.IdempotencyKey.Trim());
+            db.Refunds.Add(refund);
+            await db.SaveChangesAsync(ct);
+            await reservation.CommitAsync(ct);
+        }
 
         var account = await db.BillingAccounts.SingleAsync(x => x.Id == payment.BillingAccountId, ct);
         var provider = providers.Resolve(payment.Provider);
-        var refund = new Refund(payment.Id, request.Amount, request.Reason ?? string.Empty, request.IdempotencyKey.Trim());
-        db.Refunds.Add(refund);
-        await db.SaveChangesAsync(ct);
 
         PaymentRefundResult result;
         try
@@ -330,7 +357,11 @@ public static class BillingManagementEndpoints
                 account.CardExpiryMonth,
                 account.CardExpiryYear), ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             result = new PaymentRefundResult(false, string.Empty, "provider_exception", ex.Message);
         }
@@ -338,10 +369,12 @@ public static class BillingManagementEndpoints
         refund.Complete(result.Success, result.RefundId, result.ErrorMessage);
         if (result.Success)
         {
-            var succeededRefunded = await db.Refunds.AsNoTracking()
-                .Where(x => x.PaymentId == paymentId && x.Status == BillingRefundStatus.Succeeded)
+            var previouslySucceeded = await db.Refunds.AsNoTracking()
+                .Where(x => x.PaymentId == paymentId &&
+                            x.Id != refund.Id &&
+                            x.Status == BillingRefundStatus.Succeeded)
                 .SumAsync(x => (decimal?)x.Amount, ct) ?? 0;
-            payment.MarkRefunded(succeededRefunded + request.Amount < payment.Amount);
+            payment.MarkRefunded(previouslySucceeded + request.Amount < payment.Amount);
         }
 
         await db.SaveChangesAsync(ct);
