@@ -20,14 +20,23 @@ public sealed class PlanPricingComponent : Entity
 
     public PlanPricingComponent(Guid planId, BillingMetricType metricType, BillingPricingType pricingType,
         decimal unitPrice, decimal includedQuantity = 0, decimal? minimumCharge = null, decimal? maximumCharge = null,
-        bool isEnabled = true)
+        bool isEnabled = true, int version = 1, DateTimeOffset? effectiveFrom = null,
+        CorrectionBillingMode? correctionMode = null)
     {
         if (planId == Guid.Empty) throw new ArgumentException("Plan is required.", nameof(planId));
+        if (version <= 0) throw new ArgumentOutOfRangeException(nameof(version));
         PlanId = planId;
+        Version = version;
+        EffectiveFrom = effectiveFrom ?? DateTimeOffset.UtcNow;
+        CorrectionMode = correctionMode;
         Update(metricType, pricingType, unitPrice, includedQuantity, minimumCharge, maximumCharge, isEnabled);
     }
 
     public Guid PlanId { get; private set; }
+    public int Version { get; private set; } = 1;
+    public DateTimeOffset EffectiveFrom { get; private set; }
+    public DateTimeOffset? EffectiveTo { get; private set; }
+    public CorrectionBillingMode? CorrectionMode { get; private set; }
     public BillingMetricType MetricType { get; private set; }
     public BillingPricingType PricingType { get; private set; }
     public decimal UnitPrice { get; private set; }
@@ -35,6 +44,13 @@ public sealed class PlanPricingComponent : Entity
     public decimal? MinimumCharge { get; private set; }
     public decimal? MaximumCharge { get; private set; }
     public bool IsEnabled { get; private set; }
+
+    public void Close(DateTimeOffset effectiveTo)
+    {
+        if (effectiveTo <= EffectiveFrom) throw new ArgumentOutOfRangeException(nameof(effectiveTo));
+        EffectiveTo = effectiveTo;
+        Touch();
+    }
 
     public void Update(BillingMetricType metricType, BillingPricingType pricingType, decimal unitPrice,
         decimal includedQuantity, decimal? minimumCharge, decimal? maximumCharge, bool isEnabled)
