@@ -42,7 +42,7 @@ public static class PaymentProviderEndpoints
 
     private static async Task<IResult> StartOrganizationSetupAsync(Guid organizationId, PaymentMethodSetupApiRequest request,
         IAlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
-        IPaymentProvider provider, IConfiguration config, HttpContext http, CancellationToken ct)
+        IPaymentProviderResolver resolver, IConfiguration config, HttpContext http, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
@@ -151,7 +151,7 @@ public static class PaymentProviderEndpoints
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.EmployerId == employerId && x.OrganizationId == null, ct);
-        return await SyncAsync(account, db, provider, ct);
+        return await SyncAsync(account, db, resolver, ct);
     }
 
     private static async Task<IResult> SyncAsync(BillingAccount? account, IAlphaDbContext db,
@@ -221,7 +221,7 @@ public static class PaymentProviderEndpoints
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.EmployerId == employerId && x.OrganizationId == null, ct);
-        return await CancelAsync(account, db, provider, ct);
+        return await CancelAsync(account, db, resolver, ct);
     }
 
     private static async Task<IResult> CancelAsync(BillingAccount? account, IAlphaDbContext db,
