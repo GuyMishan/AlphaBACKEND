@@ -25,10 +25,15 @@ public sealed class BillingAccount : Entity
     public BillingAccount(Guid? organizationId, Guid? employerId)
     {
         SetScope(organizationId, employerId);
+        BillingMode = organizationId.HasValue ? BillingMode.OrganizationBilling : BillingMode.IndependentEmployerBilling;
     }
 
     public Guid? OrganizationId { get; private set; }
     public Guid? EmployerId { get; private set; }
+    public BillingOwnerType BillingOwnerType => OrganizationId.HasValue ? BillingOwnerType.Organization : BillingOwnerType.Employer;
+    public BillingMode BillingMode { get; private set; } = BillingMode.OrganizationBilling;
+    public BillingAccountStatus Status { get; private set; } = BillingAccountStatus.PendingSetup;
+    public Guid? DefaultPaymentMethodId { get; private set; }
     public string BillingName { get; private set; } = string.Empty;
     public string TaxId { get; private set; } = string.Empty;
     public string InvoiceEmail { get; private set; } = string.Empty;
@@ -46,6 +51,26 @@ public sealed class BillingAccount : Entity
     public int? CardExpiryYear { get; private set; }
 
     public string BankDebitMandateReference { get; private set; } = string.Empty;
+
+    public void Configure(BillingMode mode, BillingAccountStatus status, Guid? defaultPaymentMethodId = null)
+    {
+        BillingMode = mode;
+        Status = status;
+        DefaultPaymentMethodId = defaultPaymentMethodId;
+        Touch();
+    }
+
+    public void SetDefaultPaymentMethod(Guid? paymentMethodId)
+    {
+        DefaultPaymentMethodId = paymentMethodId;
+        Touch();
+    }
+
+    public void MarkStatus(BillingAccountStatus status)
+    {
+        Status = status;
+        Touch();
+    }
 
     public void UpdateBillingDetails(string? billingName, string? taxId, string? invoiceEmail, string? billingAddress,
         BillingPaymentMethodType paymentMethodType)
@@ -67,6 +92,14 @@ public sealed class BillingAccount : Entity
             throw new ArgumentException("Card last4 must contain exactly 4 digits.", nameof(cardLast4));
 
         PaymentMethodStatus = status;
+        Status = status switch
+        {
+            BillingPaymentMethodStatus.Active => BillingAccountStatus.Active,
+            BillingPaymentMethodStatus.Suspended => BillingAccountStatus.Suspended,
+            BillingPaymentMethodStatus.Cancelled => BillingAccountStatus.Cancelled,
+            BillingPaymentMethodStatus.Failed => BillingAccountStatus.PastDue,
+            _ => Status
+        };
         ProviderCustomerId = Clean(providerCustomerId, 200);
         ProviderPaymentMethodId = Clean(providerPaymentMethodId, 200);
         CardBrand = Clean(cardBrand, 40);
