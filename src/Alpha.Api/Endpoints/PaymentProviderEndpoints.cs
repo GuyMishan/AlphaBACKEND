@@ -382,6 +382,5 @@ public static class PaymentProviderEndpoints
 
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { ok = true });
-    }}
-
+    }
 }
