@@ -116,11 +116,24 @@ public static class BillingPlanSeedInitializer
             await db.SaveChangesAsync(ct);
         }
 
-        var hasPricing = await db.PlanPricingComponents.AsNoTracking()
-            .AnyAsync(x => x.PlanId == plan.Id && x.EffectiveTo == null, ct);
+        var activePricing = await db.PlanPricingComponents.AsNoTracking()
+            .Where(x => x.PlanId == plan.Id && x.EffectiveTo == null)
+            .ToListAsync(ct);
+        var hasPricing = activePricing.Count > 0;
 
         if (hasPricing)
+        {
+            if (!activePricing.Any(x => x.MetricType == BillingMetricType.Correction))
+            {
+                var included = correctionMode == CorrectionBillingMode.PerCorrection ? 0m : 0m;
+                db.PlanPricingComponents.Add(new PlanPricingComponent(
+                    plan.Id, BillingMetricType.Correction, BillingPricingType.PerUnit,
+                    correctionUnitPrice ?? 0m, included, null, null, true,
+                    plan.Version, plan.EffectiveFrom, correctionMode));
+                await db.SaveChangesAsync(ct);
+            }
             return;
+        }
 
         if (!isNew)
         {
