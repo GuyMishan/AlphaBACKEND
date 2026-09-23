@@ -41,18 +41,7 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
                 ? "ALPHA payment method"
                 : $"ALPHA – {request.BillingName}",
             Language = "he",
-            ISOCoinId = 1,
-            Document = new
-            {
-                Name = request.BillingName,
-                TaxId = request.TaxId,
-                Email = request.Email,
-                AddressLine1 = request.BillingAddress,
-                IsSendByEmail = false,
-                IsAllowEditDocument = false,
-                IsShowOnlyDocument = true,
-                Language = "he"
-            }
+            ISOCoinId = 1
         };
 
         using var response = await PostJson("/api/v11/LowProfile/Create", payload, ct);
