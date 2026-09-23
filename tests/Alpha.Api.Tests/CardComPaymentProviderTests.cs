@@ -37,6 +37,7 @@ public sealed class CardComPaymentProviderTests
         Assert.Equal("application/json", captured.Content!.Headers.ContentType!.MediaType);
 
         using var json = JsonDocument.Parse(await captured.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("Cardcomtest26", json.RootElement.GetProperty("ApiName").GetString());
         Assert.Equal("CreateTokenOnly", json.RootElement.GetProperty("Operation").GetString());
         Assert.Equal("account-id", json.RootElement.GetProperty("ReturnValue").GetString());
         Assert.Equal("https://api.alpha.test/callback", json.RootElement.GetProperty("WebHookUrl").GetString());
@@ -174,6 +175,7 @@ public sealed class CardComPaymentProviderTests
             {
                 ["Payments:CardCom:BaseUrl"] = "https://secure.cardcom.solutions",
                 ["Payments:CardCom:TerminalNumber"] = "1000",
+                ["Payments:CardCom:InterfaceApiName"] = "Cardcomtest26",
                 ["Payments:CardCom:ApiName"] = "pGpgO8S1VFLyBpVhi1Xp",
                 ["Payments:CardCom:ApiPassword"] = apiPassword
             })
