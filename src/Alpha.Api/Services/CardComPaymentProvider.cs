@@ -15,6 +15,7 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
     private int TerminalNumber => int.TryParse(Required("Payments:CardCom:TerminalNumber"), out var value)
         ? value
         : throw new InvalidOperationException("CardCom TerminalNumber must be numeric.");
+    private string InterfaceApiName => Required("Payments:CardCom:InterfaceApiName");
     private string ApiName => Required("Payments:CardCom:ApiName");
     private string? ApiPassword => configuration["Payments:CardCom:ApiPassword"]?.Trim();
 
@@ -29,7 +30,7 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
         var payload = new
         {
             TerminalNumber,
-            ApiName,
+            ApiName = InterfaceApiName,
             Amount = 1m,
             Operation = "CreateTokenOnly",
             ReturnValue = request.ExternalReference,
@@ -65,7 +66,7 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
         var payload = new
         {
             TerminalNumber,
-            ApiName,
+            ApiName = InterfaceApiName,
             Amount = request.Amount,
             Token = request.PaymentMethodId,
             CardExpirationMMYY = ExpiryMmYy(request.ExpiryMonth!.Value, request.ExpiryYear!.Value),
@@ -151,7 +152,7 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
         var payload = new
         {
             TerminalNumber,
-            ApiName,
+            ApiName = InterfaceApiName,
             LowProfileId = lowProfileId
         };
 
