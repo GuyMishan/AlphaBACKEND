@@ -45,7 +45,7 @@ public static class EmployerInterfaceEndpoints
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var read = await ReadXmlAsync(request, ct);
         if (read.Error is not null) return Results.BadRequest(new { error = read.Error });
-        var result = await service.IngestAsync(organizationId, employerId, read.FileName!, read.Bytes!, ct);
+        var result = await service.IngestAsync(organizationId, employerId, read.FileName!, read.Bytes!, read.PaymentAccountId, ct);
         var response = new
         {
             result.ReportId,
@@ -103,18 +103,27 @@ public static class EmployerInterfaceEndpoints
         return Results.File(generated.Bytes, "application/xml", $"employer-interface-{report.ReportingMonth:yyyy-MM}-{report.Id:N}.xml");
     }
 
-    private static async Task<(byte[]? Bytes, string? FileName, string? Error)> ReadXmlAsync(HttpRequest request, CancellationToken ct)
+    private static async Task<(byte[]? Bytes, string? FileName, Guid? PaymentAccountId, string? Error)> ReadXmlAsync(HttpRequest request, CancellationToken ct)
     {
-        if (!request.HasFormContentType) return (null, null, "multipart/form-data is required.");
+        if (!request.HasFormContentType) return (null, null, null, "multipart/form-data is required.");
         var form = await request.ReadFormAsync(ct);
         var file = form.Files.GetFile("file");
-        if (file is null || file.Length == 0) return (null, null, "No XML file was selected.");
-        if (file.Length > 20 * 1024 * 1024) return (null, null, "The maximum Employer Interface XML size is 20MB.");
+        if (file is null || file.Length == 0) return (null, null, null, "No XML file was selected.");
+        if (file.Length > 20 * 1024 * 1024) return (null, null, null, "The maximum Employer Interface XML size is 20MB.");
         if (!file.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) && !file.FileName.EndsWith(".dat", StringComparison.OrdinalIgnoreCase) && !file.FileName.EndsWith(".tst", StringComparison.OrdinalIgnoreCase))
-            return (null, null, "Employer Interface uploads must be XML/DAT/TST files containing XML.");
+            return (null, null, null, "Employer Interface uploads must be XML/DAT/TST files containing XML.");
+        Guid? paymentAccountId = null;
+        var paymentAccountRaw = form["paymentAccountId"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(paymentAccountRaw))
+        {
+            if (!Guid.TryParse(paymentAccountRaw, out var parsedPaymentAccountId))
+                return (null, null, null, "payment_account_invalid");
+            paymentAccountId = parsedPaymentAccountId;
+        }
+
         await using var stream = file.OpenReadStream();
         using var memory = new MemoryStream();
         await stream.CopyToAsync(memory, ct);
-        return (memory.ToArray(), Path.GetFileName(file.FileName), null);
+        return (memory.ToArray(), Path.GetFileName(file.FileName), paymentAccountId, null);
     }
 }
