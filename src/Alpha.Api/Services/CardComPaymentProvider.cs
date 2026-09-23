@@ -37,9 +37,22 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
             SuccessRedirectUrl = request.SuccessUrl,
             FailedRedirectUrl = request.FailureUrl,
             WebHookUrl = request.CallbackUrl,
-            ProductName = "ALPHA payment method",
+            ProductName = string.IsNullOrWhiteSpace(request.BillingName)
+                ? "ALPHA payment method"
+                : $"ALPHA – {request.BillingName}",
             Language = "he",
-            ISOCoinId = 1
+            ISOCoinId = 1,
+            Document = new
+            {
+                Name = request.BillingName,
+                TaxId = request.TaxId,
+                Email = request.Email,
+                AddressLine1 = request.BillingAddress,
+                IsSendByEmail = false,
+                IsAllowEditDocument = false,
+                IsShowOnlyDocument = true,
+                Language = "he"
+            }
         };
 
         using var response = await PostJson("/api/v11/LowProfile/Create", payload, ct);
