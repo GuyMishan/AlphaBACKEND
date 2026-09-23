@@ -4,13 +4,14 @@ using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Alpha.Application.Abstractions;
+using Alpha.Application.Reporting;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Services;
 
-public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfaceSchemaRegistry schemas)
+public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfaceSchemaRegistry schemas, ReportPaymentAccountService paymentAccounts)
 {
     public const string CurrentVersion = EmployerInterfaceSchemaRegistry.Version;
     private static readonly UTF8Encoding Utf8NoBom = new(false);
@@ -61,14 +62,14 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         return new(bytes, new(schemaValidation.IsValid, type, CurrentVersion, schemaValidation.SchemaFileName, schemaValidation.Issues));
     }
 
-    public async Task<IngestResult> IngestAsync(Guid organizationId, Guid employerId, string sourceFileName, byte[] xmlBytes, CancellationToken ct)
+    public async Task<IngestResult> IngestAsync(Guid organizationId, Guid employerId, string sourceFileName, byte[] xmlBytes, Guid? paymentAccountId, CancellationToken ct)
     {
         var validation = Validate(xmlBytes);
         if (!validation.IsValid || validation.DocumentType is null)
             return new(null, null, validation, 0, 0);
         return validation.DocumentType is EmployerInterfaceDocumentType.SummaryFeedback or EmployerInterfaceDocumentType.AnnualSummaryFeedback
             ? await IngestFeedbackAsync(organizationId, employerId, sourceFileName, xmlBytes, validation, ct)
-            : await ImportReportAsync(organizationId, employerId, xmlBytes, validation, ct);
+            : await ImportReportAsync(organizationId, employerId, xmlBytes, validation, paymentAccountId, ct);
     }
 
     public static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
@@ -91,7 +92,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
     }
 
     private async Task<IngestResult> ImportReportAsync(Guid organizationId, Guid employerId, byte[] bytes,
-        FileValidation validation, CancellationToken ct)
+        FileValidation validation, Guid? paymentAccountId, CancellationToken ct)
     {
         var doc = EmployerInterfaceSchemaRegistry.LoadXml(bytes);
         var nodes = Desc(doc, "PirteiOved").ToList();
@@ -115,6 +116,10 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
         var valueDate = Desc(doc, "PirteiHaavaratKsafim").Select(n => ParseDate(Value(n, "TAARICH-ERECH-HAFKADA-LEKUPA"))).FirstOrDefault(d => d is not null);
         var report = new ManualReport(organizationId, employerId, reportingMonth, valueDate, kind, sourceId);
+        var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, paymentAccountId, ct);
+        if (paymentAccount is null)
+            return InvalidIngest(validation, "payment_account_required");
+        await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, ct);
         db.ManualReports.Add(report);
 
         var imported = 0;
