@@ -1,4 +1,6 @@
+using Alpha.Application.Abstractions;
 using Alpha.Domain.Billing;
+using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Application.Billing;
 
@@ -35,7 +37,7 @@ public sealed record BillingGateDecision(
             resolution.Account is not null);
 }
 
-public sealed class BillingGateService(BillingInheritanceService inheritance)
+public sealed class BillingGateService(BillingInheritanceService inheritance, IAlphaDbContext db)
 {
     public const string BillingAccountRequired = "billing_account_required";
     public const string BillingPaymentMethodNotActive = "billing_payment_method_not_active";
@@ -45,10 +47,22 @@ public sealed class BillingGateService(BillingInheritanceService inheritance)
     public async Task<BillingGateDecision> CanTransmitAsync(Guid employerId, CancellationToken ct = default)
     {
         var resolution = await inheritance.ResolveBillingAccountAsync(employerId, ct);
-        if (resolution is null || resolution.Account is null)
-            return BillingGateDecision.Deny(BillingAccountRequired, resolution);
+        if (resolution is null)
+            return BillingGateDecision.Deny(BillingAccountRequired);
+
+        if (resolution.Account is null)
+            return BillingGateDecision.Allow(resolution);
 
         var account = resolution.Account;
+        var isPaid = await db.BillingAccountPricingComponents.AsNoTracking().AnyAsync(x =>
+            x.BillingAccountId == account.Id &&
+            x.EffectiveTo == null &&
+            x.IsEnabled &&
+            x.UnitPrice > 0 &&
+            (x.MetricType == BillingMetricType.Employee || x.MetricType == BillingMetricType.ReportRow), ct);
+
+        if (!isPaid)
+            return BillingGateDecision.Allow(resolution);
         if (account.Status is BillingAccountStatus.Suspended or BillingAccountStatus.Cancelled)
             return BillingGateDecision.Deny(BillingAccountSuspended, resolution);
 
