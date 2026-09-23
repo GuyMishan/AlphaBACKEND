@@ -27,7 +27,8 @@ public sealed class CardComPaymentProviderTests
 
         var result = await provider.CreatePaymentMethod(new PaymentMethodSetupRequest(
             "customer", "https://alpha.test/success", "https://alpha.test/fail",
-            "https://alpha.test/cancel", "https://api.alpha.test/callback", "account-id"),
+            "https://alpha.test/cancel", "https://api.alpha.test/callback", "account-id",
+            "Acme Ltd", "515151515", "billing@acme.test", "1 Test Street"),
             TestContext.Current.CancellationToken);
 
         Assert.Equal("LP-123", result.SetupRequestId);
@@ -41,6 +42,14 @@ public sealed class CardComPaymentProviderTests
         Assert.Equal("CreateTokenOnly", json.RootElement.GetProperty("Operation").GetString());
         Assert.Equal("account-id", json.RootElement.GetProperty("ReturnValue").GetString());
         Assert.Equal("https://api.alpha.test/callback", json.RootElement.GetProperty("WebHookUrl").GetString());
+        Assert.Equal("ALPHA – Acme Ltd", json.RootElement.GetProperty("ProductName").GetString());
+        var document = json.RootElement.GetProperty("Document");
+        Assert.Equal("Acme Ltd", document.GetProperty("Name").GetString());
+        Assert.Equal("515151515", document.GetProperty("TaxId").GetString());
+        Assert.Equal("billing@acme.test", document.GetProperty("Email").GetString());
+        Assert.Equal("1 Test Street", document.GetProperty("AddressLine1").GetString());
+        Assert.True(document.GetProperty("IsShowOnlyDocument").GetBoolean());
+        Assert.False(document.GetProperty("IsSendByEmail").GetBoolean());
     }
 
     [Fact]

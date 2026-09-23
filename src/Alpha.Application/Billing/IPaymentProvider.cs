@@ -17,7 +17,11 @@ public sealed record PaymentMethodSetupRequest(
     string FailureUrl,
     string CancelUrl,
     string CallbackUrl,
-    string ExternalReference);
+    string ExternalReference,
+    string BillingName = "",
+    string TaxId = "",
+    string Email = "",
+    string BillingAddress = "");
 
 public sealed record PaymentMethodSetupResult(
     string SetupRequestId,

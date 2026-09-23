@@ -104,7 +104,11 @@ public static class PaymentProviderEndpoints
                 $"{frontend}{safeReturnPath}{returnSeparator}payment=failed",
                 $"{frontend}{safeReturnPath}{returnSeparator}payment=cancelled",
                 $"{callbackBase}/api/billing/providers/{Uri.EscapeDataString(provider.Name)}/callback",
-                account.Id.ToString()), ct);
+                account.Id.ToString(),
+                account.BillingName,
+                account.TaxId,
+                account.InvoiceEmail,
+                account.BillingAddress), ct);
 
             account.UpdateProviderMetadata(
                 BillingPaymentMethodStatus.Pending,
