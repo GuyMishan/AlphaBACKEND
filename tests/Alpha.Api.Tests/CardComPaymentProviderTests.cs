@@ -174,7 +174,7 @@ public sealed class CardComPaymentProviderTests
             {
                 ["Payments:CardCom:BaseUrl"] = "https://secure.cardcom.solutions",
                 ["Payments:CardCom:TerminalNumber"] = "1000",
-                ["Payments:CardCom:ApiName"] = "test2025",
+                ["Payments:CardCom:ApiName"] = "pGpgO8S1VFLyBpVhi1Xp",
                 ["Payments:CardCom:ApiPassword"] = apiPassword
             })
             .Build();
