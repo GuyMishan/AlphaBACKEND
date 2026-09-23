@@ -233,8 +233,6 @@ public static class PaymentProviderEndpoints
         IPaymentProviderResolver resolver, CancellationToken ct)
     {
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
-        if (string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId))
-            return Results.NoContent();
 
         try
         {
@@ -243,23 +241,20 @@ public static class PaymentProviderEndpoints
                     x => x.Id == account.DefaultPaymentMethodId.Value &&
                          x.BillingAccountId == account.Id, ct)
                 : null;
-            if (method is null)
-                return Results.NoContent();
 
-            var provider = resolver.Resolve(method.Provider);
-            await provider.CancelPaymentMethod(
-                method.ProviderCustomerId, method.ProviderPaymentMethodId, ct);
-            method.MarkStatus(BillingPaymentMethodStatus.Cancelled);
-            account.SetDefaultPaymentMethod(null);
-            account.UpdateProviderMetadata(
-                BillingPaymentMethodStatus.Cancelled,
-                method.ProviderCustomerId,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                null,
-                null,
-                string.Empty);
+            if (method is not null)
+            {
+                if (!string.IsNullOrWhiteSpace(method.ProviderPaymentMethodId))
+                {
+                    var provider = resolver.Resolve(method.Provider);
+                    await provider.CancelPaymentMethod(
+                        method.ProviderCustomerId, method.ProviderPaymentMethodId, ct);
+                }
+
+                method.MarkStatus(BillingPaymentMethodStatus.Cancelled);
+            }
+
+            account.ResetBillingSetup();
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }
