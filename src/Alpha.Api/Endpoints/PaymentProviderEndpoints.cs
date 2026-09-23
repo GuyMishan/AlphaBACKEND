@@ -87,7 +87,7 @@ public static class PaymentProviderEndpoints
 
             var frontend = config["Frontend:BaseUrl"]?.TrimEnd('/');
             if (string.IsNullOrWhiteSpace(frontend))
-                frontend = $"{http.Request.Scheme}://{http.Request.Host}";
+                frontend = "https://alpha-ochre-ten.vercel.app";
 
             var safeReturnPath = !string.IsNullOrWhiteSpace(returnPath) && returnPath.StartsWith('/') && !returnPath.StartsWith("//")
                 ? returnPath
