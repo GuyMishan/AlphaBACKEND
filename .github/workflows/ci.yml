@@ -30,14 +30,3 @@ jobs:
           path: build.log
           if-no-files-found: ignore
       - run: dotnet test --solution AlphaBackend.slnx --no-build --configuration Release
-      - name: Probe CardCom public sandbox usernames
-        shell: bash
-        run: |
-          set -euo pipefail
-          for name in Cardcomtest26 test2025 cardtest26 pGpgO8S1VFLyBpVhi1Xp; do
-            echo "=== $name ==="
-            curl -sS -X POST 'https://secure.cardcom.solutions/api/v11/LowProfile/Create' \
-              -H 'Content-Type: application/json' \
-              --data "{\"TerminalNumber\":1000,\"ApiName\":\"$name\",\"Amount\":1,\"Operation\":\"CreateTokenOnly\",\"SuccessRedirectUrl\":\"https://example.com/success\",\"FailedRedirectUrl\":\"https://example.com/fail\",\"WebHookUrl\":\"https://example.com/webhook\",\"ProductName\":\"ALPHA sandbox probe\",\"Language\":\"he\",\"ISOCoinId\":1}"
-            echo
-          done
