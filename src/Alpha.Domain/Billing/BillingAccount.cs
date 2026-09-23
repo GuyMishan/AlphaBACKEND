@@ -83,6 +83,26 @@ public sealed class BillingAccount : Entity
         Touch();
     }
 
+    public void ResetBillingSetup()
+    {
+        BillingName = string.Empty;
+        TaxId = string.Empty;
+        InvoiceEmail = string.Empty;
+        BillingAddress = string.Empty;
+        PaymentMethodType = BillingPaymentMethodType.CreditCard;
+        PaymentMethodStatus = BillingPaymentMethodStatus.NotConfigured;
+        Status = BillingAccountStatus.PendingSetup;
+        DefaultPaymentMethodId = null;
+        ProviderCustomerId = string.Empty;
+        ProviderPaymentMethodId = string.Empty;
+        CardBrand = string.Empty;
+        CardLast4 = string.Empty;
+        CardExpiryMonth = null;
+        CardExpiryYear = null;
+        BankDebitMandateReference = string.Empty;
+        Touch();
+    }
+
     public void UpdateProviderMetadata(BillingPaymentMethodStatus status, string? providerCustomerId,
         string? providerPaymentMethodId, string? cardBrand, string? cardLast4,
         int? cardExpiryMonth, int? cardExpiryYear, string? bankDebitMandateReference)
