@@ -32,20 +32,26 @@ public static class ReportValidationEndpoints
     }
 
     private static async Task<IResult> PreviewValidationAsync(Guid organizationId, Guid employerId, Guid reportId,
-        string? stage, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        string? stage, IAlphaDbContext db, OrganizationAccessService access,
+        EmployerInterface006ExportService employerInterfaceExporter, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-        var result = await ValidateReportAsync(organizationId, employerId, reportId, NormalizeStage(stage), db, false, ct);
-        return result is null ? Results.NotFound() : Results.Ok(ToResponse(result));
+        var normalizedStage = NormalizeStage(stage);
+        var result = await ValidateReportAsync(organizationId, employerId, reportId, normalizedStage, db, false, ct);
+        if (result is null) return Results.NotFound();
+        await AppendEmployerInterfacePreflightAsync(result, normalizedStage, employerInterfaceExporter, ct);
+        return Results.Ok(ToResponse(result));
     }
 
     private static async Task<IResult> CommitValidationAsync(Guid organizationId, Guid employerId, Guid reportId,
-        string? stage, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        string? stage, IAlphaDbContext db, OrganizationAccessService access,
+        EmployerInterface006ExportService employerInterfaceExporter, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var normalizedStage = NormalizeStage(stage);
         var result = await ValidateReportAsync(organizationId, employerId, reportId, normalizedStage, db, true, ct);
         if (result is null) return Results.NotFound();
+        await AppendEmployerInterfacePreflightAsync(result, normalizedStage, employerInterfaceExporter, ct);
 
         if (result.Report.Status is ManualReportStatus.Submitted or ManualReportStatus.Sent
             or ManualReportStatus.Processing or ManualReportStatus.Completed or ManualReportStatus.Cancelled)
@@ -200,6 +206,22 @@ public static class ReportValidationEndpoints
         }
 
         return new ValidationContext(report, employees, products, productsByEmployee, issues);
+    }
+
+    private static async Task AppendEmployerInterfacePreflightAsync(
+        ValidationContext result,
+        ValidationStage stage,
+        EmployerInterface006ExportService exporter,
+        CancellationToken ct)
+    {
+        if (stage != ValidationStage.Final || result.Issues.Count > 0 || result.Report.ReportKind == ManualReportKind.Differences)
+            return;
+
+        var generated = await exporter.ExportAsync(result.Report, ct);
+        if (generated.Validation.IsValid) return;
+
+        foreach (var issue in generated.Validation.Issues.Distinct(StringComparer.Ordinal).Take(100))
+            result.Issues.Add(new("EMPLOYER_INTERFACE_006", issue, ValidationScope.Report));
     }
 
     private static object ToResponse(ValidationContext result) => new
