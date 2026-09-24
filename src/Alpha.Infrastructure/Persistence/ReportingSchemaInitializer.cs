@@ -236,6 +236,7 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_payments (
     "ProviderAccount" varchar(120) NOT NULL DEFAULT '',
     "PaymentMethod" varchar(80) NOT NULL DEFAULT 'העברה בנקאית',
     "ValueDate" date NULL,
+    "TrustAccountValueDate" date NULL,
     "ReferenceNumber" varchar(120) NOT NULL DEFAULT '',
     "EmployerBankName" varchar(120) NOT NULL DEFAULT '',
     "EmployerBankCode" varchar(30) NOT NULL DEFAULT '',
@@ -268,6 +269,9 @@ CREATE INDEX IF NOT EXISTS "IX_manual_report_attachments_product"
     ON reporting.manual_report_attachments ("ReportProductId");
 CREATE UNIQUE INDEX IF NOT EXISTS "UX_manual_report_attachments_transmission_name"
     ON reporting.manual_report_attachments ("ReportId", "TransmissionFileName");
+
+ALTER TABLE reporting.manual_report_payments
+    ADD COLUMN IF NOT EXISTS "TrustAccountValueDate" date NULL;
 
 CREATE TABLE IF NOT EXISTS reporting.contribution_percentage_limits (
     "Id" uuid PRIMARY KEY,
