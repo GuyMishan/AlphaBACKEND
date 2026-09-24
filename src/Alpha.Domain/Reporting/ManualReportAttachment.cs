@@ -8,7 +8,7 @@ public sealed class ManualReportAttachment : Entity
     private ManualReportAttachment() { }
 
     public ManualReportAttachment(Guid reportId, Guid? reportProductId, int documentTypeCode,
-        string originalFileName, string transmissionFileName, string contentType, byte[] content)
+        string originalFileName, string contentType, byte[] content)
     {
         if (reportId == Guid.Empty) throw new ArgumentException("Report is required.", nameof(reportId));
         if (documentTypeCode is not (3 or 4 or 6))
@@ -16,15 +16,13 @@ public sealed class ManualReportAttachment : Entity
         if (documentTypeCode is 4 or 6 && reportProductId is null)
             throw new ArgumentException("Document types 4 and 6 must be linked to a report product.", nameof(reportProductId));
         if (string.IsNullOrWhiteSpace(originalFileName)) throw new ArgumentException("Original file name is required.", nameof(originalFileName));
-        if (string.IsNullOrWhiteSpace(transmissionFileName) || transmissionFileName.Length > 100)
-            throw new ArgumentException("Transmission file name is required and cannot exceed 100 characters.", nameof(transmissionFileName));
         if (content is null || content.Length == 0) throw new ArgumentException("Attachment content is required.", nameof(content));
 
         ReportId = reportId;
         ReportProductId = documentTypeCode == 3 ? null : reportProductId;
         DocumentTypeCode = documentTypeCode;
         OriginalFileName = Path.GetFileName(originalFileName.Trim());
-        TransmissionFileName = Path.GetFileName(transmissionFileName.Trim());
+        TransmissionFileName = $"ALPHA_EMP_{Id:N}.pdf";
         ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/pdf" : contentType.Trim();
         Content = content;
         SizeBytes = content.LongLength;
