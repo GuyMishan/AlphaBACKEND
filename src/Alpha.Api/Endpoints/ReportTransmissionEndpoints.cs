@@ -63,11 +63,9 @@ public static class ReportTransmissionEndpoints
 
         var payloadBytes = generated.Bytes;
         var hash = EmployerInterfaceService.Hash(payloadBytes);
-        var attachmentFiles = await db.ManualReportAttachments.AsNoTracking()
-            .Where(x => x.ReportId == report.Id)
-            .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt)
-            .Select(x => new ReportTransmissionAttachment(x.TransmissionFileName, x.ContentType, x.Content, x.Sha256))
-            .ToListAsync(ct);
+        var attachmentFiles = (generated.AttachmentFiles ?? [])
+            .Select(x => new ReportTransmissionAttachment(x.FileName, x.ContentType, x.Content, x.Sha256))
+            .ToArray();
         var attemptNumber = (await db.ReportTransmissions.Where(x => x.ReportId == reportId).MaxAsync(x => (int?)x.AttemptNumber, ct) ?? 0) + 1;
         var transmission = new ReportTransmission(reportId, organizationId, employerId, provider.Name, attemptNumber);
         transmission.Start(hash);
@@ -77,7 +75,8 @@ public static class ReportTransmissionEndpoints
 
         try
         {
-            var result = await provider.SendAsync(new ReportTransmissionEnvelope(reportId, organizationId, employerId, payloadBytes, hash, attachmentFiles), ct);
+            var result = await provider.SendAsync(new ReportTransmissionEnvelope(reportId, organizationId, employerId,
+                payloadBytes, hash, attachmentFiles, generated.PayloadFileName), ct);
             transmission.Complete(result.Success ? ReportTransmissionStatus.Accepted : ReportTransmissionStatus.Rejected, result.ExternalId, result.ResponsePayload, result.ErrorMessage);
             if (result.Success) report.MarkSent(); else report.MarkTransmissionError(result.ErrorMessage ?? "The report was rejected by the transmission provider.");
             await db.SaveChangesAsync(ct);
