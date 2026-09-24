@@ -438,19 +438,46 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
-    public void Negative_operation_5_requires_supporting_attachment_for_current_report()
+    public void Current_operation_3_uses_actual_additional_cash_amount_not_contribution_total()
+    {
+        var fixture = CreateFixture(false, operationCode: 3, paymentMethodCode: 1);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal("50.00", Assert.Single(result.Document!.Descendants("SACH-HAFKADA-KUPA-H-P")).Value);
+        Assert.Equal("50.00", Assert.Single(result.Document.Descendants("SCHUM-HAFKADA-KOLEL")).Value);
+        Assert.Equal("50.00", result.Document.Root?.Element("ReshumatSgira")?.Element("SACH-HAFKADOT-BAKOVETZ")?.Value);
+    }
+
+    [Fact]
+    public void Current_masav_payment_emits_configured_masav_sender_code()
+    {
+        var fixture = CreateFixture(false, operationCode: 1, paymentMethodCode: 7);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.Equal("12345678", Assert.Single(result.Document!.Descendants("KOD-MASAV")).Value);
+    }
+
+    [Fact]
+    public void Current_no_money_correction_uses_file_date_and_reference_000()
+    {
+        var fixture = CreateFixture(false, operationCode: 2, paymentMethodCode: 1);
+        var preparedAt = new DateTimeOffset(2026, 9, 24, 20, 0, 0, TimeSpan.FromHours(3));
+        var context = fixture.Context with { PreparedAt = preparedAt };
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+        Assert.Empty(result.Issues);
+        Assert.Equal("2026-09-24", Assert.Single(result.Document!.Descendants("TAARICH-ERECH-HAFKADA-LEKUPA")).Value);
+        Assert.Equal("000", Assert.Single(result.Document.Descendants("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM")).Value);
+    }
+
+    [Fact]
+    public void Negative_report_does_not_emit_non_relevant_birth_date_or_contribution_percentage()
     {
         var fixture = CreateFixture(true, operationCode: 5);
-        var context = fixture.Context with
-        {
-            Attachments = [],
-            AnnualEmployerAffidavitSatisfied = true
-        };
-
-        var result = EmployerInterface006XmlBuilder.BuildNegative(context);
-
-        Assert.Null(result.Document);
-        Assert.Contains(result.Issues, x => x.Contains("supporting attachment", StringComparison.OrdinalIgnoreCase));
+        var result = EmployerInterface006XmlBuilder.BuildNegative(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.Empty(result.Document!.Descendants("TAARICH-LEIDA"));
+        Assert.Empty(result.Document.Descendants("SHIUR-HAFRASHA"));
     }
 
     [Fact]
@@ -493,8 +520,11 @@ public sealed class EmployerInterface006XmlBuilderTests
         var contribution = new ManualContribution(product.Id, ContributionParty.Employee, ContributionComponent.Benefits,
             100m, 10m, 0m);
         var payment = new ManualReportPayment(product.Id);
-        payment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), "REF-1", "Test Bank", "10", "123",
-            "123456", "");
+        var resolvedOperation = operationCode ?? (negative ? 5 : 1);
+        var actualDepositAmount = !negative && resolvedOperation == 3 ? 50m : null;
+        var masavSenderCode = paymentMethodCode == 7 ? "12345678" : null;
+        payment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), null, "REF-1",
+            "Test Bank", "10", "123", "123456", "", actualDepositAmount, masavSenderCode);
         var metadata = new EmployerInterfaceReportProductData(product.Id);
         metadata.Update(operationCode ?? (negative ? 5 : 1), 1, 1, new DateOnly(2026, 9, 1), null, null, 2,
             negative ? 1 : null, paymentMethodCode, 1, 1,
