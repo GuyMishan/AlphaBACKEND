@@ -208,15 +208,16 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
-    public void Negative_operation_6_uses_payment_method_1_and_matches_official_006_xsd()
+    public void Negative_operation_6_emits_nil_payment_method_and_matches_official_006_xsd()
     {
-        var fixture = CreateFixture(true, operationCode: 6, paymentMethodCode: 1);
+        var fixture = CreateFixture(true, operationCode: 6, paymentMethodCode: null);
         var result = EmployerInterface006XmlBuilder.BuildNegative(fixture.Context);
         Assert.Empty(result.Issues);
         Assert.NotNull(result.Document);
         var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, true);
         Assert.Empty(workbookIssues);
-        Assert.Contains(result.Document!.Descendants("KOD-EMTZAI-TASHLUM"), x => x.Value == "1");
+        var method = Assert.Single(result.Document!.Descendants("KOD-EMTZAI-TASHLUM"));
+        Assert.Equal("true", method.Attribute(XName.Get("nil", "http://www.w3.org/2001/XMLSchema-instance"))?.Value);
         AssertValid(result.Document!, "mimshak_maasikim_shliliim_xsd_schema_006.xsd.xml");
     }
 
@@ -262,7 +263,6 @@ public sealed class EmployerInterface006XmlBuilderTests
     [InlineData(5, 6)]
     [InlineData(5, 7)]
     [InlineData(5, 9)]
-    [InlineData(6, 1)]
     public void Negative_report_accepts_every_official_operation_payment_combination(int operationCode, int paymentMethodCode)
     {
         var fixture = CreateFixture(true, operationCode: operationCode, paymentMethodCode: paymentMethodCode);
@@ -272,6 +272,24 @@ public sealed class EmployerInterface006XmlBuilderTests
         var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, true);
         Assert.Empty(workbookIssues);
         AssertValid(result.Document!, "mimshak_maasikim_shliliim_xsd_schema_006.xsd.xml");
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(7)]
+    public void Current_non_deposit_corrections_report_zero_deposit_totals(int operationCode)
+    {
+        var fixture = CreateFixture(false, operationCode: operationCode, paymentMethodCode: 1);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var transfer = Assert.Single(result.Document!.Descendants("PirteiHaavaratKsafim"));
+        Assert.Equal("0.00", transfer.Element("SCHUM-HAFKADA-KOLEL")?.Value);
+        Assert.Equal("0.00", transfer.Element("SACH-HAFKADA-KUPA-H-P")?.Value);
+        Assert.Equal("0.00", result.Document.Root?.Element("ReshumatSgira")?.Element("SACH-HAFKADOT-BAKOVETZ")?.Value);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, fixture.Context, false);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
     }
 
     [Fact]
@@ -455,7 +473,7 @@ public sealed class EmployerInterface006XmlBuilderTests
 
     private static (EmployerInterface006XmlBuilder.BuildContext Context, ManualReportProduct Product) CreateFixture(
         bool negative, int? operationCode = null, int? previousExceptionCode = 1, int? section14Code = null,
-        string employerMobile = "0501234567", int paymentMethodCode = 1, string policyNumber = "123")
+        string employerMobile = "0501234567", int? paymentMethodCode = 1, string policyNumber = "123")
     {
         var organizationId = Guid.NewGuid();
         var employer = new Employer(organizationId, "Test Employer", "123456789", "987654321",
