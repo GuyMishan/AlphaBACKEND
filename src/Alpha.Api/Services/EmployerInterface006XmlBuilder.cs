@@ -441,8 +441,8 @@ public static class EmployerInterface006XmlBuilder
                         .Select(x => x.Id).ToHashSet();
                     var actualAmounts = c.Payments.Where(x => groupIds.Contains(x.ReportProductId) && x.ActualDepositAmount.HasValue)
                         .Select(x => x.ActualDepositAmount!.Value).Distinct().ToArray();
-                    if (actualAmounts.Length != 1)
-                        issues.Add($"{label}: operation 3 requires one consistent actual additional deposit amount for the fund transfer.");
+                    if (actualAmounts.Length != 1 || actualAmounts[0] <= 0)
+                        issues.Add($"{label}: operation 3 requires one consistent actual additional deposit amount greater than zero for the fund transfer.");
                 }
                 ValidatePaymentAccount(c, product, label, requirePayment: true, issues);
             }
@@ -532,9 +532,8 @@ public static class EmployerInterface006XmlBuilder
         if (payment is null) { issues.Add($"{label}: payment details are required."); return; }
 
         var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
-        var total = c.Contributions.Where(x => x.ReportProductId == product.Id).Sum(x => x.Amount);
         var correctionWithoutMoney = metadata?.OperationCode is 2 or 7;
-        var effectiveDeposit = correctionWithoutMoney ? 0m : total;
+        var effectiveDeposit = metadata is null ? 0m : ReportedDepositAmount(c, [product], false);
         var paymentMethod = metadata?.PaymentMethodCode;
 
         if (!correctionWithoutMoney && metadata?.ReceiverAccountType == 1 && paymentMethod is not (6 or 9) && payment.ValueDate is null)
@@ -543,6 +542,8 @@ public static class EmployerInterface006XmlBuilder
             issues.Add($"{label}: trust-account payment requires TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT.");
         if (paymentMethod == 7 && (payment.MasavSenderCode.Length < 8 || payment.MasavSenderCode.Length > 16))
             issues.Add($"{label}: MASAV payment method 7 requires KOD-MASAV containing 8-16 characters.");
+        if (!correctionWithoutMoney && effectiveDeposit > 0 && paymentMethod is 1 or 3 && string.IsNullOrWhiteSpace(payment.ReferenceNumber))
+            issues.Add($"{label}: payment method {paymentMethod} requires the actual transfer/clearing reference number.");
         if (correctionWithoutMoney && payment.TrustAccountValueDate is not null)
             issues.Add($"{label}: operation {metadata?.OperationCode} must not include a trust-account value date.");
 
