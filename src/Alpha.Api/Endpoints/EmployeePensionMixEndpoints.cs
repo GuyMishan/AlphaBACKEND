@@ -115,8 +115,8 @@ public static class EmployeePensionMixEndpoints
                 return Results.BadRequest(new { error = "Salary allocation percentage cannot exceed 100%." });
             if (allocationOrder < 0)
                 return Results.BadRequest(new { error = "Salary allocation order cannot be negative." });
-            if (section14Code is < 1 or > 4)
-                return Results.BadRequest(new { error = "Section14Code must be one of 1,2,3,4." });
+            if (section14Code is < 1 or > 5)
+                return Results.BadRequest(new { error = "Section14Code must be one of 1,2,3,4,5." });
             if (section14Code is 2 or 4 && !input.Section14StartDate.HasValue)
                 return Results.BadRequest(new { error = "Section 14 effective/cancellation date is required for codes 2 and 4." });
 
