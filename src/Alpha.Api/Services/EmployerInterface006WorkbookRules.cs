@@ -16,7 +16,6 @@ public static class EmployerInterface006WorkbookRules
             [2] = [1],
             [3] = [1, 3, 5, 6, 7, 9],
             [5] = [1, 3, 6, 7, 9],
-            [6] = [1],
             [7] = [1]
         };
 
@@ -92,9 +91,14 @@ public static class EmployerInterface006WorkbookRules
 
             if (first.OperationCode is int operationCode)
             {
-                if (first.PaymentMethodCode is not int paymentMethodCode)
+                if (operationCode == 6)
                 {
-                    issues.Add($"{label}: operation {operationCode} requires a payment method according to the official Version 6 operation/payment matrix.");
+                    if (first.PaymentMethodCode.HasValue)
+                        issues.Add($"{label}: operation 6 must not carry a payment-method value; KOD-EMTZAI-TASHLUM is emitted as xsi:nil per the Version 6 workbook.");
+                }
+                else if (first.PaymentMethodCode is not int paymentMethodCode)
+                {
+                    issues.Add($"{label}: operation {operationCode} requires a payment method according to the official Version 6 rules.");
                 }
                 else if (!AllowedPaymentMethodsByOperation.TryGetValue(operationCode, out var allowedPaymentMethods)
                     || !allowedPaymentMethods.Contains(paymentMethodCode))
@@ -132,8 +136,9 @@ public static class EmployerInterface006WorkbookRules
         EnsureBefore(previous, "MISPAR-SNIF-KOLET");
         EnsureBefore(previous, "MISPAR-CHESHBON-KOLET");
 
-        // KOD-EMTZAI-TASHLUM is required by the negative 006 XSD. The official
-        // operation/payment matrix allows operation 6 only with payment method 1.
+        // KOD-EMTZAI-TASHLUM is structurally required by the negative 006 XSD but
+        // the Version 6 workbook explicitly says that operation 6 carries no value,
+        // therefore the builder emits the element with xsi:nil.
     }
 
     private static void EnsureBefore(XElement anchor, string name)
