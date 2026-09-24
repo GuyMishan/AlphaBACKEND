@@ -159,20 +159,17 @@ public static class EmployerInterface006XmlBuilder
 
         transfer.Add(Nil("MISPAR-ZIHUI-KODEM", null), Nil("MISPAR-MISLAKA", null), Nil("MISPAR-MISLAKA-KODEM", null));
 
-        if (negative)
+        var attachments = c.Attachments
+            .Where(x => x.ReportProductId is null || productIds.Contains(x.ReportProductId.Value))
+            .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ToList();
+        foreach (var attachment in attachments)
         {
-            var attachments = c.Attachments
-                .Where(x => x.ReportProductId is null || productIds.Contains(x.ReportProductId.Value))
-                .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ToList();
-            foreach (var attachment in attachments)
-            {
-                transfer.Add(new XElement("ZihuiShemMismachBeramatEirua",
-                    E("SHEM-KOVETZ-SHEL-MISMACH-BERAMAT-EIRUA-VEBERAMAT-LAKOACH",
-                        c.AttachmentTransmissionNames.TryGetValue(attachment.Id, out var transmissionName)
-                            ? transmissionName
-                            : attachment.TransmissionFileName),
-                    E("SUG-MISMACH", attachment.DocumentTypeCode)));
-            }
+            transfer.Add(new XElement("ZihuiShemMismachBeramatEirua",
+                E("SHEM-KOVETZ-SHEL-MISMACH-BERAMAT-EIRUA-VEBERAMAT-LAKOACH",
+                    c.AttachmentTransmissionNames.TryGetValue(attachment.Id, out var transmissionName)
+                        ? transmissionName
+                        : attachment.TransmissionFileName),
+                E("SUG-MISMACH", attachment.DocumentTypeCode)));
         }
 
         transfer.Add(BuildFund(c, products, negative));
@@ -341,8 +338,8 @@ public static class EmployerInterface006XmlBuilder
             issues.Add("EmployerInterface006: EmployerIdentifierTypeCode must be one of 1,2,3,4,5,7,8,9,10,11,12,13.");
         if (o.EnvironmentCode is not (1 or 2)) issues.Add("EmployerInterface006:EnvironmentCode must be 1 (TEST) or 2 (PRODUCTION).");
         if (o.FileDirectionCode is < 1 or > 999) issues.Add("EmployerInterface006:FileDirectionCode must contain a valid Annex VI 3-digit direction code.");
-        if (o.SenderCode is < 1 or > 6 || (negative && o.SenderCode == 1))
-            issues.Add("EmployerInterface006:SenderCode must be allowed by the selected Version 006 schema (negative reports allow codes 2-6).");
+        if (o.SenderCode is < 2 or > 6)
+            issues.Add("EmployerInterface006:SenderCode must be one of 2-6; Version 006 marks sender code 1 as not relevant for employer reports.");
         if (sender.Identifier.Length is 0 or > 16) issues.Add("EmployerInterface006: actual sender identifier is required and cannot exceed 16 characters.");
         if (string.IsNullOrWhiteSpace(sender.Name) || sender.Name.Length > 100) issues.Add("EmployerInterface006: actual sender name is required and cannot exceed 100 characters.");
         if (string.IsNullOrWhiteSpace(sender.ContactFirstName) || sender.ContactFirstName.Length > 20) issues.Add("EmployerInterface006: sender contact first name is required and cannot exceed 20 characters.");
@@ -374,14 +371,24 @@ public static class EmployerInterface006XmlBuilder
             issues.Add("Employer Interface contact mobile must contain digits only and match ^05\\d\\d{7}$; when no mobile exists, Version 006 requires 0500000000.");
         if (c.Products.Count == 0) issues.Add("The report has no pension products to export.");
 
-        if (!negative && c.Attachments.Count > 0)
-            issues.Add("Employer Interface attachments of types 3, 4 and 6 are only supported for negative reports.");
+        if (!negative)
+        {
+            foreach (var attachment in c.Attachments)
+            {
+                if (attachment.DocumentTypeCode != 5)
+                    issues.Add($"Attachment {attachment.Id}: current Version 006 supports document type 5 only.");
+                if (attachment.ReportProductId is null)
+                    issues.Add($"Attachment {attachment.Id}: document type 5 must be linked to a report product.");
+                if (attachment.TransmissionFileName.Length is 0 or > 100)
+                    issues.Add($"Attachment {attachment.Id}: transmission file name must contain 1-100 characters.");
+            }
+        }
         if (negative)
         {
             foreach (var attachment in c.Attachments)
             {
                 if (attachment.DocumentTypeCode is not (3 or 4 or 6))
-                    issues.Add($"Attachment {attachment.Id}: document type must be 3, 4 or 6.");
+                    issues.Add($"Attachment {attachment.Id}: negative Version 006 supports document types 3, 4 and 6 only.");
                 if (attachment.TransmissionFileName.Length is 0 or > 100)
                     issues.Add($"Attachment {attachment.Id}: transmission file name must contain 1-100 characters.");
                 if (attachment.DocumentTypeCode is 4 or 6 && attachment.ReportProductId is null)
