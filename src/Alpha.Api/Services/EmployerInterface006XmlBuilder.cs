@@ -157,7 +157,9 @@ public static class EmployerInterface006XmlBuilder
         var fund = new XElement("PirteiKupa",
             E("SUG-KUPA", MapProductCode(first.ProductType)),
             Nil("SUG-KEREN-PENSIA", null),
-            Nil("SHEM-KUPA-ETZEL-MAASIK", first.FundName),
+            // Internal employer fund name is a different field from the official fund name.
+            // Alpha does not currently store an employer-specific internal fund name, so Version 006 emits xsi:nil.
+            Nil("SHEM-KUPA-ETZEL-MAASIK", null),
             Nil("MISPAR-KUPA-ETZEL-MAASIK", null));
 
         // Version 006 clearinghouse rules require one PirteiOved block per employee in a batch.
