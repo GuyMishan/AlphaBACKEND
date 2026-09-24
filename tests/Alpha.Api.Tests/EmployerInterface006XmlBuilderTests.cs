@@ -178,6 +178,29 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Negative_operation_6_uses_payment_method_1_and_matches_official_006_xsd()
+    {
+        var fixture = CreateFixture(true, operationCode: 6, paymentMethodCode: 1);
+        var result = EmployerInterface006XmlBuilder.BuildNegative(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, true);
+        Assert.Empty(workbookIssues);
+        Assert.Contains(result.Document!.Descendants("KOD-EMTZAI-TASHLUM"), x => x.Value == "1");
+        AssertValid(result.Document!, "mimshak_maasikim_shliliim_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Negative_operation_6_rejects_non_matrix_payment_method()
+    {
+        var fixture = CreateFixture(true, operationCode: 6, paymentMethodCode: 3);
+        var result = EmployerInterface006XmlBuilder.BuildNegative(fixture.Context);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, true);
+        Assert.Contains(workbookIssues, x => x.Contains("payment method 3 is not allowed for operation 6", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Negative_report_rejects_current_operation_code()
     {
         var fixture = CreateFixture(true, operationCode: 1);
