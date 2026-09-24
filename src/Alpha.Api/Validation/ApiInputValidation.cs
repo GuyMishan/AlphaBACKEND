@@ -56,8 +56,7 @@ public static class ApiInputValidation
         {
             index++;
             var prefix = $"מוצר {index}: ";
-            if (string.IsNullOrWhiteSpace(product.PolicyNumber)) errors.Add(prefix + "מספר פוליסה הוא שדה חובה.");
-            if (product.PolicyNumber?.Trim().Length > 100) errors.Add(prefix + "מספר פוליסה ארוך מדי.");
+            if (product.PolicyNumber?.Trim().Length > 20) errors.Add(prefix + "מספר פוליסה/חשבון יכול להכיל עד 20 תווים לפי ממשק מעסיקים 006.");
             if (product.Salary <= 0) errors.Add(prefix + "השכר חייב להיות גדול מאפס.");
             if (product.Salary > 10_000_000) errors.Add(prefix + "השכר חורג מהטווח המותר.");
             if (product.SalaryMonth.Year < 2000 || product.SalaryMonth > DateOnly.FromDateTime(DateTime.UtcNow.AddYears(1))) errors.Add(prefix + "חודש השכר אינו תקין.");
