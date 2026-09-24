@@ -13,7 +13,7 @@ public sealed record EmployerBillingSettingsRequest(EmployerBillingMode BillingM
 public sealed record EmployerPensionPaymentSettingsRequest(EmployerPensionPaymentMode Mode);
 public sealed record EmployerReportingSettingsRequest(
     int? DefaultSalaryPaymentDay, int? DefaultPaymentMethodCode, int? DefaultEmployerAccountType,
-    int? DefaultReceiverAccountType, string? ReportingNotes);
+    int? DefaultReceiverAccountType, string? ReportingNotes, int? DefaultDepositorTypeCode = null);
 public static class EmployerProfileCenterEndpoints
 {
     public static IEndpointRouteBuilder MapEmployerProfileCenterEndpoints(this IEndpointRouteBuilder endpoints)
@@ -76,6 +76,7 @@ public static class EmployerProfileCenterEndpoints
             reporting = new
             {
                 defaultSalaryPaymentDay = settings?.DefaultSalaryPaymentDay,
+                defaultDepositorTypeCode = settings?.DefaultDepositorTypeCode ?? 1,
                 defaultPaymentMethodCode = settings?.DefaultPaymentMethodCode,
                 defaultEmployerAccountType = settings?.DefaultEmployerAccountType,
                 defaultReceiverAccountType = settings?.DefaultReceiverAccountType,
@@ -153,8 +154,10 @@ public static class EmployerProfileCenterEndpoints
 
         try
         {
-            settings.UpdateReporting(request.DefaultSalaryPaymentDay, request.DefaultPaymentMethodCode,
-                request.DefaultEmployerAccountType, request.DefaultReceiverAccountType, request.ReportingNotes);
+            settings.UpdateReporting(request.DefaultSalaryPaymentDay,
+                request.DefaultDepositorTypeCode ?? settings.DefaultDepositorTypeCode,
+                request.DefaultPaymentMethodCode, request.DefaultEmployerAccountType,
+                request.DefaultReceiverAccountType, request.ReportingNotes);
         }
         catch (ArgumentOutOfRangeException ex)
         {
