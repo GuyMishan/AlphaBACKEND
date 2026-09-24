@@ -17,6 +17,7 @@ public static class EmployerInterface006WorkbookRules
             [2] = [1],
             [3] = [1, 3, 5, 6, 7, 9],
             [5] = [1, 3, 6, 7, 9],
+            [6] = [1],
             [7] = [1]
         };
 
@@ -70,7 +71,7 @@ public static class EmployerInterface006WorkbookRules
             if (first.PreviousReferenceExceptionCode is not null && first.PreviousReferenceExceptionCode is not (1 or 2 or 3))
                 issues.Add($"{label}: unsupported previous-report reference exception code.");
 
-            if (first.OperationCode is int operationCode && operationCode != 6)
+            if (first.OperationCode is int operationCode)
             {
                 if (first.PaymentMethodCode is not int paymentMethodCode)
                 {
@@ -112,9 +113,8 @@ public static class EmployerInterface006WorkbookRules
         EnsureBefore(previous, "MISPAR-SNIF-KOLET");
         EnsureBefore(previous, "MISPAR-CHESHBON-KOLET");
 
-        // Operation 6 is explicitly a cancellation without refund. The payment-method element is optional
-        // in the XSD and must remain absent according to the Version 6 workbook.
-        if (metadata.OperationCode == 6) transfer.Element("KOD-EMTZAI-TASHLUM")?.Remove();
+        // KOD-EMTZAI-TASHLUM is required by the negative 006 XSD. The official
+        // operation/payment matrix allows operation 6 only with payment method 1.
     }
 
     private static void EnsureBefore(XElement anchor, string name)
