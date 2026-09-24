@@ -361,7 +361,9 @@ public static class EmployerInterface006XmlBuilder
         {
             var withholding = Digits(c.Employer.WithholdingFileNumber);
             if (withholding.Length > 0 && (withholding.Length != 9 || !withholding.StartsWith("9", StringComparison.Ordinal)))
-                issues.Add("Employer withholding file number must contain exactly 9 digits and start with 9; when unavailable Alpha emits 900000000 per Version 006.");
+                issues.Add("Employer withholding file number must contain exactly 9 digits and start with 9.");
+            if (withholding.Length == 0 && c.DepositorTypeCode == 3)
+                issues.Add("Small-employer depositor type 3 requires a real withholding-file number; the 900000000 fallback is explicitly defined for depositor types 1 and 2.");
         }
         if ((c.Employer.ContactFirstName?.Trim().Length ?? 0) is < 2 or > 20) issues.Add("Employer Interface contact first name must contain 2-20 characters.");
         if ((c.Employer.ContactLastName?.Trim().Length ?? 0) is < 2 or > 20) issues.Add("Employer Interface contact last name must contain 2-20 characters.");
@@ -633,7 +635,8 @@ public static class EmployerInterface006XmlBuilder
     private static string EmployerWithholdingFile(BuildContext c)
     {
         var value = Digits(c.Employer.WithholdingFileNumber);
-        return value.Length == 9 ? value : "900000000";
+        if (value.Length == 9) return value;
+        return c.DepositorTypeCode is 1 or 2 ? "900000000" : value;
     }
 
     private static int ParseRequiredCode(string value) => int.Parse(value.Trim(), CultureInfo.InvariantCulture);
