@@ -67,6 +67,9 @@ public static class EmployerInterface006WorkbookRules
                 var firstPayment = payments[0];
                 if (payments.Skip(1).Any(x =>
                     x.ValueDate != firstPayment.ValueDate
+                    || x.TrustAccountValueDate != firstPayment.TrustAccountValueDate
+                    || x.ActualDepositAmount != firstPayment.ActualDepositAmount
+                    || !StringEquals(x.MasavSenderCode, firstPayment.MasavSenderCode)
                     || !StringEquals(x.ReferenceNumber, firstPayment.ReferenceNumber)
                     || !StringEquals(x.EmployerBankCode, firstPayment.EmployerBankCode)
                     || !StringEquals(x.EmployerBranch, firstPayment.EmployerBranch)
