@@ -33,13 +33,14 @@ public static class EmployerInterface006XmlBuilder
         root.Add(body);
 
         var totalContributions = c.Contributions.Sum(x => x.Amount);
+        var totalDeposits = groups.Sum(group => ReportedDepositAmount(c, group.ToList(), negative));
         root.Add(new XElement("ReshumatSgira",
             E("MISPAR-KUPOT-YATZRANIM-BAKOVETZ", groups.Count),
             E("MISPAR-MAASIKIM", 1),
             E("MISPAR-RESHUMOT", c.Contributions.Count),
             E("MISPAR-AMITIM", c.Employees.Select(x => x.PersonId).Distinct().Count()),
             E("SACH-HAFRASHOT-BAKOVETZ", Money(totalContributions)),
-            E("SACH-HAFKADOT-BAKOVETZ", Money(totalContributions))));
+            E("SACH-HAFKADOT-BAKOVETZ", Money(totalDeposits))));
 
         return new(new XDocument(new XDeclaration("1.0", "utf-8", null), root), []);
     }
@@ -78,6 +79,7 @@ public static class EmployerInterface006XmlBuilder
         var payment = c.Payments.FirstOrDefault(x => productIds.Contains(x.ReportProductId));
         var metadata = c.ProductMetadata.First(x => x.ReportProductId == first.Id);
         var total = c.Contributions.Where(x => productIds.Contains(x.ReportProductId)).Sum(x => x.Amount);
+        var reportedDeposit = ReportedDepositAmount(c, products, negative);
         var receiverAccount = ParseReceiverAccount(payment?.ProviderAccount);
 
         var transfer = new XElement("PirteiHaavaratKsafim",
@@ -87,8 +89,8 @@ public static class EmployerInterface006XmlBuilder
             E("MISPAR-ZIHUY-MAASIK", senderId),
             E("MISPAR-TIK-NIKUIM-MAASIK", Digits(c.Employer.WithholdingFileNumber)),
             Nil("KOD-MEZAHE-MAASIK-ETZEL-YATZRAN", null),
-            Nil("KOD-MASAV", null),
-            E("SCHUM-HAFKADA-KOLEL", negative && metadata.OperationCode == 6 ? Money(0) : Money(total)),
+            negative || metadata.PaymentMethodCode != 5 ? Nil("KOD-MASAV", null) : E("KOD-MASAV", "1"),
+            E("SCHUM-HAFKADA-KOLEL", Money(reportedDeposit)),
             E("SHEM-MAASIK", c.Employer.LegalName),
             E("SHEM-PRATI-ISH-KESHER-MAASIK", c.Employer.ContactFirstName),
             E("SHEM-MISHPACHA-ISH-KESHER-MAASIK", c.Employer.ContactLastName),
@@ -100,13 +102,13 @@ public static class EmployerInterface006XmlBuilder
         if (!negative)
         {
             var paymentMethod = metadata.PaymentMethodCode!.Value;
-            var zeroEmployerAccount = total == 0 || paymentMethod is 3 or 5 or 6 or 9;
+            var zeroEmployerAccount = reportedDeposit == 0 || paymentMethod is 3 or 5 or 6 or 9;
             // Clearinghouse V6: receiver account is mandatory for bank transfer only when amount > 0,
             // and is mandatory for MASAV (7) regardless of the reported amount.
-            var requiresReceiverAccount = (paymentMethod == 1 && total > 0) || paymentMethod == 7;
+            var requiresReceiverAccount = (paymentMethod == 1 && reportedDeposit > 0) || paymentMethod == 7;
             transfer.Add(
                 E("KOD-EMTZAI-TASHLUM", paymentMethod),
-                E("SACH-HAFKADA-KUPA-H-P", Money(total)),
+                E("SACH-HAFKADA-KUPA-H-P", Money(reportedDeposit)),
                 Nil("TAARICH-ERECH-HAFKADA-LEKUPA", payment?.ValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
                 Nil("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT", null),
                 E("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM", payment?.ReferenceNumber ?? string.Empty),
@@ -123,8 +125,11 @@ public static class EmployerInterface006XmlBuilder
         }
         else
         {
-            if (metadata.OperationCode is 5 or 6) transfer.Add(E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value));
-            transfer.Add(E("SACH-HAFKADA-KUPA-H-P", metadata.OperationCode == 6 ? Money(0) : Money(total)));
+            if (metadata.OperationCode == 5)
+                transfer.Add(E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value));
+            else
+                transfer.Add(Nil("KOD-EMTZAI-TASHLUM", null));
+            transfer.Add(E("SACH-HAFKADA-KUPA-H-P", Money(reportedDeposit)));
             transfer.Add(E("MISPAR-ZIHUI", UpperGuid(first.Id)));
             if (metadata.OperationCode == 5 && metadata.PaymentMethodCode == 1)
             {
@@ -188,10 +193,11 @@ public static class EmployerInterface006XmlBuilder
 
         var ids = products.Select(x => x.Id).ToHashSet();
         var total = c.Contributions.Where(x => ids.Contains(x.ReportProductId)).Sum(x => x.Amount);
+        var reportedDeposit = ReportedDepositAmount(c, products, negative);
         if (total > 0)
             fund.Add(new XElement("SachHafrashaLeKupaMaasik",
                 E("SACH-HAFRASHA-LEKUPA-BERAMAT-MAASIK", Money(total)),
-                E("SACH-HAFKADA-LEKUPA-BERAMAT-MAASIK", Money(total)),
+                E("SACH-HAFKADA-LEKUPA-BERAMAT-MAASIK", Money(reportedDeposit)),
                 E("MISPAR-AMITIM-BERAMAT-MAASIK", products.Select(x => c.Employees.Single(e => e.Id == x.ReportEmployeeId).PersonId).Distinct().Count())));
         return fund;
     }
@@ -375,12 +381,15 @@ public static class EmployerInterface006XmlBuilder
             else
             {
                 if (!meta.RefundReason.HasValue || meta.RefundReason is < 1 or > 10) issues.Add($"{label}: RefundReason 1-10 is required for a negative report.");
-                if (meta.OperationCode is 5 or 6)
+                if (meta.OperationCode == 5)
                 {
                     if (!meta.PaymentMethodCode.HasValue || !PaymentMethodCodes.Contains(meta.PaymentMethodCode.Value))
-                        issues.Add($"{label}: negative Version 006 operation {meta.OperationCode} requires a valid PaymentMethodCode.");
-                    if (meta.OperationCode == 5)
-                        ValidatePaymentAccount(c, product, label, requirePayment: meta.PaymentMethodCode == 1, issues);
+                        issues.Add($"{label}: negative Version 006 operation 5 requires a valid PaymentMethodCode.");
+                    ValidatePaymentAccount(c, product, label, requirePayment: meta.PaymentMethodCode == 1, issues);
+                }
+                else if (meta.OperationCode == 6 && meta.PaymentMethodCode.HasValue)
+                {
+                    issues.Add($"{label}: negative Version 006 operation 6 must not carry PaymentMethodCode.");
                 }
             }
 
@@ -431,11 +440,12 @@ public static class EmployerInterface006XmlBuilder
 
         var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
         var total = c.Contributions.Where(x => x.ReportProductId == product.Id).Sum(x => x.Amount);
+        var effectiveDeposit = metadata?.OperationCode is 2 or 7 ? 0m : total;
         var paymentMethod = metadata?.PaymentMethodCode;
 
         // Per clearinghouse V6, employer branch/account are zeroed when no money was transferred,
         // or for methods 3/5/6/9. They are therefore required only when their actual values are emitted.
-        var requiresEmployerBranchAccount = total > 0 && paymentMethod is not (3 or 5 or 6 or 9);
+        var requiresEmployerBranchAccount = effectiveDeposit > 0 && paymentMethod is not (3 or 5 or 6 or 9);
         if (requiresEmployerBranchAccount)
         {
             var branch = payment.EmployerBranch.Trim();
@@ -445,7 +455,7 @@ public static class EmployerInterface006XmlBuilder
         }
 
         // Receiver details: method 1 only with amount > 0; method 7 always.
-        var requiresReceiver = (paymentMethod == 1 && total > 0) || paymentMethod == 7;
+        var requiresReceiver = (paymentMethod == 1 && effectiveDeposit > 0) || paymentMethod == 7;
         if (requiresReceiver)
         {
             var receiver = ParseReceiverAccount(payment.ProviderAccount);
@@ -455,6 +465,16 @@ public static class EmployerInterface006XmlBuilder
 
         if ((payment.ReferenceNumber?.Length ?? 0) > 50)
             issues.Add($"{label}: transfer reference number cannot exceed 50 characters in Employer Interface 006.");
+    }
+
+    private static decimal ReportedDepositAmount(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative)
+    {
+        var ids = products.Select(x => x.Id).ToHashSet();
+        var total = c.Contributions.Where(x => ids.Contains(x.ReportProductId)).Sum(x => x.Amount);
+        var operation = c.ProductMetadata.First(x => ids.Contains(x.ReportProductId)).OperationCode;
+        if (negative && operation == 6) return 0m;
+        if (!negative && operation is 2 or 7) return 0m;
+        return total;
     }
 
     private static int ParseRequiredCode(string value) => int.Parse(value.Trim(), CultureInfo.InvariantCulture);
