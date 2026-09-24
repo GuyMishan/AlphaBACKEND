@@ -12,13 +12,15 @@ ALTER TABLE employees.employee_pension_products
     ADD COLUMN IF NOT EXISTS fund_external_key varchar(500) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS fund_code varchar(100) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS fund_name varchar(300) NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS fund_company_name varchar(300) NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS fund_company_name varchar(300) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS fund_classification varchar(200) NOT NULL DEFAULT '';
 
 ALTER TABLE reporting.manual_report_products
     ADD COLUMN IF NOT EXISTS fund_external_key varchar(500) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS fund_code varchar(100) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS fund_name varchar(300) NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS fund_company_name varchar(300) NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS fund_company_name varchar(300) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS fund_classification varchar(200) NOT NULL DEFAULT '';
 
 -- Report products are seeded explicitly by ManualReportEndpoints. The older database trigger
 -- also seeded the same employee mix and could create duplicate report products.
