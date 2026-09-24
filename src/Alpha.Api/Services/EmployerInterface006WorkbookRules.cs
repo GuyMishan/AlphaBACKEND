@@ -44,11 +44,14 @@ public static class EmployerInterface006WorkbookRules
             var first = context.ProductMetadata.Single(x => x.ReportProductId == products[0].Id);
             var metas = products.Select(p => context.ProductMetadata.Single(x => x.ReportProductId == p.Id)).ToList();
             var label = $"Fund {products[0].FundCode}";
+            if (products.Any(x => !string.Equals(x.FundClassification, products[0].FundClassification, StringComparison.Ordinal)))
+                issues.Add($"{label}: products grouped into one transfer must use the same fund classification snapshot.");
 
             if (metas.Any(x => x.OperationCode != first.OperationCode
                 || x.PaymentMethodCode != first.PaymentMethodCode
                 || x.EmployerAccountType != first.EmployerAccountType
                 || x.ReceiverAccountType != first.ReceiverAccountType
+                || x.OldPensionTypeCode != first.OldPensionTypeCode
                 || !StringEquals(x.PreviousIdentifier, first.PreviousIdentifier)
                 || !StringEquals(x.PreviousClearingIdentifier, first.PreviousClearingIdentifier)
                 || x.PreviousReferenceExceptionCode != first.PreviousReferenceExceptionCode))
