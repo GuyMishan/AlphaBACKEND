@@ -521,7 +521,7 @@ public sealed class EmployerInterface006XmlBuilderTests
             [reportEmployee],
             new Dictionary<Guid, Person> { [person.Id] = person },
             new Dictionary<Guid, Employment> { [employment.Id] = employment },
-            [product], [contribution], [payment], [metadata], options, 1, attachments, annualAffidavitSatisfied);
+            [product], [contribution], [payment], [metadata], options, 1, 1, attachments, annualAffidavitSatisfied);
         return (context, product);
     }
 
