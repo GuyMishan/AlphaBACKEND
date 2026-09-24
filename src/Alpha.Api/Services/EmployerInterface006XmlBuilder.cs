@@ -100,7 +100,9 @@ public static class EmployerInterface006XmlBuilder
         {
             var paymentMethod = metadata.PaymentMethodCode!.Value;
             var zeroEmployerAccount = total == 0 || paymentMethod is 3 or 5 or 6 or 9;
-            var requiresReceiverAccount = total > 0 && paymentMethod is 1 or 7;
+            // Clearinghouse V6: receiver account is mandatory for bank transfer only when amount > 0,
+            // and is mandatory for MASAV (7) regardless of the reported amount.
+            var requiresReceiverAccount = (paymentMethod == 1 && total > 0) || paymentMethod == 7;
             transfer.Add(
                 E("KOD-EMTZAI-TASHLUM", paymentMethod),
                 E("SACH-HAFKADA-KUPA-H-P", Money(total)),
@@ -286,6 +288,8 @@ public static class EmployerInterface006XmlBuilder
         foreach (var product in c.Products)
         {
             var label = $"Product {product.Id}";
+            if (product.ProductType == PensionProductType.Other)
+                issues.Add($"{label}: ProductType Other cannot be serialized to Employer Interface 006 because SUG-KUPA only allows codes 1-4.");
             if (Digits(product.FundCode).Length != 30) issues.Add($"{label}: fund code must be exactly 30 digits (KOD-MEZAHE-KUPA-H-P).");
             if (!TryCode(product.ReportingType, CurrentReceiptCodes, out _)) issues.Add($"{label}: ReportingType must be one of 1,2,4,6,8 for Version 006.");
             if (!TryCode(product.SalaryLayer, SalaryLayerCodes, out _)) issues.Add($"{label}: SalaryLayer must be one of 1,3,5,6,7 for Version 006.");
@@ -310,7 +314,7 @@ public static class EmployerInterface006XmlBuilder
                 if (!meta.PaymentMethodCode.HasValue || !PaymentMethodCodes.Contains(meta.PaymentMethodCode.Value)) issues.Add($"{label}: PaymentMethodCode must be one of 1,3,4,5,6,7,9.");
                 if (meta.EmployerAccountType is not (1 or 2)) issues.Add($"{label}: EmployerAccountType must be 1 or 2 for a current report.");
                 if (meta.ReceiverAccountType is not (1 or 2)) issues.Add($"{label}: ReceiverAccountType must be 1 or 2 for a current report.");
-                ValidatePaymentAccount(c, product, label, requireBankAccount: true, issues);
+                ValidatePaymentAccount(c, product, label, requirePayment: true, issues);
             }
             else
             {
@@ -320,7 +324,7 @@ public static class EmployerInterface006XmlBuilder
                     if (!meta.PaymentMethodCode.HasValue || !PaymentMethodCodes.Contains(meta.PaymentMethodCode.Value))
                         issues.Add($"{label}: negative Version 006 operation {meta.OperationCode} requires a valid PaymentMethodCode.");
                     if (meta.OperationCode == 5)
-                        ValidatePaymentAccount(c, product, label, requireBankAccount: meta.PaymentMethodCode == 1, issues);
+                        ValidatePaymentAccount(c, product, label, requirePayment: meta.PaymentMethodCode == 1, issues);
                 }
             }
 
@@ -335,6 +339,9 @@ public static class EmployerInterface006XmlBuilder
             }
 
             var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
+            foreach (var contribution in contributions)
+                if (!TryMapContributionCode(contribution, out _))
+                    issues.Add($"{label}: contribution pair {contribution.Party}/{contribution.Component} has no defined SUG-HAFRASHA mapping in Alpha and must not be silently mapped.");
             if (negative && contributions.Count == 0) issues.Add($"{label}: negative Version 006 requires at least one contribution record.");
             if (negative && contributions.Any(x => x.Amount <= 0)) issues.Add($"{label}: negative contribution amounts must be greater than zero.");
         }
@@ -360,44 +367,74 @@ public static class EmployerInterface006XmlBuilder
         return issues;
     }
 
-    private static void ValidatePaymentAccount(BuildContext c, ManualReportProduct product, string label, bool requireBankAccount, List<string> issues)
+    private static void ValidatePaymentAccount(BuildContext c, ManualReportProduct product, string label, bool requirePayment, List<string> issues)
     {
         var payment = c.Payments.FirstOrDefault(x => x.ReportProductId == product.Id);
-        if (!requireBankAccount) return;
-        if (payment is null) { issues.Add($"{label}: payment/bank details are required."); return; }
-        if (!int.TryParse(Digits(payment.EmployerBankCode), out _)) issues.Add($"{label}: employer bank code must be numeric.");
-        var branchDigits = Digits(payment.EmployerBranch);
-        if (branchDigits.Length is < 1 or > 3) issues.Add($"{label}: employer bank branch must contain 1-3 digits.");
-        var accountDigits = Digits(payment.EmployerAccount);
-        if (accountDigits.Length is < 1 or > 20) issues.Add($"{label}: employer bank account must contain 1-20 digits.");
+        if (!requirePayment) return;
+        if (payment is null) { issues.Add($"{label}: payment details are required."); return; }
+
+        if (!int.TryParse(Digits(payment.EmployerBankCode), out _))
+            issues.Add($"{label}: employer bank code must be numeric.");
 
         var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
-        if (metadata?.OperationCode is 1 or 2 or 3 or 7 && metadata.PaymentMethodCode is 1 or 7)
+        var total = c.Contributions.Where(x => x.ReportProductId == product.Id).Sum(x => x.Amount);
+        var paymentMethod = metadata?.PaymentMethodCode;
+
+        // Per clearinghouse V6, employer branch/account are zeroed when no money was transferred,
+        // or for methods 3/5/6/9. They are therefore required only when their actual values are emitted.
+        var requiresEmployerBranchAccount = total > 0 && paymentMethod is not (3 or 5 or 6 or 9);
+        if (requiresEmployerBranchAccount)
+        {
+            var branchDigits = Digits(payment.EmployerBranch);
+            if (branchDigits.Length is < 1 or > 3) issues.Add($"{label}: employer bank branch must contain 1-3 digits.");
+            var accountDigits = Digits(payment.EmployerAccount);
+            if (accountDigits.Length is < 1 or > 20) issues.Add($"{label}: employer bank account must contain 1-20 digits.");
+        }
+
+        // Receiver details: method 1 only with amount > 0; method 7 always.
+        var requiresReceiver = (paymentMethod == 1 && total > 0) || paymentMethod == 7;
+        if (requiresReceiver)
         {
             var receiver = ParseReceiverAccount(payment.ProviderAccount);
             if (!receiver.IsValid)
-                issues.Add($"{label}: payment method {metadata.PaymentMethodCode} requires receiving bank, branch and account details from the selected pension product.");
+                issues.Add($"{label}: payment method {paymentMethod} requires receiving bank, branch and account details from the selected pension product.");
         }
+
+        if ((payment.ReferenceNumber?.Length ?? 0) > 50)
+            issues.Add($"{label}: transfer reference number cannot exceed 50 characters in Employer Interface 006.");
     }
 
     private static int ParseRequiredCode(string value) => int.Parse(value.Trim(), CultureInfo.InvariantCulture);
     private static bool TryCode(string? value, int[] allowed, out int code) => int.TryParse(value?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out code) && allowed.Contains(code);
     private static string MapProductCode(PensionProductType type) => type switch
     {
-        PensionProductType.ManagersInsurance => "1", PensionProductType.PensionFund => "2",
-        PensionProductType.ProvidentFund => "3", PensionProductType.StudyFund => "4", _ => "4"
+        PensionProductType.ManagersInsurance => "1",
+        PensionProductType.PensionFund => "2",
+        PensionProductType.ProvidentFund => "3",
+        PensionProductType.StudyFund => "4",
+        _ => throw new InvalidOperationException($"Pension product type {type} has no SUG-KUPA mapping in Employer Interface 006.")
     };
-    private static string MapContributionCode(ManualContribution c) => (c.Party, c.Component) switch
+
+    private static string MapContributionCode(ManualContribution contribution) =>
+        TryMapContributionCode(contribution, out var code)
+            ? code
+            : throw new InvalidOperationException($"Contribution pair {contribution.Party}/{contribution.Component} has no SUG-HAFRASHA mapping.");
+
+    private static bool TryMapContributionCode(ManualContribution c, out string code)
     {
-        (ContributionParty.Employer, ContributionComponent.Severance) => "1",
-        (ContributionParty.Employee, ContributionComponent.Benefits) => "2",
-        (ContributionParty.Employer, ContributionComponent.Benefits) => "3",
-        (ContributionParty.Employee, ContributionComponent.Disability) => "5",
-        (ContributionParty.Employer, ContributionComponent.Disability) => "6",
-        (ContributionParty.Employee, ContributionComponent.Other) => "7",
-        (ContributionParty.Employer, ContributionComponent.Other) => "8",
-        _ => "8"
-    };
+        code = (c.Party, c.Component) switch
+        {
+            (ContributionParty.Employer, ContributionComponent.Severance) => "1",
+            (ContributionParty.Employee, ContributionComponent.Benefits) => "2",
+            (ContributionParty.Employer, ContributionComponent.Benefits) => "3",
+            (ContributionParty.Employee, ContributionComponent.Disability) => "5",
+            (ContributionParty.Employer, ContributionComponent.Disability) => "6",
+            (ContributionParty.Employee, ContributionComponent.Other) => "7",
+            (ContributionParty.Employer, ContributionComponent.Other) => "8",
+            _ => string.Empty
+        };
+        return code.Length > 0;
+    }
     private static XElement E(string name, object? value) => new(name, Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
     private static XElement Nil(string name, object? value)
     {
