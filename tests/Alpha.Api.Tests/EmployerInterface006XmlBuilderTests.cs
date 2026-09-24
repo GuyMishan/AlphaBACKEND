@@ -222,13 +222,12 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
-    public void Negative_operation_6_rejects_non_matrix_payment_method()
+    public void Negative_operation_6_rejects_payment_method_value()
     {
         var fixture = CreateFixture(true, operationCode: 6, paymentMethodCode: 3);
         var result = EmployerInterface006XmlBuilder.BuildNegative(fixture.Context);
-        Assert.NotNull(result.Document);
-        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, true);
-        Assert.Contains(workbookIssues, x => x.Contains("payment method 3 is not allowed for operation 6", StringComparison.Ordinal));
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("must not carry PaymentMethodCode", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -352,7 +351,9 @@ public sealed class EmployerInterface006XmlBuilderTests
     [InlineData(ContributionParty.Employer, ContributionComponent.Other, "8")]
     public void Current_report_maps_all_official_contribution_types(ContributionParty party, ContributionComponent component, string expectedCode)
     {
-        var fixture = CreateFixture(false);
+        var fixture = CreateFixture(false, productType: int.Parse(expectedCode, CultureInfo.InvariantCulture) >= 5
+            ? PensionProductType.ManagersInsurance
+            : PensionProductType.PensionFund);
         var contribution = new ManualContribution(fixture.Product.Id, party, component, 100m, 10m, 0m);
         var context = fixture.Context with { Contributions = [contribution] };
 
@@ -473,7 +474,8 @@ public sealed class EmployerInterface006XmlBuilderTests
 
     private static (EmployerInterface006XmlBuilder.BuildContext Context, ManualReportProduct Product) CreateFixture(
         bool negative, int? operationCode = null, int? previousExceptionCode = 1, int? section14Code = null,
-        string employerMobile = "0501234567", int? paymentMethodCode = 1, string policyNumber = "123")
+        string employerMobile = "0501234567", int? paymentMethodCode = 1, string policyNumber = "123",
+        PensionProductType productType = PensionProductType.PensionFund)
     {
         var organizationId = Guid.NewGuid();
         var employer = new Employer(organizationId, "Test Employer", "123456789", "987654321",
@@ -485,7 +487,7 @@ public sealed class EmployerInterface006XmlBuilderTests
         var reportId = Guid.NewGuid();
         var reportEmployee = new ManualReportEmployee(reportId, organizationId, employer.Id, employment.Id, person.Id,
             person.NationalId, person.FirstName, person.LastName, employment.EmployeeNumber, employment.MonthlySalary);
-        var product = new ManualReportProduct(reportEmployee.Id, PensionProductType.PensionFund, policyNumber,
+        var product = new ManualReportProduct(reportEmployee.Id, productType, policyNumber,
             new DateOnly(2026, 9, 1), 1000m, "1", "1", false, null,
             fundCode: new string('1', 30), fundName: "Test Fund", section14Code: section14Code);
         var contribution = new ManualContribution(product.Id, ContributionParty.Employee, ContributionComponent.Benefits,
@@ -502,6 +504,13 @@ public sealed class EmployerInterface006XmlBuilderTests
             EnvironmentCode = 2,
             SenderCode = 3,
             SenderIdentifierType = 1,
+            SenderIdentifier = "123456789",
+            SenderName = "Test Sender",
+            SenderContactFirstName = "Sender",
+            SenderContactLastName = "Contact",
+            SenderContactPhone = "031234567",
+            SenderContactEmail = "sender@example.com",
+            SenderContactMobile = "0501234567",
             RecipientCode = 6,
             RecipientIdentifierType = 1,
             RecipientIdentifier = "123456789"
