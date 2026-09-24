@@ -351,7 +351,7 @@ public sealed class EmployerInterface006XmlBuilderTests
     [InlineData(ContributionParty.Employer, ContributionComponent.Other, "8")]
     public void Current_report_maps_all_official_contribution_types(ContributionParty party, ContributionComponent component, string expectedCode)
     {
-        var fixture = CreateFixture(false, productType: int.Parse(expectedCode, CultureInfo.InvariantCulture) >= 5
+        var fixture = CreateFixture(false, productType: int.Parse(expectedCode) >= 5
             ? PensionProductType.ManagersInsurance
             : PensionProductType.PensionFund);
         var contribution = new ManualContribution(fixture.Product.Id, party, component, 100m, 10m, 0m);
