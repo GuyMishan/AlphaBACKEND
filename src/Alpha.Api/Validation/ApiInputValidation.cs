@@ -108,9 +108,10 @@ public static class ApiInputValidation
             errors.Add("בהעברה באמצעות חשבון נאמנות חובה להזין תאריך ערך הפקדה לחשבון הנאמנות.");
         if (operationCode == 3 && (request.ActualDepositAmount is null or <= 0))
             errors.Add("בקוד פעולה 3 יש להזין סכום הפקדה נוספת בפועל הגדול מאפס.");
-        if (masav && (request.MasavSenderCode?.Trim().Length is < 8 or > 16))
+        if (masav && (string.IsNullOrWhiteSpace(request.MasavSenderCode)
+            || request.MasavSenderCode.Trim().Length is < 8 or > 16))
             errors.Add("בסליקה באמצעות מס״ב יש להזין קוד מס״ב פנימי באורך 8–16 תווים.");
-        if (!noMoneyCorrection && hasPositiveDeposit && paymentMethod is "1" or "העברה בנקאית" or "3"
+        if (!noMoneyCorrection && hasPositiveDeposit && (paymentMethod is "1" or "העברה בנקאית" or "3")
             && string.IsNullOrWhiteSpace(request.ReferenceNumber))
             errors.Add("מספר אסמכתא בפועל הוא שדה חובה באמצעי תשלום זה.");
 
