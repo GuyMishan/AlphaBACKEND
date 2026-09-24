@@ -393,6 +393,32 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_old_pension_fund_emits_required_pension_type_and_work_measure()
+    {
+        var fixture = CreateFixture(false, fundClassification: "קרנות ותיקות מאוזנות",
+            oldPensionTypeCode: 1, employmentPercentage: 80m);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.Equal("1", Assert.Single(result.Document!.Descendants("SUG-KEREN-PENSIA")).Value);
+        Assert.Equal("80", Assert.Single(result.Document.Descendants("CHELKIUT-MISRA")).Value);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, fixture.Context, false);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_old_pension_fund_requires_type_and_employment_measure()
+    {
+        var fixture = CreateFixture(false, fundClassification: "קרנות ותיקות מאוזנות");
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("SUG-KEREN-PENSIA", StringComparison.Ordinal));
+        Assert.Contains(result.Issues, x => x.Contains("employment percentage or work days", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Current_report_emits_official_default_fund_attachment_type_5()
     {
         var fixture = CreateFixture(false, operationCode: 1);
@@ -520,7 +546,8 @@ public sealed class EmployerInterface006XmlBuilderTests
     private static (EmployerInterface006XmlBuilder.BuildContext Context, ManualReportProduct Product) CreateFixture(
         bool negative, int? operationCode = null, int? previousExceptionCode = 1, int? section14Code = null,
         string employerMobile = "0501234567", int? paymentMethodCode = 1, string policyNumber = "123",
-        PensionProductType productType = PensionProductType.PensionFund)
+        PensionProductType productType = PensionProductType.PensionFund, string fundClassification = "",
+        int? oldPensionTypeCode = null, decimal? employmentPercentage = null)
     {
         var organizationId = Guid.NewGuid();
         var employer = new Employer(organizationId, "Test Employer", "123456789", "987654321",
@@ -534,7 +561,8 @@ public sealed class EmployerInterface006XmlBuilderTests
             person.NationalId, person.FirstName, person.LastName, employment.EmployeeNumber, employment.MonthlySalary);
         var product = new ManualReportProduct(reportEmployee.Id, productType, policyNumber,
             new DateOnly(2026, 9, 1), 1000m, "1", "1", false, null,
-            fundCode: new string('1', 30), fundName: "Test Fund", section14Code: section14Code);
+            fundCode: new string('1', 30), fundName: "Test Fund", section14Code: section14Code,
+            fundClassification: fundClassification);
         var contribution = new ManualContribution(product.Id, ContributionParty.Employee, ContributionComponent.Benefits,
             100m, 10m, 0m);
         var payment = new ManualReportPayment(product.Id);
@@ -544,9 +572,10 @@ public sealed class EmployerInterface006XmlBuilderTests
         payment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), null, "REF-1",
             "Test Bank", "10", "123", "123456", "", actualDepositAmount, masavSenderCode);
         var metadata = new EmployerInterfaceReportProductData(product.Id);
-        metadata.Update(operationCode ?? (negative ? 5 : 1), 1, 1, new DateOnly(2026, 9, 1), null, null, 2,
+        metadata.Update(operationCode ?? (negative ? 5 : 1), 1, 1, new DateOnly(2026, 9, 1), employmentPercentage, null, 2,
             negative ? 1 : null, paymentMethodCode, 1, 1,
-            previousReferenceExceptionCode: (negative || (operationCode is 2 or 3 or 7)) ? previousExceptionCode : null);
+            previousReferenceExceptionCode: (negative || (operationCode is 2 or 3 or 7)) ? previousExceptionCode : null,
+            oldPensionTypeCode: oldPensionTypeCode);
         var options = new EmployerInterface006Options
         {
             EnvironmentCode = 2,
