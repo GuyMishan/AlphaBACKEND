@@ -211,10 +211,10 @@ public static class ReportValidationEndpoints
                 var request = new SaveManualReportPaymentRequest(payment.ProviderName, payment.ProviderAccount,
                     payment.PaymentMethod, payment.ValueDate, payment.ReferenceNumber, payment.EmployerBankName,
                     payment.EmployerBankCode, payment.EmployerBranch, payment.EmployerAccount, payment.ConfirmationFileName,
-                    payment.TrustAccountValueDate);
+                    payment.TrustAccountValueDate, payment.ActualDepositAmount, payment.MasavSenderCode);
                 var totalDeposit = contributions.Where(x => x.ReportProductId == product.Id).Sum(x => x.Amount);
                 foreach (var error in ApiInputValidation.Payment(request, totalDeposit,
-                    productMetadata?.OperationCode, productMetadata?.EmployerAccountType))
+                    productMetadata?.OperationCode, productMetadata?.EmployerAccountType, productMetadata?.ReceiverAccountType))
                     issues.Add(new("PAYMENT_VALIDATION", $"{employeeName}, פוליסה {product.PolicyNumber}: {error}", ValidationScope.Payment, employee.Id, product.Id));
             }
         }
