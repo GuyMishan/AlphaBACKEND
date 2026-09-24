@@ -22,7 +22,7 @@ public static class EmployerInterface006XmlBuilder
         var issues = Validate(c, negative);
         if (issues.Count > 0) return new(null, issues);
 
-        var now = DateTimeOffset.UtcNow;
+        var now = c.PreparedAt ?? DateTimeOffset.UtcNow;
         var senderId = Digits(c.Employer.RegistrationNumber);
         var groups = c.Products.GroupBy(x => new { x.FundCode, x.FundName }).ToList();
         var root = new XElement("MimshakMaasikim", new XAttribute(XNamespace.Xmlns + "xsi", Xsi));
@@ -145,7 +145,10 @@ public static class EmployerInterface006XmlBuilder
             foreach (var attachment in attachments)
             {
                 transfer.Add(new XElement("ZihuiShemMismachBeramatEirua",
-                    E("SHEM-KOVETZ-SHEL-MISMACH-BERAMAT-EIRUA-VEBERAMAT-LAKOACH", attachment.TransmissionFileName),
+                    E("SHEM-KOVETZ-SHEL-MISMACH-BERAMAT-EIRUA-VEBERAMAT-LAKOACH",
+                        c.AttachmentTransmissionNames.TryGetValue(attachment.Id, out var transmissionName)
+                            ? transmissionName
+                            : attachment.TransmissionFileName),
                     E("SUG-MISMACH", attachment.DocumentTypeCode)));
             }
         }
@@ -537,9 +540,11 @@ public static class EmployerInterface006XmlBuilder
         IReadOnlyList<ManualReportProduct> Products, IReadOnlyList<ManualContribution> Contributions,
         IReadOnlyList<ManualReportPayment> Payments, IReadOnlyList<EmployerInterfaceReportProductData> ProductMetadata,
         EmployerInterface006Options Options, int DepositorTypeCode = 1,
-        IReadOnlyList<ManualReportAttachment>? AttachmentItems = null, bool AnnualEmployerAffidavitSatisfied = false)
+        IReadOnlyList<ManualReportAttachment>? AttachmentItems = null, bool AnnualEmployerAffidavitSatisfied = false,
+        DateTimeOffset? PreparedAt = null, IReadOnlyDictionary<Guid, string>? AttachmentFileNames = null)
     {
         public IReadOnlyList<ManualReportAttachment> Attachments { get; init; } = AttachmentItems ?? [];
+        public IReadOnlyDictionary<Guid, string> AttachmentTransmissionNames { get; init; } = AttachmentFileNames ?? new Dictionary<Guid, string>();
     }
     public sealed record BuildResult(XDocument? Document, IReadOnlyList<string> Issues);
 }
