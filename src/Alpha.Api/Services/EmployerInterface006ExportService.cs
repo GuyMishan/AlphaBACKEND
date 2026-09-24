@@ -40,9 +40,29 @@ public sealed class EmployerInterface006ExportService(
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var payments = await db.ManualReportPayments.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var attachments = await db.ManualReportAttachments.AsNoTracking()
+            .Where(x => x.ReportId == report.Id).ToListAsync(ct);
+
+        var annualEmployerAffidavitSatisfied = attachments.Any(x => x.DocumentTypeCode == 3);
+        if (!annualEmployerAffidavitSatisfied && report.ReportKind == ManualReportKind.Negative)
+        {
+            var from = new DateOnly(report.ReportingMonth.Year, 1, 1);
+            var to = from.AddYears(1);
+            annualEmployerAffidavitSatisfied = await (
+                from attachment in db.ManualReportAttachments.AsNoTracking()
+                join previousReport in db.ManualReports.AsNoTracking() on attachment.ReportId equals previousReport.Id
+                where attachment.DocumentTypeCode == 3
+                      && previousReport.Id != report.Id
+                      && previousReport.EmployerId == report.EmployerId
+                      && previousReport.ReportingMonth >= from
+                      && previousReport.ReportingMonth < to
+                      && (previousReport.Status == ManualReportStatus.Sent || previousReport.Status == ManualReportStatus.Completed)
+                select attachment.Id).AnyAsync(ct);
+        }
 
         var context = new EmployerInterface006XmlBuilder.BuildContext(employer, employees, people, employments,
-            products, contributions, payments, metadata, options.Value, profileSettings?.DefaultDepositorTypeCode ?? 1);
+            products, contributions, payments, metadata, options.Value, profileSettings?.DefaultDepositorTypeCode ?? 1,
+            attachments, annualEmployerAffidavitSatisfied);
         var negative = documentType == EmployerInterfaceDocumentType.NegativeReport;
         var built = negative
             ? EmployerInterface006XmlBuilder.BuildNegative(context)
