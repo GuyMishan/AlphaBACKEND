@@ -12,6 +12,7 @@ public static class EmployerInterface006XmlBuilder
     private static readonly int[] CurrentReceiptCodes = [1, 2, 4, 6, 8];
     private static readonly int[] SalaryLayerCodes = [1, 3, 5, 6, 7];
     private static readonly int[] PaymentMethodCodes = [1, 3, 4, 5, 6, 7, 9];
+    private static readonly int[] IdentifierTypeCodes = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13];
 
     public static BuildResult BuildCurrent(BuildContext context) => Build(context, false);
     public static BuildResult BuildNegative(BuildContext context) => Build(context, true);
@@ -272,9 +273,11 @@ public static class EmployerInterface006XmlBuilder
         if (c.DepositorTypeCode is < 1 or > 3) issues.Add("EmployerInterface006:DepositorTypeCode must be 1, 2 or 3.");
         if (o.EnvironmentCode is not (1 or 2)) issues.Add("EmployerInterface006:EnvironmentCode must be 1 or 2.");
         if (o.SenderCode is < 1 or > 6) issues.Add("EmployerInterface006:SenderCode must be a valid Version 006 sender code.");
-        if (o.SenderIdentifierType <= 0) issues.Add("EmployerInterface006:SenderIdentifierType is required.");
+        if (!IdentifierTypeCodes.Contains(o.SenderIdentifierType))
+            issues.Add("EmployerInterface006:SenderIdentifierType must be one of 1,2,3,4,5,7,8,9,10,11,12,13.");
         if (o.RecipientCode is not (1 or 2 or 3 or 6)) issues.Add("EmployerInterface006:RecipientCode is required and must be 1, 2, 3 or 6.");
-        if (o.RecipientIdentifierType <= 0) issues.Add("EmployerInterface006:RecipientIdentifierType is required.");
+        if (!IdentifierTypeCodes.Contains(o.RecipientIdentifierType))
+            issues.Add("EmployerInterface006:RecipientIdentifierType must be one of 1,2,3,4,5,7,8,9,10,11,12,13.");
         if (string.IsNullOrWhiteSpace(o.RecipientIdentifier)) issues.Add("EmployerInterface006:RecipientIdentifier is required.");
         if (Digits(c.Employer.RegistrationNumber).Length is 0 or > 16) issues.Add("Employer registration number must contain 1-16 digits for Version 006.");
         if (Digits(c.Employer.WithholdingFileNumber).Length is 0 or > 9) issues.Add("Employer withholding file number must contain 1-9 digits for Version 006.");
