@@ -36,6 +36,40 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_accepts_section14_code_5()
+    {
+        var fixture = CreateFixture(false, section14Code: 5);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, false);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_report_uses_official_mobile_fallback_when_employer_has_no_mobile()
+    {
+        var fixture = CreateFixture(false, employerMobile: "");
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Contains(result.Document!.Descendants("MISPAR-CELLULARI-ISH-KESHER-MAASIK"), x => x.Value == "0500000000");
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, false);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_report_rejects_invalid_employer_mobile_format()
+    {
+        var fixture = CreateFixture(false, employerMobile: "031234567");
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("contact mobile", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Negative_report_rejects_current_operation_code()
     {
         var fixture = CreateFixture(true, operationCode: 1);
@@ -55,11 +89,12 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     private static (EmployerInterface006XmlBuilder.BuildContext Context, ManualReportProduct Product) CreateFixture(
-        bool negative, int? operationCode = null, int? previousExceptionCode = 1)
+        bool negative, int? operationCode = null, int? previousExceptionCode = 1, int? section14Code = null,
+        string employerMobile = "0501234567")
     {
         var organizationId = Guid.NewGuid();
         var employer = new Employer(organizationId, "Test Employer", "123456789", "987654321",
-            "Guy", "Mishan", "031234567", "employer@example.com", "0501234567");
+            "Guy", "Mishan", "031234567", "employer@example.com", employerMobile);
         var person = new Person(organizationId, "123456789", "Test", "Employee",
             new DateOnly(1990, 1, 1), PersonGender.Male, "employee@example.com", "0507654321",
             "Tel Aviv", "Herzl", "10", "4", "6100001", "123");
@@ -69,7 +104,7 @@ public sealed class EmployerInterface006XmlBuilderTests
             person.NationalId, person.FirstName, person.LastName, employment.EmployeeNumber, employment.MonthlySalary);
         var product = new ManualReportProduct(reportEmployee.Id, PensionProductType.PensionFund, "123",
             new DateOnly(2026, 9, 1), 1000m, "1", "1", false, null,
-            fundCode: new string('1', 30), fundName: "Test Fund");
+            fundCode: new string('1', 30), fundName: "Test Fund", section14Code: section14Code);
         var contribution = new ManualContribution(product.Id, ContributionParty.Employee, ContributionComponent.Benefits,
             100m, 10m, 0m);
         var payment = new ManualReportPayment(product.Id);
