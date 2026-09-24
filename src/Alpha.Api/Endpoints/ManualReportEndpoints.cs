@@ -197,8 +197,9 @@ public static class ManualReportEndpoints
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.EmploymentIds.Count > MaxEmployeesPerDraft)
             return Results.BadRequest(new { error = $"Manual reports are limited to {MaxEmployeesPerDraft} employees per draft." });
-        var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
+        if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
 
         var requested = request.EmploymentIds.Distinct().ToHashSet();
         var existing = await db.ManualReportEmployees.Where(x => x.ReportId == reportId).ToListAsync(ct);
@@ -223,6 +224,7 @@ public static class ManualReportEndpoints
                 await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
             }
         }
+        report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -344,6 +346,11 @@ public static class ManualReportEndpoints
         OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId
+            && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
+
         var exists = await (from product in db.ManualReportProducts.AsNoTracking()
                             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
                             where product.Id == reportProductId && employee.ReportId == reportId
@@ -361,6 +368,7 @@ public static class ManualReportEndpoints
             request.TrustAccountValueDate, request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode,
             request.EmployerBranch, request.EmployerAccount, request.ConfirmationFileName,
             request.ActualDepositAmount, request.MasavSenderCode);
+        report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -396,6 +404,10 @@ public static class ManualReportEndpoints
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.Products.Count > MaxProductsPerEmployee)
             return Results.BadRequest(new { error = $"An employee can have up to {MaxProductsPerEmployee} products in a report." });
+
+        var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
 
         var employee = await db.ManualReportEmployees.SingleOrDefaultAsync(x => x.Id == reportEmployeeId && x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (employee is null) return Results.NotFound();
@@ -433,6 +445,7 @@ public static class ManualReportEndpoints
             AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
         }
+        report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
