@@ -154,7 +154,11 @@ public static class EmployerInterface006XmlBuilder
             Nil("SHEM-KUPA-ETZEL-MAASIK", first.FundName),
             Nil("MISPAR-KUPA-ETZEL-MAASIK", null));
 
-        foreach (var product in products) fund.Add(BuildEmployee(c, product, negative));
+        // Version 006 clearinghouse rules require one PirteiOved block per employee in a batch.
+        // Multiple products/policies for the same employee are represented by multiple
+        // ChodeshMaskoretVestatusOved blocks under the same PirteiOved.
+        foreach (var employeeProducts in products.GroupBy(x => x.ReportEmployeeId))
+            fund.Add(BuildEmployee(c, employeeProducts.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToList(), negative));
 
         var ids = products.Select(x => x.Id).ToHashSet();
         var total = c.Contributions.Where(x => ids.Contains(x.ReportProductId)).Sum(x => x.Amount);
@@ -166,14 +170,12 @@ public static class EmployerInterface006XmlBuilder
         return fund;
     }
 
-    private static XElement BuildEmployee(BuildContext c, ManualReportProduct product, bool negative)
+    private static XElement BuildEmployee(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative)
     {
-        var employee = c.Employees.Single(x => x.Id == product.ReportEmployeeId);
+        var firstProduct = products[0];
+        var employee = c.Employees.Single(x => x.Id == firstProduct.ReportEmployeeId);
         var person = c.People[employee.PersonId];
         var employment = c.Employments[employee.EmploymentId];
-        var metadata = c.ProductMetadata.Single(x => x.ReportProductId == product.Id);
-        var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
-        var total = contributions.Sum(x => x.Amount);
 
         var node = new XElement("PirteiOved",
             E("SUG-MEZAHE-OVED", 1),
@@ -198,8 +200,8 @@ public static class EmployerInterface006XmlBuilder
                 E("MISPAR-CELLULARI", Digits(person.Mobile)),
                 E("MIN", (int)person.Gender!.Value),
                 E("MOED-TCHILAT-AHASAKAT-OVED", employment.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
-                E("SEIF-ARBA-ESRE-LAOVED", product.Section14Code),
-                Nil("SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF", product.Section14StartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+                E("SEIF-ARBA-ESRE-LAOVED", firstProduct.Section14Code),
+                Nil("SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF", firstProduct.Section14StartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         }
         else
         {
@@ -210,38 +212,58 @@ public static class EmployerInterface006XmlBuilder
                 Nil("SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF", null));
         }
 
-        var salary = new XElement("ChodeshMaskoretVestatusOved",
-            E("CHODESH-MASKORET", product.SalaryMonth.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
-        if (!negative) salary.Add(E("MAHAMAD-HAFKADA-BEKUPA", metadata.DepositStatus!.Value));
-        salary.Add(E("SUG-TAKBUL", ParseRequiredCode(product.ReportingType)), E("ROVED-SACHAR", ParseRequiredCode(product.SalaryLayer)));
-        if (negative) salary.Add(E("SIBAT-BAKASH-LECHZER-KSAFIM", metadata.RefundReason!.Value));
-        if (!negative)
+        decimal employeeTotal = 0;
+        foreach (var product in products)
         {
-            salary.Add(E("SACHAR-MEDUVACH", Money(product.Salary)), E("STATUS-OVED-BECHODESH-MASKORET", metadata.EmployeeStatus!.Value),
-                Nil("TAARICH-TCHILAT-STATUS", metadata.StatusStartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
-                Nil("CHELKIUT-MISRA", metadata.EmploymentPercentage), Nil("YEMEI-AVODA-BECHODESH", metadata.WorkDaysInMonth),
-                Nil("MISPAR-POLISA-O-HESHBON", product.PolicyNumber), E("HAFKADA-ACHRONA", metadata.LastDeposit!.Value));
-        }
-        else
-        {
-            salary.Add(Nil("TAARICH-TCHILAT-STATUS", null));
+            var metadata = c.ProductMetadata.Single(x => x.ReportProductId == product.Id);
+            if (!negative)
+            {
+                var sameEmployeeFundProducts = c.Products.Where(x => x.ReportEmployeeId == product.ReportEmployeeId
+                    && string.Equals(x.FundCode, product.FundCode, StringComparison.Ordinal)
+                    && string.Equals(x.FundName, product.FundName, StringComparison.Ordinal)).ToList();
+                if (sameEmployeeFundProducts.Any(x => x.Section14Code != product.Section14Code
+                    || x.Section14StartDate != product.Section14StartDate))
+                    issues.Add($"{label}: products for the same employee and fund must use the same Section 14 code/effective date because Version 006 permits one PirteiOved block per employee in a batch.");
+            }
+
+            var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
+            var total = contributions.Sum(x => x.Amount);
+            employeeTotal += total;
+
+            var salary = new XElement("ChodeshMaskoretVestatusOved",
+                E("CHODESH-MASKORET", product.SalaryMonth.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+            if (!negative) salary.Add(E("MAHAMAD-HAFKADA-BEKUPA", metadata.DepositStatus!.Value));
+            salary.Add(E("SUG-TAKBUL", ParseRequiredCode(product.ReportingType)), E("ROVED-SACHAR", ParseRequiredCode(product.SalaryLayer)));
+            if (negative) salary.Add(E("SIBAT-BAKASH-LECHZER-KSAFIM", metadata.RefundReason!.Value));
+            if (!negative)
+            {
+                salary.Add(E("SACHAR-MEDUVACH", Money(product.Salary)), E("STATUS-OVED-BECHODESH-MASKORET", metadata.EmployeeStatus!.Value),
+                    Nil("TAARICH-TCHILAT-STATUS", metadata.StatusStartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                    Nil("CHELKIUT-MISRA", metadata.EmploymentPercentage), Nil("YEMEI-AVODA-BECHODESH", metadata.WorkDaysInMonth),
+                    Nil("MISPAR-POLISA-O-HESHBON", product.PolicyNumber), E("HAFKADA-ACHRONA", metadata.LastDeposit!.Value));
+            }
+            else
+            {
+                salary.Add(Nil("TAARICH-TCHILAT-STATUS", null));
+            }
+
+            foreach (var contribution in contributions)
+            {
+                var split = new XElement("PizulHafrashotOvedBeKupa", E("SUG-HAFRASHA", MapContributionCode(contribution)));
+                if (!negative) split.Add(contribution.Percentage > 0 ? E("SHIUR-HAFRASHA", contribution.Percentage) : Nil("SHIUR-HAFRASHA", null));
+                else if (contribution.Percentage > 0) split.Add(E("SHIUR-HAFRASHA", contribution.Percentage));
+                split.Add(E("SCHUM-HAFRASHA", Money(contribution.Amount)));
+                if (!negative) split.Add(E("SACH-TASHLUMIM-PTURIM", Money(contribution.ExemptPayments)));
+                split.Add(E("MISPAR-MEZAHE-RESHUMA", UpperGuid(contribution.Id)), Nil("MISPAR-MEZAHE-RESHUMA-KODEM", null));
+                salary.Add(split);
+            }
+            salary.Add(new XElement("SachHafrashaLeKupaBechodeshMaskoretOved",
+                total > 0 ? E("SACH-HAFRASHA-BECHODESH-MASKORET", Money(total)) : Nil("SACH-HAFRASHA-BECHODESH-MASKORET", null)));
+            node.Add(salary);
         }
 
-        foreach (var contribution in contributions)
-        {
-            var split = new XElement("PizulHafrashotOvedBeKupa", E("SUG-HAFRASHA", MapContributionCode(contribution)));
-            if (!negative) split.Add(contribution.Percentage > 0 ? E("SHIUR-HAFRASHA", contribution.Percentage) : Nil("SHIUR-HAFRASHA", null));
-            else if (contribution.Percentage > 0) split.Add(E("SHIUR-HAFRASHA", contribution.Percentage));
-            split.Add(E("SCHUM-HAFRASHA", Money(contribution.Amount)));
-            if (!negative) split.Add(E("SACH-TASHLUMIM-PTURIM", Money(contribution.ExemptPayments)));
-            split.Add(E("MISPAR-MEZAHE-RESHUMA", UpperGuid(contribution.Id)), Nil("MISPAR-MEZAHE-RESHUMA-KODEM", null));
-            salary.Add(split);
-        }
-        salary.Add(new XElement("SachHafrashaLeKupaBechodeshMaskoretOved",
-            total > 0 ? E("SACH-HAFRASHA-BECHODESH-MASKORET", Money(total)) : Nil("SACH-HAFRASHA-BECHODESH-MASKORET", null)));
-        node.Add(salary);
         node.Add(new XElement("SachHafrashaLeOvedBekupa",
-            total > 0 ? E("SACH-HAFRASHA-LEOVED-BEKUPA", Money(total)) : Nil("SACH-HAFRASHA-LEOVED-BEKUPA", null)));
+            employeeTotal > 0 ? E("SACH-HAFRASHA-LEOVED-BEKUPA", Money(employeeTotal)) : Nil("SACH-HAFRASHA-LEOVED-BEKUPA", null)));
         return node;
     }
 
