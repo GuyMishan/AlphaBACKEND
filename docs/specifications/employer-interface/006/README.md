@@ -93,6 +93,14 @@ When any official source is updated in the future:
 
 Do not parse the XLS at runtime in production as a substitute for versioned application logic. The committed workbook documents the official source; Alpha's versioned DB seeds and code implement it deterministically.
 
+## Deferred integration checks
+
+The following items are intentionally deferred until the real clearinghouse integration/testing phase and must be re-verified against actual clearinghouse behavior before production transmission:
+
+- Birth-date wire format: the clearinghouse rules document states `DD-MM-YYYY`, while the official Version 006 XSD declares `TAARICH-LEIDA` as `xsd:date`, which serializes as `YYYY-MM-DD`. Keep XSD-valid output for now and verify the accepted wire format during clearinghouse integration.
+- Employee identifier type (`SUG-MEZAHE-OVED`): Alpha currently emits type `1`. Add/verify support for the other official identifier type when a real use case is introduced.
+- Old pension fund subtype (`SUG-KEREN-PENSIA`): Alpha currently emits `xsi:nil`. Add/verify support for old-pension-fund cases when needed and during clearinghouse integration.
+
 ## Testing
 
 `tests/Alpha.Api.Tests/EmployerInterface006XmlBuilderTests.cs` builds representative current and negative XML documents, applies workbook-derived business rules, and validates the results against these exact official XSD files. The tests run in CI.
