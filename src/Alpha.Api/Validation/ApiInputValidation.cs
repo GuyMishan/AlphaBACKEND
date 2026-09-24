@@ -86,22 +86,30 @@ public static class ApiInputValidation
         return errors;
     }
 
-    public static IReadOnlyList<string> Payment(SaveManualReportPaymentRequest request)
+    public static IReadOnlyList<string> Payment(SaveManualReportPaymentRequest request, decimal? totalDeposit = null)
     {
         var errors = new List<string>();
         var paymentMethod = request.PaymentMethod?.Trim() ?? string.Empty;
-        var bankOrMasav = paymentMethod is "1" or "7" or "העברה בנקאית" or "מס״ב" or "מס\"ב";
+        var bankTransfer = paymentMethod is "1" or "העברה בנקאית";
+        var masav = paymentMethod is "7" or "מס״ב" or "מס\"ב";
+        var bankOrMasav = bankTransfer || masav;
+        var hasPositiveDeposit = !totalDeposit.HasValue || totalDeposit.Value > 0;
+        var receiverAccountRequired = masav || (bankTransfer && hasPositiveDeposit);
+        var employerBranchAccountRequired = bankOrMasav && hasPositiveDeposit;
 
         if (string.IsNullOrWhiteSpace(request.ProviderName)) errors.Add("שם יצרן / מוצר הוא שדה חובה.");
-        if (bankOrMasav && string.IsNullOrWhiteSpace(request.ProviderAccount)) errors.Add("חשבון יצרן לזיכוי הוא שדה חובה בהעברה בנקאית / מס״ב.");
+        if (receiverAccountRequired && string.IsNullOrWhiteSpace(request.ProviderAccount)) errors.Add("חשבון יצרן לזיכוי הוא שדה חובה לפי כללי אמצעי התשלום בממשק 006.");
         if (string.IsNullOrWhiteSpace(paymentMethod)) errors.Add("אופן התשלום הוא שדה חובה.");
         if (bankOrMasav)
         {
             if (request.ValueDate is null) errors.Add("תאריך ערך הוא שדה חובה בהעברה בנקאית / מס״ב.");
             if (string.IsNullOrWhiteSpace(request.ReferenceNumber)) errors.Add("מספר אסמכתא הוא שדה חובה בהעברה בנקאית / מס״ב.");
             if (string.IsNullOrWhiteSpace(request.EmployerBankCode) || !Digits.IsMatch(request.EmployerBankCode.Trim())) errors.Add("מספר בנק חייב להכיל ספרות בלבד.");
-            if (string.IsNullOrWhiteSpace(request.EmployerBranch) || !Digits.IsMatch(request.EmployerBranch.Trim())) errors.Add("מספר סניף חייב להכיל ספרות בלבד.");
-            if (string.IsNullOrWhiteSpace(request.EmployerAccount) || !Digits.IsMatch(request.EmployerAccount.Trim())) errors.Add("מספר חשבון מעסיק חייב להכיל ספרות בלבד.");
+            if (employerBranchAccountRequired)
+            {
+                if (string.IsNullOrWhiteSpace(request.EmployerBranch) || !Digits.IsMatch(request.EmployerBranch.Trim())) errors.Add("מספר סניף חייב להכיל ספרות בלבד.");
+                if (string.IsNullOrWhiteSpace(request.EmployerAccount) || !Digits.IsMatch(request.EmployerAccount.Trim())) errors.Add("מספר חשבון מעסיק חייב להכיל ספרות בלבד.");
+            }
         }
         if (request.ValueDate is { } valueDate && valueDate > DateOnly.FromDateTime(DateTime.UtcNow.AddDays(31))) errors.Add("תאריך הערך רחוק מדי בעתיד.");
         return errors;
