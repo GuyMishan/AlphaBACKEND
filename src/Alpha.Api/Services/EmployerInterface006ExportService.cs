@@ -60,9 +60,22 @@ public sealed class EmployerInterface006ExportService(
                 select attachment.Id).AnyAsync(ct);
         }
 
+        var preparedAt = DateTimeOffset.UtcNow;
+        var packageName = EmployerInterface006FileNaming.Build(employer,
+            documentType == EmployerInterfaceDocumentType.NegativeReport, preparedAt);
+        var attachmentNames = attachments
+            .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ThenBy(x => x.Id)
+            .Select((attachment, index) => new
+            {
+                attachment.Id,
+                FileName = EmployerInterface006FileNaming.BuildAttachmentFileName(packageName.BaseName, index + 1,
+                    Path.GetExtension(attachment.OriginalFileName).TrimStart('.'))
+            })
+            .ToDictionary(x => x.Id, x => x.FileName);
+
         var context = new EmployerInterface006XmlBuilder.BuildContext(employer, employees, people, employments,
             products, contributions, payments, metadata, options.Value, profileSettings?.DefaultDepositorTypeCode ?? 1,
-            attachments, annualEmployerAffidavitSatisfied);
+            attachments, annualEmployerAffidavitSatisfied, preparedAt, attachmentNames);
         var negative = documentType == EmployerInterfaceDocumentType.NegativeReport;
         var built = negative
             ? EmployerInterface006XmlBuilder.BuildNegative(context)
@@ -76,8 +89,13 @@ public sealed class EmployerInterface006ExportService(
 
         var bytes = Serialize(built.Document);
         var validation = schemas.Validate(bytes, documentType);
+        var attachmentFiles = attachments
+            .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ThenBy(x => x.Id)
+            .Select(x => new EmployerInterfaceService.GeneratedAttachment(
+                attachmentNames[x.Id], x.ContentType, x.Content, x.Sha256))
+            .ToArray();
         return new(bytes, new(validation.IsValid, documentType, EmployerInterfaceSchemaRegistry.Version,
-            validation.SchemaFileName, validation.Issues));
+            validation.SchemaFileName, validation.Issues), packageName.PayloadFileName, attachmentFiles);
     }
 
     private static byte[] Serialize(System.Xml.Linq.XDocument document)
