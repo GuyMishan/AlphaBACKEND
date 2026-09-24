@@ -263,7 +263,7 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_attachments (
     "Sha256" varchar(64) NOT NULL,
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL,
-    CONSTRAINT "CK_manual_report_attachments_document_type" CHECK ("DocumentTypeCode" IN (3,4,6))
+    CONSTRAINT "CK_manual_report_attachments_document_type" CHECK ("DocumentTypeCode" IN (3,4,5,6))
 );
 CREATE INDEX IF NOT EXISTS "IX_manual_report_attachments_report"
     ON reporting.manual_report_attachments ("ReportId");
@@ -271,6 +271,12 @@ CREATE INDEX IF NOT EXISTS "IX_manual_report_attachments_product"
     ON reporting.manual_report_attachments ("ReportProductId");
 CREATE UNIQUE INDEX IF NOT EXISTS "UX_manual_report_attachments_transmission_name"
     ON reporting.manual_report_attachments ("ReportId", "TransmissionFileName");
+
+ALTER TABLE reporting.manual_report_attachments
+    DROP CONSTRAINT IF EXISTS "CK_manual_report_attachments_document_type";
+ALTER TABLE reporting.manual_report_attachments
+    ADD CONSTRAINT "CK_manual_report_attachments_document_type"
+    CHECK ("DocumentTypeCode" IN (3,4,5,6));
 
 ALTER TABLE reporting.manual_report_payments
     ADD COLUMN IF NOT EXISTS "TrustAccountValueDate" date NULL;
