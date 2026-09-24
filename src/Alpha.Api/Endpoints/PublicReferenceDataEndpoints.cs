@@ -1,3 +1,4 @@
+using Alpha.Api.Services;
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -54,7 +55,7 @@ public static class PublicReferenceDataEndpoints
             return Results.Ok(result);
         });
 
-        group.MapGet("/employer-interface-006/options", async (string category, string? scope, AlphaDbContext db, CancellationToken ct) =>
+        group.MapGet("/employer-interface-006/options", async (string category, string? scope, int? operationCode, AlphaDbContext db, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(category)) return Results.BadRequest(new { error = "category is required." });
             var normalizedCategory = category.Trim().ToLowerInvariant();
@@ -74,8 +75,16 @@ public static class PublicReferenceDataEndpoints
             if (command.Connection!.State != System.Data.ConnectionState.Open)
                 await command.Connection.OpenAsync(ct);
             await using var reader = await command.ExecuteReaderAsync(ct);
+            IReadOnlyCollection<int>? allowedPaymentMethods = null;
+            if (normalizedCategory == "payment-method" && operationCode.HasValue)
+                allowedPaymentMethods = EmployerInterface006WorkbookRules.AllowedPaymentMethods(operationCode.Value);
+
             while (await reader.ReadAsync(ct))
-                result.Add(new { code = reader.GetInt32(0), name = reader.GetString(1), scope = reader.GetString(2) });
+            {
+                var code = reader.GetInt32(0);
+                if (allowedPaymentMethods is not null && !allowedPaymentMethods.Contains(code)) continue;
+                result.Add(new { code, name = reader.GetString(1), scope = reader.GetString(2) });
+            }
             return Results.Ok(result);
         });
 
