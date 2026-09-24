@@ -37,7 +37,7 @@ public static class EmployerInterface006XmlBuilder
         var totalDeposits = groups.Sum(group => ReportedDepositAmount(c, group.ToList(), negative));
         root.Add(new XElement("ReshumatSgira",
             E("MISPAR-KUPOT-YATZRANIM-BAKOVETZ", groups.Count),
-            E("MISPAR-MAASIKIM", 1),
+            E("MISPAR-MAASIKIM", groups.Count),
             E("MISPAR-RESHUMOT", c.Contributions.Count),
             E("MISPAR-AMITIM", groups.Sum(group => group.Select(x => x.ReportEmployeeId).Distinct().Count())),
             E("SACH-HAFRASHOT-BAKOVETZ", Money(totalContributions)),
@@ -89,9 +89,9 @@ public static class EmployerInterface006XmlBuilder
             E("SUG-MAFKID", c.DepositorTypeCode),
             E("SUG-MEZAHE-MAASIK", c.EmployerIdentifierTypeCode),
             E("MISPAR-ZIHUY-MAASIK", c.Employer.RegistrationNumber.Trim()),
-            negative ? Nil("MISPAR-TIK-NIKUIM-MAASIK", null) : E("MISPAR-TIK-NIKUIM-MAASIK", Digits(c.Employer.WithholdingFileNumber)),
+            negative ? Nil("MISPAR-TIK-NIKUIM-MAASIK", null) : E("MISPAR-TIK-NIKUIM-MAASIK", EmployerWithholdingFile(c)),
             Nil("KOD-MEZAHE-MAASIK-ETZEL-YATZRAN", null),
-            negative || metadata.PaymentMethodCode != 5 ? Nil("KOD-MASAV", null) : E("KOD-MASAV", "1"),
+            !negative && metadata.PaymentMethodCode == 7 ? E("KOD-MASAV", payment!.MasavSenderCode) : Nil("KOD-MASAV", null),
             E("SCHUM-HAFKADA-KOLEL", Money(reportedDeposit)),
             E("SHEM-MAASIK", c.Employer.LegalName),
             E("SHEM-PRATI-ISH-KESHER-MAASIK", c.Employer.ContactFirstName),
@@ -112,14 +112,19 @@ public static class EmployerInterface006XmlBuilder
             var requiresReceiverAccount = !correctionWithoutMoney
                 && ((paymentMethod == 1 && reportedDeposit > 0) || paymentMethod == 7);
             var trustDateRelevant = !correctionWithoutMoney && metadata.EmployerAccountType == 2;
-            var valueDate = correctionWithoutMoney ? null : payment?.ValueDate;
-            var reference = correctionWithoutMoney || reportedDeposit == 0
+            var fileDate = (c.PreparedAt ?? DateTimeOffset.UtcNow).Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var valueDateText = correctionWithoutMoney || paymentMethod is 6 or 9
+                ? fileDate
+                : metadata.ReceiverAccountType == 1
+                    ? payment?.ValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                    : null;
+            var reference = correctionWithoutMoney || reportedDeposit == 0 || paymentMethod is 6 or 9
                 ? "000"
                 : string.IsNullOrWhiteSpace(payment?.ReferenceNumber) ? "000" : payment!.ReferenceNumber;
             transfer.Add(
                 E("KOD-EMTZAI-TASHLUM", paymentMethod),
                 E("SACH-HAFKADA-KUPA-H-P", Money(reportedDeposit)),
-                Nil("TAARICH-ERECH-HAFKADA-LEKUPA", valueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                Nil("TAARICH-ERECH-HAFKADA-LEKUPA", valueDateText),
                 Nil("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT",
                     trustDateRelevant ? payment?.TrustAccountValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null),
                 E("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM", reference),
@@ -247,7 +252,6 @@ public static class EmployerInterface006XmlBuilder
             E("SHEM-MISHPACHA", employee.LastName));
 
         if (!negative) node.Add(E("TAARICH-LEIDA", person.BirthDate!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
-        else if (person.BirthDate.HasValue) node.Add(E("TAARICH-LEIDA", person.BirthDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         node.Add(Nil("MISPAR-OVED-ETZEL-MAASIK", employee.EmployeeNumber));
 
         if (!negative)
@@ -307,7 +311,6 @@ public static class EmployerInterface006XmlBuilder
             {
                 var split = new XElement("PizulHafrashotOvedBeKupa", E("SUG-HAFRASHA", MapContributionCode(contribution)));
                 if (!negative) split.Add(contribution.Percentage > 0 ? E("SHIUR-HAFRASHA", contribution.Percentage) : Nil("SHIUR-HAFRASHA", null));
-                else if (contribution.Percentage > 0) split.Add(E("SHIUR-HAFRASHA", contribution.Percentage));
                 split.Add(E("SCHUM-HAFRASHA", Money(contribution.Amount)));
                 if (!negative) split.Add(E("SACH-TASHLUMIM-PTURIM", Money(contribution.ExemptPayments)));
                 split.Add(E("MISPAR-MEZAHE-RESHUMA", UpperGuid(contribution.Id)), Nil("MISPAR-MEZAHE-RESHUMA-KODEM", null));
@@ -348,11 +351,16 @@ public static class EmployerInterface006XmlBuilder
             issues.Add("EmployerInterface006:RecipientIdentifierType must be one of 1,2,3,4,5,7,8,9,10,11,12,13.");
         if (string.IsNullOrWhiteSpace(o.RecipientIdentifier)) issues.Add("EmployerInterface006:RecipientIdentifier is required.");
         if (Digits(c.Employer.RegistrationNumber).Length is 0 or > 16) issues.Add("Employer registration number must contain 1-16 digits for Version 006.");
-        if (Digits(c.Employer.WithholdingFileNumber).Length is 0 or > 9) issues.Add("Employer withholding file number must contain 1-9 digits for Version 006.");
-        if (string.IsNullOrWhiteSpace(c.Employer.ContactFirstName)) issues.Add("Employer Interface contact first name is required.");
-        if (string.IsNullOrWhiteSpace(c.Employer.ContactLastName)) issues.Add("Employer Interface contact last name is required.");
-        if (Digits(c.Employer.ContactPhone).Length is 0 or > 20) issues.Add("Employer Interface contact phone must contain 1-20 digits.");
-        if (string.IsNullOrWhiteSpace(c.Employer.ContactEmail)) issues.Add("Employer Interface contact email is required.");
+        if (!negative)
+        {
+            var withholding = Digits(c.Employer.WithholdingFileNumber);
+            if (withholding.Length > 0 && (withholding.Length != 9 || !withholding.StartsWith("9", StringComparison.Ordinal)))
+                issues.Add("Employer withholding file number must contain exactly 9 digits and start with 9; when unavailable Alpha emits 900000000 per Version 006.");
+        }
+        if ((c.Employer.ContactFirstName?.Trim().Length ?? 0) is < 2 or > 20) issues.Add("Employer Interface contact first name must contain 2-20 characters.");
+        if ((c.Employer.ContactLastName?.Trim().Length ?? 0) is < 2 or > 20) issues.Add("Employer Interface contact last name must contain 2-20 characters.");
+        if (Digits(c.Employer.ContactPhone).Length is < 9 or > 20) issues.Add("Employer Interface contact phone must contain 9-20 digits.");
+        if (string.IsNullOrWhiteSpace(c.Employer.ContactEmail) || c.Employer.ContactEmail.Length > 50 || !c.Employer.ContactEmail.Contains('@')) issues.Add("Employer Interface contact email must be a valid address up to 50 characters.");
         var employerMobile = c.Employer.ContactMobile?.Trim() ?? string.Empty;
         if (employerMobile.Length > 0 && (!IsDigits(employerMobile) || employerMobile.Length != 10 || !employerMobile.StartsWith("05", StringComparison.Ordinal)))
             issues.Add("Employer Interface contact mobile must contain digits only and match ^05\\d\\d{7}$; when no mobile exists, Version 006 requires 0500000000.");
@@ -422,8 +430,10 @@ public static class EmployerInterface006XmlBuilder
                 {
                     if (meta.PaymentMethodCode != 1)
                         issues.Add($"{label}: no-money correction operation {meta.OperationCode} must use payment method 1.");
-                    if (meta.EmployerAccountType != 1 || meta.ReceiverAccountType != 1)
-                        issues.Add($"{label}: no-money correction operation {meta.OperationCode} must use employer account type 1 and receiver account type 1.");
+                    if (meta.OperationCode == 7 && meta.EmployerAccountType != 1)
+                        issues.Add($"{label}: operation 7 has no payment and must report employer account type 1.");
+                    // For operation 2, and for the receiver account on any no-money correction,
+                    // Version 006 requires the account type used by the previous report being corrected.
                 }
                 ValidatePaymentAccount(c, product, label, requirePayment: true, issues);
             }
@@ -505,10 +515,12 @@ public static class EmployerInterface006XmlBuilder
         var effectiveDeposit = correctionWithoutMoney ? 0m : total;
         var paymentMethod = metadata?.PaymentMethodCode;
 
-        if (!correctionWithoutMoney && metadata?.OperationCode is 1 or 3 && payment.ValueDate is null)
-            issues.Add($"{label}: operation {metadata.OperationCode} requires TAARICH-ERECH-HAFKADA-LEKUPA.");
+        if (!correctionWithoutMoney && metadata?.ReceiverAccountType == 1 && paymentMethod is not (6 or 9) && payment.ValueDate is null)
+            issues.Add($"{label}: receiver account type 1 requires TAARICH-ERECH-HAFKADA-LEKUPA.");
         if (!correctionWithoutMoney && metadata?.EmployerAccountType == 2 && payment.TrustAccountValueDate is null)
             issues.Add($"{label}: trust-account payment requires TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT.");
+        if (paymentMethod == 7 && (payment.MasavSenderCode.Length < 8 || payment.MasavSenderCode.Length > 16))
+            issues.Add($"{label}: MASAV payment method 7 requires KOD-MASAV containing 8-16 characters.");
         if (correctionWithoutMoney && payment.TrustAccountValueDate is not null)
             issues.Add($"{label}: operation {metadata?.OperationCode} must not include a trust-account value date.");
 
@@ -561,7 +573,19 @@ public static class EmployerInterface006XmlBuilder
         var operation = c.ProductMetadata.First(x => ids.Contains(x.ReportProductId)).OperationCode;
         if (negative && operation == 6) return 0m;
         if (!negative && operation is 2 or 7) return 0m;
+        if (!negative && operation == 3)
+        {
+            var amounts = c.Payments.Where(x => ids.Contains(x.ReportProductId) && x.ActualDepositAmount.HasValue)
+                .Select(x => x.ActualDepositAmount!.Value).Distinct().ToArray();
+            return amounts.Length == 1 ? amounts[0] : 0m;
+        }
         return total;
+    }
+
+    private static string EmployerWithholdingFile(BuildContext c)
+    {
+        var value = Digits(c.Employer.WithholdingFileNumber);
+        return value.Length == 9 ? value : "900000000";
     }
 
     private static int ParseRequiredCode(string value) => int.Parse(value.Trim(), CultureInfo.InvariantCulture);
@@ -631,7 +655,7 @@ public static class EmployerInterface006XmlBuilder
 
     private static string EmployerContactMobile(string? value)
     {
-        var normalized = value?.Trim() ?? string.Empty;
+        var normalized = Digits(value);
         return normalized.Length == 0 ? "0500000000" : normalized;
     }
 
