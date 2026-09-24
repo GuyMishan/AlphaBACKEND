@@ -535,5 +535,5 @@ public sealed record ManualProductInput(PensionProductType ProductType, string P
     IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions);
 public sealed record ManualContributionInput(ContributionComponent Component, decimal Amount, decimal Percentage, decimal ExemptPayments);
 public sealed record SaveManualReportPaymentRequest(string ProviderName, string ProviderAccount, string PaymentMethod,
-    DateOnly? ValueDate, DateOnly? TrustAccountValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,
-    string EmployerBranch, string EmployerAccount, string ConfirmationFileName);
+    DateOnly? ValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,
+    string EmployerBranch, string EmployerAccount, string ConfirmationFileName, DateOnly? TrustAccountValueDate = null);
