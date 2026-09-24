@@ -212,7 +212,8 @@ public static class ReportValidationEndpoints
                     payment.PaymentMethod, payment.ValueDate, payment.TrustAccountValueDate, payment.ReferenceNumber, payment.EmployerBankName,
                     payment.EmployerBankCode, payment.EmployerBranch, payment.EmployerAccount, payment.ConfirmationFileName);
                 var totalDeposit = contributions.Where(x => x.ReportProductId == product.Id).Sum(x => x.Amount);
-                foreach (var error in ApiInputValidation.Payment(request, totalDeposit))
+                foreach (var error in ApiInputValidation.Payment(request, totalDeposit,
+                    productMetadata?.OperationCode, productMetadata?.EmployerAccountType))
                     issues.Add(new("PAYMENT_VALIDATION", $"{employeeName}, פוליסה {product.PolicyNumber}: {error}", ValidationScope.Payment, employee.Id, product.Id));
             }
         }
