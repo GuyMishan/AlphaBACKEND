@@ -87,9 +87,9 @@ public static class EmployerInterface006XmlBuilder
         var transfer = new XElement("PirteiHaavaratKsafim",
             E("KOD-MEZAHE-KUPA-H-P", Digits(first.FundCode)),
             E("SUG-MAFKID", c.DepositorTypeCode),
-            E("SUG-MEZAHE-MAASIK", 1),
-            E("MISPAR-ZIHUY-MAASIK", senderId),
-            E("MISPAR-TIK-NIKUIM-MAASIK", Digits(c.Employer.WithholdingFileNumber)),
+            E("SUG-MEZAHE-MAASIK", c.EmployerIdentifierTypeCode),
+            E("MISPAR-ZIHUY-MAASIK", c.Employer.RegistrationNumber.Trim()),
+            negative ? Nil("MISPAR-TIK-NIKUIM-MAASIK", null) : E("MISPAR-TIK-NIKUIM-MAASIK", Digits(c.Employer.WithholdingFileNumber)),
             Nil("KOD-MEZAHE-MAASIK-ETZEL-YATZRAN", null),
             negative || metadata.PaymentMethodCode != 5 ? Nil("KOD-MASAV", null) : E("KOD-MASAV", "1"),
             E("SCHUM-HAFKADA-KOLEL", Money(reportedDeposit)),
@@ -162,18 +162,38 @@ public static class EmployerInterface006XmlBuilder
 
         transfer.Add(BuildFund(c, products, negative));
 
-        return new XElement("YeshutGoremPoneLemislaka",
-            E("SUG-PONE", 5),
-            E("SUG-KOD-MEZAHE-PONE", 1),
-            E("MISPAR-MEZAHE-PONE", senderId),
-            E("SHEM-GOREM-PONE", c.Employer.LegalName),
-            Nil("MISPAR-MEZAHE-METAFEL", c.Options.SenderCode == 5 ? null : senderId),
-            Nil("SHEM-PRATI-PONE-LEMISLAKA", c.Employer.ContactFirstName),
-            Nil("SHEM-MISHPACHA-PONE-LEMISLAKA", c.Employer.ContactLastName),
-            Nil("MISPAR-TELEPHONE-KAVI-PONE-LEMISLAKA", Digits(c.Employer.ContactPhone)),
-            Nil("E-MAIL-PONE-LEMISLAKA", c.Employer.ContactEmail),
-            Nil("MISPAR-CELLULARI", Digits(c.Employer.ContactMobile)),
-            transfer);
+        var directEmployerSender = c.Options.SenderCode == 5;
+        var requester = new XElement("YeshutGoremPoneLemislaka");
+        if (directEmployerSender)
+        {
+            requester.Add(
+                Nil("SUG-PONE", null),
+                Nil("SUG-KOD-MEZAHE-PONE", null),
+                Nil("MISPAR-MEZAHE-PONE", null),
+                Nil("SHEM-GOREM-PONE", null),
+                Nil("MISPAR-MEZAHE-METAFEL", null),
+                Nil("SHEM-PRATI-PONE-LEMISLAKA", null),
+                Nil("SHEM-MISHPACHA-PONE-LEMISLAKA", null),
+                Nil("MISPAR-TELEPHONE-KAVI-PONE-LEMISLAKA", null),
+                Nil("E-MAIL-PONE-LEMISLAKA", null),
+                Nil("MISPAR-CELLULARI", null));
+        }
+        else
+        {
+            requester.Add(
+                E("SUG-PONE", 5),
+                E("SUG-KOD-MEZAHE-PONE", c.EmployerIdentifierTypeCode),
+                E("MISPAR-MEZAHE-PONE", c.Employer.RegistrationNumber.Trim()),
+                E("SHEM-GOREM-PONE", c.Employer.LegalName),
+                Nil("MISPAR-MEZAHE-METAFEL", senderId),
+                Nil("SHEM-PRATI-PONE-LEMISLAKA", c.Employer.ContactFirstName),
+                Nil("SHEM-MISHPACHA-PONE-LEMISLAKA", c.Employer.ContactLastName),
+                Nil("MISPAR-TELEPHONE-KAVI-PONE-LEMISLAKA", Digits(c.Employer.ContactPhone)),
+                Nil("E-MAIL-PONE-LEMISLAKA", c.Employer.ContactEmail),
+                Nil("MISPAR-CELLULARI", EmployerContactMobile(c.Employer.ContactMobile)));
+        }
+        requester.Add(transfer);
+        return requester;
     }
 
     private static XElement BuildFund(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative)
@@ -300,6 +320,8 @@ public static class EmployerInterface006XmlBuilder
         var o = c.Options;
         var sender = ResolveSender(c);
         if (c.DepositorTypeCode is < 1 or > 3) issues.Add("EmployerInterface006:DepositorTypeCode must be 1, 2 or 3.");
+        if (!IdentifierTypeCodes.Contains(c.EmployerIdentifierTypeCode))
+            issues.Add("EmployerInterface006: EmployerIdentifierTypeCode must be one of 1,2,3,4,5,7,8,9,10,11,12,13.");
         if (o.EnvironmentCode is not (1 or 2)) issues.Add("EmployerInterface006:EnvironmentCode must be 1 (TEST) or 2 (PRODUCTION).");
         if (o.FileDirectionCode is < 1 or > 999) issues.Add("EmployerInterface006:FileDirectionCode must contain a valid Annex VI 3-digit direction code.");
         if (o.SenderCode is < 1 or > 6) issues.Add("EmployerInterface006:SenderCode must be a valid Version 006 sender code.");
@@ -605,7 +627,7 @@ public static class EmployerInterface006XmlBuilder
         IReadOnlyDictionary<Guid, Person> People, IReadOnlyDictionary<Guid, Employment> Employments,
         IReadOnlyList<ManualReportProduct> Products, IReadOnlyList<ManualContribution> Contributions,
         IReadOnlyList<ManualReportPayment> Payments, IReadOnlyList<EmployerInterfaceReportProductData> ProductMetadata,
-        EmployerInterface006Options Options, int DepositorTypeCode = 1,
+        EmployerInterface006Options Options, int DepositorTypeCode = 1, int EmployerIdentifierTypeCode = 1,
         IReadOnlyList<ManualReportAttachment>? AttachmentItems = null, bool AnnualEmployerAffidavitSatisfied = false,
         DateTimeOffset? PreparedAt = null, IReadOnlyDictionary<Guid, string>? AttachmentFileNames = null,
         int FileSequence = 1)
