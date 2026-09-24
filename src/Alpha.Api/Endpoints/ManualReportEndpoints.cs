@@ -325,6 +325,7 @@ public static class ManualReportEndpoints
                 providerAccount = payment?.ProviderAccount ?? string.Empty,
                 paymentMethod = payment?.PaymentMethod ?? "העברה בנקאית",
                 valueDate = payment?.ValueDate,
+                trustAccountValueDate = payment?.TrustAccountValueDate,
                 referenceNumber = payment?.ReferenceNumber ?? string.Empty,
                 employerBankName = payment?.EmployerBankName ?? string.Empty,
                 employerBankCode = payment?.EmployerBankCode ?? string.Empty,
@@ -355,8 +356,8 @@ public static class ManualReportEndpoints
             db.ManualReportPayments.Add(payment);
         }
         payment.Update(request.ProviderName, request.ProviderAccount, request.PaymentMethod, request.ValueDate,
-            request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode, request.EmployerBranch,
-            request.EmployerAccount, request.ConfirmationFileName);
+            request.TrustAccountValueDate, request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode,
+            request.EmployerBranch, request.EmployerAccount, request.ConfirmationFileName);
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -534,5 +535,5 @@ public sealed record ManualProductInput(PensionProductType ProductType, string P
     IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions);
 public sealed record ManualContributionInput(ContributionComponent Component, decimal Amount, decimal Percentage, decimal ExemptPayments);
 public sealed record SaveManualReportPaymentRequest(string ProviderName, string ProviderAccount, string PaymentMethod,
-    DateOnly? ValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,
+    DateOnly? ValueDate, DateOnly? TrustAccountValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,
     string EmployerBranch, string EmployerAccount, string ConfirmationFileName);
