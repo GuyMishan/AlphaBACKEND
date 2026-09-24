@@ -53,6 +53,7 @@ public static class EmployeePensionMixEndpoints
             p.FundCode,
             p.FundName,
             p.FundCompanyName,
+            p.FundClassification,
             p.SalaryAllocationType,
             p.SalaryAllocationValue,
             p.AllocationOrder,
@@ -99,6 +100,7 @@ public static class EmployeePensionMixEndpoints
             var fundCode = input.FundCode ?? existing?.FundCode ?? string.Empty;
             var fundName = input.FundName ?? existing?.FundName ?? string.Empty;
             var fundCompanyName = input.FundCompanyName ?? existing?.FundCompanyName ?? string.Empty;
+            var fundClassification = input.FundClassification ?? existing?.FundClassification ?? string.Empty;
             var allocationType = input.SalaryAllocationType ?? existing?.SalaryAllocationType ?? SalaryAllocationType.Fixed;
             var allocationValue = input.SalaryAllocationType.HasValue || input.SalaryAllocationValue.HasValue
                 ? input.SalaryAllocationValue
@@ -124,7 +126,7 @@ public static class EmployeePensionMixEndpoints
                 return Results.BadRequest(new { error = "Section 14 effective/cancellation date is required for codes 2 and 4." });
 
             resolved.Add(new ResolvedProductInput(input, isActive, effectiveFrom, effectiveTo, institutionalBody,
-                manufacturer, fundExternalKey, fundCode, fundName, fundCompanyName,
+                manufacturer, fundExternalKey, fundCode, fundName, fundCompanyName, fundClassification,
                 allocationType, allocationValue, allocationOrder, section14Code));
         }
 
@@ -157,7 +159,7 @@ public static class EmployeePensionMixEndpoints
                 Math.Max(legacySalary, 0), input.ReportingType, input.SalaryLayer, item.Section14Code is 1 or 2, input.Section14StartDate,
                 item.IsActive, item.EffectiveFrom, item.EffectiveTo, item.InstitutionalBody, item.Manufacturer,
                 item.FundExternalKey, item.FundCode, item.FundName, item.FundCompanyName,
-                item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder, item.Section14Code);
+                item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder, item.Section14Code, item.FundClassification);
             db.EmployeePensionProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, input.EmployeeContributions);
@@ -207,7 +209,7 @@ public static class EmployeePensionMixEndpoints
 
     private sealed record ResolvedProductInput(EmployeePensionProductInput Input, bool IsActive, DateOnly EffectiveFrom,
         DateOnly? EffectiveTo, string InstitutionalBody, string Manufacturer, string FundExternalKey,
-        string FundCode, string FundName, string FundCompanyName, SalaryAllocationType SalaryAllocationType,
+        string FundCode, string FundName, string FundCompanyName, string FundClassification, SalaryAllocationType SalaryAllocationType,
         decimal? SalaryAllocationValue, int AllocationOrder, int Section14Code);
 }
 
@@ -215,7 +217,7 @@ public sealed record SaveEmployeePensionMixRequest(decimal? MonthlySalary, IRead
 public sealed record EmployeePensionProductInput(PensionProductType ProductType, string PolicyNumber, decimal Salary,
     string ReportingType, string SalaryLayer, bool Section14, int? Section14Code, DateOnly? Section14StartDate,
     bool? IsActive, DateOnly? EffectiveFrom, DateOnly? EffectiveTo, string? InstitutionalBody, string? Manufacturer,
-    string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName,
+    string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName, string? FundClassification,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployerContributions,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployeeContributions);
