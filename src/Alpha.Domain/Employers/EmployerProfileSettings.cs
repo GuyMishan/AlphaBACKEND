@@ -47,6 +47,7 @@ public sealed class EmployerProfileSettings : Entity
     public bool PensionPaymentModeOverridden { get; private set; }
 
     public int? DefaultSalaryPaymentDay { get; private set; }
+    public int DefaultDepositorTypeCode { get; private set; } = 1;
     public int? DefaultPaymentMethodCode { get; private set; }
     public int? DefaultEmployerAccountType { get; private set; }
     public int? DefaultReceiverAccountType { get; private set; }
@@ -93,15 +94,18 @@ public sealed class EmployerProfileSettings : Entity
         Touch();
     }
 
-    public void UpdateReporting(int? defaultSalaryPaymentDay, int? defaultPaymentMethodCode,
+    public void UpdateReporting(int? defaultSalaryPaymentDay, int defaultDepositorTypeCode, int? defaultPaymentMethodCode,
         int? defaultEmployerAccountType, int? defaultReceiverAccountType, string? notes)
     {
         if (defaultSalaryPaymentDay is < 1 or > 31)
             throw new ArgumentOutOfRangeException(nameof(defaultSalaryPaymentDay), "Salary payment day must be between 1 and 31.");
+        if (defaultDepositorTypeCode is < 1 or > 3)
+            throw new ArgumentOutOfRangeException(nameof(defaultDepositorTypeCode), "Depositor type must be 1, 2 or 3.");
         if (defaultPaymentMethodCode < 0 || defaultEmployerAccountType < 0 || defaultReceiverAccountType < 0)
             throw new ArgumentOutOfRangeException(nameof(defaultPaymentMethodCode), "Reporting codes cannot be negative.");
 
         DefaultSalaryPaymentDay = defaultSalaryPaymentDay;
+        DefaultDepositorTypeCode = defaultDepositorTypeCode;
         DefaultPaymentMethodCode = defaultPaymentMethodCode;
         DefaultEmployerAccountType = defaultEmployerAccountType;
         DefaultReceiverAccountType = defaultReceiverAccountType;
