@@ -202,11 +202,21 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
         if (paymentNode is null) return;
         var payment = new ManualReportPayment(product.Id);
-        payment.Update(Value(fundNode, "SHEM-KUPA-ETZEL-MAASIK"), Value(paymentNode, "MISPAR-CHESHBON-KOLET"),
+        payment.Update(Value(fundNode, "SHEM-KUPA-ETZEL-MAASIK"), BuildReceiverAccountText(paymentNode),
             Value(paymentNode, "KOD-EMTZAI-TASHLUM"), ParseDate(Value(paymentNode, "TAARICH-ERECH-HAFKADA-LEKUPA")),
             Value(paymentNode, "MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM"), null, Value(paymentNode, "MISPAR-BANK-MAASIK"),
             Value(paymentNode, "MISPAR-SNIF-MAASIK"), Value(paymentNode, "MISPAR-CHESHBON-MAASIK"), null);
         context.ManualReportPayments.Add(payment);
+    }
+
+    private static string BuildReceiverAccountText(XContainer paymentNode)
+    {
+        var bank = Value(paymentNode, "MISPAR-BANK-KOLET");
+        var branch = Value(paymentNode, "MISPAR-SNIF-KOLET");
+        var account = Value(paymentNode, "MISPAR-CHESHBON-KOLET");
+        return new[] { bank, branch, account }.All(x => !string.IsNullOrWhiteSpace(x))
+            ? $"{bank} - {branch} - {account}"
+            : account ?? string.Empty;
     }
 
     private static XDocument BuildEmployerReportXml(string employerName, string registrationNumber, string withholdingFileNumber,
