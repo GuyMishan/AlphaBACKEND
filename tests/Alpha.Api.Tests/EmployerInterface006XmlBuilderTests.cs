@@ -393,6 +393,24 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_emits_official_default_fund_attachment_type_5()
+    {
+        var fixture = CreateFixture(false, operationCode: 1);
+        var request = new ManualReportAttachment(Guid.NewGuid(), fixture.Product.Id, 5, "default-fund-request.pdf",
+            "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.4\nrequest"));
+        var context = fixture.Context with { Attachments = [request] };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal("5", Assert.Single(result.Document!.Descendants("SUG-MISMACH")).Value);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, false);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Negative_operation_5_emits_attachment_references_and_employee_flags()
     {
         var fixture = CreateFixture(true, operationCode: 5);
