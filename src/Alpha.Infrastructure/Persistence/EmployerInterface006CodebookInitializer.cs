@@ -70,6 +70,9 @@ public static class EmployerInterface006CodebookInitializer
                 ('receiver-account-type', 'current', 1, 'חשבון יצרן', 1, true, 'EmployerInterface006-Workbook-V6', now()),
                 ('receiver-account-type', 'current', 2, 'חשבון נאמנות', 2, true, 'EmployerInterface006-Workbook-V6', now()),
 
+                ('old-pension-type', 'current', 1, 'מקיפה', 1, true, 'EmployerInterface006-Workbook-V6', now()),
+                ('old-pension-type', 'current', 2, 'יסוד', 2, true, 'EmployerInterface006-Workbook-V6', now()),
+
                 ('section14-code', 'all', 1, 'כן - סעיף 14 חל ממועד תחילת ההעסקה', 1, true, 'EmployerInterface006-Workbook-V6', now()),
                 ('section14-code', 'all', 2, 'כן - סעיף 14 חל מתאריך שונה ממועד תחילת ההעסקה', 2, true, 'EmployerInterface006-Workbook-V6', now()),
                 ('section14-code', 'all', 3, 'העובד אינו חתום על סעיף 14', 3, true, 'EmployerInterface006-Workbook-V6', now()),
