@@ -1,3 +1,4 @@
+using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Schema;
@@ -358,6 +359,82 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_allows_missing_policy_number_and_emits_nil()
+    {
+        var fixture = CreateFixture(false, policyNumber: "");
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var policy = Assert.Single(result.Document!.Descendants("MISPAR-POLISA-O-HESHBON"));
+        Assert.Equal("true", policy.Attribute(XName.Get("nil", "http://www.w3.org/2001/XMLSchema-instance"))?.Value);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, fixture.Context, false);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Negative_operation_5_emits_attachment_references_and_employee_flags()
+    {
+        var fixture = CreateFixture(true, operationCode: 5);
+        var employeeApproval = new ManualReportAttachment(Guid.NewGuid(), fixture.Product.Id, 4, "employee-approval.pdf",
+            "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.4\nemployee"));
+        var collectiveAgreement = new ManualReportAttachment(Guid.NewGuid(), fixture.Product.Id, 6, "collective.pdf",
+            "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.4\ncollective"));
+        var context = fixture.Context with
+        {
+            Attachments = [.. fixture.Context.Attachments, employeeApproval, collectiveAgreement],
+            AnnualEmployerAffidavitSatisfied = true
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildNegative(context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var documentTypes = result.Document!.Descendants("SUG-MISMACH").Select(x => x.Value).OrderBy(x => x).ToArray();
+        Assert.Equal(["3", "4", "6"], documentTypes);
+        Assert.Contains(result.Document.Descendants("HASHAVA-KIBUTZI"), x => x.Value == "1");
+        Assert.Contains(result.Document.Descendants("HATZHARAT-OVED"), x => x.Value == "1");
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, true);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document, "mimshak_maasikim_shliliim_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Negative_operation_5_requires_annual_employer_affidavit()
+    {
+        var fixture = CreateFixture(true, operationCode: 5);
+        var employeeApproval = new ManualReportAttachment(Guid.NewGuid(), fixture.Product.Id, 4, "employee-approval.pdf",
+            "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.4\nemployee"));
+        var context = fixture.Context with
+        {
+            Attachments = [employeeApproval],
+            AnnualEmployerAffidavitSatisfied = false
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildNegative(context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("annual employer affidavit", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Negative_operation_5_requires_supporting_attachment_for_current_report()
+    {
+        var fixture = CreateFixture(true, operationCode: 5);
+        var context = fixture.Context with
+        {
+            Attachments = [],
+            AnnualEmployerAffidavitSatisfied = true
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildNegative(context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("supporting attachment", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Negative_report_rejects_current_operation_code()
     {
         var fixture = CreateFixture(true, operationCode: 1);
@@ -378,7 +455,7 @@ public sealed class EmployerInterface006XmlBuilderTests
 
     private static (EmployerInterface006XmlBuilder.BuildContext Context, ManualReportProduct Product) CreateFixture(
         bool negative, int? operationCode = null, int? previousExceptionCode = 1, int? section14Code = null,
-        string employerMobile = "0501234567", int paymentMethodCode = 1)
+        string employerMobile = "0501234567", int paymentMethodCode = 1, string policyNumber = "123")
     {
         var organizationId = Guid.NewGuid();
         var employer = new Employer(organizationId, "Test Employer", "123456789", "987654321",
@@ -390,7 +467,7 @@ public sealed class EmployerInterface006XmlBuilderTests
         var reportId = Guid.NewGuid();
         var reportEmployee = new ManualReportEmployee(reportId, organizationId, employer.Id, employment.Id, person.Id,
             person.NationalId, person.FirstName, person.LastName, employment.EmployeeNumber, employment.MonthlySalary);
-        var product = new ManualReportProduct(reportEmployee.Id, PensionProductType.PensionFund, "123",
+        var product = new ManualReportProduct(reportEmployee.Id, PensionProductType.PensionFund, policyNumber,
             new DateOnly(2026, 9, 1), 1000m, "1", "1", false, null,
             fundCode: new string('1', 30), fundName: "Test Fund", section14Code: section14Code);
         var contribution = new ManualContribution(product.Id, ContributionParty.Employee, ContributionComponent.Benefits,
@@ -412,12 +489,21 @@ public sealed class EmployerInterface006XmlBuilderTests
             RecipientIdentifier = "123456789"
         };
 
+        var attachments = new List<ManualReportAttachment>();
+        var annualAffidavitSatisfied = false;
+        if (negative && (operationCode ?? 5) == 5)
+        {
+            attachments.Add(new ManualReportAttachment(reportId, null, 3, "employer-affidavit.pdf", "application/pdf",
+                Encoding.ASCII.GetBytes("%PDF-1.4\nfixture")));
+            annualAffidavitSatisfied = true;
+        }
+
         var context = new EmployerInterface006XmlBuilder.BuildContext(
             employer,
             [reportEmployee],
             new Dictionary<Guid, Person> { [person.Id] = person },
             new Dictionary<Guid, Employment> { [employment.Id] = employment },
-            [product], [contribution], [payment], [metadata], options);
+            [product], [contribution], [payment], [metadata], options, 1, attachments, annualAffidavitSatisfied);
         return (context, product);
     }
 
