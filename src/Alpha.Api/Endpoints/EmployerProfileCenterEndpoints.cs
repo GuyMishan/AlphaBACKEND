@@ -13,7 +13,8 @@ public sealed record EmployerBillingSettingsRequest(EmployerBillingMode BillingM
 public sealed record EmployerPensionPaymentSettingsRequest(EmployerPensionPaymentMode Mode);
 public sealed record EmployerReportingSettingsRequest(
     int? DefaultSalaryPaymentDay, int? DefaultPaymentMethodCode, int? DefaultEmployerAccountType,
-    int? DefaultReceiverAccountType, string? ReportingNotes, int? DefaultDepositorTypeCode = null);
+    int? DefaultReceiverAccountType, string? ReportingNotes, int? DefaultDepositorTypeCode = null,
+    int? DefaultEmployerIdentifierTypeCode = null);
 public static class EmployerProfileCenterEndpoints
 {
     public static IEndpointRouteBuilder MapEmployerProfileCenterEndpoints(this IEndpointRouteBuilder endpoints)
@@ -77,6 +78,7 @@ public static class EmployerProfileCenterEndpoints
             {
                 defaultSalaryPaymentDay = settings?.DefaultSalaryPaymentDay,
                 defaultDepositorTypeCode = settings?.DefaultDepositorTypeCode ?? 1,
+                defaultEmployerIdentifierTypeCode = settings?.DefaultEmployerIdentifierTypeCode ?? 1,
                 defaultPaymentMethodCode = settings?.DefaultPaymentMethodCode,
                 defaultEmployerAccountType = settings?.DefaultEmployerAccountType,
                 defaultReceiverAccountType = settings?.DefaultReceiverAccountType,
@@ -156,6 +158,7 @@ public static class EmployerProfileCenterEndpoints
         {
             settings.UpdateReporting(request.DefaultSalaryPaymentDay,
                 request.DefaultDepositorTypeCode ?? settings.DefaultDepositorTypeCode,
+                request.DefaultEmployerIdentifierTypeCode ?? settings.DefaultEmployerIdentifierTypeCode,
                 request.DefaultPaymentMethodCode, request.DefaultEmployerAccountType,
                 request.DefaultReceiverAccountType, request.ReportingNotes);
         }
