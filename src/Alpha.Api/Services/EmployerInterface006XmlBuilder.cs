@@ -471,7 +471,7 @@ public static class EmployerInterface006XmlBuilder
                     issues.Add($"{label}: products for the same employee and fund must use the same Section 14 code/effective date because Version 006 permits one PirteiOved block per employee in a batch.");
             }
 
-            var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
+            var contributions = EffectiveContributions(c, product, negative);
             var contributionCodes = contributions.Select(MapContributionCode).ToList();
             if (contributionCodes.GroupBy(x => x).Any(g => g.Key != "4" && g.Count() > 1))
                 issues.Add($"{label}: the same SUG-HAFRASHA contribution type cannot be reported more than once in one salary/status block, except code 4.");
