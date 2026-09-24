@@ -175,7 +175,7 @@ public static class ReportValidationEndpoints
                     .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray()
             )).ToArray();
 
-            foreach (var error in ApiInputValidation.Products(inputs, limits))
+            foreach (var error in ApiInputValidation.Products(inputs, limits, enforcePolicyPercentageLimits: false))
                 issues.Add(new("PRODUCT_VALIDATION", $"{employeeName}: {error}", ValidationScope.Contribution, employee.Id));
         }
 
