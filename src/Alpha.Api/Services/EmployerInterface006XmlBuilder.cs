@@ -49,6 +49,7 @@ public static class EmployerInterface006XmlBuilder
     private static XElement BuildHeader(BuildContext c, bool negative, DateTimeOffset now, string senderId)
     {
         var o = c.Options;
+        var sender = ResolveSender(c);
         return new XElement("KoteretKovetz",
             E("SUG-MIMSHAK", negative ? 13 : 12),
             E("MISPAR-GIRSAT-XML", EmployerInterfaceSchemaRegistry.Version),
