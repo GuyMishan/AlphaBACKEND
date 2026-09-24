@@ -50,6 +50,8 @@ public sealed class EmployeePensionProduct : Entity
         int allocationOrder = 0, int? section14Code = null)
     {
         if (salary < 0) throw new ArgumentOutOfRangeException(nameof(salary));
+        if ((policyNumber?.Trim().Length ?? 0) > 20)
+            throw new ArgumentOutOfRangeException(nameof(policyNumber), "Policy/account number cannot exceed 20 characters in Employer Interface 006.");
         if (effectiveTo is not null && effectiveTo.Value < effectiveFrom)
             throw new ArgumentException("Product effective end date cannot be earlier than the start date.", nameof(effectiveTo));
         if (allocationOrder < 0) throw new ArgumentOutOfRangeException(nameof(allocationOrder));
@@ -91,7 +93,6 @@ public sealed class EmployeePensionProduct : Entity
     public IReadOnlyCollection<string> MissingDetails()
     {
         var missing = new List<string>();
-        if (string.IsNullOrWhiteSpace(PolicyNumber)) missing.Add("policyNumber");
         if (ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(FundExternalKey)) missing.Add("fund");
         if (string.IsNullOrWhiteSpace(InstitutionalBody)) missing.Add("institutionalBody");
         if (string.IsNullOrWhiteSpace(Manufacturer)) missing.Add("manufacturer");
