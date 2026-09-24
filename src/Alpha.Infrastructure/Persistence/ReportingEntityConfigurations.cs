@@ -24,6 +24,7 @@ public sealed class EmployeePensionProductConfiguration : IEntityTypeConfigurati
         b.Property(x => x.FundCode).HasColumnName("fund_code").HasMaxLength(100);
         b.Property(x => x.FundName).HasColumnName("fund_name").HasMaxLength(300);
         b.Property(x => x.FundCompanyName).HasColumnName("fund_company_name").HasMaxLength(300);
+        b.Property(x => x.FundClassification).HasColumnName("fund_classification").HasMaxLength(200);
         b.Property(x => x.SalaryAllocationType).HasConversion<string>().HasMaxLength(30);
         b.Property(x => x.SalaryAllocationValue).HasPrecision(18, 4);
         b.HasIndex(x => x.EmploymentId);
@@ -100,6 +101,7 @@ public sealed class ManualReportProductConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.FundCode).HasColumnName("fund_code").HasMaxLength(100);
         b.Property(x => x.FundName).HasColumnName("fund_name").HasMaxLength(300);
         b.Property(x => x.FundCompanyName).HasColumnName("fund_company_name").HasMaxLength(300);
+        b.Property(x => x.FundClassification).HasColumnName("fund_classification").HasMaxLength(200);
         b.Property(x => x.SalaryAllocationType).HasConversion<string>().HasMaxLength(30);
         b.Property(x => x.SalaryAllocationValue).HasPrecision(18, 4);
         b.Property(x => x.ValidationStatus).HasConversion<string>().HasMaxLength(40);
