@@ -20,6 +20,14 @@ public static class EmployerInterface006WorkbookRules
             [7] = [1]
         };
 
+    public static IReadOnlyCollection<int> AllowedPaymentMethods(int operationCode)
+    {
+        if (operationCode == 6) return Array.Empty<int>();
+        return AllowedPaymentMethodsByOperation.TryGetValue(operationCode, out var allowed)
+            ? allowed.OrderBy(x => x).ToArray()
+            : Array.Empty<int>();
+    }
+
     public static IReadOnlyList<string> ValidateAndApply(XDocument document,
         EmployerInterface006XmlBuilder.BuildContext context, bool negative)
     {
