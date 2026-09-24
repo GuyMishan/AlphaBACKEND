@@ -127,8 +127,8 @@ public static class EmployerInterface006XmlBuilder
             {
                 transfer.Add(
                     E("MISPAR-BANK-MAASIK", int.Parse(Digits(payment!.EmployerBankCode), CultureInfo.InvariantCulture)),
-                    E("MISPAR-SNIF-MAASIK", Digits(payment.EmployerBranch)),
-                    E("MISPAR-CHESHBON-MAASIK", Digits(payment.EmployerAccount)));
+                    E("MISPAR-SNIF-MAASIK", FixedDigits(payment.EmployerBranch, 3)),
+                    E("MISPAR-CHESHBON-MAASIK", FixedDigits(payment.EmployerAccount, 20)));
             }
         }
 
