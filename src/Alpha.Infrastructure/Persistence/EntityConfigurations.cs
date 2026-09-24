@@ -212,6 +212,7 @@ public sealed class EmployerProfileSettingsConfiguration : IEntityTypeConfigurat
         b.Property(x => x.PensionPaymentMode).HasConversion<string>().HasMaxLength(40).IsRequired();
         b.Property(x => x.PensionPaymentModeOverridden).IsRequired().HasDefaultValue(false);
         b.Property(x => x.DefaultDepositorTypeCode).IsRequired().HasDefaultValue(1);
+        b.Property(x => x.DefaultEmployerIdentifierTypeCode).IsRequired().HasDefaultValue(1);
         b.Property(x => x.ReportingNotes).HasMaxLength(500);
         b.HasIndex(x => x.EmployerId).IsUnique();
         b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade);
