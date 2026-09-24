@@ -237,6 +237,8 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_payments (
     "PaymentMethod" varchar(80) NOT NULL DEFAULT 'העברה בנקאית',
     "ValueDate" date NULL,
     "TrustAccountValueDate" date NULL,
+    "ActualDepositAmount" numeric(15,2) NULL,
+    "MasavSenderCode" varchar(16) NOT NULL DEFAULT '',
     "ReferenceNumber" varchar(120) NOT NULL DEFAULT '',
     "EmployerBankName" varchar(120) NOT NULL DEFAULT '',
     "EmployerBankCode" varchar(30) NOT NULL DEFAULT '',
@@ -272,6 +274,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS "UX_manual_report_attachments_transmission_nam
 
 ALTER TABLE reporting.manual_report_payments
     ADD COLUMN IF NOT EXISTS "TrustAccountValueDate" date NULL;
+ALTER TABLE reporting.manual_report_payments
+    ADD COLUMN IF NOT EXISTS "ActualDepositAmount" numeric(15,2) NULL;
+ALTER TABLE reporting.manual_report_payments
+    ADD COLUMN IF NOT EXISTS "MasavSenderCode" varchar(16) NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS reporting.contribution_percentage_limits (
     "Id" uuid PRIMARY KEY,
