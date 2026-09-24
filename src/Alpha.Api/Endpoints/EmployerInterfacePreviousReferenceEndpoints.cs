@@ -64,7 +64,8 @@ public static class EmployerInterfacePreviousReferenceEndpoints
             item.Update(item.OperationCode, item.DepositStatus, item.EmployeeStatus, item.StatusStartDate,
                 item.EmploymentPercentage, item.WorkDaysInMonth, item.LastDeposit, item.RefundReason,
                 item.PaymentMethodCode, item.EmployerAccountType, item.ReceiverAccountType,
-                request.PreviousIdentifier, request.PreviousClearingIdentifier, request.PreviousReferenceExceptionCode);
+                request.PreviousIdentifier, request.PreviousClearingIdentifier, request.PreviousReferenceExceptionCode,
+                item.OldPensionTypeCode);
         }
         catch (ArgumentException ex)
         {
