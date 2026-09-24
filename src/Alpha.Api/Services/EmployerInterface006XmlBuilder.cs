@@ -211,9 +211,11 @@ public static class EmployerInterface006XmlBuilder
     private static XElement BuildFund(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative)
     {
         var first = products[0];
+        var firstMetadata = c.ProductMetadata.First(x => x.ReportProductId == first.Id);
+        var oldPensionTypeCode = !negative && IsOldPensionFund(first) ? firstMetadata.OldPensionTypeCode : null;
         var fund = new XElement("PirteiKupa",
             E("SUG-KUPA", MapProductCode(first.ProductType)),
-            Nil("SUG-KEREN-PENSIA", null),
+            Nil("SUG-KEREN-PENSIA", oldPensionTypeCode),
             // Internal employer fund name is a different field from the official fund name.
             // Alpha does not currently store an employer-specific internal fund name, so Version 006 emits xsi:nil.
             Nil("SHEM-KUPA-ETZEL-MAASIK", null),
@@ -430,6 +432,13 @@ public static class EmployerInterface006XmlBuilder
                 if (!meta.EmployeeStatus.HasValue) issues.Add($"{label}: EmployeeStatus is required for a current report.");
                 if (!meta.StatusStartDate.HasValue) issues.Add($"{label}: StatusStartDate is required for a current report.");
                 if (!meta.LastDeposit.HasValue) issues.Add($"{label}: LastDeposit is required for a current report.");
+                var oldPension = IsOldPensionFund(product);
+                if (oldPension && meta.OldPensionTypeCode is not (1 or 2))
+                    issues.Add($"{label}: old pension funds require SUG-KEREN-PENSIA code 1 (מקיפה) or 2 (יסוד).");
+                if (oldPension && !meta.EmploymentPercentage.HasValue && !meta.WorkDaysInMonth.HasValue)
+                    issues.Add($"{label}: old pension funds require either employment percentage or work days in month.");
+                if (!oldPension && meta.OldPensionTypeCode.HasValue)
+                    issues.Add($"{label}: SUG-KEREN-PENSIA is relevant only to an old pension fund.");
                 if (meta.EmployeeStatus == 14 && product.Section14Code == 5)
                     issues.Add($"{label}: Section14Code 5 must not be used for a new employee/status 14.");
                 if (!meta.PaymentMethodCode.HasValue || !PaymentMethodCodes.Contains(meta.PaymentMethodCode.Value)) issues.Add($"{label}: PaymentMethodCode must be one of 1,3,4,5,6,7,9.");
@@ -613,6 +622,10 @@ public static class EmployerInterface006XmlBuilder
         }
         return total;
     }
+
+    private static bool IsOldPensionFund(ManualReportProduct product) =>
+        product.ProductType == PensionProductType.PensionFund
+        && product.FundClassification.Contains("ותיק", StringComparison.Ordinal);
 
     private static readonly HashSet<int> NoContributionEmployeeStatuses = [3, 4, 5, 8, 9, 10, 11, 12, 17];
 
