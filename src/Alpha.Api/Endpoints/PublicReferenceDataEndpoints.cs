@@ -258,7 +258,7 @@ public static class PublicReferenceDataEndpoints
         command.CommandText = $"""
             SELECT DISTINCT ON (COALESCE(NULLIF(fund_code, ''), fund_name), fund_name)
                    external_key, fund_code, fund_name, company_name, domain, product_type,
-                   bank_code, bank_name, branch_code, account_number
+                   bank_code, bank_name, branch_code, account_number, classification
             FROM reference_data.pension_products
             WHERE is_active = true
               AND product_type = @product_type
@@ -287,7 +287,8 @@ public static class PublicReferenceDataEndpoints
                 bankCode = reader.IsDBNull(6) ? (int?)null : reader.GetInt32(6),
                 bankName = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
                 branchCode = reader.IsDBNull(8) ? (int?)null : reader.GetInt32(8),
-                accountNumber = reader.IsDBNull(9) ? string.Empty : reader.GetString(9)
+                accountNumber = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
+                classification = reader.IsDBNull(10) ? string.Empty : reader.GetString(10)
             });
         }
 
