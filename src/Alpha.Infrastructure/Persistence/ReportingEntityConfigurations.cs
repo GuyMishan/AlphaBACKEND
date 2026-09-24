@@ -125,6 +125,25 @@ public sealed class ManualContributionConfiguration : IEntityTypeConfiguration<M
     }
 }
 
+public sealed class ManualReportAttachmentConfiguration : IEntityTypeConfiguration<ManualReportAttachment>
+{
+    public void Configure(EntityTypeBuilder<ManualReportAttachment> b)
+    {
+        b.ToTable("manual_report_attachments", "reporting");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.OriginalFileName).HasMaxLength(260).IsRequired();
+        b.Property(x => x.TransmissionFileName).HasMaxLength(100).IsRequired();
+        b.Property(x => x.ContentType).HasMaxLength(120).IsRequired();
+        b.Property(x => x.Content).IsRequired();
+        b.Property(x => x.Sha256).HasMaxLength(64).IsRequired();
+        b.HasIndex(x => x.ReportId);
+        b.HasIndex(x => x.ReportProductId);
+        b.HasIndex(x => new { x.ReportId, x.TransmissionFileName }).IsUnique();
+        b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ManualReportProduct>().WithMany().HasForeignKey(x => x.ReportProductId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class ManualReportPaymentConfiguration : IEntityTypeConfiguration<ManualReportPayment>
 {
     public void Configure(EntityTypeBuilder<ManualReportPayment> b)
