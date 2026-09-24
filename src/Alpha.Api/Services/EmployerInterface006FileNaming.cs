@@ -1,21 +1,22 @@
-using Alpha.Domain.Employers;
-
 namespace Alpha.Api.Services;
 
 public static class EmployerInterface006FileNaming
 {
     public sealed record PackageName(string PayloadFileName, string BaseName);
 
-    public static PackageName Build(Employer employer, bool negative, DateTimeOffset preparedAt, int sequence = 1, bool testFile = false)
+    public static PackageName Build(string senderIdentifier, int directionCode, bool negative,
+        DateTimeOffset preparedAt, int sequence = 1, bool testFile = false)
     {
         if (sequence is < 1 or > 9999) throw new ArgumentOutOfRangeException(nameof(sequence));
-        var senderDigits = new string((employer.RegistrationNumber ?? string.Empty).Where(char.IsDigit).ToArray());
-        if (senderDigits.Length is 0 or > 12)
-            throw new InvalidOperationException("Employer Interface Annex VI file naming requires a sender identifier of up to 12 digits.");
+        if (directionCode is < 1 or > 999) throw new ArgumentOutOfRangeException(nameof(directionCode));
 
-        var customerId = senderDigits.PadLeft(12, '0');
+        var senderDigits = new string((senderIdentifier ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (senderDigits.Length is 0 or > 12)
+            throw new InvalidOperationException("Annex VI file naming requires the actual sender identifier to contain 1-12 digits.");
+
+        var senderId = senderDigits.PadLeft(12, '0');
         var serviceId = negative ? "EMPNEG" : "EMPONG";
-        var baseName = $"003{customerId}{serviceId}000006{preparedAt:yyyyMMddHHmmss}{sequence:0000}";
+        var baseName = $"{directionCode:000}{senderId}{serviceId}000006{preparedAt:yyyyMMddHHmmss}{sequence:0000}";
         return new PackageName($"{baseName}.{(testFile ? "TST" : "DAT")}", baseName);
     }
 
