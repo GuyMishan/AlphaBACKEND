@@ -14,7 +14,7 @@ public sealed class EmployerInterface006ExportService(
 {
     private static readonly UTF8Encoding Utf8NoBom = new(false);
 
-    public async Task<EmployerInterfaceService.GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct)
+    public async Task<EmployerInterfaceService.GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct, int fileSequence = 1)
     {
         if (report.ReportKind == ManualReportKind.Differences)
             return Invalid(EmployerInterfaceDocumentType.CurrentReport,
@@ -60,9 +60,16 @@ public sealed class EmployerInterface006ExportService(
                 select attachment.Id).AnyAsync(ct);
         }
 
-        var preparedAt = DateTimeOffset.UtcNow;
-        var packageName = EmployerInterface006FileNaming.Build(employer,
-            documentType == EmployerInterfaceDocumentType.NegativeReport, preparedAt);
+        var preparedAt = IsraelNow();
+        var senderIdentifier = string.IsNullOrWhiteSpace(options.Value.SenderIdentifier) && options.Value.SenderCode == 5
+            ? new string(employer.RegistrationNumber.Where(char.IsDigit).ToArray())
+            : options.Value.SenderIdentifier.Trim();
+        if (string.IsNullOrWhiteSpace(senderIdentifier))
+            return Invalid(documentType, "Employer Interface sender identity is not configured. Configure the actual vault/sender identifier before generating a transmission package.");
+
+        var packageName = EmployerInterface006FileNaming.Build(senderIdentifier, options.Value.FileDirectionCode,
+            documentType == EmployerInterfaceDocumentType.NegativeReport, preparedAt, fileSequence,
+            testFile: options.Value.EnvironmentCode == 1);
         var attachmentNames = attachments
             .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ThenBy(x => x.Id)
             .Select((attachment, index) => new
@@ -75,7 +82,7 @@ public sealed class EmployerInterface006ExportService(
 
         var context = new EmployerInterface006XmlBuilder.BuildContext(employer, employees, people, employments,
             products, contributions, payments, metadata, options.Value, profileSettings?.DefaultDepositorTypeCode ?? 1,
-            attachments, annualEmployerAffidavitSatisfied, preparedAt, attachmentNames);
+            attachments, annualEmployerAffidavitSatisfied, preparedAt, attachmentNames, fileSequence);
         var negative = documentType == EmployerInterfaceDocumentType.NegativeReport;
         var built = negative
             ? EmployerInterface006XmlBuilder.BuildNegative(context)
@@ -96,6 +103,18 @@ public sealed class EmployerInterface006ExportService(
             .ToArray();
         return new(bytes, new(validation.IsValid, documentType, EmployerInterfaceSchemaRegistry.Version,
             validation.SchemaFileName, validation.Issues), packageName.PayloadFileName, attachmentFiles);
+    }
+
+    private static DateTimeOffset IsraelNow()
+    {
+        try
+        {
+            return TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Jerusalem"));
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return DateTimeOffset.UtcNow;
+        }
     }
 
     private static byte[] Serialize(System.Xml.Linq.XDocument document)
