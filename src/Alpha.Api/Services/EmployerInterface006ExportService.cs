@@ -25,6 +25,8 @@ public sealed class EmployerInterface006ExportService(
             : EmployerInterfaceDocumentType.CurrentReport;
 
         var employer = await db.Employers.AsNoTracking().SingleAsync(x => x.Id == report.EmployerId, ct);
+        var profileSettings = await db.EmployerProfileSettings.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.EmployerId == report.EmployerId, ct);
         var employees = await db.ManualReportEmployees.AsNoTracking()
             .Where(x => x.ReportId == report.Id).OrderBy(x => x.EmployeeNumber).ToListAsync(ct);
         var personIds = employees.Select(x => x.PersonId).Distinct().ToArray();
@@ -40,7 +42,7 @@ public sealed class EmployerInterface006ExportService(
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
 
         var context = new EmployerInterface006XmlBuilder.BuildContext(employer, employees, people, employments,
-            products, contributions, payments, metadata, options.Value);
+            products, contributions, payments, metadata, options.Value, profileSettings?.DefaultDepositorTypeCode ?? 1);
         var negative = documentType == EmployerInterfaceDocumentType.NegativeReport;
         var built = negative
             ? EmployerInterface006XmlBuilder.BuildNegative(context)
