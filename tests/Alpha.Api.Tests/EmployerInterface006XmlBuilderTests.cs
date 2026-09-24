@@ -36,6 +36,22 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_emits_small_employer_depositor_type_3()
+    {
+        var fixture = CreateFixture(false);
+        var context = fixture.Context with { DepositorTypeCode = 3 };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.All(result.Document!.Descendants("SUG-MAFKID"), x => Assert.Equal("3", x.Value));
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, false);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Current_report_accepts_section14_code_5()
     {
         var fixture = CreateFixture(false, section14Code: 5);
