@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS reporting.employer_interface_report_product_data (
     "PaymentMethodCode" integer NULL,
     "EmployerAccountType" integer NULL,
     "ReceiverAccountType" integer NULL,
+    "OldPensionTypeCode" integer NULL,
     "PreviousIdentifier" varchar(36) NULL,
     "PreviousClearingIdentifier" varchar(36) NULL,
     "PreviousReferenceExceptionCode" integer NULL,
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS reporting.employer_interface_report_product_data (
     CONSTRAINT "UX_employer_interface_report_product_data_product" UNIQUE ("ReportProductId")
 );
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "OperationCode" integer NULL;
+ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "OldPensionTypeCode" integer NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "PreviousIdentifier" varchar(36) NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "PreviousClearingIdentifier" varchar(36) NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "PreviousReferenceExceptionCode" integer NULL;
