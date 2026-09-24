@@ -46,6 +46,12 @@ public static class EmployerInterfaceProfileEndpoints
         if (employer is null) return Results.NotFound();
         employer.UpdateInterfaceContact(request.ContactFirstName, request.ContactLastName, request.ContactPhone,
             request.ContactEmail, request.ContactMobile);
+        var editableReports = await db.ManualReports
+            .Where(x => x.EmployerId == employerId && x.OrganizationId == organizationId
+                && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
+                    || x.Status == ManualReportStatus.Validated || x.Status == ManualReportStatus.Error))
+            .ToListAsync(ct);
+        foreach (var report in editableReports) report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.Ok(new
         {
@@ -83,6 +89,15 @@ public static class EmployerInterfaceProfileEndpoints
         var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
         person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile,
             request.City, request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
+        var affectedReportIds = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.EmploymentId == employmentId)
+            .Select(x => x.ReportId).Distinct().ToArrayAsync(ct);
+        var editableReports = await db.ManualReports
+            .Where(x => affectedReportIds.Contains(x.Id)
+                && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
+                    || x.Status == ManualReportStatus.Validated || x.Status == ManualReportStatus.Error))
+            .ToListAsync(ct);
+        foreach (var report in editableReports) report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.Ok(new
         {
@@ -130,13 +145,18 @@ public static class EmployerInterfaceProfileEndpoints
         OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
-        var reportKind = await (from product in db.ManualReportProducts.AsNoTracking()
-                                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                                join report in db.ManualReports.AsNoTracking() on employee.ReportId equals report.Id
-                                where product.Id == reportProductId && employee.ReportId == reportId
-                                    && employee.OrganizationId == organizationId && employee.EmployerId == employerId
-                                select (ManualReportKind?)report.ReportKind).SingleOrDefaultAsync(ct);
-        if (reportKind is null) return Results.NotFound();
+        var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId
+            && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
+
+        var belongsToReport = await (from product in db.ManualReportProducts.AsNoTracking()
+                                     join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                                     where product.Id == reportProductId && employee.ReportId == reportId
+                                         && employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                                     select product.Id).AnyAsync(ct);
+        if (!belongsToReport) return Results.NotFound();
+        var reportKind = report.ReportKind;
         if (request.OperationCode.HasValue)
         {
             var allowed = reportKind == ManualReportKind.Negative
@@ -165,6 +185,7 @@ public static class EmployerInterfaceProfileEndpoints
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+        report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.Ok(new
         {
