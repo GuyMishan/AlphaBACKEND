@@ -326,6 +326,8 @@ public static class ManualReportEndpoints
                 paymentMethod = payment?.PaymentMethod ?? "העברה בנקאית",
                 valueDate = payment?.ValueDate,
                 trustAccountValueDate = payment?.TrustAccountValueDate,
+                actualDepositAmount = payment?.ActualDepositAmount,
+                masavSenderCode = payment?.MasavSenderCode ?? string.Empty,
                 referenceNumber = payment?.ReferenceNumber ?? string.Empty,
                 employerBankName = payment?.EmployerBankName ?? string.Empty,
                 employerBankCode = payment?.EmployerBankCode ?? string.Empty,
@@ -357,7 +359,8 @@ public static class ManualReportEndpoints
         }
         payment.Update(request.ProviderName, request.ProviderAccount, request.PaymentMethod, request.ValueDate,
             request.TrustAccountValueDate, request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode,
-            request.EmployerBranch, request.EmployerAccount, request.ConfirmationFileName);
+            request.EmployerBranch, request.EmployerAccount, request.ConfirmationFileName,
+            request.ActualDepositAmount, request.MasavSenderCode);
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -536,4 +539,5 @@ public sealed record ManualProductInput(PensionProductType ProductType, string P
 public sealed record ManualContributionInput(ContributionComponent Component, decimal Amount, decimal Percentage, decimal ExemptPayments);
 public sealed record SaveManualReportPaymentRequest(string ProviderName, string ProviderAccount, string PaymentMethod,
     DateOnly? ValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,
-    string EmployerBranch, string EmployerAccount, string ConfirmationFileName, DateOnly? TrustAccountValueDate = null);
+    string EmployerBranch, string EmployerAccount, string ConfirmationFileName, DateOnly? TrustAccountValueDate = null,
+    decimal? ActualDepositAmount = null, string? MasavSenderCode = null);
