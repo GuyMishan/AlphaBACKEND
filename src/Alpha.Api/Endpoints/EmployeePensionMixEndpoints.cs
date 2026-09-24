@@ -84,7 +84,10 @@ public static class EmployeePensionMixEndpoints
         {
             var existing = existingProducts.FirstOrDefault(x =>
                 x.ProductType == input.ProductType &&
-                string.Equals(x.PolicyNumber.Trim(), input.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+                (!string.IsNullOrWhiteSpace(input.PolicyNumber)
+                    ? string.Equals(x.PolicyNumber.Trim(), input.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase)
+                    : !string.IsNullOrWhiteSpace(input.FundExternalKey)
+                      && string.Equals(x.FundExternalKey, input.FundExternalKey, StringComparison.OrdinalIgnoreCase)));
             var lifecycleProvided = input.IsActive.HasValue || input.EffectiveFrom.HasValue || input.InstitutionalBody is not null || input.Manufacturer is not null;
 
             var isActive = lifecycleProvided ? input.IsActive ?? true : existing?.IsActive ?? true;
