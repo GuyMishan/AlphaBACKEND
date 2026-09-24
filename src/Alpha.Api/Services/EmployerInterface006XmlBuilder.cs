@@ -103,21 +103,30 @@ public static class EmployerInterface006XmlBuilder
 
         if (!negative)
         {
+            var operationCode = metadata.OperationCode!.Value;
             var paymentMethod = metadata.PaymentMethodCode!.Value;
-            var zeroEmployerAccount = reportedDeposit == 0 || paymentMethod is 3 or 5 or 6 or 9;
-            // Clearinghouse V6: receiver account is mandatory for bank transfer only when amount > 0,
-            // and is mandatory for MASAV (7) regardless of the reported amount.
-            var requiresReceiverAccount = (paymentMethod == 1 && reportedDeposit > 0) || paymentMethod == 7;
+            var correctionWithoutMoney = operationCode is 2 or 7;
+            var zeroEmployerAccount = correctionWithoutMoney || reportedDeposit == 0 || paymentMethod is 3 or 5 or 6 or 9;
+            // Clearinghouse V6: receiver account is mandatory for bank transfer only when money is actually
+            // transferred, and for MASAV (7). No receiver bank details are sent for no-money corrections.
+            var requiresReceiverAccount = !correctionWithoutMoney
+                && ((paymentMethod == 1 && reportedDeposit > 0) || paymentMethod == 7);
+            var trustDateRelevant = !correctionWithoutMoney && metadata.EmployerAccountType == 2;
+            var valueDate = correctionWithoutMoney ? null : payment?.ValueDate;
+            var reference = correctionWithoutMoney || reportedDeposit == 0
+                ? "000"
+                : string.IsNullOrWhiteSpace(payment?.ReferenceNumber) ? "000" : payment!.ReferenceNumber;
             transfer.Add(
                 E("KOD-EMTZAI-TASHLUM", paymentMethod),
                 E("SACH-HAFKADA-KUPA-H-P", Money(reportedDeposit)),
-                Nil("TAARICH-ERECH-HAFKADA-LEKUPA", payment?.ValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
-                Nil("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT", null),
-                E("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM", payment?.ReferenceNumber ?? string.Empty),
+                Nil("TAARICH-ERECH-HAFKADA-LEKUPA", valueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                Nil("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT",
+                    trustDateRelevant ? payment?.TrustAccountValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null),
+                E("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM", reference),
                 E("MISPAR-ZIHUI", UpperGuid(first.Id)),
-                E("MISPAR-BANK-MAASIK", int.Parse(Digits(payment!.EmployerBankCode), CultureInfo.InvariantCulture)),
-                E("MISPAR-SNIF-MAASIK", zeroEmployerAccount ? "000" : FixedDigits(payment.EmployerBranch, 3)),
-                E("MISPAR-CHESHBON-MAASIK", zeroEmployerAccount ? new string('0', 20) : FixedDigits(payment.EmployerAccount, 20)),
+                E("MISPAR-BANK-MAASIK", zeroEmployerAccount ? 0 : int.Parse(Digits(payment!.EmployerBankCode), CultureInfo.InvariantCulture)),
+                E("MISPAR-SNIF-MAASIK", zeroEmployerAccount ? "000" : FixedDigits(payment!.EmployerBranch, 3)),
+                E("MISPAR-CHESHBON-MAASIK", zeroEmployerAccount ? new string('0', 20) : FixedDigits(payment!.EmployerAccount, 20)),
                 Nil("SUG-CHESHBON", null),
                 E("SUG-CHESHBON-MAASIK", metadata.EmployerAccountType!.Value),
                 E("SUG-CHESHBON-KOLET-TASHLUM", metadata.ReceiverAccountType!.Value),
@@ -409,6 +418,13 @@ public static class EmployerInterface006XmlBuilder
                 if (!meta.PaymentMethodCode.HasValue || !PaymentMethodCodes.Contains(meta.PaymentMethodCode.Value)) issues.Add($"{label}: PaymentMethodCode must be one of 1,3,4,5,6,7,9.");
                 if (meta.EmployerAccountType is not (1 or 2)) issues.Add($"{label}: EmployerAccountType must be 1 or 2 for a current report.");
                 if (meta.ReceiverAccountType is not (1 or 2)) issues.Add($"{label}: ReceiverAccountType must be 1 or 2 for a current report.");
+                if (meta.OperationCode is 2 or 7)
+                {
+                    if (meta.PaymentMethodCode != 1)
+                        issues.Add($"{label}: no-money correction operation {meta.OperationCode} must use payment method 1.");
+                    if (meta.EmployerAccountType != 1 || meta.ReceiverAccountType != 1)
+                        issues.Add($"{label}: no-money correction operation {meta.OperationCode} must use employer account type 1 and receiver account type 1.");
+                }
                 ValidatePaymentAccount(c, product, label, requirePayment: true, issues);
             }
             else
@@ -483,27 +499,33 @@ public static class EmployerInterface006XmlBuilder
         if (!requirePayment) return;
         if (payment is null) { issues.Add($"{label}: payment details are required."); return; }
 
-        if (!IsDigits(payment.EmployerBankCode) || !int.TryParse(payment.EmployerBankCode, out _))
-            issues.Add($"{label}: employer bank code must contain digits only.");
-
         var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
         var total = c.Contributions.Where(x => x.ReportProductId == product.Id).Sum(x => x.Amount);
-        var effectiveDeposit = metadata?.OperationCode is 2 or 7 ? 0m : total;
+        var correctionWithoutMoney = metadata?.OperationCode is 2 or 7;
+        var effectiveDeposit = correctionWithoutMoney ? 0m : total;
         var paymentMethod = metadata?.PaymentMethodCode;
 
-        // Per clearinghouse V6, employer branch/account are zeroed when no money was transferred,
-        // or for methods 3/5/6/9. They are therefore required only when their actual values are emitted.
+        if (!correctionWithoutMoney && metadata?.OperationCode is 1 or 3 && payment.ValueDate is null)
+            issues.Add($"{label}: operation {metadata.OperationCode} requires TAARICH-ERECH-HAFKADA-LEKUPA.");
+        if (!correctionWithoutMoney && metadata?.EmployerAccountType == 2 && payment.TrustAccountValueDate is null)
+            issues.Add($"{label}: trust-account payment requires TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT.");
+        if (correctionWithoutMoney && payment.TrustAccountValueDate is not null)
+            issues.Add($"{label}: operation {metadata?.OperationCode} must not include a trust-account value date.");
+
+        // Employer bank details are emitted as zero when no money is transferred or for methods 3/5/6/9.
         var requiresEmployerBranchAccount = effectiveDeposit > 0 && paymentMethod is not (3 or 5 or 6 or 9);
         if (requiresEmployerBranchAccount)
         {
+            if (!IsDigits(payment.EmployerBankCode))
+                issues.Add($"{label}: employer bank code must contain digits only.");
             var branch = payment.EmployerBranch.Trim();
             if (branch.Length is < 1 or > 3 || !IsDigits(branch)) issues.Add($"{label}: employer bank branch must contain 1-3 digits only.");
             var account = payment.EmployerAccount.Trim();
             if (account.Length is < 1 or > 20 || !IsDigits(account)) issues.Add($"{label}: employer bank account must contain 1-20 digits only.");
         }
 
-        // Receiver details: method 1 only with amount > 0; method 7 always.
-        var requiresReceiver = (paymentMethod == 1 && effectiveDeposit > 0) || paymentMethod == 7;
+        // Receiver details: method 1 only with an actual deposit; method 7 when not a no-money correction.
+        var requiresReceiver = !correctionWithoutMoney && ((paymentMethod == 1 && effectiveDeposit > 0) || paymentMethod == 7);
         if (requiresReceiver)
         {
             var receiver = ParseReceiverAccount(payment.ProviderAccount);
