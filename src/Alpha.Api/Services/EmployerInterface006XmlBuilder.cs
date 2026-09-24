@@ -77,6 +77,7 @@ public static class EmployerInterface006XmlBuilder
         var payment = c.Payments.FirstOrDefault(x => productIds.Contains(x.ReportProductId));
         var metadata = c.ProductMetadata.First(x => x.ReportProductId == first.Id);
         var total = c.Contributions.Where(x => productIds.Contains(x.ReportProductId)).Sum(x => x.Amount);
+        var receiverAccount = ParseReceiverAccount(payment?.ProviderAccount);
 
         var transfer = new XElement("PirteiHaavaratKsafim",
             E("KOD-MEZAHE-KUPA-H-P", Digits(first.FundCode)),
@@ -97,22 +98,25 @@ public static class EmployerInterface006XmlBuilder
 
         if (!negative)
         {
+            var paymentMethod = metadata.PaymentMethodCode!.Value;
+            var zeroEmployerAccount = total == 0 || paymentMethod is 3 or 5 or 6 or 9;
+            var requiresReceiverAccount = total > 0 && paymentMethod is 1 or 7;
             transfer.Add(
-                E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value),
+                E("KOD-EMTZAI-TASHLUM", paymentMethod),
                 E("SACH-HAFKADA-KUPA-H-P", Money(total)),
                 Nil("TAARICH-ERECH-HAFKADA-LEKUPA", payment?.ValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
                 Nil("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT", null),
                 E("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM", payment?.ReferenceNumber ?? string.Empty),
                 E("MISPAR-ZIHUI", UpperGuid(first.Id)),
                 E("MISPAR-BANK-MAASIK", int.Parse(Digits(payment!.EmployerBankCode), CultureInfo.InvariantCulture)),
-                E("MISPAR-SNIF-MAASIK", Digits(payment.EmployerBranch)),
-                E("MISPAR-CHESHBON-MAASIK", Digits(payment.EmployerAccount)),
+                E("MISPAR-SNIF-MAASIK", zeroEmployerAccount ? "000" : FixedDigits(payment.EmployerBranch, 3)),
+                E("MISPAR-CHESHBON-MAASIK", zeroEmployerAccount ? new string('0', 20) : FixedDigits(payment.EmployerAccount, 20)),
                 Nil("SUG-CHESHBON", null),
                 E("SUG-CHESHBON-MAASIK", metadata.EmployerAccountType!.Value),
                 E("SUG-CHESHBON-KOLET-TASHLUM", metadata.ReceiverAccountType!.Value),
-                Nil("MISPAR-BANK-KOLET", null),
-                Nil("MISPAR-SNIF-KOLET", null),
-                Nil("MISPAR-CHESHBON-KOLET", null));
+                requiresReceiverAccount ? E("MISPAR-BANK-KOLET", receiverAccount.BankCode!.Value) : Nil("MISPAR-BANK-KOLET", null),
+                requiresReceiverAccount ? E("MISPAR-SNIF-KOLET", FixedDigits(receiverAccount.BranchCode, 3)) : Nil("MISPAR-SNIF-KOLET", null),
+                requiresReceiverAccount ? E("MISPAR-CHESHBON-KOLET", FixedDigits(receiverAccount.AccountNumber, 20)) : Nil("MISPAR-CHESHBON-KOLET", null));
         }
         else
         {
@@ -363,8 +367,18 @@ public static class EmployerInterface006XmlBuilder
         if (!requireBankAccount) return;
         if (payment is null) { issues.Add($"{label}: payment/bank details are required."); return; }
         if (!int.TryParse(Digits(payment.EmployerBankCode), out _)) issues.Add($"{label}: employer bank code must be numeric.");
-        if (Digits(payment.EmployerBranch).Length != 3) issues.Add($"{label}: employer bank branch must be exactly 3 digits.");
-        if (Digits(payment.EmployerAccount).Length != 20) issues.Add($"{label}: employer bank account must be exactly 20 digits.");
+        var branchDigits = Digits(payment.EmployerBranch);
+        if (branchDigits.Length is < 1 or > 3) issues.Add($"{label}: employer bank branch must contain 1-3 digits.");
+        var accountDigits = Digits(payment.EmployerAccount);
+        if (accountDigits.Length is < 1 or > 20) issues.Add($"{label}: employer bank account must contain 1-20 digits.");
+
+        var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
+        if (metadata?.PaymentMethodCode is 1 or 7)
+        {
+            var receiver = ParseReceiverAccount(payment.ProviderAccount);
+            if (!receiver.IsValid)
+                issues.Add($"{label}: payment method {metadata.PaymentMethodCode} requires receiving bank, branch and account details from the selected pension product.");
+        }
     }
 
     private static int ParseRequiredCode(string value) => int.Parse(value.Trim(), CultureInfo.InvariantCulture);
@@ -392,6 +406,34 @@ public static class EmployerInterface006XmlBuilder
         return new XElement(name, new XAttribute(Xsi + "nil", "true"));
     }
     private static string Digits(string? value) => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
+
+    private static string FixedDigits(string? value, int width)
+    {
+        var digits = Digits(value);
+        return digits.Length >= width ? digits[^width..] : digits.PadLeft(width, '0');
+    }
+
+    private static ReceiverAccount ParseReceiverAccount(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return default;
+        var parts = value.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 3) return default;
+        var bankDigits = Digits(parts[0]);
+        var branchDigits = Digits(parts[1]);
+        var accountDigits = Digits(parts[2]);
+        if (!int.TryParse(bankDigits, NumberStyles.None, CultureInfo.InvariantCulture, out var bankCode)
+            || bankCode is <= 0 or > 999
+            || branchDigits.Length is < 1 or > 3
+            || accountDigits.Length is < 1 or > 20)
+            return default;
+        return new ReceiverAccount(bankCode, branchDigits, accountDigits);
+    }
+
+    private readonly record struct ReceiverAccount(int? BankCode, string? BranchCode, string? AccountNumber)
+    {
+        public bool IsValid => BankCode.HasValue && !string.IsNullOrWhiteSpace(BranchCode) && !string.IsNullOrWhiteSpace(AccountNumber);
+    }
+
     private static string EmployerContactMobile(string? value)
     {
         var digits = Digits(value);
