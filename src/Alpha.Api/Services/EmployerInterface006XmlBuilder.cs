@@ -39,7 +39,7 @@ public static class EmployerInterface006XmlBuilder
             E("MISPAR-KUPOT-YATZRANIM-BAKOVETZ", groups.Count),
             E("MISPAR-MAASIKIM", 1),
             E("MISPAR-RESHUMOT", c.Contributions.Count),
-            E("MISPAR-AMITIM", c.Employees.Select(x => x.PersonId).Distinct().Count()),
+            E("MISPAR-AMITIM", groups.Sum(group => group.Select(x => x.ReportEmployeeId).Distinct().Count())),
             E("SACH-HAFRASHOT-BAKOVETZ", Money(totalContributions)),
             E("SACH-HAFKADOT-BAKOVETZ", Money(totalDeposits))));
 
@@ -415,6 +415,21 @@ public static class EmployerInterface006XmlBuilder
             }
 
             var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
+            var contributionCodes = contributions.Select(MapContributionCode).ToList();
+            if (contributionCodes.GroupBy(x => x).Any(g => g.Count() > 1))
+                issues.Add($"{label}: the same SUG-HAFRASHA contribution type cannot be reported more than once in one salary/status block.");
+
+            if (product.ProductType == PensionProductType.StudyFund)
+            {
+                if (contributions.Any(x => MapContributionCode(x) is not ("2" or "3")))
+                    issues.Add($"{label}: study funds may report only employee contributions under code 2 and employer contributions under code 3.");
+            }
+            else if (product.ProductType is PensionProductType.PensionFund or PensionProductType.ProvidentFund)
+            {
+                if (contributions.Any(x => int.Parse(MapContributionCode(x), CultureInfo.InvariantCulture) >= 5))
+                    issues.Add($"{label}: pension and provident funds must not report SUG-HAFRASHA codes 5-8.");
+            }
+
             if (negative && contributions.Count == 0) issues.Add($"{label}: negative Version 006 requires at least one contribution record.");
             if (negative && contributions.Any(x => x.Amount <= 0)) issues.Add($"{label}: negative contribution amounts must be greater than zero.");
         }
