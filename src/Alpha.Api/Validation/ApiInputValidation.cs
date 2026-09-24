@@ -42,7 +42,7 @@ public static class ApiInputValidation
     }
 
     public static IReadOnlyList<string> Products(IReadOnlyCollection<ManualProductInput> products,
-        IReadOnlyCollection<ContributionPercentageLimit> limits)
+        IReadOnlyCollection<ContributionPercentageLimit> limits, bool enforcePolicyPercentageLimits = true)
     {
         var errors = new List<string>();
         if (products.Count == 0) errors.Add("יש להגדיר לפחות מוצר פנסיוני אחד לעובד.");
@@ -75,9 +75,9 @@ public static class ApiInputValidation
                 errors.Add(prefix + "תאריך תחולה/ביטול סעיף 14 לא יכול להיות בעתיד.");
 
             ValidateContributions(errors, prefix, product.SalaryMonth.Year, product.ProductType, ContributionParty.Employer,
-                product.Salary, product.EmployerContributions, limits);
+                product.Salary, product.EmployerContributions, limits, enforcePolicyPercentageLimits);
             ValidateContributions(errors, prefix, product.SalaryMonth.Year, product.ProductType, ContributionParty.Employee,
-                product.Salary, product.EmployeeContributions, limits);
+                product.Salary, product.EmployeeContributions, limits, enforcePolicyPercentageLimits);
         }
         return errors;
     }
@@ -124,7 +124,7 @@ public static class ApiInputValidation
 
     private static void ValidateContributions(List<string> errors, string prefix, int year, PensionProductType productType,
         ContributionParty party, decimal salary, IReadOnlyCollection<ManualContributionInput> items,
-        IReadOnlyCollection<ContributionPercentageLimit> limits)
+        IReadOnlyCollection<ContributionPercentageLimit> limits, bool enforcePolicyPercentageLimits)
     {
         if (items.GroupBy(x => x.Component).Any(g => g.Count() > 1
             && !(party == ContributionParty.Employee && g.Key == ContributionComponent.Benefits)))
@@ -139,15 +139,18 @@ public static class ApiInputValidation
             if (item.Amount < 0 || item.Percentage < 0)
                 errors.Add(prefix + $"ערכי הפקדת {side} לא יכולים להיות שליליים.");
 
-            var limit = limits.FirstOrDefault(x => x.Year == year && x.ProductType == productType
-                && x.Party == party && x.Component == item.Component);
-            if (limit is null)
+            if (enforcePolicyPercentageLimits)
             {
-                errors.Add(prefix + $"לא הוגדר גבול אחוזים לשנת {year}, {ProductName(productType)}, {ComponentName(item.Component)} ({side}).");
-            }
-            else if (item.Percentage > limit.MaxPercentage)
-            {
-                errors.Add(prefix + $"אחוז {ComponentName(item.Component)} של {side} חורג מהמקסימום לשנת {year} ({limit.MaxPercentage:0.##}%).");
+                var limit = limits.FirstOrDefault(x => x.Year == year && x.ProductType == productType
+                    && x.Party == party && x.Component == item.Component);
+                if (limit is null)
+                {
+                    errors.Add(prefix + $"לא הוגדר גבול אחוזים לשנת {year}, {ProductName(productType)}, {ComponentName(item.Component)} ({side}).");
+                }
+                else if (item.Percentage > limit.MaxPercentage)
+                {
+                    errors.Add(prefix + $"אחוז {ComponentName(item.Component)} של {side} חורג מהמקסימום לשנת {year} ({limit.MaxPercentage:0.##}%).");
+                }
             }
 
             if (item.ExemptPayments > item.Amount)
