@@ -280,9 +280,9 @@ public static class EmployerInterface006XmlBuilder
         if (string.IsNullOrWhiteSpace(c.Employer.ContactLastName)) issues.Add("Employer Interface contact last name is required.");
         if (Digits(c.Employer.ContactPhone).Length is 0 or > 20) issues.Add("Employer Interface contact phone must contain 1-20 digits.");
         if (string.IsNullOrWhiteSpace(c.Employer.ContactEmail)) issues.Add("Employer Interface contact email is required.");
-        var employerMobile = Digits(c.Employer.ContactMobile);
-        if (employerMobile.Length > 0 && (employerMobile.Length != 10 || !employerMobile.StartsWith("05", StringComparison.Ordinal)))
-            issues.Add("Employer Interface contact mobile must match ^05\\d\\d{7}$; when no mobile exists, Version 006 requires 0500000000.");
+        var employerMobile = c.Employer.ContactMobile?.Trim() ?? string.Empty;
+        if (employerMobile.Length > 0 && (!IsDigits(employerMobile) || employerMobile.Length != 10 || !employerMobile.StartsWith("05", StringComparison.Ordinal)))
+            issues.Add("Employer Interface contact mobile must contain digits only and match ^05\\d\\d{7}$; when no mobile exists, Version 006 requires 0500000000.");
         if (c.Products.Count == 0) issues.Add("The report has no pension products to export.");
 
         foreach (var product in c.Products)
@@ -290,7 +290,8 @@ public static class EmployerInterface006XmlBuilder
             var label = $"Product {product.Id}";
             if (product.ProductType == PensionProductType.Other)
                 issues.Add($"{label}: ProductType Other cannot be serialized to Employer Interface 006 because SUG-KUPA only allows codes 1-4.");
-            if (Digits(product.FundCode).Length != 30) issues.Add($"{label}: fund code must be exactly 30 digits (KOD-MEZAHE-KUPA-H-P).");
+            if (product.FundCode.Length != 30 || !IsDigits(product.FundCode))
+                issues.Add($"{label}: fund code must be exactly 30 digits (KOD-MEZAHE-KUPA-H-P).");
             if (!TryCode(product.ReportingType, CurrentReceiptCodes, out _)) issues.Add($"{label}: ReportingType must be one of 1,2,4,6,8 for Version 006.");
             if (!TryCode(product.SalaryLayer, SalaryLayerCodes, out _)) issues.Add($"{label}: SalaryLayer must be one of 1,3,5,6,7 for Version 006.");
             if (!negative)
@@ -373,8 +374,8 @@ public static class EmployerInterface006XmlBuilder
         if (!requirePayment) return;
         if (payment is null) { issues.Add($"{label}: payment details are required."); return; }
 
-        if (!int.TryParse(Digits(payment.EmployerBankCode), out _))
-            issues.Add($"{label}: employer bank code must be numeric.");
+        if (!IsDigits(payment.EmployerBankCode) || !int.TryParse(payment.EmployerBankCode, out _))
+            issues.Add($"{label}: employer bank code must contain digits only.");
 
         var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
         var total = c.Contributions.Where(x => x.ReportProductId == product.Id).Sum(x => x.Amount);
@@ -385,10 +386,10 @@ public static class EmployerInterface006XmlBuilder
         var requiresEmployerBranchAccount = total > 0 && paymentMethod is not (3 or 5 or 6 or 9);
         if (requiresEmployerBranchAccount)
         {
-            var branchDigits = Digits(payment.EmployerBranch);
-            if (branchDigits.Length is < 1 or > 3) issues.Add($"{label}: employer bank branch must contain 1-3 digits.");
-            var accountDigits = Digits(payment.EmployerAccount);
-            if (accountDigits.Length is < 1 or > 20) issues.Add($"{label}: employer bank account must contain 1-20 digits.");
+            var branch = payment.EmployerBranch.Trim();
+            if (branch.Length is < 1 or > 3 || !IsDigits(branch)) issues.Add($"{label}: employer bank branch must contain 1-3 digits only.");
+            var account = payment.EmployerAccount.Trim();
+            if (account.Length is < 1 or > 20 || !IsDigits(account)) issues.Add($"{label}: employer bank account must contain 1-20 digits only.");
         }
 
         // Receiver details: method 1 only with amount > 0; method 7 always.
@@ -454,10 +455,11 @@ public static class EmployerInterface006XmlBuilder
         if (string.IsNullOrWhiteSpace(value)) return default;
         var parts = value.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 3) return default;
-        var bankDigits = Digits(parts[0]);
-        var branchDigits = Digits(parts[1]);
-        var accountDigits = Digits(parts[2]);
-        if (!int.TryParse(bankDigits, NumberStyles.None, CultureInfo.InvariantCulture, out var bankCode)
+        var bankDigits = parts[0].Trim();
+        var branchDigits = parts[1].Trim();
+        var accountDigits = parts[2].Trim();
+        if (!IsDigits(bankDigits) || !IsDigits(branchDigits) || !IsDigits(accountDigits)
+            || !int.TryParse(bankDigits, NumberStyles.None, CultureInfo.InvariantCulture, out var bankCode)
             || bankCode is <= 0 or > 999
             || branchDigits.Length is < 1 or > 3
             || accountDigits.Length is < 1 or > 20)
@@ -472,9 +474,12 @@ public static class EmployerInterface006XmlBuilder
 
     private static string EmployerContactMobile(string? value)
     {
-        var digits = Digits(value);
-        return digits.Length == 0 ? "0500000000" : digits;
+        var normalized = value?.Trim() ?? string.Empty;
+        return normalized.Length == 0 ? "0500000000" : normalized;
     }
+
+    private static bool IsDigits(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Trim().All(char.IsDigit);
     private static string Money(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
     private static string UpperGuid(Guid value) => value.ToString("D").ToUpperInvariant();
     private static string BuildFileNumber(DateTimeOffset now, string senderId)
