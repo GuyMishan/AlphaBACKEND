@@ -178,6 +178,35 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_rejects_inconsistent_payment_details_inside_one_transfer()
+    {
+        var fixture = CreateFixture(false);
+        var secondProduct = new ManualReportProduct(fixture.Context.Employees[0].Id, PensionProductType.PensionFund, "456",
+            new DateOnly(2026, 9, 1), 500m, "1", "1", false, null,
+            fundCode: new string('1', 30), fundName: "Test Fund");
+        var secondContribution = new ManualContribution(secondProduct.Id, ContributionParty.Employee, ContributionComponent.Benefits,
+            50m, 10m, 0m);
+        var secondPayment = new ManualReportPayment(secondProduct.Id);
+        secondPayment.Update("Test Fund", "", "", new DateOnly(2026, 9, 17), "DIFFERENT-REF", "Test Bank", "10", "123",
+            "12345678901234567890", "");
+        var secondMetadata = new EmployerInterfaceReportProductData(secondProduct.Id);
+        secondMetadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1);
+
+        var context = fixture.Context with
+        {
+            Products = [.. fixture.Context.Products, secondProduct],
+            Contributions = [.. fixture.Context.Contributions, secondContribution],
+            Payments = [.. fixture.Context.Payments, secondPayment],
+            ProductMetadata = [.. fixture.Context.ProductMetadata, secondMetadata]
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, context, false);
+        Assert.Contains(workbookIssues, x => x.Contains("identical transfer/payment details", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Negative_operation_6_uses_payment_method_1_and_matches_official_006_xsd()
     {
         var fixture = CreateFixture(true, operationCode: 6, paymentMethodCode: 1);
