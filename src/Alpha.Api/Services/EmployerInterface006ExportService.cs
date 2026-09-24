@@ -82,7 +82,9 @@ public sealed class EmployerInterface006ExportService(
             .ToDictionary(x => x.Id, x => x.FileName);
 
         var context = new EmployerInterface006XmlBuilder.BuildContext(employer, employees, people, employments,
-            products, contributions, payments, metadata, options.Value, profileSettings?.DefaultDepositorTypeCode ?? 1,
+            products, contributions, payments, metadata, options.Value,
+            profileSettings?.DefaultDepositorTypeCode ?? 1,
+            profileSettings?.DefaultEmployerIdentifierTypeCode ?? 1,
             attachments, annualEmployerAffidavitSatisfied, preparedAt, attachmentNames, fileSequence);
         var negative = documentType == EmployerInterfaceDocumentType.NegativeReport;
         var built = negative
