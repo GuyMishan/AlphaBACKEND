@@ -209,8 +209,9 @@ public static class ReportValidationEndpoints
                     continue;
 
                 var request = new SaveManualReportPaymentRequest(payment.ProviderName, payment.ProviderAccount,
-                    payment.PaymentMethod, payment.ValueDate, payment.TrustAccountValueDate, payment.ReferenceNumber, payment.EmployerBankName,
-                    payment.EmployerBankCode, payment.EmployerBranch, payment.EmployerAccount, payment.ConfirmationFileName);
+                    payment.PaymentMethod, payment.ValueDate, payment.ReferenceNumber, payment.EmployerBankName,
+                    payment.EmployerBankCode, payment.EmployerBranch, payment.EmployerAccount, payment.ConfirmationFileName,
+                    payment.TrustAccountValueDate);
                 var totalDeposit = contributions.Where(x => x.ReportProductId == product.Id).Sum(x => x.Amount);
                 foreach (var error in ApiInputValidation.Payment(request, totalDeposit,
                     productMetadata?.OperationCode, productMetadata?.EmployerAccountType))
