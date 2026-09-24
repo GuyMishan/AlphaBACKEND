@@ -70,6 +70,49 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_rejects_operation_payment_combination_not_allowed_by_clearinghouse_matrix()
+    {
+        var fixture = CreateFixture(false, operationCode: 1, paymentMethodCode: 4);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, false);
+        Assert.Contains(workbookIssues, x => x.Contains("payment method 4 is not allowed for operation 1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_report_emits_one_employee_block_for_multiple_products_in_same_fund()
+    {
+        var fixture = CreateFixture(false);
+        var secondProduct = new ManualReportProduct(fixture.Context.Employees[0].Id, PensionProductType.PensionFund, "456",
+            new DateOnly(2026, 9, 1), 500m, "1", "1", false, null,
+            fundCode: new string('1', 30), fundName: "Test Fund");
+        var secondContribution = new ManualContribution(secondProduct.Id, ContributionParty.Employee, ContributionComponent.Benefits,
+            50m, 10m, 0m);
+        var secondPayment = new ManualReportPayment(secondProduct.Id);
+        secondPayment.Update("Test Fund", "", "", new DateOnly(2026, 9, 16), "REF-2", "Test Bank", "10", "123",
+            "12345678901234567890", "");
+        var secondMetadata = new EmployerInterfaceReportProductData(secondProduct.Id);
+        secondMetadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1);
+
+        var context = fixture.Context with
+        {
+            Products = [.. fixture.Context.Products, secondProduct],
+            Contributions = [.. fixture.Context.Contributions, secondContribution],
+            Payments = [.. fixture.Context.Payments, secondPayment],
+            ProductMetadata = [.. fixture.Context.ProductMetadata, secondMetadata]
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Single(result.Document!.Descendants("PirteiOved"));
+        Assert.Equal(2, result.Document.Descendants("ChodeshMaskoretVestatusOved").Count());
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, false);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Negative_report_rejects_current_operation_code()
     {
         var fixture = CreateFixture(true, operationCode: 1);
@@ -90,7 +133,7 @@ public sealed class EmployerInterface006XmlBuilderTests
 
     private static (EmployerInterface006XmlBuilder.BuildContext Context, ManualReportProduct Product) CreateFixture(
         bool negative, int? operationCode = null, int? previousExceptionCode = 1, int? section14Code = null,
-        string employerMobile = "0501234567")
+        string employerMobile = "0501234567", int paymentMethodCode = 1)
     {
         var organizationId = Guid.NewGuid();
         var employer = new Employer(organizationId, "Test Employer", "123456789", "987654321",
@@ -112,7 +155,7 @@ public sealed class EmployerInterface006XmlBuilderTests
             "12345678901234567890", "");
         var metadata = new EmployerInterfaceReportProductData(product.Id);
         metadata.Update(operationCode ?? (negative ? 5 : 1), 1, 1, new DateOnly(2026, 9, 1), null, null, 2,
-            negative ? 1 : null, 1, 1, 1,
+            negative ? 1 : null, paymentMethodCode, 1, 1,
             previousReferenceExceptionCode: (negative || (operationCode is 2 or 3 or 7)) ? previousExceptionCode : null);
         var options = new EmployerInterface006Options
         {
