@@ -23,8 +23,9 @@ public static class EmployerInterface006XmlBuilder
         if (issues.Count > 0) return new(null, issues);
 
         var now = c.PreparedAt ?? DateTimeOffset.UtcNow;
-        var senderId = Digits(c.Employer.RegistrationNumber);
-        var groups = c.Products.GroupBy(x => new { x.FundCode, x.FundName }).ToList();
+        var sender = ResolveSender(c);
+        var senderId = sender.Identifier;
+        var groups = c.Products.GroupBy(x => x.FundCode, StringComparer.Ordinal).ToList();
         var root = new XElement("MimshakMaasikim", new XAttribute(XNamespace.Xmlns + "xsi", Xsi));
         root.Add(BuildHeader(c, negative, now, senderId));
 
@@ -53,18 +54,18 @@ public static class EmployerInterface006XmlBuilder
             E("MISPAR-GIRSAT-XML", EmployerInterfaceSchemaRegistry.Version),
             E("TAARICH-BITZUA", now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)),
             E("KOD-SVIVAT-AVODA", o.EnvironmentCode),
-            E("MISPAR-HAKOVETZ", BuildFileNumber(now, senderId)),
-            E("MISPAR-SIDURI", 1),
+            E("MISPAR-HAKOVETZ", BuildFileNumber(now, senderId, c.FileSequence)),
+            E("MISPAR-SIDURI", c.FileSequence),
             new XElement("NetuneiGoremSholech",
                 E("KOD-SHOLECH", o.SenderCode),
                 E("SUG-MEZAHE-SHOLECH", o.SenderIdentifierType),
-                E("MISPAR-ZIHUI-SHOLECH", senderId),
-                E("SHEM-GOREM-SHOLECH", c.Employer.LegalName),
-                E("SHEM-PRATI-ISH-KESHER-SHOLECH", c.Employer.ContactFirstName),
-                E("SHEM-MISHPACHA-ISH-KESHER-SHOLECH", c.Employer.ContactLastName),
-                E("MISPAR-TELEPHONE-KAVI-ISH-KESHER-SHOLECH", Digits(c.Employer.ContactPhone)),
-                E("E-MAIL-ISH-KESHER-SHOLECH", c.Employer.ContactEmail),
-                Nil("MISPAR-CELLULARI-ISH-KESHER-SHOLECH", Digits(c.Employer.ContactMobile))),
+                E("MISPAR-ZIHUI-SHOLECH", sender.Identifier),
+                E("SHEM-GOREM-SHOLECH", sender.Name),
+                E("SHEM-PRATI-ISH-KESHER-SHOLECH", sender.ContactFirstName),
+                E("SHEM-MISHPACHA-ISH-KESHER-SHOLECH", sender.ContactLastName),
+                E("MISPAR-TELEPHONE-KAVI-ISH-KESHER-SHOLECH", sender.ContactPhone),
+                E("E-MAIL-ISH-KESHER-SHOLECH", sender.ContactEmail),
+                Nil("MISPAR-CELLULARI-ISH-KESHER-SHOLECH", sender.ContactMobile)),
             new XElement("NetuneiGoremNimaan",
                 E("KOD-NIMAAN", o.RecipientCode),
                 E("SUG-MEZAHE-NIMAAN", o.RecipientIdentifierType),
@@ -165,7 +166,7 @@ public static class EmployerInterface006XmlBuilder
             E("SUG-KOD-MEZAHE-PONE", 1),
             E("MISPAR-MEZAHE-PONE", senderId),
             E("SHEM-GOREM-PONE", c.Employer.LegalName),
-            Nil("MISPAR-MEZAHE-METAFEL", null),
+            Nil("MISPAR-MEZAHE-METAFEL", c.Options.SenderCode == 5 ? null : senderId),
             Nil("SHEM-PRATI-PONE-LEMISLAKA", c.Employer.ContactFirstName),
             Nil("SHEM-MISHPACHA-PONE-LEMISLAKA", c.Employer.ContactLastName),
             Nil("MISPAR-TELEPHONE-KAVI-PONE-LEMISLAKA", Digits(c.Employer.ContactPhone)),
@@ -296,9 +297,18 @@ public static class EmployerInterface006XmlBuilder
     {
         var issues = new List<string>();
         var o = c.Options;
+        var sender = ResolveSender(c);
         if (c.DepositorTypeCode is < 1 or > 3) issues.Add("EmployerInterface006:DepositorTypeCode must be 1, 2 or 3.");
-        if (o.EnvironmentCode is not (1 or 2)) issues.Add("EmployerInterface006:EnvironmentCode must be 1 or 2.");
+        if (o.EnvironmentCode is not (1 or 2)) issues.Add("EmployerInterface006:EnvironmentCode must be 1 (TEST) or 2 (PRODUCTION).");
+        if (o.FileDirectionCode is < 1 or > 999) issues.Add("EmployerInterface006:FileDirectionCode must contain a valid Annex VI 3-digit direction code.");
         if (o.SenderCode is < 1 or > 6) issues.Add("EmployerInterface006:SenderCode must be a valid Version 006 sender code.");
+        if (sender.Identifier.Length is 0 or > 16) issues.Add("EmployerInterface006: actual sender identifier is required and cannot exceed 16 characters.");
+        if (string.IsNullOrWhiteSpace(sender.Name) || sender.Name.Length > 100) issues.Add("EmployerInterface006: actual sender name is required and cannot exceed 100 characters.");
+        if (string.IsNullOrWhiteSpace(sender.ContactFirstName) || sender.ContactFirstName.Length > 20) issues.Add("EmployerInterface006: sender contact first name is required and cannot exceed 20 characters.");
+        if (string.IsNullOrWhiteSpace(sender.ContactLastName) || sender.ContactLastName.Length > 20) issues.Add("EmployerInterface006: sender contact last name is required and cannot exceed 20 characters.");
+        if (!IsDigits(sender.ContactPhone) || sender.ContactPhone.Length > 11) issues.Add("EmployerInterface006: sender contact phone must contain digits only and cannot exceed 11 digits.");
+        if (string.IsNullOrWhiteSpace(sender.ContactEmail) || sender.ContactEmail.Length > 50 || !sender.ContactEmail.Contains('@')) issues.Add("EmployerInterface006: sender contact email is required and must be a valid address up to 50 characters.");
+        if (sender.ContactMobile.Length > 0 && (!IsDigits(sender.ContactMobile) || sender.ContactMobile.Length > 15)) issues.Add("EmployerInterface006: sender contact mobile must contain digits only and cannot exceed 15 digits.");
         if (!IdentifierTypeCodes.Contains(o.SenderIdentifierType))
             issues.Add("EmployerInterface006:SenderIdentifierType must be one of 1,2,3,4,5,7,8,9,10,11,12,13.");
         if (o.RecipientCode is not (1 or 2 or 3 or 6)) issues.Add("EmployerInterface006:RecipientCode is required and must be 1, 2, 3 or 6.");
@@ -467,6 +477,23 @@ public static class EmployerInterface006XmlBuilder
             issues.Add($"{label}: transfer reference number cannot exceed 50 characters in Employer Interface 006.");
     }
 
+    private static SenderIdentity ResolveSender(BuildContext c)
+    {
+        var o = c.Options;
+        var directEmployer = o.SenderCode == 5;
+        var identifier = string.IsNullOrWhiteSpace(o.SenderIdentifier)
+            ? directEmployer ? Digits(c.Employer.RegistrationNumber) : string.Empty
+            : o.SenderIdentifier.Trim();
+        return new SenderIdentity(
+            identifier,
+            string.IsNullOrWhiteSpace(o.SenderName) && directEmployer ? c.Employer.LegalName : o.SenderName.Trim(),
+            string.IsNullOrWhiteSpace(o.SenderContactFirstName) && directEmployer ? c.Employer.ContactFirstName : o.SenderContactFirstName.Trim(),
+            string.IsNullOrWhiteSpace(o.SenderContactLastName) && directEmployer ? c.Employer.ContactLastName : o.SenderContactLastName.Trim(),
+            Digits(string.IsNullOrWhiteSpace(o.SenderContactPhone) && directEmployer ? c.Employer.ContactPhone : o.SenderContactPhone),
+            string.IsNullOrWhiteSpace(o.SenderContactEmail) && directEmployer ? c.Employer.ContactEmail : o.SenderContactEmail.Trim(),
+            Digits(string.IsNullOrWhiteSpace(o.SenderContactMobile) && directEmployer ? c.Employer.ContactMobile : o.SenderContactMobile));
+    }
+
     private static decimal ReportedDepositAmount(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative)
     {
         var ids = products.Select(x => x.Id).ToHashSet();
@@ -534,6 +561,9 @@ public static class EmployerInterface006XmlBuilder
         return new ReceiverAccount(bankCode, branchDigits, accountDigits);
     }
 
+    private readonly record struct SenderIdentity(string Identifier, string Name, string ContactFirstName,
+        string ContactLastName, string ContactPhone, string ContactEmail, string ContactMobile);
+
     private readonly record struct ReceiverAccount(int? BankCode, string? BranchCode, string? AccountNumber)
     {
         public bool IsValid => BankCode.HasValue && !string.IsNullOrWhiteSpace(BranchCode) && !string.IsNullOrWhiteSpace(AccountNumber);
@@ -549,10 +579,10 @@ public static class EmployerInterface006XmlBuilder
         !string.IsNullOrWhiteSpace(value) && value.Trim().All(char.IsDigit);
     private static string Money(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
     private static string UpperGuid(Guid value) => value.ToString("D").ToUpperInvariant();
-    private static string BuildFileNumber(DateTimeOffset now, string senderId)
+    private static string BuildFileNumber(DateTimeOffset now, string senderId, int sequence)
     {
         var normalized = senderId.Length > 16 ? senderId[^16..] : senderId.PadLeft(16, '0');
-        return $"{now:yyyyMMddHHmmss}{normalized}0001";
+        return $"{now:yyyyMMddHHmmss}{normalized}{sequence:0000}";
     }
 
     public sealed record BuildContext(Employer Employer, IReadOnlyList<ManualReportEmployee> Employees,
@@ -561,7 +591,8 @@ public static class EmployerInterface006XmlBuilder
         IReadOnlyList<ManualReportPayment> Payments, IReadOnlyList<EmployerInterfaceReportProductData> ProductMetadata,
         EmployerInterface006Options Options, int DepositorTypeCode = 1,
         IReadOnlyList<ManualReportAttachment>? AttachmentItems = null, bool AnnualEmployerAffidavitSatisfied = false,
-        DateTimeOffset? PreparedAt = null, IReadOnlyDictionary<Guid, string>? AttachmentFileNames = null)
+        DateTimeOffset? PreparedAt = null, IReadOnlyDictionary<Guid, string>? AttachmentFileNames = null,
+        int FileSequence = 1)
     {
         public IReadOnlyList<ManualReportAttachment> Attachments { get; init; } = AttachmentItems ?? [];
         public IReadOnlyDictionary<Guid, string> AttachmentTransmissionNames { get; init; } = AttachmentFileNames ?? new Dictionary<Guid, string>();
