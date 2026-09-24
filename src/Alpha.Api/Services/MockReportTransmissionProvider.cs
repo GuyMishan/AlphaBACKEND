@@ -16,8 +16,9 @@ public sealed class MockReportTransmissionProvider : IReportTransmissionProvider
             accepted = true,
             externalId,
             provider = Name,
+            payloadFileName = envelope.PayloadFileName,
             attachmentCount = envelope.Attachments?.Count ?? 0,
-            attachments = envelope.Attachments?.Select(x => new { x.FileName, x.ContentType, x.Sha256 }).ToArray() ?? []
+            attachments = envelope.Attachments?.Select(x => x.FileName).ToArray() ?? Array.Empty<string>()
         });
         return Task.FromResult(new ReportTransmissionProviderResult(true, "Accepted", externalId, response, null));
     }
