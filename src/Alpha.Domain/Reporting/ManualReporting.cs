@@ -93,7 +93,7 @@ public sealed class ManualReportEmployee : Entity
 public sealed class ManualReportProduct : Entity
 {
     private ManualReportProduct() { }
-    public ManualReportProduct(Guid reportEmployeeId, PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary, string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate, string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null, SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null, int allocationOrder = 0, int? section14Code = null)
+    public ManualReportProduct(Guid reportEmployeeId, PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary, string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate, string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null, SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null, int allocationOrder = 0, int? section14Code = null, string? fundClassification = null)
     {
         ReportEmployeeId = reportEmployeeId;
         Update(productType, policyNumber, salaryMonth, salary, reportingType, salaryLayer, section14, section14StartDate,
