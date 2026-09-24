@@ -166,6 +166,7 @@ public static class ReportValidationEndpoints
                 product.FundCode,
                 product.FundName,
                 product.FundCompanyName,
+                product.FundClassification,
                 product.SalaryAllocationType,
                 product.SalaryAllocationValue,
                 product.AllocationOrder,
