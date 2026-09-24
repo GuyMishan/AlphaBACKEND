@@ -92,7 +92,7 @@ public static class EmployerInterface006XmlBuilder
             E("SHEM-MISHPACHA-ISH-KESHER-MAASIK", c.Employer.ContactLastName),
             E("MISPAR-TELEPHONE-KAVI-ISH-KESHER-MAASIK", Digits(c.Employer.ContactPhone)),
             E("E-MAIL-ISH-KESHER-MAASIK", c.Employer.ContactEmail),
-            E("MISPAR-CELLULARI-ISH-KESHER-MAASIK", Digits(c.Employer.ContactMobile)),
+            E("MISPAR-CELLULARI-ISH-KESHER-MAASIK", EmployerContactMobile(c.Employer.ContactMobile)),
             E("SUG-PEULA", metadata.OperationCode!.Value));
 
         if (!negative)
@@ -261,7 +261,9 @@ public static class EmployerInterface006XmlBuilder
         if (string.IsNullOrWhiteSpace(c.Employer.ContactLastName)) issues.Add("Employer Interface contact last name is required.");
         if (Digits(c.Employer.ContactPhone).Length is 0 or > 20) issues.Add("Employer Interface contact phone must contain 1-20 digits.");
         if (string.IsNullOrWhiteSpace(c.Employer.ContactEmail)) issues.Add("Employer Interface contact email is required.");
-        if (Digits(c.Employer.ContactMobile).Length is 0 or > 15) issues.Add("Employer Interface contact mobile must contain 1-15 digits.");
+        var employerMobile = Digits(c.Employer.ContactMobile);
+        if (employerMobile.Length > 0 && (employerMobile.Length != 10 || !employerMobile.StartsWith("05", StringComparison.Ordinal)))
+            issues.Add("Employer Interface contact mobile must match ^05\\d\\d{7}$; when no mobile exists, Version 006 requires 0500000000.");
         if (c.Products.Count == 0) issues.Add("The report has no pension products to export.");
 
         foreach (var product in c.Products)
@@ -272,7 +274,7 @@ public static class EmployerInterface006XmlBuilder
             if (!TryCode(product.SalaryLayer, SalaryLayerCodes, out _)) issues.Add($"{label}: SalaryLayer must be one of 1,3,5,6,7 for Version 006.");
             if (!negative)
             {
-                if (product.Section14Code is < 1 or > 4) issues.Add($"{label}: Section14Code must be one of 1,2,3,4.");
+                if (product.Section14Code is < 1 or > 5) issues.Add($"{label}: Section14Code must be one of 1,2,3,4,5.");
                 if (product.Section14Code is 2 or 4 && !product.Section14StartDate.HasValue)
                     issues.Add($"{label}: Section14StartDate is required for Section14Code 2 or 4.");
             }
@@ -368,6 +370,11 @@ public static class EmployerInterface006XmlBuilder
         return new XElement(name, new XAttribute(Xsi + "nil", "true"));
     }
     private static string Digits(string? value) => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
+    private static string EmployerContactMobile(string? value)
+    {
+        var digits = Digits(value);
+        return digits.Length == 0 ? "0500000000" : digits;
+    }
     private static string Money(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
     private static string UpperGuid(Guid value) => value.ToString("D").ToUpperInvariant();
     private static string BuildFileNumber(DateTimeOffset now, string senderId)
