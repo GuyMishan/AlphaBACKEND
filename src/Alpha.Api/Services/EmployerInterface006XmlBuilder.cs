@@ -385,16 +385,6 @@ public static class EmployerInterface006XmlBuilder
             if (hasOperation5 && !c.AnnualEmployerAffidavitSatisfied)
                 issues.Add("Negative operation 5 requires the annual employer affidavit (SUG-MISMACH=3) at least once per calendar year.");
 
-            foreach (var product in c.Products)
-            {
-                var meta = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
-                if (meta?.OperationCode != 5) continue;
-                var supporting = c.Attachments.Any(x =>
-                    (x.ReportProductId is null || x.ReportProductId == product.Id)
-                    && x.DocumentTypeCode is 3 or 4 or 6);
-                if (!supporting)
-                    issues.Add($"Product {product.Id}: operation 5 requires an employee or employer supporting attachment (SUG-MISMACH 3, 4 or 6).");
-            }
         }
 
         foreach (var product in c.Products)
