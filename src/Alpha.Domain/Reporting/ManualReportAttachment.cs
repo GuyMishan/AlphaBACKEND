@@ -11,10 +11,10 @@ public sealed class ManualReportAttachment : Entity
         string originalFileName, string contentType, byte[] content)
     {
         if (reportId == Guid.Empty) throw new ArgumentException("Report is required.", nameof(reportId));
-        if (documentTypeCode is not (3 or 4 or 6))
-            throw new ArgumentOutOfRangeException(nameof(documentTypeCode), "Negative Employer Interface 006 attachments support document types 3, 4 and 6.");
-        if (documentTypeCode is 4 or 6 && reportProductId is null)
-            throw new ArgumentException("Document types 4 and 6 must be linked to a report product.", nameof(reportProductId));
+        if (documentTypeCode is not (3 or 4 or 5 or 6))
+            throw new ArgumentOutOfRangeException(nameof(documentTypeCode), "Employer Interface 006 attachments support document types 3, 4, 5 and 6.");
+        if (documentTypeCode is 4 or 5 or 6 && reportProductId is null)
+            throw new ArgumentException("Document types 4, 5 and 6 must be linked to a report product.", nameof(reportProductId));
         if (string.IsNullOrWhiteSpace(originalFileName)) throw new ArgumentException("Original file name is required.", nameof(originalFileName));
         if (content is null || content.Length == 0) throw new ArgumentException("Attachment content is required.", nameof(content));
 
