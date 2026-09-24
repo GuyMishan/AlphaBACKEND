@@ -324,6 +324,8 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
     };
 
     public sealed record FileValidation(bool IsValid, EmployerInterfaceDocumentType? DocumentType, string? Version, string? SchemaFileName, IReadOnlyList<string> Issues);
-    public sealed record GeneratedDocument(byte[] Bytes, FileValidation Validation);
+    public sealed record GeneratedAttachment(string FileName, string ContentType, byte[] Content, string Sha256);
+    public sealed record GeneratedDocument(byte[] Bytes, FileValidation Validation, string? PayloadFileName = null,
+        IReadOnlyList<GeneratedAttachment>? AttachmentFiles = null);
     public sealed record IngestResult(Guid? ReportId, Guid? FeedbackId, FileValidation Validation, int ImportedEmployees, int UnmatchedRows);
 }
