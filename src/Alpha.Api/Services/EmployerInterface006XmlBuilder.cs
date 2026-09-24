@@ -373,7 +373,7 @@ public static class EmployerInterface006XmlBuilder
         if (accountDigits.Length is < 1 or > 20) issues.Add($"{label}: employer bank account must contain 1-20 digits.");
 
         var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
-        if (metadata?.PaymentMethodCode is 1 or 7)
+        if (metadata?.OperationCode is 1 or 2 or 3 or 7 && metadata.PaymentMethodCode is 1 or 7)
         {
             var receiver = ParseReceiverAccount(payment.ProviderAccount);
             if (!receiver.IsValid)
