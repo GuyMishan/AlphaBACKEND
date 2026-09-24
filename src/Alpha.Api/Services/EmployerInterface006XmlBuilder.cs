@@ -120,7 +120,7 @@ public static class EmployerInterface006XmlBuilder
         }
         else
         {
-            if (metadata.OperationCode == 5) transfer.Add(E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value));
+            if (metadata.OperationCode is 5 or 6) transfer.Add(E("KOD-EMTZAI-TASHLUM", metadata.PaymentMethodCode!.Value));
             transfer.Add(E("SACH-HAFKADA-KUPA-H-P", metadata.OperationCode == 6 ? Money(0) : Money(total)));
             transfer.Add(E("MISPAR-ZIHUI", UpperGuid(first.Id)));
             if (metadata.OperationCode == 5 && metadata.PaymentMethodCode == 1)
@@ -315,14 +315,12 @@ public static class EmployerInterface006XmlBuilder
             else
             {
                 if (!meta.RefundReason.HasValue || meta.RefundReason is < 1 or > 10) issues.Add($"{label}: RefundReason 1-10 is required for a negative report.");
-                if (meta.OperationCode == 5)
+                if (meta.OperationCode is 5 or 6)
                 {
-                    if (!meta.PaymentMethodCode.HasValue || !PaymentMethodCodes.Contains(meta.PaymentMethodCode.Value)) issues.Add($"{label}: OperationCode 5 requires a valid refund PaymentMethodCode.");
-                    ValidatePaymentAccount(c, product, label, requireBankAccount: meta.PaymentMethodCode == 1, issues);
-                }
-                else if (meta.OperationCode == 6 && meta.PaymentMethodCode.HasValue)
-                {
-                    issues.Add($"{label}: OperationCode 6 must not include PaymentMethodCode according to Employer Interface Version 6.");
+                    if (!meta.PaymentMethodCode.HasValue || !PaymentMethodCodes.Contains(meta.PaymentMethodCode.Value))
+                        issues.Add($"{label}: negative Version 006 operation {meta.OperationCode} requires a valid PaymentMethodCode.");
+                    if (meta.OperationCode == 5)
+                        ValidatePaymentAccount(c, product, label, requireBankAccount: meta.PaymentMethodCode == 1, issues);
                 }
             }
 
