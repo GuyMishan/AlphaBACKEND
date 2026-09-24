@@ -216,16 +216,6 @@ public static class EmployerInterface006XmlBuilder
         foreach (var product in products)
         {
             var metadata = c.ProductMetadata.Single(x => x.ReportProductId == product.Id);
-            if (!negative)
-            {
-                var sameEmployeeFundProducts = c.Products.Where(x => x.ReportEmployeeId == product.ReportEmployeeId
-                    && string.Equals(x.FundCode, product.FundCode, StringComparison.Ordinal)
-                    && string.Equals(x.FundName, product.FundName, StringComparison.Ordinal)).ToList();
-                if (sameEmployeeFundProducts.Any(x => x.Section14Code != product.Section14Code
-                    || x.Section14StartDate != product.Section14StartDate))
-                    issues.Add($"{label}: products for the same employee and fund must use the same Section 14 code/effective date because Version 006 permits one PirteiOved block per employee in a batch.");
-            }
-
             var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
             var total = contributions.Sum(x => x.Amount);
             employeeTotal += total;
@@ -329,6 +319,16 @@ public static class EmployerInterface006XmlBuilder
                 {
                     issues.Add($"{label}: OperationCode 6 must not include PaymentMethodCode according to Employer Interface Version 6.");
                 }
+            }
+
+            if (!negative)
+            {
+                var sameEmployeeFundProducts = c.Products.Where(x => x.ReportEmployeeId == product.ReportEmployeeId
+                    && string.Equals(x.FundCode, product.FundCode, StringComparison.Ordinal)
+                    && string.Equals(x.FundName, product.FundName, StringComparison.Ordinal)).ToList();
+                if (sameEmployeeFundProducts.Any(x => x.Section14Code != product.Section14Code
+                    || x.Section14StartDate != product.Section14StartDate))
+                    issues.Add($"{label}: products for the same employee and fund must use the same Section 14 code/effective date because Version 006 permits one PirteiOved block per employee in a batch.");
             }
 
             var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
