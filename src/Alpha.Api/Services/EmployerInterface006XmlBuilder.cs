@@ -136,6 +136,20 @@ public static class EmployerInterface006XmlBuilder
         }
 
         transfer.Add(Nil("MISPAR-ZIHUI-KODEM", null), Nil("MISPAR-MISLAKA", null), Nil("MISPAR-MISLAKA-KODEM", null));
+
+        if (negative)
+        {
+            var attachments = c.Attachments
+                .Where(x => x.ReportProductId is null || productIds.Contains(x.ReportProductId.Value))
+                .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ToList();
+            foreach (var attachment in attachments)
+            {
+                transfer.Add(new XElement("ZihuiShemMismachBeramatEirua",
+                    E("SHEM-KOVETZ-SHEL-MISMACH-BERAMAT-EIRUA-VEBERAMAT-LAKOACH", attachment.TransmissionFileName),
+                    E("SUG-MISMACH", attachment.DocumentTypeCode)));
+            }
+        }
+
         transfer.Add(BuildFund(c, products, negative));
 
         return new XElement("YeshutGoremPoneLemislaka",
@@ -214,9 +228,12 @@ public static class EmployerInterface006XmlBuilder
         }
         else
         {
+            var productIds = products.Select(x => x.Id).ToHashSet();
+            var operation5 = products.Any(p => c.ProductMetadata.Single(x => x.ReportProductId == p.Id).OperationCode == 5);
+            var employeeAttachments = c.Attachments.Where(x => x.ReportProductId.HasValue && productIds.Contains(x.ReportProductId.Value)).ToList();
             node.Add(
-                Nil("HASHAVA-KIBUTZI", null),
-                Nil("HATZHARAT-OVED", null),
+                operation5 ? E("HASHAVA-KIBUTZI", employeeAttachments.Any(x => x.DocumentTypeCode == 6) ? 1 : 2) : Nil("HASHAVA-KIBUTZI", null),
+                operation5 ? E("HATZHARAT-OVED", employeeAttachments.Any(x => x.DocumentTypeCode == 4) ? 1 : 2) : Nil("HATZHARAT-OVED", null),
                 Nil("SEIF-ARBA-ESRE-LAOVED", null),
                 Nil("SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF", null));
         }
@@ -289,6 +306,36 @@ public static class EmployerInterface006XmlBuilder
         if (employerMobile.Length > 0 && (!IsDigits(employerMobile) || employerMobile.Length != 10 || !employerMobile.StartsWith("05", StringComparison.Ordinal)))
             issues.Add("Employer Interface contact mobile must contain digits only and match ^05\\d\\d{7}$; when no mobile exists, Version 006 requires 0500000000.");
         if (c.Products.Count == 0) issues.Add("The report has no pension products to export.");
+
+        if (!negative && c.Attachments.Count > 0)
+            issues.Add("Employer Interface attachments of types 3, 4 and 6 are only supported for negative reports.");
+        if (negative)
+        {
+            foreach (var attachment in c.Attachments)
+            {
+                if (attachment.DocumentTypeCode is not (3 or 4 or 6))
+                    issues.Add($"Attachment {attachment.Id}: document type must be 3, 4 or 6.");
+                if (attachment.TransmissionFileName.Length is 0 or > 100)
+                    issues.Add($"Attachment {attachment.Id}: transmission file name must contain 1-100 characters.");
+                if (attachment.DocumentTypeCode is 4 or 6 && attachment.ReportProductId is null)
+                    issues.Add($"Attachment {attachment.Id}: document type {attachment.DocumentTypeCode} must be linked to a report product.");
+            }
+
+            var hasOperation5 = c.ProductMetadata.Any(x => x.OperationCode == 5);
+            if (hasOperation5 && !c.AnnualEmployerAffidavitSatisfied)
+                issues.Add("Negative operation 5 requires the annual employer affidavit (SUG-MISMACH=3) at least once per calendar year.");
+
+            foreach (var product in c.Products)
+            {
+                var meta = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
+                if (meta?.OperationCode != 5) continue;
+                var supporting = c.Attachments.Any(x =>
+                    (x.ReportProductId is null || x.ReportProductId == product.Id)
+                    && x.DocumentTypeCode is 3 or 4 or 6);
+                if (!supporting)
+                    issues.Add($"Product {product.Id}: operation 5 requires an employee or employer supporting attachment (SUG-MISMACH 3, 4 or 6).");
+            }
+        }
 
         foreach (var product in c.Products)
         {
@@ -489,6 +536,10 @@ public static class EmployerInterface006XmlBuilder
         IReadOnlyDictionary<Guid, Person> People, IReadOnlyDictionary<Guid, Employment> Employments,
         IReadOnlyList<ManualReportProduct> Products, IReadOnlyList<ManualContribution> Contributions,
         IReadOnlyList<ManualReportPayment> Payments, IReadOnlyList<EmployerInterfaceReportProductData> ProductMetadata,
-        EmployerInterface006Options Options, int DepositorTypeCode = 1);
+        EmployerInterface006Options Options, int DepositorTypeCode = 1,
+        IReadOnlyList<ManualReportAttachment>? AttachmentItems = null, bool AnnualEmployerAffidavitSatisfied = false)
+    {
+        public IReadOnlyList<ManualReportAttachment> Attachments { get; init; } = AttachmentItems ?? [];
+    }
     public sealed record BuildResult(XDocument? Document, IReadOnlyList<string> Issues);
 }
