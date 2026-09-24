@@ -184,16 +184,16 @@ public static class ReportAttachmentEndpoints
 
     private static async Task<bool> HasPreviouslySentAnnualAffidavitAsync(IAlphaDbContext db, ManualReport report, CancellationToken ct)
     {
-        var from = new DateOnly(report.ReportingMonth.Year, 1, 1);
-        var to = from.AddYears(1);
+        var yearStart = new DateOnly(report.ReportingMonth.Year, 1, 1);
+        var yearEnd = yearStart.AddYears(1);
         return await (
             from attachment in db.ManualReportAttachments.AsNoTracking()
             join previousReport in db.ManualReports.AsNoTracking() on attachment.ReportId equals previousReport.Id
             where attachment.DocumentTypeCode == 3
                   && previousReport.Id != report.Id
                   && previousReport.EmployerId == report.EmployerId
-                  && previousReport.ReportingMonth >= from
-                  && previousReport.ReportingMonth < to
+                  && previousReport.ReportingMonth >= yearStart
+                  && previousReport.ReportingMonth < yearEnd
                   && (previousReport.Status == ManualReportStatus.Sent || previousReport.Status == ManualReportStatus.Completed)
             select attachment.Id).AnyAsync(ct);
     }
