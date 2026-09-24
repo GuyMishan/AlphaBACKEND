@@ -94,6 +94,11 @@ public sealed class EmployerProfileSettings : Entity
         Touch();
     }
 
+    public void UpdateReporting(int? defaultSalaryPaymentDay, int? defaultPaymentMethodCode,
+        int? defaultEmployerAccountType, int? defaultReceiverAccountType, string? notes) =>
+        UpdateReporting(defaultSalaryPaymentDay, DefaultDepositorTypeCode, defaultPaymentMethodCode,
+            defaultEmployerAccountType, defaultReceiverAccountType, notes);
+
     public void UpdateReporting(int? defaultSalaryPaymentDay, int defaultDepositorTypeCode, int? defaultPaymentMethodCode,
         int? defaultEmployerAccountType, int? defaultReceiverAccountType, string? notes)
     {
