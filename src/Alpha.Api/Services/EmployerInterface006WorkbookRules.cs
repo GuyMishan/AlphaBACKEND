@@ -8,8 +8,7 @@ public static class EmployerInterface006WorkbookRules
     private static readonly XNamespace Xsi = "http://www.w3.org/2001/XMLSchema-instance";
 
     // Official "קוד אמצעי תשלום וסוג פעולה" matrix supplied with the Version 6
-    // clearinghouse rules. Operation 6 intentionally carries no payment-method
-    // element in the negative interface and is validated separately.
+    // clearinghouse rules.
     private static readonly IReadOnlyDictionary<int, HashSet<int>> AllowedPaymentMethodsByOperation =
         new Dictionary<int, HashSet<int>>
         {
@@ -23,7 +22,6 @@ public static class EmployerInterface006WorkbookRules
 
     public static IReadOnlyCollection<int> AllowedPaymentMethods(int operationCode)
     {
-        if (operationCode == 6) return Array.Empty<int>();
         return AllowedPaymentMethodsByOperation.TryGetValue(operationCode, out var allowed)
             ? allowed.OrderBy(x => x).ToArray()
             : Array.Empty<int>();
