@@ -58,6 +58,27 @@ public static class EmployerInterface006WorkbookRules
                 continue;
             }
 
+            var payments = products
+                .Select(p => context.Payments.FirstOrDefault(x => x.ReportProductId == p.Id))
+                .Where(x => x is not null)
+                .Cast<ManualReportPayment>()
+                .ToList();
+            if (payments.Count > 1)
+            {
+                var firstPayment = payments[0];
+                if (payments.Skip(1).Any(x =>
+                    x.ValueDate != firstPayment.ValueDate
+                    || !StringEquals(x.ReferenceNumber, firstPayment.ReferenceNumber)
+                    || !StringEquals(x.EmployerBankCode, firstPayment.EmployerBankCode)
+                    || !StringEquals(x.EmployerBranch, firstPayment.EmployerBranch)
+                    || !StringEquals(x.EmployerAccount, firstPayment.EmployerAccount)
+                    || !StringEquals(x.ProviderAccount, firstPayment.ProviderAccount)))
+                {
+                    issues.Add($"{label}: products grouped into one transfer must use identical transfer/payment details.");
+                    continue;
+                }
+            }
+
             var requiresPrevious = negative
                 ? first.OperationCode is 5 or 6
                 : first.OperationCode is 2 or 3 or 7;
