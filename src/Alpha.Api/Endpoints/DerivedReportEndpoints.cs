@@ -167,7 +167,8 @@ public static class DerivedReportEndpoints
                 oldProduct.PolicyNumber, oldProduct.SalaryMonth, oldProduct.Salary, reportingType, oldProduct.SalaryLayer,
                 oldProduct.Section14, oldProduct.Section14StartDate,
                 oldProduct.FundExternalKey, oldProduct.FundCode, oldProduct.FundName, oldProduct.FundCompanyName,
-                oldProduct.SalaryAllocationType, oldProduct.SalaryAllocationValue, oldProduct.AllocationOrder);
+                oldProduct.SalaryAllocationType, oldProduct.SalaryAllocationValue, oldProduct.AllocationOrder,
+                oldProduct.Section14Code, oldProduct.FundClassification);
             db.ManualReportProducts.Add(clone);
             productMap[oldProduct.Id] = clone;
         }
