@@ -33,12 +33,13 @@ public static class EmployerInterface006XmlBuilder
         foreach (var group in groups) body.Add(BuildRequester(c, group.ToList(), negative, senderId));
         root.Add(body);
 
-        var totalContributions = c.Contributions.Sum(x => x.Amount);
+        var emittedContributions = c.Products.SelectMany(product => EffectiveContributions(c, product, negative)).ToList();
+        var totalContributions = emittedContributions.Sum(x => x.Amount);
         var totalDeposits = groups.Sum(group => ReportedDepositAmount(c, group.ToList(), negative));
         root.Add(new XElement("ReshumatSgira",
             E("MISPAR-KUPOT-YATZRANIM-BAKOVETZ", groups.Count),
             E("MISPAR-MAASIKIM", groups.Count),
-            E("MISPAR-RESHUMOT", c.Contributions.Count),
+            E("MISPAR-RESHUMOT", emittedContributions.Count),
             E("MISPAR-AMITIM", groups.Sum(group => group.Select(x => x.ReportEmployeeId).Distinct().Count())),
             E("SACH-HAFRASHOT-BAKOVETZ", Money(totalContributions)),
             E("SACH-HAFKADOT-BAKOVETZ", Money(totalDeposits))));
@@ -228,7 +229,7 @@ public static class EmployerInterface006XmlBuilder
             fund.Add(BuildEmployee(c, employeeProducts.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToList(), negative));
 
         var ids = products.Select(x => x.Id).ToHashSet();
-        var total = c.Contributions.Where(x => ids.Contains(x.ReportProductId)).Sum(x => x.Amount);
+        var total = products.SelectMany(product => EffectiveContributions(c, product, negative)).Sum(x => x.Amount);
         var reportedDeposit = ReportedDepositAmount(c, products, negative);
         if (total > 0)
             fund.Add(new XElement("SachHafrashaLeKupaMaasik",
@@ -257,14 +258,14 @@ public static class EmployerInterface006XmlBuilder
         if (!negative)
         {
             node.Add(
-                E("SHEM-YISHUV", person.City),
-                E("SHEM-RECHOV", person.Street),
-                E("MISPAR-BAIT", person.HouseNumber),
-                E("MISPAR-DIRA", person.Apartment),
-                E("MIKUD", person.PostalCode),
-                E("TA-DOAR", person.PostOfficeBox),
-                E("E-MAIL", person.Email),
-                E("MISPAR-CELLULARI", Digits(person.Mobile)),
+                Nil("SHEM-YISHUV", person.City),
+                Nil("SHEM-RECHOV", person.Street),
+                Nil("MISPAR-BAIT", person.HouseNumber),
+                Nil("MISPAR-DIRA", string.IsNullOrWhiteSpace(person.Apartment) ? null : person.Apartment),
+                Nil("MIKUD", string.IsNullOrWhiteSpace(person.PostalCode) ? null : Digits(person.PostalCode)),
+                Nil("TA-DOAR", string.IsNullOrWhiteSpace(person.PostOfficeBox) ? null : Digits(person.PostOfficeBox)),
+                E("E-MAIL", string.IsNullOrWhiteSpace(person.Email) ? "israel1234@notrelevant.com" : person.Email.Trim()),
+                E("MISPAR-CELLULARI", EmployeeMobile(person.Mobile)),
                 E("MIN", (int)person.Gender!.Value),
                 E("MOED-TCHILAT-AHASAKAT-OVED", employment.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
                 E("SEIF-ARBA-ESRE-LAOVED", firstProduct.Section14Code),
@@ -286,7 +287,7 @@ public static class EmployerInterface006XmlBuilder
         foreach (var product in products)
         {
             var metadata = c.ProductMetadata.Single(x => x.ReportProductId == product.Id);
-            var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
+            var contributions = EffectiveContributions(c, product, negative);
             var total = contributions.Sum(x => x.Amount);
             employeeTotal += total;
 
@@ -297,7 +298,8 @@ public static class EmployerInterface006XmlBuilder
             if (negative) salary.Add(E("SIBAT-BAKASH-LECHZER-KSAFIM", metadata.RefundReason!.Value));
             if (!negative)
             {
-                salary.Add(E("SACHAR-MEDUVACH", Money(product.Salary)), E("STATUS-OVED-BECHODESH-MASKORET", metadata.EmployeeStatus!.Value),
+                salary.Add(metadata.OperationCode == 7 ? Nil("SACHAR-MEDUVACH", null) : E("SACHAR-MEDUVACH", Money(product.Salary)),
+                    E("STATUS-OVED-BECHODESH-MASKORET", metadata.EmployeeStatus!.Value),
                     Nil("TAARICH-TCHILAT-STATUS", metadata.StatusStartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
                     Nil("CHELKIUT-MISRA", metadata.EmploymentPercentage), Nil("YEMEI-AVODA-BECHODESH", metadata.WorkDaysInMonth),
                     Nil("MISPAR-POLISA-O-HESHBON", product.PolicyNumber), E("HAFKADA-ACHRONA", metadata.LastDeposit!.Value));
@@ -310,7 +312,10 @@ public static class EmployerInterface006XmlBuilder
             foreach (var contribution in contributions)
             {
                 var split = new XElement("PizulHafrashotOvedBeKupa", E("SUG-HAFRASHA", MapContributionCode(contribution)));
-                if (!negative) split.Add(contribution.Percentage > 0 ? E("SHIUR-HAFRASHA", contribution.Percentage) : Nil("SHIUR-HAFRASHA", null));
+                if (!negative)
+                    split.Add(HasMoneyTransfer(c, product) && contribution.Percentage > 0
+                        ? E("SHIUR-HAFRASHA", contribution.Percentage)
+                        : Nil("SHIUR-HAFRASHA", null));
                 split.Add(E("SCHUM-HAFRASHA", Money(contribution.Amount)));
                 if (!negative) split.Add(E("SACH-TASHLUMIM-PTURIM", Money(contribution.ExemptPayments)));
                 split.Add(E("MISPAR-MEZAHE-RESHUMA", UpperGuid(contribution.Id)), Nil("MISPAR-MEZAHE-RESHUMA-KODEM", null));
@@ -401,6 +406,8 @@ public static class EmployerInterface006XmlBuilder
                 if (product.Section14Code is < 1 or > 5) issues.Add($"{label}: Section14Code must be one of 1,2,3,4,5.");
                 if (product.Section14Code is 2 or 4 && !product.Section14StartDate.HasValue)
                     issues.Add($"{label}: Section14StartDate is required for Section14Code 2 or 4.");
+                if (product.ProductType == PensionProductType.StudyFund && product.Section14Code != 3)
+                    issues.Add($"{label}: study funds must report Section14Code 3 because severance funds are not managed in this product.");
             }
             var meta = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
             if (meta is null) { issues.Add($"{label}: Employer Interface 006 metadata is missing."); continue; }
@@ -414,6 +421,8 @@ public static class EmployerInterface006XmlBuilder
                 if (!meta.EmployeeStatus.HasValue) issues.Add($"{label}: EmployeeStatus is required for a current report.");
                 if (!meta.StatusStartDate.HasValue) issues.Add($"{label}: StatusStartDate is required for a current report.");
                 if (!meta.LastDeposit.HasValue) issues.Add($"{label}: LastDeposit is required for a current report.");
+                if (meta.EmployeeStatus == 14 && product.Section14Code == 5)
+                    issues.Add($"{label}: Section14Code 5 must not be used for a new employee/status 14.");
                 if (!meta.PaymentMethodCode.HasValue || !PaymentMethodCodes.Contains(meta.PaymentMethodCode.Value)) issues.Add($"{label}: PaymentMethodCode must be one of 1,3,4,5,6,7,9.");
                 if (meta.EmployerAccountType is not (1 or 2)) issues.Add($"{label}: EmployerAccountType must be 1 or 2 for a current report.");
                 if (meta.ReceiverAccountType is not (1 or 2)) issues.Add($"{label}: ReceiverAccountType must be 1 or 2 for a current report.");
@@ -464,8 +473,8 @@ public static class EmployerInterface006XmlBuilder
 
             var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
             var contributionCodes = contributions.Select(MapContributionCode).ToList();
-            if (contributionCodes.GroupBy(x => x).Any(g => g.Count() > 1))
-                issues.Add($"{label}: the same SUG-HAFRASHA contribution type cannot be reported more than once in one salary/status block.");
+            if (contributionCodes.GroupBy(x => x).Any(g => g.Key != "4" && g.Count() > 1))
+                issues.Add($"{label}: the same SUG-HAFRASHA contribution type cannot be reported more than once in one salary/status block, except code 4.");
 
             if (product.ProductType == PensionProductType.StudyFund)
             {
@@ -478,6 +487,9 @@ public static class EmployerInterface006XmlBuilder
                     issues.Add($"{label}: pension and provident funds must not report SUG-HAFRASHA codes 5-8.");
             }
 
+            if (!negative && meta.DepositStatus == 1 && ParseRequiredCode(product.ReportingType) == 1 && HasMoneyTransfer(c, product)
+                && contributions.Any(x => x.Percentage <= 0))
+                issues.Add($"{label}: routine salaried deposits require SHIUR-HAFRASHA for every reported contribution component.");
             if (negative && contributions.Count == 0) issues.Add($"{label}: negative Version 006 requires at least one contribution record.");
             if (negative && contributions.Any(x => x.Amount <= 0)) issues.Add($"{label}: negative contribution amounts must be greater than zero.");
         }
@@ -489,14 +501,24 @@ public static class EmployerInterface006XmlBuilder
                 if (!c.People.TryGetValue(employee.PersonId, out var person)) { issues.Add($"Employee {employee.Id}: person profile was not found."); continue; }
                 if (!person.BirthDate.HasValue) issues.Add($"Employee {employee.Id}: BirthDate is required.");
                 if (!person.Gender.HasValue) issues.Add($"Employee {employee.Id}: Gender is required.");
-                if (string.IsNullOrWhiteSpace(person.Email)) issues.Add($"Employee {employee.Id}: Email is required.");
-                if (Digits(person.Mobile).Length == 0) issues.Add($"Employee {employee.Id}: Mobile is required.");
-                if (string.IsNullOrWhiteSpace(person.City)) issues.Add($"Employee {employee.Id}: City is required.");
-                if (string.IsNullOrWhiteSpace(person.Street)) issues.Add($"Employee {employee.Id}: Street is required.");
-                if (string.IsNullOrWhiteSpace(person.HouseNumber)) issues.Add($"Employee {employee.Id}: HouseNumber is required.");
-                if (string.IsNullOrWhiteSpace(person.Apartment)) issues.Add($"Employee {employee.Id}: Apartment is required.");
-                if (Digits(person.PostalCode).Length == 0) issues.Add($"Employee {employee.Id}: PostalCode is required.");
-                if (string.IsNullOrWhiteSpace(person.PostOfficeBox)) issues.Add($"Employee {employee.Id}: PostOfficeBox is required.");
+                if (!string.IsNullOrWhiteSpace(person.Email) && (person.Email.Length > 50 || !person.Email.Contains('@')))
+                    issues.Add($"Employee {employee.Id}: Email must be valid and contain up to 50 characters.");
+                var employeeMobile = Digits(person.Mobile);
+                if (!string.IsNullOrWhiteSpace(person.Mobile) && (employeeMobile.Length == 0 || employeeMobile.Length > 15))
+                    issues.Add($"Employee {employee.Id}: Mobile must contain digits only and up to 15 digits.");
+
+                var employeeProducts = c.Products.Where(x => x.ReportEmployeeId == employee.Id).ToList();
+                var isNewEmployee = employeeProducts.Any(p => c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == p.Id)?.EmployeeStatus == 14);
+                if (isNewEmployee)
+                {
+                    var hasPostalBox = Digits(person.PostOfficeBox).Length > 0;
+                    var hasStreetAddress = !string.IsNullOrWhiteSpace(person.City)
+                        && !string.IsNullOrWhiteSpace(person.Street)
+                        && !string.IsNullOrWhiteSpace(person.HouseNumber)
+                        && Digits(person.PostalCode).Length > 0;
+                    if (!hasPostalBox && !hasStreetAddress)
+                        issues.Add($"Employee {employee.Id}: status 14 requires either a postal box or the required street-address fields.");
+                }
                 if (!c.Employments.ContainsKey(employee.EmploymentId)) issues.Add($"Employee {employee.Id}: employment profile was not found.");
             }
         }
@@ -569,7 +591,7 @@ public static class EmployerInterface006XmlBuilder
     private static decimal ReportedDepositAmount(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative)
     {
         var ids = products.Select(x => x.Id).ToHashSet();
-        var total = c.Contributions.Where(x => ids.Contains(x.ReportProductId)).Sum(x => x.Amount);
+        var total = products.SelectMany(product => EffectiveContributions(c, product, negative)).Sum(x => x.Amount);
         var operation = c.ProductMetadata.First(x => ids.Contains(x.ReportProductId)).OperationCode;
         if (negative && operation == 6) return 0m;
         if (!negative && operation is 2 or 7) return 0m;
@@ -580,6 +602,31 @@ public static class EmployerInterface006XmlBuilder
             return amounts.Length == 1 ? amounts[0] : 0m;
         }
         return total;
+    }
+
+    private static readonly HashSet<int> NoContributionEmployeeStatuses = [3, 4, 5, 8, 9, 10, 11, 12, 17];
+
+    private static List<ManualContribution> EffectiveContributions(BuildContext c, ManualReportProduct product, bool negative)
+    {
+        var items = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
+        if (negative) return items;
+        var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
+        return metadata?.EmployeeStatus is int status && NoContributionEmployeeStatuses.Contains(status) ? [] : items;
+    }
+
+    private static bool HasMoneyTransfer(BuildContext c, ManualReportProduct product)
+    {
+        var metadata = c.ProductMetadata.First(x => x.ReportProductId == product.Id);
+        if (metadata.OperationCode is 2 or 7) return false;
+        if (metadata.OperationCode == 3)
+            return c.Payments.FirstOrDefault(x => x.ReportProductId == product.Id)?.ActualDepositAmount > 0;
+        return EffectiveContributions(c, product, false).Sum(x => x.Amount) > 0;
+    }
+
+    private static string EmployeeMobile(string? value)
+    {
+        var digits = Digits(value);
+        return digits.Length == 0 ? "0500000000" : digits;
     }
 
     private static string EmployerWithholdingFile(BuildContext c)
