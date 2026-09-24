@@ -23,6 +23,7 @@ public static class EmployerProfileSchemaInitializer
                 "PensionPaymentMode" character varying(40) NOT NULL DEFAULT 'InheritOrganization',
                 "PensionPaymentModeOverridden" boolean NOT NULL DEFAULT false,
                 "DefaultSalaryPaymentDay" integer NULL,
+                "DefaultDepositorTypeCode" integer NOT NULL DEFAULT 1,
                 "DefaultPaymentMethodCode" integer NULL,
                 "DefaultEmployerAccountType" integer NULL,
                 "DefaultReceiverAccountType" integer NULL,
@@ -42,6 +43,8 @@ public static class EmployerProfileSchemaInitializer
                 ADD COLUMN IF NOT EXISTS "PensionPaymentMode" character varying(40) NOT NULL DEFAULT 'InheritOrganization';
             ALTER TABLE employers.employer_profile_settings
                 ADD COLUMN IF NOT EXISTS "PensionPaymentModeOverridden" boolean NOT NULL DEFAULT false;
+            ALTER TABLE employers.employer_profile_settings
+                ADD COLUMN IF NOT EXISTS "DefaultDepositorTypeCode" integer NOT NULL DEFAULT 1;
 
             CREATE TABLE IF NOT EXISTS employers.employer_payment_accounts (
                 "Id" uuid NOT NULL PRIMARY KEY,
