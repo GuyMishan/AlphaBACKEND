@@ -97,7 +97,7 @@ public sealed class ManualReportProduct : Entity
     {
         ReportEmployeeId = reportEmployeeId;
         Update(productType, policyNumber, salaryMonth, salary, reportingType, salaryLayer, section14, section14StartDate,
-            fundExternalKey, fundCode, fundName, fundCompanyName, salaryAllocationType, salaryAllocationValue, allocationOrder, section14Code);
+            fundExternalKey, fundCode, fundName, fundCompanyName, salaryAllocationType, salaryAllocationValue, allocationOrder, section14Code, fundClassification);
     }
 
     public Guid ReportEmployeeId { get; private set; }
@@ -114,6 +114,7 @@ public sealed class ManualReportProduct : Entity
     public string FundCode { get; private set; } = string.Empty;
     public string FundName { get; private set; } = string.Empty;
     public string FundCompanyName { get; private set; } = string.Empty;
+    public string FundClassification { get; private set; } = string.Empty;
     public SalaryAllocationType SalaryAllocationType { get; private set; } = SalaryAllocationType.Fixed;
     public decimal? SalaryAllocationValue { get; private set; }
     public int AllocationOrder { get; private set; }
@@ -124,7 +125,7 @@ public sealed class ManualReportProduct : Entity
         string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate,
         string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null,
         SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
-        int allocationOrder = 0, int? section14Code = null)
+        int allocationOrder = 0, int? section14Code = null, string? fundClassification = null)
     {
         if (salary < 0) throw new ArgumentOutOfRangeException(nameof(salary));
         if ((policyNumber?.Trim().Length ?? 0) > 20)
@@ -151,6 +152,7 @@ public sealed class ManualReportProduct : Entity
         FundCode = fundCode?.Trim() ?? string.Empty;
         FundName = fundName?.Trim() ?? string.Empty;
         FundCompanyName = fundCompanyName?.Trim() ?? string.Empty;
+        FundClassification = fundClassification?.Trim() ?? string.Empty;
         SalaryAllocationType = salaryAllocationType;
         SalaryAllocationValue = salaryAllocationType == SalaryAllocationType.Remainder ? null : salaryAllocationValue;
         AllocationOrder = allocationOrder;
