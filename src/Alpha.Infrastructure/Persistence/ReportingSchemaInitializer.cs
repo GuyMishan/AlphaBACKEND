@@ -239,6 +239,28 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_payments (
     CONSTRAINT "UX_manual_report_payment_product" UNIQUE ("ReportProductId")
 );
 
+CREATE TABLE IF NOT EXISTS reporting.manual_report_attachments (
+    "Id" uuid PRIMARY KEY,
+    "ReportId" uuid NOT NULL REFERENCES reporting.manual_reports("Id") ON DELETE CASCADE,
+    "ReportProductId" uuid NULL REFERENCES reporting.manual_report_products("Id") ON DELETE CASCADE,
+    "DocumentTypeCode" integer NOT NULL,
+    "OriginalFileName" varchar(260) NOT NULL,
+    "TransmissionFileName" varchar(100) NOT NULL,
+    "ContentType" varchar(120) NOT NULL,
+    "Content" bytea NOT NULL,
+    "SizeBytes" bigint NOT NULL,
+    "Sha256" varchar(64) NOT NULL,
+    "CreatedAt" timestamptz NOT NULL,
+    "UpdatedAt" timestamptz NOT NULL,
+    CONSTRAINT "CK_manual_report_attachments_document_type" CHECK ("DocumentTypeCode" IN (3,4,6))
+);
+CREATE INDEX IF NOT EXISTS "IX_manual_report_attachments_report"
+    ON reporting.manual_report_attachments ("ReportId");
+CREATE INDEX IF NOT EXISTS "IX_manual_report_attachments_product"
+    ON reporting.manual_report_attachments ("ReportProductId");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_manual_report_attachments_transmission_name"
+    ON reporting.manual_report_attachments ("ReportId", "TransmissionFileName");
+
 CREATE TABLE IF NOT EXISTS reporting.contribution_percentage_limits (
     "Id" uuid PRIMARY KEY,
     "Year" integer NOT NULL,
