@@ -63,8 +63,17 @@ public static class ApiInputValidation
             if (product.SalaryMonth.Year < 2000 || product.SalaryMonth > DateOnly.FromDateTime(DateTime.UtcNow.AddYears(1))) errors.Add(prefix + "חודש השכר אינו תקין.");
             if (string.IsNullOrWhiteSpace(product.ReportingType)) errors.Add(prefix + "סוג דיווח הוא שדה חובה.");
             if (string.IsNullOrWhiteSpace(product.SalaryLayer)) errors.Add(prefix + "רובד שכר הוא שדה חובה.");
-            if (product.Section14 && product.Section14StartDate is null) errors.Add(prefix + "יש להזין תאריך תחילת סעיף 14.");
-            if (product.Section14StartDate is { } section14Date && section14Date > DateOnly.FromDateTime(DateTime.UtcNow)) errors.Add(prefix + "תאריך תחילת סעיף 14 לא יכול להיות בעתיד.");
+            var section14Code = product.Section14Code ?? (product.Section14
+                ? product.Section14StartDate.HasValue ? 2 : 1
+                : product.Section14StartDate.HasValue ? 4 : 3);
+            if (section14Code is < 1 or > 5)
+                errors.Add(prefix + "קוד סעיף 14 אינו תקין.");
+            if (section14Code is 2 or 4 && product.Section14StartDate is null)
+                errors.Add(prefix + "יש להזין תאריך תחולה/ביטול לסעיף 14.");
+            if (section14Code is not (2 or 4) && product.Section14StartDate is not null)
+                errors.Add(prefix + "אין להעביר תאריך סעיף 14 עבור הקוד שנבחר.");
+            if (product.Section14StartDate is { } section14Date && section14Date > DateOnly.FromDateTime(DateTime.UtcNow))
+                errors.Add(prefix + "תאריך תחולה/ביטול סעיף 14 לא יכול להיות בעתיד.");
 
             if (!product.EmployerContributions.Concat(product.EmployeeContributions).Any(x => x.Amount > 0))
                 errors.Add(prefix + "יש להזין לפחות רכיב הפקדה אחד עם סכום גדול מאפס.");
