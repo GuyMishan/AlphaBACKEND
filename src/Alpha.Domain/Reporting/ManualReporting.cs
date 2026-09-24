@@ -169,8 +169,8 @@ public sealed class ManualContribution : Entity
     public Guid ReportProductId { get; private set; } public ContributionParty Party { get; private set; } public ContributionComponent Component { get; private set; } public decimal Amount { get; private set; } public decimal Percentage { get; private set; } public decimal ExemptPayments { get; private set; }
     public void Update(decimal amount, decimal percentage, decimal exemptPayments)
     {
-        if (amount < 0 || percentage < 0 || exemptPayments < 0)
-            throw new ArgumentOutOfRangeException(nameof(amount), "Contribution values cannot be negative.");
+        if (amount < 0 || percentage < 0)
+            throw new ArgumentOutOfRangeException(nameof(amount), "Contribution amount and percentage cannot be negative.");
         if (percentage > 100)
             throw new ArgumentOutOfRangeException(nameof(percentage), "Contribution percentage cannot exceed 100%.");
         Amount = amount;
