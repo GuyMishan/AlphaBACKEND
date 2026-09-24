@@ -70,6 +70,41 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_bank_transfer_normalizes_employer_and_receiver_accounts_for_xsd()
+    {
+        var fixture = CreateFixture(false);
+        var payment = fixture.Context.Payments[0];
+        payment.Update("Test Fund", "10 - 8 - 999", "", new DateOnly(2026, 9, 16), "REF-1", "Test Bank", "10", "7", "12345", "");
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+
+        var transfer = Assert.Single(result.Document!.Descendants("PirteiHaavaratKsafim"));
+        Assert.Equal("007", transfer.Element("MISPAR-SNIF-MAASIK")?.Value);
+        Assert.Equal("00000000000000012345", transfer.Element("MISPAR-CHESHBON-MAASIK")?.Value);
+        Assert.Equal("10", transfer.Element("MISPAR-BANK-KOLET")?.Value);
+        Assert.Equal("008", transfer.Element("MISPAR-SNIF-KOLET")?.Value);
+        Assert.Equal("00000000000000000999", transfer.Element("MISPAR-CHESHBON-KOLET")?.Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_non_bank_payment_zeroes_employer_branch_and_account()
+    {
+        var fixture = CreateFixture(false, paymentMethodCode: 3);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+
+        var transfer = Assert.Single(result.Document!.Descendants("PirteiHaavaratKsafim"));
+        Assert.Equal("000", transfer.Element("MISPAR-SNIF-MAASIK")?.Value);
+        Assert.Equal(new string('0', 20), transfer.Element("MISPAR-CHESHBON-MAASIK")?.Value);
+        Assert.Equal("true", transfer.Element("MISPAR-BANK-KOLET")?.Attribute(XName.Get("nil", "http://www.w3.org/2001/XMLSchema-instance"))?.Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Current_report_rejects_operation_payment_combination_not_allowed_by_clearinghouse_matrix()
     {
         var fixture = CreateFixture(false, operationCode: 1, paymentMethodCode: 4);
