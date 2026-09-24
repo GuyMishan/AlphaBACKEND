@@ -127,6 +127,8 @@ public sealed class ManualReportProduct : Entity
         int allocationOrder = 0, int? section14Code = null)
     {
         if (salary < 0) throw new ArgumentOutOfRangeException(nameof(salary));
+        if ((policyNumber?.Trim().Length ?? 0) > 20)
+            throw new ArgumentOutOfRangeException(nameof(policyNumber), "Policy/account number cannot exceed 20 characters in Employer Interface 006.");
         if (allocationOrder < 0) throw new ArgumentOutOfRangeException(nameof(allocationOrder));
         if (salaryAllocationValue < 0) throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue));
         if (salaryAllocationType == SalaryAllocationType.Percentage && salaryAllocationValue > 100)
