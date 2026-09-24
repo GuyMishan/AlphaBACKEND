@@ -89,8 +89,8 @@ public sealed class EmployerInterface006XmlBuilderTests
         var secondContribution = new ManualContribution(secondProduct.Id, ContributionParty.Employee, ContributionComponent.Benefits,
             50m, 10m, 0m);
         var secondPayment = new ManualReportPayment(secondProduct.Id);
-        secondPayment.Update("Test Fund", "", "", new DateOnly(2026, 9, 16), "REF-2", "Test Bank", "10", "123",
-            "12345678901234567890", "");
+        secondPayment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), "REF-2", "Test Bank", "10", "123",
+            "123456", "");
         var secondMetadata = new EmployerInterfaceReportProductData(secondProduct.Id);
         secondMetadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1);
 
@@ -151,8 +151,8 @@ public sealed class EmployerInterface006XmlBuilderTests
         var contribution = new ManualContribution(product.Id, ContributionParty.Employee, ContributionComponent.Benefits,
             100m, 10m, 0m);
         var payment = new ManualReportPayment(product.Id);
-        payment.Update("Test Fund", "", "", new DateOnly(2026, 9, 16), "REF-1", "Test Bank", "10", "123",
-            "12345678901234567890", "");
+        payment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), "REF-1", "Test Bank", "10", "123",
+            "123456", "");
         var metadata = new EmployerInterfaceReportProductData(product.Id);
         metadata.Update(operationCode ?? (negative ? 5 : 1), 1, 1, new DateOnly(2026, 9, 1), null, null, 2,
             negative ? 1 : null, paymentMethodCode, 1, 1,
