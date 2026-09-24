@@ -153,6 +153,7 @@ public sealed class ManualReportPaymentConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.ProviderName).HasMaxLength(160);
         b.Property(x => x.ProviderAccount).HasMaxLength(120);
         b.Property(x => x.PaymentMethod).HasMaxLength(80);
+        b.Property(x => x.TrustAccountValueDate);
         b.Property(x => x.ReferenceNumber).HasMaxLength(120);
         b.Property(x => x.EmployerBankName).HasMaxLength(120);
         b.Property(x => x.EmployerBankCode).HasMaxLength(30);
