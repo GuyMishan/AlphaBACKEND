@@ -167,6 +167,7 @@ public static class ReportValidationEndpoints
                 product.SalaryLayer,
                 product.Section14,
                 product.Section14StartDate,
+                product.Section14Code,
                 product.FundExternalKey,
                 product.FundCode,
                 product.FundName,
