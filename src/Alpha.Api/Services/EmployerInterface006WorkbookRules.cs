@@ -7,6 +7,19 @@ public static class EmployerInterface006WorkbookRules
 {
     private static readonly XNamespace Xsi = "http://www.w3.org/2001/XMLSchema-instance";
 
+    // Official "קוד אמצעי תשלום וסוג פעולה" matrix supplied with the Version 6
+    // clearinghouse rules. Operation 6 intentionally carries no payment-method
+    // element in the negative interface and is validated separately.
+    private static readonly IReadOnlyDictionary<int, HashSet<int>> AllowedPaymentMethodsByOperation =
+        new Dictionary<int, HashSet<int>>
+        {
+            [1] = [1, 3, 5, 6, 7, 9],
+            [2] = [1],
+            [3] = [1, 3, 5, 6, 7, 9],
+            [5] = [1, 3, 6, 7, 9],
+            [7] = [1]
+        };
+
     public static IReadOnlyList<string> ValidateAndApply(XDocument document,
         EmployerInterface006XmlBuilder.BuildContext context, bool negative)
     {
@@ -48,6 +61,19 @@ public static class EmployerInterface006WorkbookRules
 
             if (first.PreviousReferenceExceptionCode is not null && first.PreviousReferenceExceptionCode is not (1 or 2 or 3))
                 issues.Add($"{label}: unsupported previous-report reference exception code.");
+
+            if (first.OperationCode is int operationCode && operationCode != 6)
+            {
+                if (first.PaymentMethodCode is not int paymentMethodCode)
+                {
+                    issues.Add($"{label}: operation {operationCode} requires a payment method according to the official Version 6 operation/payment matrix.");
+                }
+                else if (!AllowedPaymentMethodsByOperation.TryGetValue(operationCode, out var allowedPaymentMethods)
+                    || !allowedPaymentMethods.Contains(paymentMethodCode))
+                {
+                    issues.Add($"{label}: payment method {paymentMethodCode} is not allowed for operation {operationCode} according to the official Version 6 operation/payment matrix.");
+                }
+            }
 
             if (negative) NormalizeNegativeTransfer(transfers[i], first);
             SetNullable(transfers[i].Element("MISPAR-ZIHUI-KODEM"), requiresPrevious ? first.PreviousIdentifier : null);
