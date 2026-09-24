@@ -154,8 +154,6 @@ public static class ReportValidationEndpoints
                     issues.Add(new("INSURED_SALARY_REQUIRED", $"למוצר {ProductLabel(product)} של {employeeName} חסר שכר מבוטח.", ValidationScope.Product, employee.Id, product.Id));
                 if (product.ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(product.FundExternalKey))
                     issues.Add(new("FUND_REQUIRED", $"למוצר {ProductLabel(product)} של {employeeName} לא נבחרה קופה.", ValidationScope.Product, employee.Id, product.Id));
-                if (string.IsNullOrWhiteSpace(product.PolicyNumber))
-                    issues.Add(new("POLICY_NUMBER_REQUIRED", $"למוצר של {employeeName} חסר מספר פוליסה/חשבון.", ValidationScope.Product, employee.Id, product.Id));
             }
 
             var inputs = employeeProducts.Select(product => new ManualProductInput(
