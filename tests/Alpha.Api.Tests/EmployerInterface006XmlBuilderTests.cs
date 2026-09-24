@@ -322,17 +322,27 @@ public sealed class EmployerInterface006XmlBuilderTests
         Assert.Contains(result.Issues, x => x.Contains("SUG-KUPA only allows codes 1-4", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void Current_report_rejects_unmapped_contribution_pair_instead_of_silently_using_code_8()
+    [Theory]
+    [InlineData(ContributionParty.Employer, ContributionComponent.Severance, "1")]
+    [InlineData(ContributionParty.Employee, ContributionComponent.Severance, "2")]
+    [InlineData(ContributionParty.Employer, ContributionComponent.Benefits, "3")]
+    [InlineData(ContributionParty.Employee, ContributionComponent.Benefits, "4")]
+    [InlineData(ContributionParty.Employee, ContributionComponent.Disability, "5")]
+    [InlineData(ContributionParty.Employer, ContributionComponent.Disability, "6")]
+    [InlineData(ContributionParty.Employee, ContributionComponent.Other, "7")]
+    [InlineData(ContributionParty.Employer, ContributionComponent.Other, "8")]
+    public void Current_report_maps_all_official_contribution_types(ContributionParty party, ContributionComponent component, string expectedCode)
     {
         var fixture = CreateFixture(false);
-        var invalidContribution = new ManualContribution(fixture.Product.Id, ContributionParty.Employee, ContributionComponent.Severance, 100m, 10m, 0m);
-        var context = fixture.Context with { Contributions = [invalidContribution] };
+        var contribution = new ManualContribution(fixture.Product.Id, party, component, 100m, 10m, 0m);
+        var context = fixture.Context with { Contributions = [contribution] };
 
         var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
 
-        Assert.Null(result.Document);
-        Assert.Contains(result.Issues, x => x.Contains("has no defined SUG-HAFRASHA mapping", StringComparison.Ordinal));
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Contains(result.Document!.Descendants("SUG-HAFRASHA"), x => x.Value == expectedCode);
+        AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
     }
 
     [Fact]
