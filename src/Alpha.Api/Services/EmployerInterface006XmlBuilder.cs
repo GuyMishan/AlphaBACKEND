@@ -336,7 +336,8 @@ public static class EmployerInterface006XmlBuilder
             issues.Add("EmployerInterface006: EmployerIdentifierTypeCode must be one of 1,2,3,4,5,7,8,9,10,11,12,13.");
         if (o.EnvironmentCode is not (1 or 2)) issues.Add("EmployerInterface006:EnvironmentCode must be 1 (TEST) or 2 (PRODUCTION).");
         if (o.FileDirectionCode is < 1 or > 999) issues.Add("EmployerInterface006:FileDirectionCode must contain a valid Annex VI 3-digit direction code.");
-        if (o.SenderCode is < 1 or > 6) issues.Add("EmployerInterface006:SenderCode must be a valid Version 006 sender code.");
+        if (o.SenderCode is < 1 or > 6 || (negative && o.SenderCode == 1))
+            issues.Add("EmployerInterface006:SenderCode must be allowed by the selected Version 006 schema (negative reports allow codes 2-6).");
         if (sender.Identifier.Length is 0 or > 16) issues.Add("EmployerInterface006: actual sender identifier is required and cannot exceed 16 characters.");
         if (string.IsNullOrWhiteSpace(sender.Name) || sender.Name.Length > 100) issues.Add("EmployerInterface006: actual sender name is required and cannot exceed 100 characters.");
         if (string.IsNullOrWhiteSpace(sender.ContactFirstName) || sender.ContactFirstName.Length > 20) issues.Add("EmployerInterface006: sender contact first name is required and cannot exceed 20 characters.");
@@ -434,6 +435,15 @@ public static class EmployerInterface006XmlBuilder
                         issues.Add($"{label}: operation 7 has no payment and must report employer account type 1.");
                     // For operation 2, and for the receiver account on any no-money correction,
                     // Version 006 requires the account type used by the previous report being corrected.
+                }
+                if (meta.OperationCode == 3)
+                {
+                    var groupIds = c.Products.Where(x => string.Equals(x.FundCode, product.FundCode, StringComparison.Ordinal))
+                        .Select(x => x.Id).ToHashSet();
+                    var actualAmounts = c.Payments.Where(x => groupIds.Contains(x.ReportProductId) && x.ActualDepositAmount.HasValue)
+                        .Select(x => x.ActualDepositAmount!.Value).Distinct().ToArray();
+                    if (actualAmounts.Length != 1)
+                        issues.Add($"{label}: operation 3 requires one consistent actual additional deposit amount for the fund transfer.");
                 }
                 ValidatePaymentAccount(c, product, label, requirePayment: true, issues);
             }
