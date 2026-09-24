@@ -14,7 +14,8 @@ public sealed class EmployerInterface006ExportService(
 {
     private static readonly UTF8Encoding Utf8NoBom = new(false);
 
-    public async Task<EmployerInterfaceService.GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct, int fileSequence = 1)
+    public async Task<EmployerInterfaceService.GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct,
+        int fileSequence = 1, DateTimeOffset? preparedAtOverride = null)
     {
         if (report.ReportKind == ManualReportKind.Differences)
             return Invalid(EmployerInterfaceDocumentType.CurrentReport,
@@ -60,7 +61,7 @@ public sealed class EmployerInterface006ExportService(
                 select attachment.Id).AnyAsync(ct);
         }
 
-        var preparedAt = IsraelNow();
+        var preparedAt = preparedAtOverride ?? IsraelNow();
         var senderIdentifier = string.IsNullOrWhiteSpace(options.Value.SenderIdentifier) && options.Value.SenderCode == 5
             ? new string(employer.RegistrationNumber.Where(char.IsDigit).ToArray())
             : options.Value.SenderIdentifier.Trim();
