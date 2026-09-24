@@ -81,7 +81,7 @@ public static class EmployerInterface006XmlBuilder
 
         var transfer = new XElement("PirteiHaavaratKsafim",
             E("KOD-MEZAHE-KUPA-H-P", Digits(first.FundCode)),
-            E("SUG-MAFKID", 1),
+            E("SUG-MAFKID", c.DepositorTypeCode),
             E("SUG-MEZAHE-MAASIK", 1),
             E("MISPAR-ZIHUY-MAASIK", senderId),
             E("MISPAR-TIK-NIKUIM-MAASIK", Digits(c.Employer.WithholdingFileNumber)),
@@ -265,6 +265,7 @@ public static class EmployerInterface006XmlBuilder
     {
         var issues = new List<string>();
         var o = c.Options;
+        if (c.DepositorTypeCode is < 1 or > 3) issues.Add("EmployerInterface006:DepositorTypeCode must be 1, 2 or 3.");
         if (o.EnvironmentCode is not (1 or 2)) issues.Add("EmployerInterface006:EnvironmentCode must be 1 or 2.");
         if (o.SenderCode is < 1 or > 6) issues.Add("EmployerInterface006:SenderCode must be a valid Version 006 sender code.");
         if (o.SenderIdentifierType <= 0) issues.Add("EmployerInterface006:SenderIdentifierType is required.");
@@ -451,6 +452,6 @@ public static class EmployerInterface006XmlBuilder
         IReadOnlyDictionary<Guid, Person> People, IReadOnlyDictionary<Guid, Employment> Employments,
         IReadOnlyList<ManualReportProduct> Products, IReadOnlyList<ManualContribution> Contributions,
         IReadOnlyList<ManualReportPayment> Payments, IReadOnlyList<EmployerInterfaceReportProductData> ProductMetadata,
-        EmployerInterface006Options Options);
+        EmployerInterface006Options Options, int DepositorTypeCode = 1);
     public sealed record BuildResult(XDocument? Document, IReadOnlyList<string> Issues);
 }
