@@ -134,8 +134,6 @@ public static class ReportValidationEndpoints
             var employeeProducts = productsByEmployee.GetValueOrDefault(employee.Id) ?? [];
             var employeeName = $"{employee.FirstName} {employee.LastName}".Trim();
 
-            if (employee.MonthlySalary <= 0)
-                issues.Add(new("MONTHLY_SALARY_REQUIRED", $"לעובד {employeeName} חסר שכר חודשי.", ValidationScope.Employee, employee.Id));
             if (string.IsNullOrWhiteSpace(employee.NationalId))
                 issues.Add(new("NATIONAL_ID_REQUIRED", $"לעובד {employeeName} חסרה תעודת זהות.", ValidationScope.Employee, employee.Id));
             if (employeeProducts.Count == 0)
@@ -150,8 +148,6 @@ public static class ReportValidationEndpoints
 
             foreach (var product in employeeProducts)
             {
-                if (product.Salary <= 0)
-                    issues.Add(new("INSURED_SALARY_REQUIRED", $"למוצר {ProductLabel(product)} של {employeeName} חסר שכר מבוטח.", ValidationScope.Product, employee.Id, product.Id));
                 if (product.ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(product.FundExternalKey))
                     issues.Add(new("FUND_REQUIRED", $"למוצר {ProductLabel(product)} של {employeeName} לא נבחרה קופה.", ValidationScope.Product, employee.Id, product.Id));
             }
