@@ -229,6 +229,124 @@ public sealed class EmployerInterface006XmlBuilderTests
         Assert.Contains(workbookIssues, x => x.Contains("payment method 3 is not allowed for operation 6", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(1, 3)]
+    [InlineData(1, 5)]
+    [InlineData(1, 6)]
+    [InlineData(1, 7)]
+    [InlineData(1, 9)]
+    [InlineData(2, 1)]
+    [InlineData(3, 1)]
+    [InlineData(3, 3)]
+    [InlineData(3, 5)]
+    [InlineData(3, 6)]
+    [InlineData(3, 7)]
+    [InlineData(3, 9)]
+    [InlineData(7, 1)]
+    public void Current_report_accepts_every_official_operation_payment_combination(int operationCode, int paymentMethodCode)
+    {
+        var fixture = CreateFixture(false, operationCode: operationCode, paymentMethodCode: paymentMethodCode);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, false);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Theory]
+    [InlineData(5, 1)]
+    [InlineData(5, 3)]
+    [InlineData(5, 6)]
+    [InlineData(5, 7)]
+    [InlineData(5, 9)]
+    [InlineData(6, 1)]
+    public void Negative_report_accepts_every_official_operation_payment_combination(int operationCode, int paymentMethodCode)
+    {
+        var fixture = CreateFixture(true, operationCode: operationCode, paymentMethodCode: paymentMethodCode);
+        var result = EmployerInterface006XmlBuilder.BuildNegative(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, true);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document!, "mimshak_maasikim_shliliim_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_bank_transfer_with_zero_amount_does_not_require_receiver_account()
+    {
+        var fixture = CreateFixture(false, paymentMethodCode: 1);
+        fixture.Context.Contributions[0].Update(0m, 0m, 0m);
+        fixture.Context.Payments[0].Update("Test Fund", "", "", new DateOnly(2026, 9, 16), "REF-1", "Test Bank", "10", "", "", "");
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, false);
+        Assert.Empty(workbookIssues);
+        var transfer = Assert.Single(result.Document!.Descendants("PirteiHaavaratKsafim"));
+        Assert.Equal("true", transfer.Element("MISPAR-BANK-KOLET")?.Attribute(XName.Get("nil", "http://www.w3.org/2001/XMLSchema-instance"))?.Value);
+        AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_masav_requires_receiver_account_even_when_amount_is_zero()
+    {
+        var fixture = CreateFixture(false, paymentMethodCode: 7);
+        fixture.Context.Contributions[0].Update(0m, 0m, 0m);
+        fixture.Context.Payments[0].Update("Test Fund", "", "", new DateOnly(2026, 9, 16), "REF-1", "Test Bank", "10", "", "", "");
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("requires receiving bank, branch and account details", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_report_rejects_unmapped_other_product_type()
+    {
+        var fixture = CreateFixture(false);
+        var product = new ManualReportProduct(fixture.Context.Employees[0].Id, PensionProductType.Other, "123",
+            new DateOnly(2026, 9, 1), 1000m, "1", "1", false, null,
+            fundCode: new string('1', 30), fundName: "Other");
+        var contribution = new ManualContribution(product.Id, ContributionParty.Employee, ContributionComponent.Benefits, 100m, 10m, 0m);
+        var payment = new ManualReportPayment(product.Id);
+        payment.Update("Other", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), "REF-1", "Test Bank", "10", "123", "123456", "");
+        var metadata = new EmployerInterfaceReportProductData(product.Id);
+        metadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1);
+
+        var context = fixture.Context with { Products = [product], Contributions = [contribution], Payments = [payment], ProductMetadata = [metadata] };
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("SUG-KUPA only allows codes 1-4", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_report_rejects_unmapped_contribution_pair_instead_of_silently_using_code_8()
+    {
+        var fixture = CreateFixture(false);
+        var invalidContribution = new ManualContribution(fixture.Product.Id, ContributionParty.Employee, ContributionComponent.Severance, 100m, 10m, 0m);
+        var context = fixture.Context with { Contributions = [invalidContribution] };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("has no defined SUG-HAFRASHA mapping", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_report_rejects_transfer_reference_longer_than_50_characters()
+    {
+        var fixture = CreateFixture(false);
+        fixture.Context.Payments[0].Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), new string('A', 51), "Test Bank", "10", "123", "123456", "");
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("cannot exceed 50", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Negative_report_rejects_current_operation_code()
     {
