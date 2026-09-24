@@ -48,6 +48,7 @@ public sealed class EmployerProfileSettings : Entity
 
     public int? DefaultSalaryPaymentDay { get; private set; }
     public int DefaultDepositorTypeCode { get; private set; } = 1;
+    public int DefaultEmployerIdentifierTypeCode { get; private set; } = 1;
     public int? DefaultPaymentMethodCode { get; private set; }
     public int? DefaultEmployerAccountType { get; private set; }
     public int? DefaultReceiverAccountType { get; private set; }
@@ -96,21 +97,24 @@ public sealed class EmployerProfileSettings : Entity
 
     public void UpdateReporting(int? defaultSalaryPaymentDay, int? defaultPaymentMethodCode,
         int? defaultEmployerAccountType, int? defaultReceiverAccountType, string? notes) =>
-        UpdateReporting(defaultSalaryPaymentDay, DefaultDepositorTypeCode, defaultPaymentMethodCode,
-            defaultEmployerAccountType, defaultReceiverAccountType, notes);
+        UpdateReporting(defaultSalaryPaymentDay, DefaultDepositorTypeCode, DefaultEmployerIdentifierTypeCode,
+            defaultPaymentMethodCode, defaultEmployerAccountType, defaultReceiverAccountType, notes);
 
-    public void UpdateReporting(int? defaultSalaryPaymentDay, int defaultDepositorTypeCode, int? defaultPaymentMethodCode,
-        int? defaultEmployerAccountType, int? defaultReceiverAccountType, string? notes)
+    public void UpdateReporting(int? defaultSalaryPaymentDay, int defaultDepositorTypeCode, int defaultEmployerIdentifierTypeCode,
+        int? defaultPaymentMethodCode, int? defaultEmployerAccountType, int? defaultReceiverAccountType, string? notes)
     {
         if (defaultSalaryPaymentDay is < 1 or > 31)
             throw new ArgumentOutOfRangeException(nameof(defaultSalaryPaymentDay), "Salary payment day must be between 1 and 31.");
         if (defaultDepositorTypeCode is < 1 or > 3)
             throw new ArgumentOutOfRangeException(nameof(defaultDepositorTypeCode), "Depositor type must be 1, 2 or 3.");
+        if (defaultEmployerIdentifierTypeCode is not (1 or 2 or 3 or 4 or 5 or 7 or 8 or 9 or 10 or 11 or 12 or 13))
+            throw new ArgumentOutOfRangeException(nameof(defaultEmployerIdentifierTypeCode), "Employer identifier type is not valid for Employer Interface 006.");
         if (defaultPaymentMethodCode < 0 || defaultEmployerAccountType < 0 || defaultReceiverAccountType < 0)
             throw new ArgumentOutOfRangeException(nameof(defaultPaymentMethodCode), "Reporting codes cannot be negative.");
 
         DefaultSalaryPaymentDay = defaultSalaryPaymentDay;
         DefaultDepositorTypeCode = defaultDepositorTypeCode;
+        DefaultEmployerIdentifierTypeCode = defaultEmployerIdentifierTypeCode;
         DefaultPaymentMethodCode = defaultPaymentMethodCode;
         DefaultEmployerAccountType = defaultEmployerAccountType;
         DefaultReceiverAccountType = defaultReceiverAccountType;
