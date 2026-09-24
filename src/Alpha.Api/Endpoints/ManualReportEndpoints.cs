@@ -378,7 +378,7 @@ public static class ManualReportEndpoints
             {
                 p.Id, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName,
                 p.SalaryMonth, p.Salary, p.SalaryAllocationType, p.SalaryAllocationValue, p.AllocationOrder,
-                p.ReportingType, p.SalaryLayer, p.Section14, p.Section14StartDate,
+                p.ReportingType, p.SalaryLayer, p.Section14, p.Section14Code, p.Section14StartDate,
                 employerContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employer).OrderBy(c => c.Component),
                 employeeContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employee).OrderBy(c => c.Component)
             })
@@ -424,7 +424,7 @@ public static class ManualReportEndpoints
             var product = new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
                 input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
                 input.Section14StartDate, input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
-                item.AllocationType, item.AllocationValue, item.AllocationOrder);
+                item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code);
             db.ManualReportProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
@@ -493,7 +493,7 @@ public static class ManualReportEndpoints
             var product = new ManualReportProduct(reportEmployee.Id, mix.ProductType, mix.PolicyNumber,
                 reportingMonth, mix.Salary, mix.ReportingType, mix.SalaryLayer, mix.Section14, mix.Section14StartDate,
                 mix.FundExternalKey, mix.FundCode, mix.FundName, mix.FundCompanyName,
-                mix.SalaryAllocationType, mix.SalaryAllocationValue, mix.AllocationOrder);
+                mix.SalaryAllocationType, mix.SalaryAllocationValue, mix.AllocationOrder, mix.Section14Code);
             db.ManualReportProducts.Add(product);
 
             foreach (var contribution in mixContributions.Where(x => x.EmployeePensionProductId == mix.Id))
@@ -528,7 +528,7 @@ public sealed record UpdateReportPaymentAccountRequest(Guid PaymentAccountId);
 public sealed record UpdateManualReportSelectionRequest(IReadOnlyCollection<Guid> EmploymentIds);
 public sealed record SaveManualReportEmployeeRequest(decimal MonthlySalary, IReadOnlyCollection<ManualProductInput> Products);
 public sealed record ManualProductInput(PensionProductType ProductType, string PolicyNumber, DateOnly SalaryMonth,
-    decimal Salary, string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
+    decimal Salary, string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate, int? Section14Code,
     string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions);
