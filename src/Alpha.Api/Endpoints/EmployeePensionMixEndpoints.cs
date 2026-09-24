@@ -105,8 +105,8 @@ public static class EmployeePensionMixEndpoints
 
             if (effectiveTo is not null && effectiveTo.Value < effectiveFrom)
                 return Results.BadRequest(new { error = "Product effective end date cannot be earlier than the start date." });
-            if (isActive && string.IsNullOrWhiteSpace(input.PolicyNumber))
-                return Results.BadRequest(new { error = "Active pension products must have a policy number." });
+            if ((input.PolicyNumber?.Trim().Length ?? 0) > 20)
+                return Results.BadRequest(new { error = "Policy/account number can contain up to 20 characters in Employer Interface 006." });
             if (isActive && input.ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(fundExternalKey))
                 return Results.BadRequest(new { error = "Active pension products must have a selected fund." });
             if (allocationType != SalaryAllocationType.Remainder && (!allocationValue.HasValue || allocationValue.Value <= 0))
