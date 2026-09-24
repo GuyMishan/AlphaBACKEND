@@ -59,6 +59,14 @@ CREATE TABLE IF NOT EXISTS employees.employee_pension_contributions (
     CONSTRAINT "UX_employee_pension_contribution" UNIQUE ("EmployeePensionProductId", "Party", "Component")
 );
 
+CREATE TABLE IF NOT EXISTS reporting.employer_interface_file_sequences (
+    "SenderIdentifier" varchar(16) NOT NULL,
+    "BusinessDate" date NOT NULL,
+    "LastSequence" integer NOT NULL,
+    PRIMARY KEY ("SenderIdentifier", "BusinessDate"),
+    CONSTRAINT "CK_employer_interface_file_sequence" CHECK ("LastSequence" BETWEEN 1 AND 9999)
+);
+
 CREATE TABLE IF NOT EXISTS reporting.manual_reports (
     "Id" uuid PRIMARY KEY,
     "OrganizationId" uuid NOT NULL REFERENCES organizations.organizations("Id") ON DELETE RESTRICT,
