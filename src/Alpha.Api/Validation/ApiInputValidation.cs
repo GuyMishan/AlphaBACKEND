@@ -57,7 +57,7 @@ public static class ApiInputValidation
             index++;
             var prefix = $"מוצר {index}: ";
             if (product.PolicyNumber?.Trim().Length > 20) errors.Add(prefix + "מספר פוליסה/חשבון יכול להכיל עד 20 תווים לפי ממשק מעסיקים 006.");
-            if (product.Salary <= 0) errors.Add(prefix + "השכר חייב להיות גדול מאפס.");
+            if (product.Salary < 0) errors.Add(prefix + "השכר לא יכול להיות שלילי.");
             if (product.Salary > 10_000_000) errors.Add(prefix + "השכר חורג מהטווח המותר.");
             if (product.SalaryMonth.Year < 2000 || product.SalaryMonth > DateOnly.FromDateTime(DateTime.UtcNow.AddYears(1))) errors.Add(prefix + "חודש השכר אינו תקין.");
             if (string.IsNullOrWhiteSpace(product.ReportingType)) errors.Add(prefix + "סוג דיווח הוא שדה חובה.");
@@ -73,9 +73,6 @@ public static class ApiInputValidation
                 errors.Add(prefix + "אין להעביר תאריך סעיף 14 עבור הקוד שנבחר.");
             if (product.Section14StartDate is { } section14Date && section14Date > DateOnly.FromDateTime(DateTime.UtcNow))
                 errors.Add(prefix + "תאריך תחולה/ביטול סעיף 14 לא יכול להיות בעתיד.");
-
-            if (!product.EmployerContributions.Concat(product.EmployeeContributions).Any(x => x.Amount > 0 || x.ExemptPayments != 0))
-                errors.Add(prefix + "יש להזין לפחות רכיב הפקדה או תיקון תשלומים פטורים שאינו אפס.");
 
             ValidateContributions(errors, prefix, product.SalaryMonth.Year, product.ProductType, ContributionParty.Employer,
                 product.Salary, product.EmployerContributions, limits);
