@@ -189,16 +189,27 @@ public static class ReportValidationEndpoints
         {
             var payments = await db.ManualReportPayments.AsNoTracking()
                 .Where(x => productIds.Contains(x.ReportProductId)).ToDictionaryAsync(x => x.ReportProductId, ct);
+            var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+                .Where(x => productIds.Contains(x.ReportProductId)).ToDictionaryAsync(x => x.ReportProductId, ct);
             var employeeById = employees.ToDictionary(x => x.Id);
             foreach (var product in products)
             {
                 var employee = employeeById[product.ReportEmployeeId];
                 var employeeName = $"{employee.FirstName} {employee.LastName}".Trim();
+                metadata.TryGetValue(product.Id, out var productMetadata);
+                var negativeCancellationWithoutRefund = report.ReportKind == ManualReportKind.Negative
+                    && productMetadata?.OperationCode == 6;
+
                 if (!payments.TryGetValue(product.Id, out var payment))
                 {
-                    issues.Add(new("PAYMENT_REQUIRED", $"חסרים פרטי אמצעי תשלום עבור {employeeName}, פוליסה {product.PolicyNumber}.", ValidationScope.Payment, employee.Id, product.Id));
+                    if (!negativeCancellationWithoutRefund)
+                        issues.Add(new("PAYMENT_REQUIRED", $"חסרים פרטי אמצעי תשלום עבור {employeeName}, פוליסה {product.PolicyNumber}.", ValidationScope.Payment, employee.Id, product.Id));
                     continue;
                 }
+
+                if (negativeCancellationWithoutRefund)
+                    continue;
+
                 var request = new SaveManualReportPaymentRequest(payment.ProviderName, payment.ProviderAccount,
                     payment.PaymentMethod, payment.ValueDate, payment.ReferenceNumber, payment.EmployerBankName,
                     payment.EmployerBankCode, payment.EmployerBranch, payment.EmployerAccount, payment.ConfirmationFileName);
