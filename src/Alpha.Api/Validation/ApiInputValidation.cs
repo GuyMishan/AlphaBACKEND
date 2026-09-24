@@ -80,10 +80,13 @@ public static class ApiInputValidation
     public static IReadOnlyList<string> Payment(SaveManualReportPaymentRequest request)
     {
         var errors = new List<string>();
+        var paymentMethod = request.PaymentMethod?.Trim() ?? string.Empty;
+        var bankOrMasav = paymentMethod is "1" or "7" or "העברה בנקאית" or "מס״ב" or "מס\"ב";
+
         if (string.IsNullOrWhiteSpace(request.ProviderName)) errors.Add("שם יצרן / מוצר הוא שדה חובה.");
-        if (string.IsNullOrWhiteSpace(request.ProviderAccount)) errors.Add("חשבון יצרן לזיכוי הוא שדה חובה.");
-        if (string.IsNullOrWhiteSpace(request.PaymentMethod)) errors.Add("אופן התשלום הוא שדה חובה.");
-        if (request.PaymentMethod == "העברה בנקאית" || request.PaymentMethod == "מס״ב")
+        if (bankOrMasav && string.IsNullOrWhiteSpace(request.ProviderAccount)) errors.Add("חשבון יצרן לזיכוי הוא שדה חובה בהעברה בנקאית / מס״ב.");
+        if (string.IsNullOrWhiteSpace(paymentMethod)) errors.Add("אופן התשלום הוא שדה חובה.");
+        if (bankOrMasav)
         {
             if (request.ValueDate is null) errors.Add("תאריך ערך הוא שדה חובה בהעברה בנקאית / מס״ב.");
             if (string.IsNullOrWhiteSpace(request.ReferenceNumber)) errors.Add("מספר אסמכתא הוא שדה חובה בהעברה בנקאית / מס״ב.");
