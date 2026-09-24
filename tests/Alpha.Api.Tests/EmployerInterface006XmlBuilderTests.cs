@@ -521,7 +521,7 @@ public sealed class EmployerInterface006XmlBuilderTests
             100m, 10m, 0m);
         var payment = new ManualReportPayment(product.Id);
         var resolvedOperation = operationCode ?? (negative ? 5 : 1);
-        var actualDepositAmount = !negative && resolvedOperation == 3 ? 50m : null;
+        decimal? actualDepositAmount = !negative && resolvedOperation == 3 ? 50m : null;
         var masavSenderCode = paymentMethodCode == 7 ? "12345678" : null;
         payment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), null, "REF-1",
             "Test Bank", "10", "123", "123456", "", actualDepositAmount, masavSenderCode);
