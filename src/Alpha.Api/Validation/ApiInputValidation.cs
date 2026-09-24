@@ -86,14 +86,15 @@ public static class ApiInputValidation
     }
 
     public static IReadOnlyList<string> Payment(SaveManualReportPaymentRequest request, decimal? totalDeposit = null,
-        int? operationCode = null, int? employerAccountType = null)
+        int? operationCode = null, int? employerAccountType = null, int? receiverAccountType = null)
     {
         var errors = new List<string>();
         var paymentMethod = request.PaymentMethod?.Trim() ?? string.Empty;
         var bankTransfer = paymentMethod is "1" or "העברה בנקאית";
         var masav = paymentMethod is "7" or "מס״ב" or "מס\"ב";
         var noMoneyCorrection = operationCode is 2 or 7;
-        var hasPositiveDeposit = !noMoneyCorrection && (!totalDeposit.HasValue || totalDeposit.Value > 0);
+        var effectiveDeposit = operationCode == 3 ? request.ActualDepositAmount : totalDeposit;
+        var hasPositiveDeposit = !noMoneyCorrection && (!effectiveDeposit.HasValue || effectiveDeposit.Value > 0);
         var receiverAccountRequired = !noMoneyCorrection && (masav || (bankTransfer && hasPositiveDeposit));
         var employerBranchAccountRequired = (bankTransfer || masav) && hasPositiveDeposit;
 
@@ -101,14 +102,17 @@ public static class ApiInputValidation
         if (receiverAccountRequired && string.IsNullOrWhiteSpace(request.ProviderAccount)) errors.Add("חשבון יצרן לזיכוי הוא שדה חובה לפי כללי אמצעי התשלום בממשק 006.");
         if (string.IsNullOrWhiteSpace(paymentMethod)) errors.Add("אופן התשלום הוא שדה חובה.");
 
-        if (!noMoneyCorrection && operationCode is 1 or 3 && request.ValueDate is null)
-            errors.Add("תאריך ערך הפקדה לקופה הוא שדה חובה בפעולה זו.");
-        if (noMoneyCorrection && request.ValueDate is not null)
-            errors.Add("בתיקון ללא הפקדה נוספת אין להעביר תאריך ערך הפקדה לקופה.");
+        if (!noMoneyCorrection && receiverAccountType == 1 && paymentMethod is not ("6" or "9") && request.ValueDate is null)
+            errors.Add("תאריך ערך הפקדה לקופה הוא שדה חובה כאשר החשבון הקולט הוא חשבון יצרן.");
         if (!noMoneyCorrection && employerAccountType == 2 && request.TrustAccountValueDate is null)
             errors.Add("בהעברה באמצעות חשבון נאמנות חובה להזין תאריך ערך הפקדה לחשבון הנאמנות.");
-        if (noMoneyCorrection && request.TrustAccountValueDate is not null)
-            errors.Add("בתיקון ללא הפקדה נוספת אין להעביר תאריך ערך לחשבון נאמנות.");
+        if (operationCode == 3 && (request.ActualDepositAmount is null or <= 0))
+            errors.Add("בקוד פעולה 3 יש להזין סכום הפקדה נוספת בפועל הגדול מאפס.");
+        if (masav && (request.MasavSenderCode?.Trim().Length is < 8 or > 16))
+            errors.Add("בסליקה באמצעות מס״ב יש להזין קוד מס״ב פנימי באורך 8–16 תווים.");
+        if (!noMoneyCorrection && hasPositiveDeposit && paymentMethod is "1" or "העברה בנקאית" or "3"
+            && string.IsNullOrWhiteSpace(request.ReferenceNumber))
+            errors.Add("מספר אסמכתא בפועל הוא שדה חובה באמצעי תשלום זה.");
 
         if (employerBranchAccountRequired)
         {
@@ -124,9 +128,10 @@ public static class ApiInputValidation
         ContributionParty party, decimal salary, IReadOnlyCollection<ManualContributionInput> items,
         IReadOnlyCollection<ContributionPercentageLimit> limits)
     {
-        if (items.GroupBy(x => x.Component).Any(g => g.Count() > 1))
+        if (items.GroupBy(x => x.Component).Any(g => g.Count() > 1
+            && !(party == ContributionParty.Employee && g.Key == ContributionComponent.Benefits)))
         {
-            errors.Add(prefix + "כל רכיב הפקדה יכול להופיע פעם אחת בלבד לכל צד.");
+            errors.Add(prefix + "כל רכיב הפקדה יכול להופיע פעם אחת בלבד לכל צד, למעט תגמולים 47 (קוד 4).");
             return;
         }
 
@@ -135,10 +140,6 @@ public static class ApiInputValidation
             var side = party == ContributionParty.Employer ? "מעסיק" : "עובד";
             if (item.Amount < 0 || item.Percentage < 0)
                 errors.Add(prefix + $"ערכי הפקדת {side} לא יכולים להיות שליליים.");
-            if (item.Amount > 0 && item.Percentage <= 0)
-                errors.Add(prefix + $"יש להזין אחוז עבור {ComponentName(item.Component)} של {side}.");
-            if (item.Percentage > 0 && item.Amount <= 0)
-                errors.Add(prefix + $"יש להזין סכום עבור {ComponentName(item.Component)} של {side}.");
 
             var limit = limits.FirstOrDefault(x => x.Year == year && x.ProductType == productType
                 && x.Party == party && x.Component == item.Component);
