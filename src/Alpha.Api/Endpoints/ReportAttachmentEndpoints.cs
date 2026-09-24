@@ -54,12 +54,17 @@ public static class ReportAttachmentEndpoints
         {
             items,
             annualEmployerAffidavitSatisfied,
-            documentTypes = new[]
-            {
-                new { code = 3, name = "תצהיר מעסיק", scope = "report" },
-                new { code = 4, name = "אישור עובד להשבת כספים", scope = "product" },
-                new { code = 6, name = "הצהרת מעסיק - דיווח שלילי - הסכם קיבוצי", scope = "product" }
-            }
+            documentTypes = report.ReportKind == ManualReportKind.Negative
+                ? new[]
+                {
+                    new { code = 3, name = "תצהיר מעסיק", scope = "report" },
+                    new { code = 4, name = "אישור עובד להשבת כספים", scope = "product" },
+                    new { code = 6, name = "הצהרת מעסיק - דיווח שלילי - הסכם קיבוצי", scope = "product" }
+                }
+                : new[]
+                {
+                    new { code = 5, name = "בקשת עובד להצטרפות לקרן ברירת מחדל", scope = "product" }
+                }
         });
     }
 
@@ -70,8 +75,8 @@ public static class ReportAttachmentEndpoints
         var report = await db.ManualReports
             .SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
-        if (report.ReportKind != ManualReportKind.Negative)
-            return Results.BadRequest(new { error = "Attachments of types 3, 4 and 6 are currently supported only for negative Employer Interface reports." });
+        if (report.ReportKind == ManualReportKind.Differences)
+            return Results.BadRequest(new { error = "Difference reports are not transmitted directly and cannot carry Employer Interface attachments." });
         if (!report.IsEditable)
             return Results.Conflict(new { error = "A sent or completed report cannot be edited." });
         if (!request.HasFormContentType)
@@ -79,8 +84,12 @@ public static class ReportAttachmentEndpoints
 
         var form = await request.ReadFormAsync(ct);
         if (!int.TryParse(form["documentTypeCode"].FirstOrDefault(), out var documentTypeCode)
-            || documentTypeCode is not (3 or 4 or 6))
-            return Results.BadRequest(new { error = "documentTypeCode must be 3, 4 or 6." });
+            || documentTypeCode is not (3 or 4 or 5 or 6))
+            return Results.BadRequest(new { error = "documentTypeCode must be 3, 4, 5 or 6." });
+        if (report.ReportKind == ManualReportKind.Negative && documentTypeCode is not (3 or 4 or 6))
+            return Results.BadRequest(new { error = "Negative Version 006 reports support attachment types 3, 4 and 6 only." });
+        if (report.ReportKind == ManualReportKind.Current && documentTypeCode != 5)
+            return Results.BadRequest(new { error = "Current Version 006 reports support attachment type 5 only." });
 
         Guid? reportProductId = null;
         var reportProductRaw = form["reportProductId"].FirstOrDefault();
@@ -91,10 +100,10 @@ public static class ReportAttachmentEndpoints
             reportProductId = parsed;
         }
 
-        if (documentTypeCode is 4 or 6)
+        if (documentTypeCode is 4 or 5 or 6)
         {
             if (reportProductId is null)
-                return Results.BadRequest(new { error = "Document types 4 and 6 must be linked to the employee/product they apply to." });
+                return Results.BadRequest(new { error = "Document types 4, 5 and 6 must be linked to the employee/product they apply to." });
             var belongsToReport = await (
                 from product in db.ManualReportProducts.AsNoTracking()
                 join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
