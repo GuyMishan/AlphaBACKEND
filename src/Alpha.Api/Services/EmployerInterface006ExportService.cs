@@ -68,18 +68,27 @@ public sealed class EmployerInterface006ExportService(
         if (string.IsNullOrWhiteSpace(senderIdentifier))
             return Invalid(documentType, "Employer Interface sender identity is not configured. Configure the actual vault/sender identifier before generating a transmission package.");
 
-        var packageName = EmployerInterface006FileNaming.Build(senderIdentifier, options.Value.FileDirectionCode,
-            documentType == EmployerInterfaceDocumentType.NegativeReport, preparedAt, fileSequence,
-            testFile: options.Value.EnvironmentCode == 1);
-        var attachmentNames = attachments
-            .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ThenBy(x => x.Id)
-            .Select((attachment, index) => new
-            {
-                attachment.Id,
-                FileName = EmployerInterface006FileNaming.BuildAttachmentFileName(packageName.BaseName, index + 1,
-                    Path.GetExtension(attachment.OriginalFileName).TrimStart('.'))
-            })
-            .ToDictionary(x => x.Id, x => x.FileName);
+        EmployerInterface006FileNaming.PackageName packageName;
+        Dictionary<Guid, string> attachmentNames;
+        try
+        {
+            packageName = EmployerInterface006FileNaming.Build(senderIdentifier, options.Value.FileDirectionCode,
+                documentType == EmployerInterfaceDocumentType.NegativeReport, preparedAt, fileSequence,
+                testFile: options.Value.EnvironmentCode == 1);
+            attachmentNames = attachments
+                .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ThenBy(x => x.Id)
+                .Select((attachment, index) => new
+                {
+                    attachment.Id,
+                    FileName = EmployerInterface006FileNaming.BuildAttachmentFileName(packageName.BaseName, index + 1,
+                        Path.GetExtension(attachment.OriginalFileName).TrimStart('.'))
+                })
+                .ToDictionary(x => x.Id, x => x.FileName);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return Invalid(documentType, $"Employer Interface transmission package naming is invalid: {ex.Message}");
+        }
 
         var context = new EmployerInterface006XmlBuilder.BuildContext(employer, employees, people, employments,
             products, contributions, payments, metadata, options.Value,
