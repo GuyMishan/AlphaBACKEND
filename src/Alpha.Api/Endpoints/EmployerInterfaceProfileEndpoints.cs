@@ -134,6 +134,7 @@ public static class EmployerInterfaceProfileEndpoints
             paymentMethodCode = item?.PaymentMethodCode,
             employerAccountType = item?.EmployerAccountType,
             receiverAccountType = item?.ReceiverAccountType,
+            oldPensionTypeCode = item?.OldPensionTypeCode,
             previousIdentifier = item?.PreviousIdentifier,
             previousClearingIdentifier = item?.PreviousClearingIdentifier,
             previousReferenceExceptionCode = item?.PreviousReferenceExceptionCode
@@ -179,7 +180,8 @@ public static class EmployerInterfaceProfileEndpoints
             item.Update(request.OperationCode, request.DepositStatus, request.EmployeeStatus, request.StatusStartDate,
                 request.EmploymentPercentage, request.WorkDaysInMonth, request.LastDeposit, request.RefundReason,
                 request.PaymentMethodCode, request.EmployerAccountType, request.ReceiverAccountType,
-                request.PreviousIdentifier, request.PreviousClearingIdentifier, request.PreviousReferenceExceptionCode);
+                request.PreviousIdentifier, request.PreviousClearingIdentifier, request.PreviousReferenceExceptionCode,
+                request.OldPensionTypeCode);
         }
         catch (Exception ex) when (ex is ArgumentOutOfRangeException or ArgumentException)
         {
@@ -201,6 +203,7 @@ public static class EmployerInterfaceProfileEndpoints
             item.PaymentMethodCode,
             item.EmployerAccountType,
             item.ReceiverAccountType,
+            item.OldPensionTypeCode,
             item.PreviousIdentifier,
             item.PreviousClearingIdentifier,
             item.PreviousReferenceExceptionCode
@@ -214,5 +217,5 @@ public sealed record EmployerInterfaceEmployeeProfileRequest(DateOnly? BirthDate
     string? City, string? Street, string? HouseNumber, string? Apartment, string? PostalCode, string? PostOfficeBox);
 public sealed record EmployerInterfaceProductMetadataRequest(int? OperationCode, int? DepositStatus, int? EmployeeStatus, DateOnly? StatusStartDate,
     decimal? EmploymentPercentage, int? WorkDaysInMonth, int? LastDeposit, int? RefundReason,
-    int? PaymentMethodCode, int? EmployerAccountType, int? ReceiverAccountType,
+    int? PaymentMethodCode, int? EmployerAccountType, int? ReceiverAccountType, int? OldPensionTypeCode = null,
     string? PreviousIdentifier = null, string? PreviousClearingIdentifier = null, int? PreviousReferenceExceptionCode = null);
