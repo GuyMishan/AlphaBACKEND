@@ -342,9 +342,6 @@ public static class EmployerInterface006XmlBuilder
             }
 
             var contributions = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
-            foreach (var contribution in contributions)
-                if (!TryMapContributionCode(contribution, out _))
-                    issues.Add($"{label}: contribution pair {contribution.Party}/{contribution.Component} has no defined SUG-HAFRASHA mapping in Alpha and must not be silently mapped.");
             if (negative && contributions.Count == 0) issues.Add($"{label}: negative Version 006 requires at least one contribution record.");
             if (negative && contributions.Any(x => x.Amount <= 0)) issues.Add($"{label}: negative contribution amounts must be greater than zero.");
         }
@@ -418,26 +415,21 @@ public static class EmployerInterface006XmlBuilder
         _ => throw new InvalidOperationException($"Pension product type {type} has no SUG-KUPA mapping in Employer Interface 006.")
     };
 
-    private static string MapContributionCode(ManualContribution contribution) =>
-        TryMapContributionCode(contribution, out var code)
-            ? code
-            : throw new InvalidOperationException($"Contribution pair {contribution.Party}/{contribution.Component} has no SUG-HAFRASHA mapping.");
-
-    private static bool TryMapContributionCode(ManualContribution c, out string code)
+    private static string MapContributionCode(ManualContribution c) => (c.Party, c.Component) switch
     {
-        code = (c.Party, c.Component) switch
-        {
-            (ContributionParty.Employer, ContributionComponent.Severance) => "1",
-            (ContributionParty.Employee, ContributionComponent.Benefits) => "2",
-            (ContributionParty.Employer, ContributionComponent.Benefits) => "3",
-            (ContributionParty.Employee, ContributionComponent.Disability) => "5",
-            (ContributionParty.Employer, ContributionComponent.Disability) => "6",
-            (ContributionParty.Employee, ContributionComponent.Other) => "7",
-            (ContributionParty.Employer, ContributionComponent.Other) => "8",
-            _ => string.Empty
-        };
-        return code.Length > 0;
-    }
+        // Alpha's component numbers are party-relative in the editor:
+        // employee component 1 = תג 45 / regular employee benefits (official code 2),
+        // employee component 2 = תג 47 (official code 4).
+        (ContributionParty.Employer, ContributionComponent.Severance) => "1",
+        (ContributionParty.Employee, ContributionComponent.Severance) => "2",
+        (ContributionParty.Employer, ContributionComponent.Benefits) => "3",
+        (ContributionParty.Employee, ContributionComponent.Benefits) => "4",
+        (ContributionParty.Employee, ContributionComponent.Disability) => "5",
+        (ContributionParty.Employer, ContributionComponent.Disability) => "6",
+        (ContributionParty.Employee, ContributionComponent.Other) => "7",
+        (ContributionParty.Employer, ContributionComponent.Other) => "8",
+        _ => throw new InvalidOperationException($"Contribution pair {c.Party}/{c.Component} has no SUG-HAFRASHA mapping.")
+    };
     private static XElement E(string name, object? value) => new(name, Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
     private static XElement Nil(string name, object? value)
     {
