@@ -43,6 +43,7 @@ builder.Services.Configure<EmployerInterface006Options>(builder.Configuration.Ge
 builder.Services.AddSingleton<EmployerInterfaceSchemaRegistry>();
 builder.Services.AddScoped<EmployerInterfaceService>();
 builder.Services.AddScoped<EmployerInterface006ExportService>();
+builder.Services.AddScoped<EmployerInterfaceFileSequenceService>();
 builder.Services.AddScoped<IReportTransmissionProvider, MockReportTransmissionProvider>();
 builder.Services.AddHttpClient("otp-sms", c => c.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpClient("otp-email", c => c.Timeout = TimeSpan.FromSeconds(25));
