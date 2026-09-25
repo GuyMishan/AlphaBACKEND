@@ -34,6 +34,7 @@ public sealed class ManualReport : Entity
         OrganizationId = organizationId; EmployerId = employerId;
         ReportingMonth = new DateOnly(reportingMonth.Year, reportingMonth.Month, 1);
         SalaryPaymentDate = salaryPaymentDate; ReportKind = reportKind; SourceReportId = sourceReportId;
+        ExternalSourceReference = externalSourceReference;
     }
 
     public Guid OrganizationId { get; private set; }
@@ -43,6 +44,7 @@ public sealed class ManualReport : Entity
     public ManualReportStatus Status { get; private set; } = ManualReportStatus.Draft;
     public ManualReportKind ReportKind { get; private set; } = ManualReportKind.Current;
     public Guid? SourceReportId { get; private set; }
+    public bool ExternalSourceReference { get; private set; }
     public DateTimeOffset? SnapshotTakenAt { get; private set; }
     public DateTimeOffset? ValidatedAt { get; private set; }
     public string ValidationError { get; private set; } = string.Empty;
@@ -51,6 +53,50 @@ public sealed class ManualReport : Entity
     public int? PaymentBranchId { get; private set; }
     public string PaymentAccountNumberMasked { get; private set; } = string.Empty;
     public string PaymentMandateReference { get; private set; } = string.Empty;
+
+    // Immutable Employer Interface 006 employer snapshot. Outgoing payloads must not
+    // change when the live employer/profile is edited after the report was created.
+    public string EmployerLegalNameSnapshot { get; private set; } = string.Empty;
+    public string EmployerRegistrationNumberSnapshot { get; private set; } = string.Empty;
+    public string EmployerWithholdingFileNumberSnapshot { get; private set; } = string.Empty;
+    public string EmployerContactFirstNameSnapshot { get; private set; } = string.Empty;
+    public string EmployerContactLastNameSnapshot { get; private set; } = string.Empty;
+    public string EmployerContactPhoneSnapshot { get; private set; } = string.Empty;
+    public string EmployerContactEmailSnapshot { get; private set; } = string.Empty;
+    public string EmployerContactMobileSnapshot { get; private set; } = string.Empty;
+    public int DepositorTypeCodeSnapshot { get; private set; } = 1;
+    public int EmployerIdentifierTypeCodeSnapshot { get; private set; } = 1;
+
+    public void SetEmployerInterfaceSnapshot(string legalName, string registrationNumber, string withholdingFileNumber,
+        string? contactFirstName, string? contactLastName, string? contactPhone, string? contactEmail, string? contactMobile,
+        int depositorTypeCode, int employerIdentifierTypeCode)
+    {
+        EnsureEditable();
+        if (string.IsNullOrWhiteSpace(legalName)) throw new ArgumentException("Employer legal name is required.", nameof(legalName));
+        if (string.IsNullOrWhiteSpace(registrationNumber)) throw new ArgumentException("Employer registration number is required.", nameof(registrationNumber));
+        if (depositorTypeCode is < 1 or > 3) throw new ArgumentOutOfRangeException(nameof(depositorTypeCode));
+        if (employerIdentifierTypeCode is not (1 or 2 or 3 or 4 or 5 or 7 or 8 or 9 or 10 or 11 or 12 or 13))
+            throw new ArgumentOutOfRangeException(nameof(employerIdentifierTypeCode));
+
+        EmployerLegalNameSnapshot = legalName.Trim();
+        EmployerRegistrationNumberSnapshot = registrationNumber.Trim();
+        EmployerWithholdingFileNumberSnapshot = withholdingFileNumber?.Trim() ?? string.Empty;
+        EmployerContactFirstNameSnapshot = contactFirstName?.Trim() ?? string.Empty;
+        EmployerContactLastNameSnapshot = contactLastName?.Trim() ?? string.Empty;
+        EmployerContactPhoneSnapshot = contactPhone?.Trim() ?? string.Empty;
+        EmployerContactEmailSnapshot = contactEmail?.Trim() ?? string.Empty;
+        EmployerContactMobileSnapshot = contactMobile?.Trim() ?? string.Empty;
+        DepositorTypeCodeSnapshot = depositorTypeCode;
+        EmployerIdentifierTypeCodeSnapshot = employerIdentifierTypeCode;
+        Touch();
+    }
+
+    public void CopyEmployerInterfaceSnapshotFrom(ManualReport source) =>
+        SetEmployerInterfaceSnapshot(source.EmployerLegalNameSnapshot, source.EmployerRegistrationNumberSnapshot,
+            source.EmployerWithholdingFileNumberSnapshot, source.EmployerContactFirstNameSnapshot,
+            source.EmployerContactLastNameSnapshot, source.EmployerContactPhoneSnapshot,
+            source.EmployerContactEmailSnapshot, source.EmployerContactMobileSnapshot,
+            source.DepositorTypeCodeSnapshot, source.EmployerIdentifierTypeCodeSnapshot);
 
     public void SetPaymentAccountSnapshot(Guid paymentAccountId, int bankId, int branchId,
         string accountNumberMasked, string? mandateReference)
@@ -74,7 +120,7 @@ public sealed class ManualReport : Entity
     public void MarkTransmissionError(string? message) { Status = ManualReportStatus.Error; ValidationError = message?.Trim() ?? string.Empty; Touch(); }
     public void MarkCompleted() { if (Status is not ManualReportStatus.Sent and not ManualReportStatus.Processing) throw new InvalidOperationException("Only a sent report can be completed."); Status = ManualReportStatus.Completed; Touch(); }
     public void MarkDirty() { if (Status is ManualReportStatus.Sent or ManualReportStatus.Processing or ManualReportStatus.Completed or ManualReportStatus.Submitted or ManualReportStatus.Cancelled) throw new InvalidOperationException("A sent or completed report cannot be edited."); Status = ManualReportStatus.Draft; SnapshotTakenAt = null; ValidatedAt = null; ValidationError = string.Empty; Touch(); }
-    public bool IsEditable => Status is ManualReportStatus.Draft or ManualReportStatus.ReadyForValidation or ManualReportStatus.Validated or ManualReportStatus.Error;
+    public bool IsEditable => Status is ManualReportStatus.Draft or ManualReportStatus.ReadyForValidation or ManualReportStatus.Error;
     private void EnsureEditable() { if (!IsEditable) throw new InvalidOperationException("This report can no longer be edited."); }
 }
 
@@ -270,6 +316,7 @@ public sealed class ManualContribution : Entity
     public decimal Amount { get; private set; }
     public decimal Percentage { get; private set; }
     public decimal ExemptPayments { get; private set; }
+    public string InterfaceRecordIdentifier { get; private set; } = string.Empty;
     public string PreviousRecordIdentifier { get; private set; } = string.Empty;
 
     public void Update(decimal amount, decimal percentage, decimal exemptPayments)
@@ -281,6 +328,19 @@ public sealed class ManualContribution : Entity
         Amount = amount;
         Percentage = percentage;
         ExemptPayments = exemptPayments;
+        Touch();
+    }
+
+    public void SetInterfaceRecordIdentifier(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            InterfaceRecordIdentifier = string.Empty;
+            return;
+        }
+        if (!Guid.TryParseExact(value.Trim(), "D", out var parsed))
+            throw new ArgumentException("Contribution record identifier must be a GUID.", nameof(value));
+        InterfaceRecordIdentifier = parsed.ToString("D").ToUpperInvariant();
         Touch();
     }
 

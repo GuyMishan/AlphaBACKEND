@@ -58,6 +58,14 @@ public sealed class ManualReportConfiguration : IEntityTypeConfiguration<ManualR
         b.Property(x => x.ValidationError).HasMaxLength(2000);
         b.Property(x => x.PaymentAccountNumberMasked).HasMaxLength(40);
         b.Property(x => x.PaymentMandateReference).HasMaxLength(200);
+        b.Property(x => x.EmployerLegalNameSnapshot).HasMaxLength(200);
+        b.Property(x => x.EmployerRegistrationNumberSnapshot).HasMaxLength(30);
+        b.Property(x => x.EmployerWithholdingFileNumberSnapshot).HasMaxLength(30);
+        b.Property(x => x.EmployerContactFirstNameSnapshot).HasMaxLength(100);
+        b.Property(x => x.EmployerContactLastNameSnapshot).HasMaxLength(100);
+        b.Property(x => x.EmployerContactPhoneSnapshot).HasMaxLength(30);
+        b.Property(x => x.EmployerContactEmailSnapshot).HasMaxLength(100);
+        b.Property(x => x.EmployerContactMobileSnapshot).HasMaxLength(30);
         b.HasIndex(x => new { x.OrganizationId, x.EmployerId, x.ReportingMonth });
         b.HasIndex(x => x.SourceReportId);
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
@@ -131,6 +139,7 @@ public sealed class ManualContributionConfiguration : IEntityTypeConfiguration<M
         b.Property(x => x.Amount).HasPrecision(18, 2);
         b.Property(x => x.Percentage).HasPrecision(9, 4);
         b.Property(x => x.ExemptPayments).HasPrecision(18, 2);
+        b.Property(x => x.InterfaceRecordIdentifier).HasMaxLength(36);
         b.Property(x => x.PreviousRecordIdentifier).HasMaxLength(36);
         b.HasIndex(x => new { x.ReportProductId, x.Party, x.Component }).IsUnique();
         b.HasOne<ManualReportProduct>().WithMany().HasForeignKey(x => x.ReportProductId).OnDelete(DeleteBehavior.Cascade);

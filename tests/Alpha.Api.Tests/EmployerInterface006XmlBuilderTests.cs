@@ -214,6 +214,35 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_rejects_mixed_product_types_inside_one_fund_transfer()
+    {
+        var fixture = CreateFixture(false);
+        var secondProduct = new ManualReportProduct(fixture.Context.Employees[0].Id, PensionProductType.ProvidentFund, "456",
+            new DateOnly(2026, 9, 1), 500m, "1", "1", false, null,
+            fundCode: fixture.Product.FundCode, fundName: "Test Fund");
+        var secondContribution = new ManualContribution(secondProduct.Id, ContributionParty.Employee, ContributionComponent.Benefits,
+            50m, 10m, 0m);
+        var secondPayment = new ManualReportPayment(secondProduct.Id);
+        secondPayment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), null,
+            "REF-1", "Test Bank", "10", "123", "123456", "");
+        var secondMetadata = new EmployerInterfaceReportProductData(secondProduct.Id);
+        secondMetadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1);
+
+        var context = fixture.Context with
+        {
+            Products = [.. fixture.Context.Products, secondProduct],
+            Contributions = [.. fixture.Context.Contributions, secondContribution],
+            Payments = [.. fixture.Context.Payments, secondPayment],
+            ProductMetadata = [.. fixture.Context.ProductMetadata, secondMetadata]
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, context, false);
+        Assert.Contains(workbookIssues, x => x.Contains("same SUG-KUPA", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Current_report_rejects_inconsistent_payment_details_inside_one_transfer()
     {
         var fixture = CreateFixture(false);
@@ -283,6 +312,8 @@ public sealed class EmployerInterface006XmlBuilderTests
     public void Current_report_accepts_every_official_operation_payment_combination(int operationCode, int paymentMethodCode)
     {
         var fixture = CreateFixture(false, operationCode: operationCode, paymentMethodCode: paymentMethodCode);
+        if (operationCode == 7)
+            fixture.Context.Contributions[0].Update(0m, 0m, -100m);
         var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
         Assert.Empty(result.Issues);
         Assert.NotNull(result.Document);
@@ -314,6 +345,8 @@ public sealed class EmployerInterface006XmlBuilderTests
     public void Current_non_deposit_corrections_report_zero_deposit_totals(int operationCode)
     {
         var fixture = CreateFixture(false, operationCode: operationCode, paymentMethodCode: 1);
+        if (operationCode == 7)
+            fixture.Context.Contributions[0].Update(0m, 0m, -100m);
         var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
         Assert.Empty(result.Issues);
         Assert.NotNull(result.Document);
@@ -341,6 +374,51 @@ public sealed class EmployerInterface006XmlBuilderTests
         var transfer = Assert.Single(result.Document!.Descendants("PirteiHaavaratKsafim"));
         Assert.Equal("true", transfer.Element("MISPAR-BANK-KOLET")?.Attribute(XName.Get("nil", "http://www.w3.org/2001/XMLSchema-instance"))?.Value);
         AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_transfer_to_trust_account_requires_trust_value_date()
+    {
+        var fixture = CreateFixture(false, paymentMethodCode: 1);
+        var metadata = fixture.Context.ProductMetadata[0];
+        metadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 2);
+        fixture.Context.Payments[0].Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16),
+            null, "REF-1", "Test Bank", "10", "123", "123456", "");
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("trust account", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Current_transfer_to_trust_account_emits_trust_value_date()
+    {
+        var fixture = CreateFixture(false, paymentMethodCode: 1);
+        var metadata = fixture.Context.ProductMetadata[0];
+        metadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 2);
+        fixture.Context.Payments[0].Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16),
+            new DateOnly(2026, 9, 15), "REF-1", "Test Bank", "10", "123", "123456", "");
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.Equal("2026-09-15",
+            Assert.Single(result.Document!.Descendants("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_payment_method_9_requires_both_account_types_1()
+    {
+        var fixture = CreateFixture(false, paymentMethodCode: 9);
+        fixture.Context.ProductMetadata[0].Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2,
+            null, 9, 2, 1);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("payment method 9", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -398,6 +476,23 @@ public sealed class EmployerInterface006XmlBuilderTests
         Assert.NotNull(result.Document);
         Assert.Contains(result.Document!.Descendants("SUG-HAFRASHA"), x => x.Value == expectedCode);
         AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_report_preserves_imported_transfer_and_record_identifiers()
+    {
+        var fixture = CreateFixture(false);
+        var transferId = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var recordId = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        fixture.Context.ProductMetadata[0].SetInterfaceTransferIdentifier(transferId);
+        fixture.Context.Contributions[0].SetInterfaceRecordIdentifier(recordId);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.Equal(transferId, Assert.Single(result.Document!.Descendants("MISPAR-ZIHUI")).Value);
+        Assert.Equal(recordId, Assert.Single(result.Document.Descendants("MISPAR-MEZAHE-RESHUMA")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
     }
 
     [Fact]
@@ -583,6 +678,49 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_operation_7_allows_negative_exempt_payment_adjustment_only()
+    {
+        var fixture = CreateFixture(false, operationCode: 7, paymentMethodCode: 1);
+        fixture.Context.Contributions[0].Update(0m, 0m, -300m);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal("0.00", Assert.Single(result.Document!.Descendants("SCHUM-HAFRASHA")).Value);
+        Assert.Equal("-300.00", Assert.Single(result.Document.Descendants("SACH-TASHLUMIM-PTURIM")).Value);
+        Assert.Equal("0.00", Assert.Single(result.Document.Descendants("SACH-HAFKADA-KUPA-H-P")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_operation_7_rejects_regular_contribution_amount()
+    {
+        var fixture = CreateFixture(false, operationCode: 7, paymentMethodCode: 1);
+        fixture.Context.Contributions[0].Update(100m, 0m, -300m);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("SCHUM-HAFRASHA must be 0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_operation_2_does_not_require_a_payment_row()
+    {
+        var fixture = CreateFixture(false, operationCode: 2, paymentMethodCode: 1);
+        var context = fixture.Context with { Payments = [] };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal("0.00", Assert.Single(result.Document!.Descendants("SACH-HAFKADA-KUPA-H-P")).Value);
+        Assert.Equal("000", Assert.Single(result.Document.Descendants("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Current_no_money_correction_uses_file_date_and_reference_000()
     {
         var fixture = CreateFixture(false, operationCode: 2, paymentMethodCode: 1);
@@ -611,6 +749,27 @@ public sealed class EmployerInterface006XmlBuilderTests
         var result = EmployerInterface006XmlBuilder.BuildNegative(fixture.Context);
         Assert.Null(result.Document);
         Assert.Contains(result.Issues, x => x.Contains("OperationCode 5 or 6", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_correction_emits_previous_transfer_and_clearing_identifiers()
+    {
+        var fixture = CreateFixture(false, operationCode: 2, previousExceptionCode: null);
+        var previousTransfer = Guid.NewGuid().ToString("D");
+        var previousClearing = Guid.NewGuid().ToString("D");
+        fixture.Context.ProductMetadata[0].Update(
+            2, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null,
+            1, 1, 1, previousTransfer, previousClearing);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, false);
+        Assert.Empty(workbookIssues);
+        Assert.Equal(previousTransfer.ToUpperInvariant(), Assert.Single(result.Document.Descendants("MISPAR-ZIHUI-KODEM")).Value);
+        Assert.Equal(previousClearing.ToUpperInvariant(), Assert.Single(result.Document.Descendants("MISPAR-MISLAKA-KODEM")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
     }
 
     [Fact]

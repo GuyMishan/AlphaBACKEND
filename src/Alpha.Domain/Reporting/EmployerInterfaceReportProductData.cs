@@ -24,9 +24,23 @@ public sealed class EmployerInterfaceReportProductData : Entity
     public int? EmployerAccountType { get; private set; }
     public int? ReceiverAccountType { get; private set; }
     public int? OldPensionTypeCode { get; private set; }
+    public string InterfaceTransferIdentifier { get; private set; } = string.Empty;
+    public string ClearingIdentifier { get; private set; } = string.Empty;
     public string PreviousIdentifier { get; private set; } = string.Empty;
     public string PreviousClearingIdentifier { get; private set; } = string.Empty;
     public int? PreviousReferenceExceptionCode { get; private set; }
+
+    public void SetInterfaceTransferIdentifier(string? value)
+    {
+        InterfaceTransferIdentifier = NormalizeOptionalGuid(value, nameof(value));
+        Touch();
+    }
+
+    public void SetClearingIdentifier(string? value)
+    {
+        ClearingIdentifier = NormalizeOptionalGuid(value, nameof(value));
+        Touch();
+    }
 
     public void Update(int? operationCode, int? depositStatus, int? employeeStatus, DateOnly? statusStartDate,
         decimal? employmentPercentage, int? workDaysInMonth, int? lastDeposit, int? refundReason,
@@ -67,6 +81,15 @@ public sealed class EmployerInterfaceReportProductData : Entity
         var normalized = value.Trim();
         if (!Guid.TryParseExact(normalized, "D", out var parsed) || normalized.Length != 36 || char.ToLowerInvariant(normalized[14]) != '4')
             throw new ArgumentException("Employer Interface previous identifiers must be GUID version 4 values.", name);
+        return parsed.ToString("D").ToUpperInvariant();
+    }
+
+    private static string NormalizeOptionalGuid(string? value, string name)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var normalized = value.Trim();
+        if (!Guid.TryParseExact(normalized, "D", out var parsed))
+            throw new ArgumentException("Employer Interface identifier must be a GUID value.", name);
         return parsed.ToString("D").ToUpperInvariant();
     }
 }

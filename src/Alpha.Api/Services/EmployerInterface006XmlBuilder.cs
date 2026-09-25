@@ -112,7 +112,8 @@ public static class EmployerInterface006XmlBuilder
             // transferred, and for MASAV (7). No receiver bank details are sent for no-money corrections.
             var requiresReceiverAccount = !correctionWithoutMoney
                 && ((paymentMethod == 1 && reportedDeposit > 0) || paymentMethod == 7);
-            var trustDateRelevant = !correctionWithoutMoney && metadata.EmployerAccountType == 2;
+            var trustDateRelevant = !correctionWithoutMoney
+                && (metadata.EmployerAccountType == 2 || metadata.ReceiverAccountType == 2);
             var fileDate = (c.PreparedAt ?? DateTimeOffset.UtcNow).Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var valueDateText = correctionWithoutMoney || paymentMethod is 6 or 9
                 ? fileDate
@@ -129,7 +130,7 @@ public static class EmployerInterface006XmlBuilder
                 Nil("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT",
                     trustDateRelevant ? payment?.TrustAccountValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null),
                 E("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM", reference),
-                E("MISPAR-ZIHUI", UpperGuid(first.Id)),
+                E("MISPAR-ZIHUI", CurrentTransferIdentifier(metadata, first.Id)),
                 E("MISPAR-BANK-MAASIK", zeroEmployerAccount ? 0 : int.Parse(Digits(payment!.EmployerBankCode), CultureInfo.InvariantCulture)),
                 E("MISPAR-SNIF-MAASIK", zeroEmployerAccount ? "000" : FixedDigits(payment!.EmployerBranch, 3)),
                 E("MISPAR-CHESHBON-MAASIK", zeroEmployerAccount ? new string('0', 20) : FixedDigits(payment!.EmployerAccount, 20)),
@@ -147,7 +148,7 @@ public static class EmployerInterface006XmlBuilder
             else
                 transfer.Add(Nil("KOD-EMTZAI-TASHLUM", null));
             transfer.Add(E("SACH-HAFKADA-KUPA-H-P", Money(reportedDeposit)));
-            transfer.Add(E("MISPAR-ZIHUI", UpperGuid(first.Id)));
+            transfer.Add(E("MISPAR-ZIHUI", CurrentTransferIdentifier(metadata, first.Id)));
             if (metadata.OperationCode == 5 && metadata.PaymentMethodCode == 1)
             {
                 transfer.Add(
@@ -315,7 +316,7 @@ public static class EmployerInterface006XmlBuilder
                         : Nil("SHIUR-HAFRASHA", null));
                 split.Add(E("SCHUM-HAFRASHA", Money(contribution.Amount)));
                 if (!negative) split.Add(E("SACH-TASHLUMIM-PTURIM", Money(contribution.ExemptPayments)));
-                split.Add(E("MISPAR-MEZAHE-RESHUMA", UpperGuid(contribution.Id)), Nil("MISPAR-MEZAHE-RESHUMA-KODEM", contribution.PreviousRecordIdentifier));
+                split.Add(E("MISPAR-MEZAHE-RESHUMA", CurrentRecordIdentifier(contribution)), Nil("MISPAR-MEZAHE-RESHUMA-KODEM", contribution.PreviousRecordIdentifier));
                 salary.Add(split);
             }
             salary.Add(new XElement("SachHafrashaLeKupaBechodeshMaskoretOved",
@@ -466,9 +467,21 @@ public static class EmployerInterface006XmlBuilder
                         issues.Add($"{label}: no-money correction operation {meta.OperationCode} must use payment method 1.");
                     if (meta.OperationCode == 7 && meta.EmployerAccountType != 1)
                         issues.Add($"{label}: operation 7 has no payment and must report employer account type 1.");
+                    if (meta.OperationCode == 7)
+                    {
+                        var exemptCorrectionRows = EffectiveContributions(c, product, false);
+                        if (exemptCorrectionRows.Any(x => x.Amount != 0))
+                            issues.Add($"{label}: operation 7 corrects exempt payments only; SCHUM-HAFRASHA must be 0 for every row.");
+                        if (exemptCorrectionRows.All(x => x.ExemptPayments == 0))
+                            issues.Add($"{label}: operation 7 requires at least one non-zero SACH-TASHLUMIM-PTURIM correction.");
+                    }
                     // For operation 2, and for the receiver account on any no-money correction,
                     // Version 006 requires the account type used by the previous report being corrected.
                 }
+                if (meta.PaymentMethodCode == 9
+                    && (meta.EmployerAccountType != 1 || meta.ReceiverAccountType != 1))
+                    issues.Add($"{label}: payment method 9 requires employer and receiver account types to both be 1.");
+
                 if (meta.OperationCode == 3)
                 {
                     var groupIds = c.Products.Where(x => string.Equals(x.FundCode, product.FundCode, StringComparison.Ordinal))
@@ -569,17 +582,24 @@ public static class EmployerInterface006XmlBuilder
     {
         var payment = c.Payments.FirstOrDefault(x => x.ReportProductId == product.Id);
         if (!requirePayment) return;
-        if (payment is null) { issues.Add($"{label}: payment details are required."); return; }
 
         var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
         var correctionWithoutMoney = metadata?.OperationCode is 2 or 7;
+        if (payment is null)
+        {
+            if (correctionWithoutMoney) return;
+            issues.Add($"{label}: payment details are required.");
+            return;
+        }
         var effectiveDeposit = metadata is null ? 0m : ReportedDepositAmount(c, [product], false);
         var paymentMethod = metadata?.PaymentMethodCode;
 
         if (!correctionWithoutMoney && metadata?.ReceiverAccountType == 1 && paymentMethod is not (6 or 9) && payment.ValueDate is null)
             issues.Add($"{label}: receiver account type 1 requires TAARICH-ERECH-HAFKADA-LEKUPA.");
-        if (!correctionWithoutMoney && metadata?.EmployerAccountType == 2 && payment.TrustAccountValueDate is null)
-            issues.Add($"{label}: trust-account payment requires TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT.");
+        if (!correctionWithoutMoney
+            && (metadata?.EmployerAccountType == 2 || metadata?.ReceiverAccountType == 2)
+            && payment.TrustAccountValueDate is null)
+            issues.Add($"{label}: any transfer to or from a trust account requires TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT.");
         if (paymentMethod == 7 && (payment.MasavSenderCode.Length < 8 || payment.MasavSenderCode.Length > 16))
             issues.Add($"{label}: MASAV payment method 7 requires KOD-MASAV containing 8-16 characters.");
         if (!correctionWithoutMoney && effectiveDeposit > 0 && paymentMethod is 1 or 3 && string.IsNullOrWhiteSpace(payment.ReferenceNumber))
@@ -667,6 +687,16 @@ public static class EmployerInterface006XmlBuilder
             return c.Payments.FirstOrDefault(x => x.ReportProductId == product.Id)?.ActualDepositAmount > 0;
         return EffectiveContributions(c, product, false).Sum(x => x.Amount) > 0;
     }
+
+    private static string CurrentTransferIdentifier(EmployerInterfaceReportProductData metadata, Guid fallbackId) =>
+        string.IsNullOrWhiteSpace(metadata.InterfaceTransferIdentifier)
+            ? UpperGuid(fallbackId)
+            : metadata.InterfaceTransferIdentifier.Trim().ToUpperInvariant();
+
+    private static string CurrentRecordIdentifier(ManualContribution contribution) =>
+        string.IsNullOrWhiteSpace(contribution.InterfaceRecordIdentifier)
+            ? UpperGuid(contribution.Id)
+            : contribution.InterfaceRecordIdentifier.Trim().ToUpperInvariant();
 
     private static string EmployeeMobile(string? value)
     {

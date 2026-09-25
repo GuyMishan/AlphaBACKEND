@@ -11,6 +11,8 @@ public static class EmployerInterfaceFeedbackSchemaInitializer
                 "Id" uuid PRIMARY KEY,
                 "OrganizationId" uuid NOT NULL,
                 "EmployerId" uuid NOT NULL,
+                "ReportId" uuid NULL,
+                "TransmissionId" uuid NULL,
                 "DocumentType" varchar(40) NOT NULL,
                 "InterfaceVersion" varchar(10) NOT NULL,
                 "SourceFileName" varchar(260) NOT NULL,
@@ -25,10 +27,16 @@ public static class EmployerInterfaceFeedbackSchemaInitializer
                 CONSTRAINT "FK_employer_interface_feedback_employers_EmployerId"
                     FOREIGN KEY ("EmployerId") REFERENCES employers.employers("Id") ON DELETE RESTRICT
             );
+            ALTER TABLE reporting.employer_interface_feedback ADD COLUMN IF NOT EXISTS "ReportId" uuid NULL;
+            ALTER TABLE reporting.employer_interface_feedback ADD COLUMN IF NOT EXISTS "TransmissionId" uuid NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_employer_interface_feedback_EmployerId_PayloadHash"
                 ON reporting.employer_interface_feedback ("EmployerId", "PayloadHash");
             CREATE INDEX IF NOT EXISTS "IX_employer_interface_feedback_OrganizationId_EmployerId_ReceivedAt"
                 ON reporting.employer_interface_feedback ("OrganizationId", "EmployerId", "ReceivedAt");
+            CREATE INDEX IF NOT EXISTS "IX_employer_interface_feedback_ReportId"
+                ON reporting.employer_interface_feedback ("ReportId");
+            CREATE INDEX IF NOT EXISTS "IX_employer_interface_feedback_TransmissionId"
+                ON reporting.employer_interface_feedback ("TransmissionId");
             """);
     }
 }

@@ -81,11 +81,36 @@ CREATE TABLE IF NOT EXISTS reporting.manual_reports (
 );
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "ReportKind" varchar(30) NOT NULL DEFAULT 'Current';
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "SourceReportId" uuid NULL;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "ExternalSourceReference" boolean NOT NULL DEFAULT false;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentAccountId" uuid NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentBankId" integer NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentBranchId" integer NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentAccountNumberMasked" varchar(40) NOT NULL DEFAULT '';
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentMandateReference" varchar(200) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "EmployerLegalNameSnapshot" varchar(200) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "EmployerRegistrationNumberSnapshot" varchar(30) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "EmployerWithholdingFileNumberSnapshot" varchar(30) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "EmployerContactFirstNameSnapshot" varchar(100) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "EmployerContactLastNameSnapshot" varchar(100) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "EmployerContactPhoneSnapshot" varchar(30) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "EmployerContactEmailSnapshot" varchar(100) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "EmployerContactMobileSnapshot" varchar(30) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "DepositorTypeCodeSnapshot" integer NOT NULL DEFAULT 1;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "EmployerIdentifierTypeCodeSnapshot" integer NOT NULL DEFAULT 1;
+UPDATE reporting.manual_reports r
+SET "EmployerLegalNameSnapshot" = CASE WHEN r."EmployerLegalNameSnapshot" = '' THEN e."LegalName" ELSE r."EmployerLegalNameSnapshot" END,
+    "EmployerRegistrationNumberSnapshot" = CASE WHEN r."EmployerRegistrationNumberSnapshot" = '' THEN e."RegistrationNumber" ELSE r."EmployerRegistrationNumberSnapshot" END,
+    "EmployerWithholdingFileNumberSnapshot" = CASE WHEN r."EmployerWithholdingFileNumberSnapshot" = '' THEN e."WithholdingFileNumber" ELSE r."EmployerWithholdingFileNumberSnapshot" END,
+    "EmployerContactFirstNameSnapshot" = CASE WHEN r."EmployerContactFirstNameSnapshot" = '' THEN COALESCE(e."ContactFirstName", '') ELSE r."EmployerContactFirstNameSnapshot" END,
+    "EmployerContactLastNameSnapshot" = CASE WHEN r."EmployerContactLastNameSnapshot" = '' THEN COALESCE(e."ContactLastName", '') ELSE r."EmployerContactLastNameSnapshot" END,
+    "EmployerContactPhoneSnapshot" = CASE WHEN r."EmployerContactPhoneSnapshot" = '' THEN COALESCE(e."ContactPhone", '') ELSE r."EmployerContactPhoneSnapshot" END,
+    "EmployerContactEmailSnapshot" = CASE WHEN r."EmployerContactEmailSnapshot" = '' THEN COALESCE(e."ContactEmail", '') ELSE r."EmployerContactEmailSnapshot" END,
+    "EmployerContactMobileSnapshot" = CASE WHEN r."EmployerContactMobileSnapshot" = '' THEN COALESCE(e."ContactMobile", '') ELSE r."EmployerContactMobileSnapshot" END,
+    "DepositorTypeCodeSnapshot" = COALESCE(s."DefaultDepositorTypeCode", r."DepositorTypeCodeSnapshot"),
+    "EmployerIdentifierTypeCodeSnapshot" = COALESCE(s."DefaultEmployerIdentifierTypeCode", r."EmployerIdentifierTypeCodeSnapshot")
+FROM employers.employers e
+LEFT JOIN employers.employer_profile_settings s ON s."EmployerId" = e."Id"
+WHERE r."EmployerId" = e."Id";
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_manual_reports_source') THEN
@@ -181,12 +206,14 @@ CREATE TABLE IF NOT EXISTS reporting.manual_contributions (
     "Amount" numeric(18,2) NOT NULL,
     "Percentage" numeric(9,4) NOT NULL,
     "ExemptPayments" numeric(18,2) NOT NULL,
+    "InterfaceRecordIdentifier" varchar(36) NOT NULL DEFAULT '',
     "PreviousRecordIdentifier" varchar(36) NOT NULL DEFAULT '',
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL,
     CONSTRAINT "UX_manual_contribution" UNIQUE ("ReportProductId", "Party", "Component")
 );
 
+ALTER TABLE reporting.manual_contributions ADD COLUMN IF NOT EXISTS "InterfaceRecordIdentifier" varchar(36) NOT NULL DEFAULT '';
 ALTER TABLE reporting.manual_contributions ADD COLUMN IF NOT EXISTS "PreviousRecordIdentifier" varchar(36) NOT NULL DEFAULT '';
 
 CREATE OR REPLACE FUNCTION reporting.seed_employee_mix_into_report()

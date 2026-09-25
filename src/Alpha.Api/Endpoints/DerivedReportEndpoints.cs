@@ -70,6 +70,19 @@ public static class DerivedReportEndpoints
                 select new { ReportId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.ReportId, x => x.Count, ct);
 
+        var sourceOperations = await (
+                from metadata in db.EmployerInterfaceReportProductData.AsNoTracking()
+                join product in db.ManualReportProducts.AsNoTracking() on metadata.ReportProductId equals product.Id
+                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                where ids.Contains(employee.ReportId)
+                select new { employee.ReportId, metadata.OperationCode })
+            .ToListAsync(ct);
+        var operation6Reports = sourceOperations
+            .GroupBy(x => x.ReportId)
+            .Where(g => g.Any() && g.All(x => x.OperationCode == 6))
+            .Select(g => g.Key)
+            .ToHashSet();
+
         return Results.Ok(new
         {
             items = page.Select(x => new
@@ -80,6 +93,9 @@ public static class DerivedReportEndpoints
                 x.Status,
                 x.ReportKind,
                 x.SourceReportId,
+                canBeCurrentCorrectionSource = x.ReportKind == ManualReportKind.Negative
+                    && operation6Reports.Contains(x.Id)
+                    && (x.Status == ManualReportStatus.Sent || x.Status == ManualReportStatus.Completed || x.ExternalSourceReference),
                 x.CreatedAt,
                 x.UpdatedAt,
                 employeeCount = employeeCounts.GetValueOrDefault(x.Id),
@@ -111,8 +127,9 @@ public static class DerivedReportEndpoints
         ReportPaymentAccountService paymentAccounts, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
-        if (request.ReportKind is not (ManualReportKind.Differences or ManualReportKind.Negative))
-            return Results.BadRequest(new { error = "Derived reports must be Differences or Negative." });
+        var isCurrentCorrection = request.ReportKind == ManualReportKind.Current && request.CorrectionOperationCode is 2 or 3;
+        if (request.ReportKind is not (ManualReportKind.Differences or ManualReportKind.Negative) && !isCurrentCorrection)
+            return Results.BadRequest(new { error = "Derived reports must be Differences, Negative, or a Current correction using operation 2 or 3." });
 
         var source = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.SourceReportId &&
             x.OrganizationId == organizationId && x.EmployerId == employerId && x.Status != ManualReportStatus.Cancelled, ct);
@@ -145,8 +162,19 @@ public static class DerivedReportEndpoints
             .Where(x => sourceProductIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
 
+        if (isCurrentCorrection)
+        {
+            if (source.ReportKind != ManualReportKind.Negative)
+                return Results.BadRequest(new { error = "A current operation 2/3 correction must be based on a negative report." });
+            if (source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed) && !source.ExternalSourceReference)
+                return Results.Conflict(new { error = "The negative source must already have been transmitted, or be an imported external negative report." });
+            if (sourceProducts.Count == 0 || sourceProducts.Any(p => !sourceMetadata.TryGetValue(p.Id, out var m) || m.OperationCode != 6))
+                return Results.BadRequest(new { error = "A current operation 2/3 correction must reference a negative operation 6 report." });
+        }
+
         var report = new ManualReport(organizationId, employerId, request.ReportingMonth, request.SalaryPaymentDate,
             request.ReportKind, source.Id);
+        report.CopyEmployerInterfaceSnapshotFrom(source);
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
         if (paymentAccount is null) return Results.Conflict(new { error = "payment_account_required" });
         await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, ct);
@@ -171,7 +199,14 @@ public static class DerivedReportEndpoints
             .GroupBy(x => x.FundCode, StringComparer.Ordinal)
             .ToDictionary(
                 g => g.Key,
-                g => g.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).First().Id,
+                g =>
+                {
+                    var first = g.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).First();
+                    return sourceMetadata.TryGetValue(first.Id, out var metadata)
+                        && !string.IsNullOrWhiteSpace(metadata.InterfaceTransferIdentifier)
+                            ? metadata.InterfaceTransferIdentifier
+                            : first.Id.ToString("D");
+                },
                 StringComparer.Ordinal);
 
         var productMap = new Dictionary<Guid, ManualReportProduct>(sourceProducts.Count);
@@ -190,19 +225,24 @@ public static class DerivedReportEndpoints
             {
                 var metadataClone = new EmployerInterfaceReportProductData(clone.Id);
                 metadataClone.Update(
-                    request.ReportKind == ManualReportKind.Negative ? 5 : oldMetadata.OperationCode,
+                    request.ReportKind == ManualReportKind.Negative ? null
+                        : isCurrentCorrection ? request.CorrectionOperationCode
+                        : oldMetadata.OperationCode,
                     oldMetadata.DepositStatus,
                     oldMetadata.EmployeeStatus,
                     oldMetadata.StatusStartDate,
                     oldMetadata.EmploymentPercentage,
                     oldMetadata.WorkDaysInMonth,
                     oldMetadata.LastDeposit,
-                    request.ReportKind == ManualReportKind.Negative ? null : oldMetadata.RefundReason,
-                    oldMetadata.PaymentMethodCode,
+                    request.ReportKind == ManualReportKind.Negative || isCurrentCorrection ? null : oldMetadata.RefundReason,
+                    request.ReportKind == ManualReportKind.Negative ? null
+                        : isCurrentCorrection && request.CorrectionOperationCode == 2 ? 1
+                        : isCurrentCorrection ? null
+                        : oldMetadata.PaymentMethodCode,
                     oldMetadata.EmployerAccountType,
                     oldMetadata.ReceiverAccountType,
-                    sourceTransferIdentifierByFund[oldProduct.FundCode].ToString("D"),
-                    null,
+                    sourceTransferIdentifierByFund[oldProduct.FundCode],
+                    string.IsNullOrWhiteSpace(oldMetadata.ClearingIdentifier) ? null : oldMetadata.ClearingIdentifier,
                     null,
                     oldMetadata.OldPensionTypeCode);
                 db.EmployerInterfaceReportProductData.Add(metadataClone);
@@ -213,7 +253,10 @@ public static class DerivedReportEndpoints
         {
             db.ManualContributions.Add(new ManualContribution(productMap[oldContribution.ReportProductId].Id,
                 oldContribution.Party, oldContribution.Component, oldContribution.Amount, oldContribution.Percentage,
-                oldContribution.ExemptPayments, oldContribution.Id.ToString("D")));
+                oldContribution.ExemptPayments,
+                string.IsNullOrWhiteSpace(oldContribution.InterfaceRecordIdentifier)
+                    ? oldContribution.Id.ToString("D")
+                    : oldContribution.InterfaceRecordIdentifier));
         }
 
         foreach (var oldPayment in sourcePayments)
@@ -246,4 +289,5 @@ public static class DerivedReportEndpoints
 }
 
 public sealed record CreateDerivedManualReportRequest(Guid SourceReportId, ManualReportKind ReportKind,
-    DateOnly ReportingMonth, DateOnly? SalaryPaymentDate, Guid? PaymentAccountId = null);
+    DateOnly ReportingMonth, DateOnly? SalaryPaymentDate, Guid? PaymentAccountId = null,
+    int? CorrectionOperationCode = null);

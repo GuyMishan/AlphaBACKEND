@@ -14,6 +14,9 @@ public sealed class ReportTransmissionConfiguration : IEntityTypeConfiguration<R
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(30);
         b.Property(x => x.ExternalId).HasMaxLength(200);
         b.Property(x => x.PayloadHash).HasMaxLength(128);
+        b.Property(x => x.PayloadFileName).HasMaxLength(100);
+        b.Property(x => x.Payload).HasColumnType("bytea");
+        b.Property(x => x.AttachmentManifestJson).HasColumnType("text");
         b.Property(x => x.ResponsePayload).HasColumnType("text");
         b.Property(x => x.ErrorMessage).HasMaxLength(4000);
         b.HasIndex(x => new { x.ReportId, x.AttemptNumber }).IsUnique();

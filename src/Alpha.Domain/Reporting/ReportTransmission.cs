@@ -34,16 +34,24 @@ public sealed class ReportTransmission : Entity
     public ReportTransmissionStatus Status { get; private set; } = ReportTransmissionStatus.Pending;
     public string ExternalId { get; private set; } = string.Empty;
     public string PayloadHash { get; private set; } = string.Empty;
+    public string PayloadFileName { get; private set; } = string.Empty;
+    public byte[] Payload { get; private set; } = [];
+    public string AttachmentManifestJson { get; private set; } = "[]";
     public string ResponsePayload { get; private set; } = string.Empty;
     public string ErrorMessage { get; private set; } = string.Empty;
     public DateTimeOffset? StartedAt { get; private set; }
     public DateTimeOffset? SentAt { get; private set; }
     public DateTimeOffset? CompletedAt { get; private set; }
 
-    public void Start(string payloadHash)
+    public void Start(string payloadHash, string payloadFileName, byte[] payload, string? attachmentManifestJson = null)
     {
+        if (string.IsNullOrWhiteSpace(payloadFileName)) throw new ArgumentException("Payload file name is required.", nameof(payloadFileName));
+        if (payload is null || payload.Length == 0) throw new ArgumentException("Payload is required.", nameof(payload));
         Status = ReportTransmissionStatus.Sending;
         PayloadHash = payloadHash?.Trim() ?? string.Empty;
+        PayloadFileName = payloadFileName.Trim();
+        Payload = payload.ToArray();
+        AttachmentManifestJson = string.IsNullOrWhiteSpace(attachmentManifestJson) ? "[]" : attachmentManifestJson.Trim();
         StartedAt = DateTimeOffset.UtcNow;
         ErrorMessage = string.Empty;
         Touch();

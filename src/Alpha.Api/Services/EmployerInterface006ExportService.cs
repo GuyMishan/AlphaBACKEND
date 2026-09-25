@@ -25,15 +25,15 @@ public sealed class EmployerInterface006ExportService(
             ? EmployerInterfaceDocumentType.NegativeReport
             : EmployerInterfaceDocumentType.CurrentReport;
 
-        var employer = await db.Employers.AsNoTracking().SingleAsync(x => x.Id == report.EmployerId, ct);
-        var profileSettings = await db.EmployerProfileSettings.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.EmployerId == report.EmployerId, ct);
+        var employer = new Alpha.Domain.Employers.Employer(report.OrganizationId,
+            report.EmployerLegalNameSnapshot, report.EmployerRegistrationNumberSnapshot,
+            report.EmployerWithholdingFileNumberSnapshot, report.EmployerContactFirstNameSnapshot,
+            report.EmployerContactLastNameSnapshot, report.EmployerContactPhoneSnapshot,
+            report.EmployerContactEmailSnapshot, report.EmployerContactMobileSnapshot);
         var employees = await db.ManualReportEmployees.AsNoTracking()
             .Where(x => x.ReportId == report.Id).OrderBy(x => x.EmployeeNumber).ToListAsync(ct);
-        var personIds = employees.Select(x => x.PersonId).Distinct().ToArray();
-        var employmentIds = employees.Select(x => x.EmploymentId).Distinct().ToArray();
-        var people = await db.People.AsNoTracking().Where(x => personIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
-        var employments = await db.Employments.AsNoTracking().Where(x => employmentIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+        var people = new Dictionary<Guid, Alpha.Domain.Employees.Person>();
+        var employments = new Dictionary<Guid, Alpha.Domain.Employees.Employment>();
         var employeeIds = employees.Select(x => x.Id).ToArray();
         var products = await db.ManualReportProducts.AsNoTracking()
             .Where(x => employeeIds.Contains(x.ReportEmployeeId))
@@ -93,8 +93,8 @@ public sealed class EmployerInterface006ExportService(
 
         var context = new EmployerInterface006XmlBuilder.BuildContext(employer, employees, people, employments,
             products, contributions, payments, metadata, options.Value,
-            profileSettings?.DefaultDepositorTypeCode ?? 1,
-            profileSettings?.DefaultEmployerIdentifierTypeCode ?? 1,
+            report.DepositorTypeCodeSnapshot,
+            report.EmployerIdentifierTypeCodeSnapshot,
             attachments, annualEmployerAffidavitSatisfied, preparedAt, attachmentNames, fileSequence);
         var negative = documentType == EmployerInterfaceDocumentType.NegativeReport;
         var built = negative
