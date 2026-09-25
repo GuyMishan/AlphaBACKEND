@@ -1,3 +1,4 @@
+using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Domain.Employees;
@@ -86,6 +87,9 @@ public static class EmployerInterfaceProfileEndpoints
         var employment = await db.Employments.AsNoTracking().SingleOrDefaultAsync(x =>
             x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (employment is null) return Results.NotFound();
+        var validationError = ApiInputValidation.EmployeeInterfaceProfile(request.BirthDate, request.Gender, request.Email,
+            request.Mobile, request.City, request.Street, request.HouseNumber, request.PostalCode, request.PostOfficeBox);
+        if (validationError is not null) return Results.BadRequest(new { error = validationError });
         var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
         person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile,
             request.City, request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
