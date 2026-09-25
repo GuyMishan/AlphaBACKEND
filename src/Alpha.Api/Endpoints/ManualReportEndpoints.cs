@@ -124,6 +124,10 @@ public static class ManualReportEndpoints
                 var reportEmployee = new ManualReportEmployee(report.Id, organizationId, employerId,
                     item.Employment.Id, item.Person.Id, item.Person.NationalId, item.Person.FirstName,
                     item.Person.LastName, item.Employment.EmployeeNumber, item.Employment.MonthlySalary);
+                reportEmployee.SetInterfaceSnapshot(1, item.Person.NationalId, item.Person.BirthDate,
+                    item.Person.Gender.HasValue ? (int)item.Person.Gender.Value : null, item.Person.Email, item.Person.Mobile,
+                    item.Person.City, item.Person.Street, item.Person.HouseNumber, item.Person.Apartment,
+                    item.Person.PostalCode, item.Person.PostOfficeBox, item.Employment.StartDate);
                 db.ManualReportEmployees.Add(reportEmployee);
                 await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
             }
@@ -220,6 +224,10 @@ public static class ManualReportEndpoints
                 var reportEmployee = new ManualReportEmployee(reportId, organizationId, employerId,
                     item.Employment.Id, item.Person.Id, item.Person.NationalId, item.Person.FirstName,
                     item.Person.LastName, item.Employment.EmployeeNumber, item.Employment.MonthlySalary);
+                reportEmployee.SetInterfaceSnapshot(1, item.Person.NationalId, item.Person.BirthDate,
+                    item.Person.Gender.HasValue ? (int)item.Person.Gender.Value : null, item.Person.Email, item.Person.Mobile,
+                    item.Person.City, item.Person.Street, item.Person.HouseNumber, item.Person.Apartment,
+                    item.Person.PostalCode, item.Person.PostOfficeBox, item.Employment.StartDate);
                 db.ManualReportEmployees.Add(reportEmployee);
                 await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
             }
@@ -428,6 +436,13 @@ public static class ManualReportEndpoints
         if (resolvedProducts.Error is not null) return Results.BadRequest(new { error = resolvedProducts.Error });
 
         employee.UpdateMonthlySalary(monthlySalary);
+        if (request.Snapshot is not null)
+        {
+            employee.SetInterfaceSnapshot(request.Snapshot.IdentifierType, request.Snapshot.Identifier,
+                request.Snapshot.BirthDate, request.Snapshot.Gender, request.Snapshot.Email, request.Snapshot.Mobile,
+                request.Snapshot.City, request.Snapshot.Street, request.Snapshot.HouseNumber, request.Snapshot.Apartment,
+                request.Snapshot.PostalCode, request.Snapshot.PostOfficeBox, request.Snapshot.EmploymentStartDate);
+        }
         var existingProductIds = await db.ManualReportProducts.Where(x => x.ReportEmployeeId == reportEmployeeId).Select(x => x.Id).ToArrayAsync(ct);
         if (existingProductIds.Length > 0)
         {
@@ -546,7 +561,11 @@ public sealed record CreateManualReportRequest(DateOnly ReportingMonth, DateOnly
 public sealed record UpdateManualReportDetailsRequest(DateOnly ReportingMonth, DateOnly? SalaryPaymentDate);
 public sealed record UpdateReportPaymentAccountRequest(Guid PaymentAccountId);
 public sealed record UpdateManualReportSelectionRequest(IReadOnlyCollection<Guid> EmploymentIds);
-public sealed record SaveManualReportEmployeeRequest(decimal MonthlySalary, IReadOnlyCollection<ManualProductInput> Products);
+public sealed record SaveManualReportEmployeeRequest(decimal MonthlySalary, IReadOnlyCollection<ManualProductInput> Products,
+    ManualReportEmployeeSnapshotInput? Snapshot = null);
+public sealed record ManualReportEmployeeSnapshotInput(int IdentifierType, string Identifier, DateOnly? BirthDate, int? Gender,
+    string? Email, string? Mobile, string? City, string? Street, string? HouseNumber, string? Apartment,
+    string? PostalCode, string? PostOfficeBox, DateOnly? EmploymentStartDate);
 public sealed record ManualProductInput(PensionProductType ProductType, string PolicyNumber, DateOnly SalaryMonth,
     decimal Salary, string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate, int? Section14Code,
     string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName, string? FundClassification,
