@@ -101,9 +101,16 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                     issues.Add("Receiving bank, branch and account are required for bank transfer with money and for MASAV payment method 7.");
 
                 var ids = Desc(transfer, "PirteiOved")
-                    .Select(x => Digits(Value(x, "MISPAR-MEZAHE"))).Where(x => x.Length > 0).ToArray();
-                if (ids.GroupBy(x => x, StringComparer.Ordinal).Any(g => g.Count() > 1))
-                    issues.Add("PirteiOved must appear only once per employee within a transfer batch.");
+                    .Select(x => new
+                    {
+                        Type = IntValue(x, "SUG-MEZAHE-OVED"),
+                        Identifier = Value(x, "MISPAR-MEZAHE")?.Trim() ?? string.Empty
+                    })
+                    .Where(x => x.Identifier.Length > 0)
+                    .Select(x => $"{x.Type}:{x.Identifier}")
+                    .ToArray();
+                if (ids.GroupBy(x => x, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1))
+                    issues.Add("PirteiOved must appear only once per employee identifier/type within a transfer batch.");
             }
         }
 
