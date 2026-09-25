@@ -102,10 +102,17 @@ public static class ManualReportEndpoints
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.EmploymentIds.Count > MaxEmployeesPerDraft)
             return Results.BadRequest(new { error = $"Manual reports are limited to {MaxEmployeesPerDraft} employees per draft." });
-        if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
-            return Results.NotFound();
+        var employer = await db.Employers.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
+        if (employer is null) return Results.NotFound();
+        var profileSettings = await db.EmployerProfileSettings.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.EmployerId == employerId, ct);
 
         var report = new ManualReport(organizationId, employerId, request.ReportingMonth, request.SalaryPaymentDate);
+        report.SetEmployerInterfaceSnapshot(employer.LegalName, employer.RegistrationNumber, employer.WithholdingFileNumber,
+            employer.ContactFirstName, employer.ContactLastName, employer.ContactPhone, employer.ContactEmail,
+            employer.ContactMobile, profileSettings?.DefaultDepositorTypeCode ?? 1,
+            profileSettings?.DefaultEmployerIdentifierTypeCode ?? 1);
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
         if (paymentAccount is null) return Results.Conflict(new { error = "payment_account_required" });
         await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, ct);
