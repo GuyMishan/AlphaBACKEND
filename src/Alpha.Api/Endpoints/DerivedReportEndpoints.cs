@@ -242,7 +242,7 @@ public static class DerivedReportEndpoints
                     oldMetadata.EmployerAccountType,
                     oldMetadata.ReceiverAccountType,
                     sourceTransferIdentifierByFund[oldProduct.FundCode],
-                    null,
+                    string.IsNullOrWhiteSpace(oldMetadata.ClearingIdentifier) ? null : oldMetadata.ClearingIdentifier,
                     null,
                     oldMetadata.OldPensionTypeCode);
                 db.EmployerInterfaceReportProductData.Add(metadataClone);
