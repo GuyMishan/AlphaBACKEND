@@ -83,8 +83,38 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 }
             }
 
+            if (operation is 2 or 7 && deposit != 0m)
+                issues.Add($"SUG-PEULA={operation} is a no-money correction and SACH-HAFKADA-KUPA-H-P must be 0.");
+            if (operation == 6 && deposit != 0m)
+                issues.Add("Negative SUG-PEULA=6 is a cancellation without a refund and SACH-HAFKADA-KUPA-H-P must be 0.");
+
             if (!negative)
             {
+                var employerAccountType = IntValue(transfer, "SUG-CHESHBON-MAASIK");
+                var receiverAccountType = IntValue(transfer, "SUG-CHESHBON-KOLET-TASHLUM");
+
+                if (paymentMethod == 9 && (employerAccountType != 1 || receiverAccountType != 1))
+                    issues.Add("KOD-EMTZAI-TASHLUM=9 requires SUG-CHESHBON-MAASIK=1 and SUG-CHESHBON-KOLET-TASHLUM=1.");
+
+                var noMoneyCorrection = operation is 2 or 7;
+                var trustAccountRelevant = !noMoneyCorrection && (employerAccountType == 2 || receiverAccountType == 2);
+                var trustValueDate = Value(transfer, "TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT");
+                if (trustAccountRelevant && string.IsNullOrWhiteSpace(trustValueDate))
+                    issues.Add("A transfer to or from a trust account requires TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT.");
+                if (noMoneyCorrection && !string.IsNullOrWhiteSpace(trustValueDate))
+                    issues.Add($"SUG-PEULA={operation} must not include a trust-account value date.");
+
+                if (operation == 7)
+                {
+                    var rows = Desc(transfer, "PizulHafrashotOvedBeKupa").ToList();
+                    if (rows.Any(x => (DecimalValue(x, "SCHUM-HAFRASHA") ?? 0m) != 0m))
+                        issues.Add("SUG-PEULA=7 corrects exempt payments only; SCHUM-HAFRASHA must be 0 for every row.");
+                    if (rows.All(x => (DecimalValue(x, "SACH-TASHLUMIM-PTURIM") ?? 0m) == 0m))
+                        issues.Add("SUG-PEULA=7 requires at least one non-zero SACH-TASHLUMIM-PTURIM correction.");
+                    if (employerAccountType != 1)
+                        issues.Add("SUG-PEULA=7 requires SUG-CHESHBON-MAASIK=1.");
+                }
+
                 var zeroEmployer = deposit == 0m || paymentMethod is 3 or 5 or 6 or 9;
                 var employerBranch = Digits(Value(transfer, "MISPAR-SNIF-MAASIK"));
                 var employerAccount = Digits(Value(transfer, "MISPAR-CHESHBON-MAASIK"));
