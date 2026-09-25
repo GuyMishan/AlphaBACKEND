@@ -40,6 +40,8 @@ public sealed class EmployerInterfaceFeedback : Entity
 
     public Guid OrganizationId { get; private set; }
     public Guid EmployerId { get; private set; }
+    public Guid? ReportId { get; private set; }
+    public Guid? TransmissionId { get; private set; }
     public EmployerInterfaceDocumentType DocumentType { get; private set; }
     public string InterfaceVersion { get; private set; } = string.Empty;
     public string SourceFileName { get; private set; } = string.Empty;
@@ -47,6 +49,14 @@ public sealed class EmployerInterfaceFeedback : Entity
     public string PayloadHash { get; private set; } = string.Empty;
     public string RawXml { get; private set; } = string.Empty;
     public DateTimeOffset ReceivedAt { get; private set; }
+
+    public void Correlate(Guid reportId, Guid? transmissionId)
+    {
+        if (reportId == Guid.Empty) throw new ArgumentException("Report is required.", nameof(reportId));
+        ReportId = reportId;
+        TransmissionId = transmissionId;
+        Touch();
+    }
 
     private static string Require(string value, string name) =>
         string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value is required.", name) : value.Trim();
