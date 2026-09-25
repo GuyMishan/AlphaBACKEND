@@ -174,8 +174,9 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             var transferIdentifier = Value(transferStatus, "MISPAR-ZIHUI")?.Trim();
             if (string.IsNullOrWhiteSpace(transferIdentifier)) continue;
 
-            var normalizedTransfer = Guid.TryParse(transferIdentifier, out var parsedTransfer)
-                ? parsedTransfer.ToString("D").ToUpperInvariant()
+            var directProductId = Guid.TryParse(transferIdentifier, out var parsedTransfer) ? parsedTransfer : Guid.Empty;
+            var normalizedTransfer = directProductId != Guid.Empty
+                ? directProductId.ToString("D").ToUpperInvariant()
                 : transferIdentifier.ToUpperInvariant();
 
             var matchedProducts = await (
@@ -183,8 +184,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 join employee in db.ManualReportEmployees on product.ReportEmployeeId equals employee.Id
                 join metadata in db.EmployerInterfaceReportProductData on product.Id equals metadata.ReportProductId
                 where employee.OrganizationId == organizationId && employee.EmployerId == employerId
-                    && (product.Id == (Guid.TryParse(transferIdentifier, out var directId) ? directId : Guid.Empty)
-                        || metadata.InterfaceTransferIdentifier == normalizedTransfer)
+                    && (product.Id == directProductId || metadata.InterfaceTransferIdentifier == normalizedTransfer)
                 select new { Product = product, Employee = employee, Metadata = metadata })
                 .ToListAsync(ct);
 
