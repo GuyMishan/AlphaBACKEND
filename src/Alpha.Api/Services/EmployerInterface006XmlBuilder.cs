@@ -263,8 +263,8 @@ public static class EmployerInterface006XmlBuilder
                 Nil("MISPAR-DIRA", string.IsNullOrWhiteSpace(person.Apartment) ? null : person.Apartment),
                 Nil("MIKUD", string.IsNullOrWhiteSpace(person.PostalCode) ? null : Digits(person.PostalCode)),
                 Nil("TA-DOAR", string.IsNullOrWhiteSpace(person.PostOfficeBox) ? null : Digits(person.PostOfficeBox)),
-                E("E-MAIL", string.IsNullOrWhiteSpace(person.Email) ? "israel1234@notrelevant.com" : person.Email.Trim()),
-                E("MISPAR-CELLULARI", EmployeeMobile(person.Mobile)),
+                E("E-MAIL", person.Email.Trim()),
+                E("MISPAR-CELLULARI", Digits(person.Mobile)),
                 E("MIN", (int)person.Gender!.Value),
                 E("MOED-TCHILAT-AHASAKAT-OVED", employment.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
                 E("SEIF-ARBA-ESRE-LAOVED", firstProduct.Section14Code),
@@ -537,11 +537,13 @@ public static class EmployerInterface006XmlBuilder
                 if (!c.People.TryGetValue(employee.PersonId, out var person)) { issues.Add($"Employee {employee.Id}: person profile was not found."); continue; }
                 if (!person.BirthDate.HasValue) issues.Add($"Employee {employee.Id}: BirthDate is required.");
                 if (!person.Gender.HasValue) issues.Add($"Employee {employee.Id}: Gender is required.");
-                if (!string.IsNullOrWhiteSpace(person.Email) && (person.Email.Length > 50 || !person.Email.Contains('@')))
-                    issues.Add($"Employee {employee.Id}: Email must be valid and contain up to 50 characters.");
+                if (string.IsNullOrWhiteSpace(person.Email))
+                    issues.Add($"Employee {employee.Id}: Email is required by the current Version 006 employee block.");
+                else if (person.Email.Length > 50 || !person.Email.Contains('@') || person.Email.StartsWith('@') || person.Email.EndsWith('@'))
+                    issues.Add($"Employee {employee.Id}: Email must be a real valid address containing up to 50 characters.");
                 var employeeMobile = Digits(person.Mobile);
-                if (!string.IsNullOrWhiteSpace(person.Mobile) && (employeeMobile.Length == 0 || employeeMobile.Length > 15))
-                    issues.Add($"Employee {employee.Id}: Mobile must contain digits only and up to 15 digits.");
+                if (employeeMobile.Length is < 7 or > 15)
+                    issues.Add($"Employee {employee.Id}: Mobile is required and must contain 7-15 digits. Alpha does not invent placeholder employee contact details.");
 
                 var employeeProducts = c.Products.Where(x => x.ReportEmployeeId == employee.Id).ToList();
                 var isNewEmployee = employeeProducts.Any(p => c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == p.Id)?.EmployeeStatus == 14);
