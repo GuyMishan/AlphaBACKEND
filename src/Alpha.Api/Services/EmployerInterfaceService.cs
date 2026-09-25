@@ -325,7 +325,8 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             context.ManualContributions.Add(new ManualContribution(product.Id, mapped.Item1, mapped.Item2,
                 Number(Value(contributionNode, "SCHUM-HAFRASHA")),
                 Number(Value(contributionNode, "SHIUR-HAFRASHA")),
-                Number(Value(contributionNode, "SACH-TASHLUMIM-PTURIM"))));
+                Number(Value(contributionNode, "SACH-TASHLUMIM-PTURIM")),
+                Value(contributionNode, "MISPAR-MEZAHE-RESHUMA-KODEM")));
         }
 
         var metadata = new EmployerInterfaceReportProductData(product.Id);
