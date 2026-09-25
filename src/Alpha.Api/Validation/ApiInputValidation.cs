@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Alpha.Api.Contracts;
 using Alpha.Api.Endpoints;
 using Alpha.Domain.Reporting;
+using Alpha.Domain.Employees;
 
 namespace Alpha.Api.Validation;
 
@@ -26,7 +27,37 @@ public static class ApiInputValidation
         var mobile = new string((contactMobile ?? string.Empty).Where(char.IsDigit).ToArray());
         if (phone.Length == 0 && mobile.Length == 0) return "יש להזין לפחות טלפון או נייד אחד של איש הקשר.";
         if (phone.Length > 11) return "טלפון איש הקשר יכול להכיל עד 11 ספרות.";
-        if (mobile.Length > 15) return "מספר הנייד יכול להכיל עד 15 ספרות.";
+        if (mobile.Length > 0 && (mobile.Length != 10 || !mobile.StartsWith("05", StringComparison.Ordinal)))
+            return "מספר הנייד של איש הקשר חייב להכיל 10 ספרות ולהתחיל ב-05.";
+        return null;
+    }
+
+    public static string? EmployeeInterfaceProfile(DateOnly? birthDate, PersonGender? gender, string? email, string? mobile,
+        string? city, string? street, string? houseNumber, string? postalCode, string? postOfficeBox)
+    {
+        if (!birthDate.HasValue || birthDate.Value >= DateOnly.FromDateTime(DateTime.UtcNow))
+            return "תאריך הלידה הוא שדה חובה וחייב להיות בעבר.";
+        if (!gender.HasValue || !Enum.IsDefined(gender.Value))
+            return "מין העובד הוא שדה חובה ואינו תקין.";
+
+        var normalizedEmail = email?.Trim() ?? string.Empty;
+        if (normalizedEmail.Length == 0 || normalizedEmail.Length > 50
+            || !normalizedEmail.Contains('@') || normalizedEmail.StartsWith('@') || normalizedEmail.EndsWith('@'))
+            return "יש להזין כתובת אימייל תקינה לעובד, עד 50 תווים.";
+
+        var normalizedMobile = new string((mobile ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (normalizedMobile.Length is < 7 or > 15)
+            return "יש להזין מספר נייד אמיתי לעובד, 7-15 ספרות.";
+
+        var hasPostOfficeBox = !string.IsNullOrWhiteSpace(postOfficeBox)
+            && new string(postOfficeBox.Where(char.IsDigit).ToArray()).Length > 0;
+        var normalizedPostalCode = new string((postalCode ?? string.Empty).Where(char.IsDigit).ToArray());
+        var hasStreetAddress = !string.IsNullOrWhiteSpace(city)
+            && !string.IsNullOrWhiteSpace(street)
+            && !string.IsNullOrWhiteSpace(houseNumber)
+            && normalizedPostalCode.Length > 0;
+        if (!hasPostOfficeBox && !hasStreetAddress)
+            return "יש להזין כתובת מלאה (יישוב, רחוב, מספר בית ומיקוד) או תא דואר.";
         return null;
     }
 
