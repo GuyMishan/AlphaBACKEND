@@ -112,7 +112,8 @@ public static class EmployerInterface006XmlBuilder
             // transferred, and for MASAV (7). No receiver bank details are sent for no-money corrections.
             var requiresReceiverAccount = !correctionWithoutMoney
                 && ((paymentMethod == 1 && reportedDeposit > 0) || paymentMethod == 7);
-            var trustDateRelevant = !correctionWithoutMoney && metadata.EmployerAccountType == 2;
+            var trustDateRelevant = !correctionWithoutMoney
+                && (metadata.EmployerAccountType == 2 || metadata.ReceiverAccountType == 2);
             var fileDate = (c.PreparedAt ?? DateTimeOffset.UtcNow).Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var valueDateText = correctionWithoutMoney || paymentMethod is 6 or 9
                 ? fileDate
@@ -477,6 +478,10 @@ public static class EmployerInterface006XmlBuilder
                     // For operation 2, and for the receiver account on any no-money correction,
                     // Version 006 requires the account type used by the previous report being corrected.
                 }
+                if (meta.PaymentMethodCode == 9
+                    && (meta.EmployerAccountType != 1 || meta.ReceiverAccountType != 1))
+                    issues.Add($"{label}: payment method 9 requires employer and receiver account types to both be 1.");
+
                 if (meta.OperationCode == 3)
                 {
                     var groupIds = c.Products.Where(x => string.Equals(x.FundCode, product.FundCode, StringComparison.Ordinal))
@@ -586,8 +591,10 @@ public static class EmployerInterface006XmlBuilder
 
         if (!correctionWithoutMoney && metadata?.ReceiverAccountType == 1 && paymentMethod is not (6 or 9) && payment.ValueDate is null)
             issues.Add($"{label}: receiver account type 1 requires TAARICH-ERECH-HAFKADA-LEKUPA.");
-        if (!correctionWithoutMoney && metadata?.EmployerAccountType == 2 && payment.TrustAccountValueDate is null)
-            issues.Add($"{label}: trust-account payment requires TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT.");
+        if (!correctionWithoutMoney
+            && (metadata?.EmployerAccountType == 2 || metadata?.ReceiverAccountType == 2)
+            && payment.TrustAccountValueDate is null)
+            issues.Add($"{label}: any transfer to or from a trust account requires TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT.");
         if (paymentMethod == 7 && (payment.MasavSenderCode.Length < 8 || payment.MasavSenderCode.Length > 16))
             issues.Add($"{label}: MASAV payment method 7 requires KOD-MASAV containing 8-16 characters.");
         if (!correctionWithoutMoney && effectiveDeposit > 0 && paymentMethod is 1 or 3 && string.IsNullOrWhiteSpace(payment.ReferenceNumber))
