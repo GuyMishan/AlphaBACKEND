@@ -52,6 +52,50 @@ public sealed class ManualReport : Entity
     public string PaymentAccountNumberMasked { get; private set; } = string.Empty;
     public string PaymentMandateReference { get; private set; } = string.Empty;
 
+    // Immutable Employer Interface 006 employer snapshot. Outgoing payloads must not
+    // change when the live employer/profile is edited after the report was created.
+    public string EmployerLegalNameSnapshot { get; private set; } = string.Empty;
+    public string EmployerRegistrationNumberSnapshot { get; private set; } = string.Empty;
+    public string EmployerWithholdingFileNumberSnapshot { get; private set; } = string.Empty;
+    public string EmployerContactFirstNameSnapshot { get; private set; } = string.Empty;
+    public string EmployerContactLastNameSnapshot { get; private set; } = string.Empty;
+    public string EmployerContactPhoneSnapshot { get; private set; } = string.Empty;
+    public string EmployerContactEmailSnapshot { get; private set; } = string.Empty;
+    public string EmployerContactMobileSnapshot { get; private set; } = string.Empty;
+    public int DepositorTypeCodeSnapshot { get; private set; } = 1;
+    public int EmployerIdentifierTypeCodeSnapshot { get; private set; } = 1;
+
+    public void SetEmployerInterfaceSnapshot(string legalName, string registrationNumber, string withholdingFileNumber,
+        string? contactFirstName, string? contactLastName, string? contactPhone, string? contactEmail, string? contactMobile,
+        int depositorTypeCode, int employerIdentifierTypeCode)
+    {
+        EnsureEditable();
+        if (string.IsNullOrWhiteSpace(legalName)) throw new ArgumentException("Employer legal name is required.", nameof(legalName));
+        if (string.IsNullOrWhiteSpace(registrationNumber)) throw new ArgumentException("Employer registration number is required.", nameof(registrationNumber));
+        if (depositorTypeCode is < 1 or > 3) throw new ArgumentOutOfRangeException(nameof(depositorTypeCode));
+        if (employerIdentifierTypeCode is not (1 or 2 or 3 or 4 or 5 or 7 or 8 or 9 or 10 or 11 or 12 or 13))
+            throw new ArgumentOutOfRangeException(nameof(employerIdentifierTypeCode));
+
+        EmployerLegalNameSnapshot = legalName.Trim();
+        EmployerRegistrationNumberSnapshot = registrationNumber.Trim();
+        EmployerWithholdingFileNumberSnapshot = withholdingFileNumber?.Trim() ?? string.Empty;
+        EmployerContactFirstNameSnapshot = contactFirstName?.Trim() ?? string.Empty;
+        EmployerContactLastNameSnapshot = contactLastName?.Trim() ?? string.Empty;
+        EmployerContactPhoneSnapshot = contactPhone?.Trim() ?? string.Empty;
+        EmployerContactEmailSnapshot = contactEmail?.Trim() ?? string.Empty;
+        EmployerContactMobileSnapshot = contactMobile?.Trim() ?? string.Empty;
+        DepositorTypeCodeSnapshot = depositorTypeCode;
+        EmployerIdentifierTypeCodeSnapshot = employerIdentifierTypeCode;
+        Touch();
+    }
+
+    public void CopyEmployerInterfaceSnapshotFrom(ManualReport source) =>
+        SetEmployerInterfaceSnapshot(source.EmployerLegalNameSnapshot, source.EmployerRegistrationNumberSnapshot,
+            source.EmployerWithholdingFileNumberSnapshot, source.EmployerContactFirstNameSnapshot,
+            source.EmployerContactLastNameSnapshot, source.EmployerContactPhoneSnapshot,
+            source.EmployerContactEmailSnapshot, source.EmployerContactMobileSnapshot,
+            source.DepositorTypeCodeSnapshot, source.EmployerIdentifierTypeCodeSnapshot);
+
     public void SetPaymentAccountSnapshot(Guid paymentAccountId, int bankId, int branchId,
         string accountNumberMasked, string? mandateReference)
     {
