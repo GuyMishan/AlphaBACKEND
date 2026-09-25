@@ -706,6 +706,21 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_operation_2_does_not_require_a_payment_row()
+    {
+        var fixture = CreateFixture(false, operationCode: 2, paymentMethodCode: 1);
+        var context = fixture.Context with { Payments = [] };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal("0.00", Assert.Single(result.Document!.Descendants("SACH-HAFKADA-KUPA-H-P")).Value);
+        Assert.Equal("000", Assert.Single(result.Document.Descendants("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Current_no_money_correction_uses_file_date_and_reference_000()
     {
         var fixture = CreateFixture(false, operationCode: 2, paymentMethodCode: 1);
