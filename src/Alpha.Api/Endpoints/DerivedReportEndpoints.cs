@@ -167,6 +167,13 @@ public static class DerivedReportEndpoints
             employeeMap[oldEmployee.Id] = clone;
         }
 
+        var sourceTransferIdentifierByFund = sourceProducts
+            .GroupBy(x => x.FundCode, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).First().Id,
+                StringComparer.Ordinal);
+
         var productMap = new Dictionary<Guid, ManualReportProduct>(sourceProducts.Count);
         foreach (var oldProduct in sourceProducts)
         {
@@ -194,7 +201,7 @@ public static class DerivedReportEndpoints
                     oldMetadata.PaymentMethodCode,
                     oldMetadata.EmployerAccountType,
                     oldMetadata.ReceiverAccountType,
-                    oldProduct.Id.ToString("D"),
+                    sourceTransferIdentifierByFund[oldProduct.FundCode].ToString("D"),
                     null,
                     null,
                     oldMetadata.OldPensionTypeCode);
