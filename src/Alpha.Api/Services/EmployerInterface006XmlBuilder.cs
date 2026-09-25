@@ -130,7 +130,7 @@ public static class EmployerInterface006XmlBuilder
                 Nil("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT",
                     trustDateRelevant ? payment?.TrustAccountValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null),
                 E("MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM", reference),
-                E("MISPAR-ZIHUI", UpperGuid(first.Id)),
+                E("MISPAR-ZIHUI", CurrentTransferIdentifier(metadata, first.Id)),
                 E("MISPAR-BANK-MAASIK", zeroEmployerAccount ? 0 : int.Parse(Digits(payment!.EmployerBankCode), CultureInfo.InvariantCulture)),
                 E("MISPAR-SNIF-MAASIK", zeroEmployerAccount ? "000" : FixedDigits(payment!.EmployerBranch, 3)),
                 E("MISPAR-CHESHBON-MAASIK", zeroEmployerAccount ? new string('0', 20) : FixedDigits(payment!.EmployerAccount, 20)),
@@ -148,7 +148,7 @@ public static class EmployerInterface006XmlBuilder
             else
                 transfer.Add(Nil("KOD-EMTZAI-TASHLUM", null));
             transfer.Add(E("SACH-HAFKADA-KUPA-H-P", Money(reportedDeposit)));
-            transfer.Add(E("MISPAR-ZIHUI", UpperGuid(first.Id)));
+            transfer.Add(E("MISPAR-ZIHUI", CurrentTransferIdentifier(metadata, first.Id)));
             if (metadata.OperationCode == 5 && metadata.PaymentMethodCode == 1)
             {
                 transfer.Add(
@@ -316,7 +316,7 @@ public static class EmployerInterface006XmlBuilder
                         : Nil("SHIUR-HAFRASHA", null));
                 split.Add(E("SCHUM-HAFRASHA", Money(contribution.Amount)));
                 if (!negative) split.Add(E("SACH-TASHLUMIM-PTURIM", Money(contribution.ExemptPayments)));
-                split.Add(E("MISPAR-MEZAHE-RESHUMA", UpperGuid(contribution.Id)), Nil("MISPAR-MEZAHE-RESHUMA-KODEM", contribution.PreviousRecordIdentifier));
+                split.Add(E("MISPAR-MEZAHE-RESHUMA", CurrentRecordIdentifier(contribution)), Nil("MISPAR-MEZAHE-RESHUMA-KODEM", contribution.PreviousRecordIdentifier));
                 salary.Add(split);
             }
             salary.Add(new XElement("SachHafrashaLeKupaBechodeshMaskoretOved",
@@ -682,6 +682,16 @@ public static class EmployerInterface006XmlBuilder
             return c.Payments.FirstOrDefault(x => x.ReportProductId == product.Id)?.ActualDepositAmount > 0;
         return EffectiveContributions(c, product, false).Sum(x => x.Amount) > 0;
     }
+
+    private static string CurrentTransferIdentifier(EmployerInterfaceReportProductData metadata, Guid fallbackId) =>
+        string.IsNullOrWhiteSpace(metadata.InterfaceTransferIdentifier)
+            ? UpperGuid(fallbackId)
+            : metadata.InterfaceTransferIdentifier.Trim().ToUpperInvariant();
+
+    private static string CurrentRecordIdentifier(ManualContribution contribution) =>
+        string.IsNullOrWhiteSpace(contribution.InterfaceRecordIdentifier)
+            ? UpperGuid(contribution.Id)
+            : contribution.InterfaceRecordIdentifier.Trim().ToUpperInvariant();
 
     private static string EmployeeMobile(string? value)
     {
