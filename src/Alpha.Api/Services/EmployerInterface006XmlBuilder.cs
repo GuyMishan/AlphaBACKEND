@@ -582,10 +582,15 @@ public static class EmployerInterface006XmlBuilder
     {
         var payment = c.Payments.FirstOrDefault(x => x.ReportProductId == product.Id);
         if (!requirePayment) return;
-        if (payment is null) { issues.Add($"{label}: payment details are required."); return; }
 
         var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
         var correctionWithoutMoney = metadata?.OperationCode is 2 or 7;
+        if (payment is null)
+        {
+            if (correctionWithoutMoney) return;
+            issues.Add($"{label}: payment details are required.");
+            return;
+        }
         var effectiveDeposit = metadata is null ? 0m : ReportedDepositAmount(c, [product], false);
         var paymentMethod = metadata?.PaymentMethodCode;
 
