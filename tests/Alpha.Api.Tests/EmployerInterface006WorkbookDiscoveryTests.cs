@@ -35,9 +35,7 @@ public sealed class EmployerInterface006WorkbookDiscoveryTests
             if (entry is null) continue;
             var rows = ReadRows(entry, shared);
             lines.Add($"=== {name} ({rows.Count} rows) ===");
-            foreach (var row in rows.Take(12))
-                lines.Add(string.Join(" | ", row));
-            foreach (var row in rows.Where(r => r.Any(v => Keywords.Any(k => v.Contains(k, StringComparison.OrdinalIgnoreCase)))).Take(30))
+            foreach (var row in rows.Where(r => r.Any(v => Keywords.Any(k => v.Contains(k, StringComparison.OrdinalIgnoreCase)))))
                 lines.Add("MATCH: " + string.Join(" | ", row));
         }
 
@@ -54,7 +52,10 @@ public sealed class EmployerInterface006WorkbookDiscoveryTests
         "SACH-HAFRASHOT-BAKOVETZ", "SACH-HAFKADOT-BAKOVETZ", "SUG-MAFKID",
         "MISPAR-TIK-NIKUIM-MAASIK", "SUG-CHESHBON-MAASIK", "SUG-CHESHBON-KOLET-TASHLUM",
         "MISPAR-BANK-MAASIK", "MISPAR-SNIF-MAASIK", "MISPAR-CHESHBON-MAASIK",
-        "MISPAR-BANK-KOLET", "MISPAR-SNIF-KOLET", "MISPAR-CHESHBON-KOLET"
+        "MISPAR-BANK-KOLET", "MISPAR-SNIF-KOLET", "MISPAR-CHESHBON-KOLET",
+        "HASHAVA-KIBUTZI", "HATZHARAT-OVED", "SIBAT-BAKASH-LECHZER-KSAFIM",
+        "TAARICH-ERECH-HAFKADA-LEKUPA", "TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT",
+        "MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM", "KOD-MASAV", "MISPAR-ZIHUI"
     ];
 
     private static string FindRepoRoot()
