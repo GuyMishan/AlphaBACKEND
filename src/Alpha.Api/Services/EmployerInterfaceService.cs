@@ -321,7 +321,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         // stored in Alpha. Keep the official previous identifiers and mark the source as external
         // instead of inventing a local report.
         var report = new ManualReport(organizationId, employerId, reportingMonth, salaryPaymentDate, kind, sourceId,
-            externalSourceReference: isImportedCorrection && sourceId is null);
+            externalSourceReference: isImportedCorrection);
 
         var liveEmployer = await db.Employers.AsNoTracking().SingleAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
         var transferSnapshot = Desc(doc, "PirteiHaavaratKsafim").FirstOrDefault();
