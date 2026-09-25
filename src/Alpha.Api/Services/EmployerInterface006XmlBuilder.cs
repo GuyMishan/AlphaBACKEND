@@ -315,7 +315,7 @@ public static class EmployerInterface006XmlBuilder
                         : Nil("SHIUR-HAFRASHA", null));
                 split.Add(E("SCHUM-HAFRASHA", Money(contribution.Amount)));
                 if (!negative) split.Add(E("SACH-TASHLUMIM-PTURIM", Money(contribution.ExemptPayments)));
-                split.Add(E("MISPAR-MEZAHE-RESHUMA", UpperGuid(contribution.Id)), Nil("MISPAR-MEZAHE-RESHUMA-KODEM", null));
+                split.Add(E("MISPAR-MEZAHE-RESHUMA", UpperGuid(contribution.Id)), Nil("MISPAR-MEZAHE-RESHUMA-KODEM", contribution.PreviousRecordIdentifier));
                 salary.Add(split);
             }
             salary.Add(new XElement("SachHafrashaLeKupaBechodeshMaskoretOved",
