@@ -380,7 +380,25 @@ public static class EmployerInterface006XmlBuilder
                 if (attachment.DocumentTypeCode != 5)
                     issues.Add($"Attachment {attachment.Id}: current Version 006 supports document type 5 only.");
                 if (attachment.ReportProductId is null)
+                {
                     issues.Add($"Attachment {attachment.Id}: document type 5 must be linked to a report product.");
+                }
+                else
+                {
+                    var product = c.Products.FirstOrDefault(x => x.Id == attachment.ReportProductId.Value);
+                    if (product is null)
+                    {
+                        issues.Add($"Attachment {attachment.Id}: linked report product was not found.");
+                    }
+                    else
+                    {
+                        if (product.ProductType != PensionProductType.PensionFund)
+                            issues.Add($"Attachment {attachment.Id}: Version 006 document type 5 is relevant only to a pension fund.");
+                        var productMetadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
+                        if (productMetadata?.EmployeeStatus == 14)
+                            issues.Add($"Attachment {attachment.Id}: Version 006 document type 5 is for an existing employee and must not be used with employee status 14 (new employee).");
+                    }
+                }
                 if (attachment.TransmissionFileName.Length is 0 or > 100)
                     issues.Add($"Attachment {attachment.Id}: transmission file name must contain 1-100 characters.");
             }
