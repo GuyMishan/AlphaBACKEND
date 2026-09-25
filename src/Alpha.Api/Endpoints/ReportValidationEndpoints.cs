@@ -225,8 +225,16 @@ public static class ReportValidationEndpoints
         EmployerInterface006ExportService exporter,
         CancellationToken ct)
     {
-        if (stage != ValidationStage.Final || result.Issues.Count > 0 || result.Report.ReportKind == ManualReportKind.Differences)
+        if (stage != ValidationStage.Final || result.Issues.Count > 0)
             return;
+
+        if (result.Report.ReportKind == ManualReportKind.Differences)
+        {
+            result.Issues.Add(new("DIFFERENCE_REPORT_NOT_TRANSMITTABLE",
+                "דיווח הפרשים הוא טיוטת עבודה ואינו ממשק 006 עצמאי לשידור. יש לממש את ההפרש כדיווח שוטף מתקן או כדיווח שלילי לפני שליחה.",
+                ValidationScope.Report));
+            return;
+        }
 
         var generated = await exporter.ExportAsync(result.Report, ct);
         if (generated.Validation.IsValid) return;
