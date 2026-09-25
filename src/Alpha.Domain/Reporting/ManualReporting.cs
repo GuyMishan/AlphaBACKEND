@@ -34,6 +34,7 @@ public sealed class ManualReport : Entity
         OrganizationId = organizationId; EmployerId = employerId;
         ReportingMonth = new DateOnly(reportingMonth.Year, reportingMonth.Month, 1);
         SalaryPaymentDate = salaryPaymentDate; ReportKind = reportKind; SourceReportId = sourceReportId;
+        ExternalSourceReference = externalSourceReference;
     }
 
     public Guid OrganizationId { get; private set; }
@@ -43,6 +44,7 @@ public sealed class ManualReport : Entity
     public ManualReportStatus Status { get; private set; } = ManualReportStatus.Draft;
     public ManualReportKind ReportKind { get; private set; } = ManualReportKind.Current;
     public Guid? SourceReportId { get; private set; }
+    public bool ExternalSourceReference { get; private set; }
     public DateTimeOffset? SnapshotTakenAt { get; private set; }
     public DateTimeOffset? ValidatedAt { get; private set; }
     public string ValidationError { get; private set; } = string.Empty;
