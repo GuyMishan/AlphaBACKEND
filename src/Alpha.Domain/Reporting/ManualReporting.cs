@@ -314,6 +314,7 @@ public sealed class ManualContribution : Entity
     public decimal Amount { get; private set; }
     public decimal Percentage { get; private set; }
     public decimal ExemptPayments { get; private set; }
+    public string InterfaceRecordIdentifier { get; private set; } = string.Empty;
     public string PreviousRecordIdentifier { get; private set; } = string.Empty;
 
     public void Update(decimal amount, decimal percentage, decimal exemptPayments)
@@ -325,6 +326,19 @@ public sealed class ManualContribution : Entity
         Amount = amount;
         Percentage = percentage;
         ExemptPayments = exemptPayments;
+        Touch();
+    }
+
+    public void SetInterfaceRecordIdentifier(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            InterfaceRecordIdentifier = string.Empty;
+            return;
+        }
+        if (!Guid.TryParseExact(value.Trim(), "D", out var parsed))
+            throw new ArgumentException("Contribution record identifier must be a GUID.", nameof(value));
+        InterfaceRecordIdentifier = parsed.ToString("D").ToUpperInvariant();
         Touch();
     }
 
