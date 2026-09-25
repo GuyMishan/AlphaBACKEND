@@ -25,6 +25,7 @@ public sealed class EmployerInterfaceReportProductData : Entity
     public int? ReceiverAccountType { get; private set; }
     public int? OldPensionTypeCode { get; private set; }
     public string InterfaceTransferIdentifier { get; private set; } = string.Empty;
+    public string ClearingIdentifier { get; private set; } = string.Empty;
     public string PreviousIdentifier { get; private set; } = string.Empty;
     public string PreviousClearingIdentifier { get; private set; } = string.Empty;
     public int? PreviousReferenceExceptionCode { get; private set; }
@@ -32,6 +33,12 @@ public sealed class EmployerInterfaceReportProductData : Entity
     public void SetInterfaceTransferIdentifier(string? value)
     {
         InterfaceTransferIdentifier = NormalizeOptionalGuid(value, nameof(value));
+        Touch();
+    }
+
+    public void SetClearingIdentifier(string? value)
+    {
+        ClearingIdentifier = NormalizeOptionalGuid(value, nameof(value));
         Touch();
     }
 
