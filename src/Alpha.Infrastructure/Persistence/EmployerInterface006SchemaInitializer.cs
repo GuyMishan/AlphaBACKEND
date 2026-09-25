@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS reporting.employer_interface_report_product_data (
     "ReceiverAccountType" integer NULL,
     "OldPensionTypeCode" integer NULL,
     "InterfaceTransferIdentifier" varchar(36) NULL,
+    "ClearingIdentifier" varchar(36) NULL,
     "PreviousIdentifier" varchar(36) NULL,
     "PreviousClearingIdentifier" varchar(36) NULL,
     "PreviousReferenceExceptionCode" integer NULL,
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS reporting.employer_interface_report_product_data (
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "OperationCode" integer NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "OldPensionTypeCode" integer NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "InterfaceTransferIdentifier" varchar(36) NULL;
+ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "ClearingIdentifier" varchar(36) NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "PreviousIdentifier" varchar(36) NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "PreviousClearingIdentifier" varchar(36) NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "PreviousReferenceExceptionCode" integer NULL;
