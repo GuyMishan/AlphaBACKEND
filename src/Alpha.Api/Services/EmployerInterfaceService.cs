@@ -472,14 +472,27 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
     private static string MapProductCode(PensionProductType type) => type switch { PensionProductType.ManagersInsurance => "1", PensionProductType.PensionFund => "2", PensionProductType.ProvidentFund => "3", PensionProductType.StudyFund => "4", _ => "99" };
     private static (ContributionParty, ContributionComponent) MapContribution(string? code) => code switch
     {
-        "1" => (ContributionParty.Employee, ContributionComponent.Benefits), "2" => (ContributionParty.Employer, ContributionComponent.Benefits),
-        "3" => (ContributionParty.Employer, ContributionComponent.Severance), "4" => (ContributionParty.Employer, ContributionComponent.Disability),
-        _ => (ContributionParty.Employer, ContributionComponent.Other)
+        "1" => (ContributionParty.Employer, ContributionComponent.Severance),
+        "2" => (ContributionParty.Employee, ContributionComponent.Severance),
+        "3" => (ContributionParty.Employer, ContributionComponent.Benefits),
+        "4" => (ContributionParty.Employee, ContributionComponent.Benefits),
+        "5" => (ContributionParty.Employee, ContributionComponent.Disability),
+        "6" => (ContributionParty.Employer, ContributionComponent.Disability),
+        "7" => (ContributionParty.Employee, ContributionComponent.Other),
+        "8" => (ContributionParty.Employer, ContributionComponent.Other),
+        _ => throw new InvalidDataException($"Unsupported SUG-HAFRASHA code '{code}'.")
     };
     private static string MapContributionCode(ManualContribution c) => (c.Party, c.Component) switch
     {
-        (ContributionParty.Employee, ContributionComponent.Benefits) => "1", (ContributionParty.Employer, ContributionComponent.Benefits) => "2",
-        (ContributionParty.Employer, ContributionComponent.Severance) => "3", (ContributionParty.Employer, ContributionComponent.Disability) => "4", _ => "9"
+        (ContributionParty.Employer, ContributionComponent.Severance) => "1",
+        (ContributionParty.Employee, ContributionComponent.Severance) => "2",
+        (ContributionParty.Employer, ContributionComponent.Benefits) => "3",
+        (ContributionParty.Employee, ContributionComponent.Benefits) => "4",
+        (ContributionParty.Employee, ContributionComponent.Disability) => "5",
+        (ContributionParty.Employer, ContributionComponent.Disability) => "6",
+        (ContributionParty.Employee, ContributionComponent.Other) => "7",
+        (ContributionParty.Employer, ContributionComponent.Other) => "8",
+        _ => throw new InvalidOperationException("Unsupported contribution mapping.")
     };
 
     public sealed record FileValidation(bool IsValid, EmployerInterfaceDocumentType? DocumentType, string? Version, string? SchemaFileName, IReadOnlyList<string> Issues);
