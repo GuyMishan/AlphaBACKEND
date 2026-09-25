@@ -23,6 +23,7 @@ public sealed class EmployerInterfaceReportProductData : Entity
     public int? PaymentMethodCode { get; private set; }
     public int? EmployerAccountType { get; private set; }
     public int? ReceiverAccountType { get; private set; }
+    public int? OldPensionTypeCode { get; private set; }
     public string PreviousIdentifier { get; private set; } = string.Empty;
     public string PreviousClearingIdentifier { get; private set; } = string.Empty;
     public int? PreviousReferenceExceptionCode { get; private set; }
@@ -31,7 +32,7 @@ public sealed class EmployerInterfaceReportProductData : Entity
         decimal? employmentPercentage, int? workDaysInMonth, int? lastDeposit, int? refundReason,
         int? paymentMethodCode, int? employerAccountType, int? receiverAccountType,
         string? previousIdentifier = null, string? previousClearingIdentifier = null,
-        int? previousReferenceExceptionCode = null)
+        int? previousReferenceExceptionCode = null, int? oldPensionTypeCode = null)
     {
         OperationCode = Allowed(operationCode, [1, 2, 3, 5, 6, 7], nameof(operationCode));
         DepositStatus = Allowed(depositStatus, [1, 2, 3], nameof(depositStatus));
@@ -46,6 +47,7 @@ public sealed class EmployerInterfaceReportProductData : Entity
         PaymentMethodCode = Allowed(paymentMethodCode, [1, 3, 4, 5, 6, 7, 9], nameof(paymentMethodCode));
         EmployerAccountType = Allowed(employerAccountType, [1, 2], nameof(employerAccountType));
         ReceiverAccountType = Allowed(receiverAccountType, [1, 2], nameof(receiverAccountType));
+        OldPensionTypeCode = Allowed(oldPensionTypeCode, [1, 2], nameof(oldPensionTypeCode));
         PreviousIdentifier = NormalizeGuid(previousIdentifier, nameof(previousIdentifier));
         PreviousClearingIdentifier = NormalizeGuid(previousClearingIdentifier, nameof(previousClearingIdentifier));
         PreviousReferenceExceptionCode = Allowed(previousReferenceExceptionCode, [1, 2, 3], nameof(previousReferenceExceptionCode));

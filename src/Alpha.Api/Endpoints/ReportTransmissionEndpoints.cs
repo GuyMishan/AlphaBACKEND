@@ -26,7 +26,11 @@ public static class ReportTransmissionEndpoints
         return Results.Ok(await db.ReportTransmissions.AsNoTracking().Where(x => x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId).OrderByDescending(x => x.AttemptNumber).Select(x => new { x.Id, x.Provider, x.AttemptNumber, x.Status, x.ExternalId, x.PayloadHash, x.ErrorMessage, x.StartedAt, x.SentAt, x.CompletedAt, x.CreatedAt }).ToListAsync(ct));
     }
 
-    private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid reportId, SendReportRequest? request, IAlphaDbContext db, OrganizationAccessService access, EntitlementService entitlements, ReportPaymentAccountService paymentAccounts, BillingGateService billingGate, IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter, CancellationToken ct)
+    private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid reportId, SendReportRequest? request,
+        IAlphaDbContext db, OrganizationAccessService access, EntitlementService entitlements,
+        ReportPaymentAccountService paymentAccounts, BillingGateService billingGate,
+        IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter,
+        EmployerInterfaceFileSequenceService fileSequences, CancellationToken ct)
     {
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
@@ -57,12 +61,25 @@ public static class ReportTransmissionEndpoints
         var provider = providers.FirstOrDefault(x => string.Equals(x.Name, providerName, StringComparison.OrdinalIgnoreCase));
         if (provider is null) return Results.BadRequest(new { error = "The selected transmission provider does not exist.", provider = providerName });
 
-        var generated = await exporter.ExportAsync(report, ct);
+        EmployerInterfaceFileSequenceService.Reservation reservation;
+        try
+        {
+            reservation = await fileSequences.ReserveAsync(employerId, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(new { error = ex.Message });
+        }
+
+        var generated = await exporter.ExportAsync(report, ct, reservation.Sequence, reservation.PreparedAt);
         if (!generated.Validation.IsValid)
             return Results.BadRequest(new { error = "Generated Employer Interface XML failed its report-type-specific official Version 006 XSD validation and was not transmitted.", generated.Validation });
 
         var payloadBytes = generated.Bytes;
         var hash = EmployerInterfaceService.Hash(payloadBytes);
+        var attachmentFiles = (generated.AttachmentFiles ?? [])
+            .Select(x => new ReportTransmissionAttachment(x.FileName, x.ContentType, x.Content, x.Sha256))
+            .ToArray();
         var attemptNumber = (await db.ReportTransmissions.Where(x => x.ReportId == reportId).MaxAsync(x => (int?)x.AttemptNumber, ct) ?? 0) + 1;
         var transmission = new ReportTransmission(reportId, organizationId, employerId, provider.Name, attemptNumber);
         transmission.Start(hash);
@@ -72,7 +89,8 @@ public static class ReportTransmissionEndpoints
 
         try
         {
-            var result = await provider.SendAsync(new ReportTransmissionEnvelope(reportId, organizationId, employerId, payloadBytes, hash), ct);
+            var result = await provider.SendAsync(new ReportTransmissionEnvelope(reportId, organizationId, employerId,
+                payloadBytes, hash, attachmentFiles, generated.PayloadFileName), ct);
             transmission.Complete(result.Success ? ReportTransmissionStatus.Accepted : ReportTransmissionStatus.Rejected, result.ExternalId, result.ResponsePayload, result.ErrorMessage);
             if (result.Success) report.MarkSent(); else report.MarkTransmissionError(result.ErrorMessage ?? "The report was rejected by the transmission provider.");
             await db.SaveChangesAsync(ct);

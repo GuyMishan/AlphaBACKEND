@@ -4,16 +4,18 @@ This directory contains the official Employer Interface Version 006 specificatio
 
 ## Specification sources
 
-Alpha uses two complementary official sources in this directory:
+Alpha uses three complementary official source groups:
 
 1. `Employer interface V 6.xlsx` — the business/codebook specification. It is the source of truth for code meanings, field applicability, conditional business rules, employer-responsibility error codes, and other rules that are not fully expressed by the XSD alone.
 2. The Version 006 XSD files — the structural/schema specification. They are the source of truth for XML structure, ordering, data types, allowed XML values, required/nillable elements, and final XML validation.
+3. `docs/specifications/mislaka/` — the pension clearinghouse operational/system rules supplied for Version 6.0. These are the source of truth for clearinghouse-side validation overlays, operation/payment compatibility, changed mandatory-field rules, and later the feedback/status lifecycle.
 
-Neither source replaces the other. A generated Employer Interface document must satisfy both the workbook business rules and the matching official XSD.
+No source replaces the others. A generated Employer Interface document must satisfy the workbook business rules, the clearinghouse operational rules that apply before transmission, and the matching official XSD.
 
 ### Precedence rule
 
 - Use the workbook when deciding what a code means, when a field is business-relevant, and which conditional rule applies.
+- Use the clearinghouse system rules when they add or change clearinghouse validation behavior for Version 6.0 (for example contact-mobile validation, operation/payment compatibility, or conditional bank fields).
 - Use the XSD when deciding the exact XML shape, element order, type, cardinality, and whether an element must still be emitted as `xsi:nil`.
 - If the workbook marks a field as not relevant but the XSD still requires its element positionally, Alpha emits the element as `xsi:nil` rather than inventing a value.
 - Do not invent business labels or code meanings that are not present in the official specification.
@@ -81,15 +83,23 @@ Recipient/provider identity remains externally configured under `EmployerInterfa
 
 Official V6 code labels and allowed values are seeded into database-backed reference-data tables. The workbook is the documentation/source used to maintain these initializers; runtime screens read the resulting reference data through the backend APIs.
 
-When the official workbook is updated in the future:
+When any official source is updated in the future:
 
-1. replace/add the official specification file in this directory,
-2. compare the changed sheets/codes/business rules,
+1. replace/add the official specification file under `docs/specifications/`,
+2. compare the changed workbook/XSD/clearinghouse rules,
 3. update the relevant reference-data initializer and validation/builder rules,
 4. update/add tests,
-5. validate generated current and negative XML against the corresponding official XSDs.
+5. validate generated current and negative XML against the corresponding official XSDs and clearinghouse pre-send rules.
 
 Do not parse the XLS at runtime in production as a substitute for versioned application logic. The committed workbook documents the official source; Alpha's versioned DB seeds and code implement it deterministically.
+
+## Deferred integration checks
+
+The following items are intentionally deferred until the real clearinghouse integration/testing phase and must be re-verified against actual clearinghouse behavior before production transmission:
+
+- Birth-date wire format: the clearinghouse rules document states `DD-MM-YYYY`, while the official Version 006 XSD declares `TAARICH-LEIDA` as `xsd:date`, which serializes as `YYYY-MM-DD`. Keep XSD-valid output for now and verify the accepted wire format during clearinghouse integration.
+- Employee identifier type (`SUG-MEZAHE-OVED`): Alpha currently emits type `1`. Add/verify support for the other official identifier type when a real use case is introduced.
+- Old pension fund subtype (`SUG-KEREN-PENSIA`): Alpha currently emits `xsi:nil`. Add/verify support for old-pension-fund cases when needed and during clearinghouse integration.
 
 ## Testing
 

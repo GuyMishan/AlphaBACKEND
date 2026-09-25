@@ -1,3 +1,4 @@
+using Alpha.Api.Services;
 using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
@@ -32,20 +33,26 @@ public static class ReportValidationEndpoints
     }
 
     private static async Task<IResult> PreviewValidationAsync(Guid organizationId, Guid employerId, Guid reportId,
-        string? stage, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        string? stage, IAlphaDbContext db, OrganizationAccessService access,
+        EmployerInterface006ExportService employerInterfaceExporter, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-        var result = await ValidateReportAsync(organizationId, employerId, reportId, NormalizeStage(stage), db, false, ct);
-        return result is null ? Results.NotFound() : Results.Ok(ToResponse(result));
+        var normalizedStage = NormalizeStage(stage);
+        var result = await ValidateReportAsync(organizationId, employerId, reportId, normalizedStage, db, false, ct);
+        if (result is null) return Results.NotFound();
+        await AppendEmployerInterfacePreflightAsync(result, normalizedStage, employerInterfaceExporter, ct);
+        return Results.Ok(ToResponse(result));
     }
 
     private static async Task<IResult> CommitValidationAsync(Guid organizationId, Guid employerId, Guid reportId,
-        string? stage, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        string? stage, IAlphaDbContext db, OrganizationAccessService access,
+        EmployerInterface006ExportService employerInterfaceExporter, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var normalizedStage = NormalizeStage(stage);
         var result = await ValidateReportAsync(organizationId, employerId, reportId, normalizedStage, db, true, ct);
         if (result is null) return Results.NotFound();
+        await AppendEmployerInterfacePreflightAsync(result, normalizedStage, employerInterfaceExporter, ct);
 
         if (result.Report.Status is ManualReportStatus.Submitted or ManualReportStatus.Sent
             or ManualReportStatus.Processing or ManualReportStatus.Completed or ManualReportStatus.Cancelled)
@@ -127,8 +134,6 @@ public static class ReportValidationEndpoints
             var employeeProducts = productsByEmployee.GetValueOrDefault(employee.Id) ?? [];
             var employeeName = $"{employee.FirstName} {employee.LastName}".Trim();
 
-            if (employee.MonthlySalary <= 0)
-                issues.Add(new("MONTHLY_SALARY_REQUIRED", $"לעובד {employeeName} חסר שכר חודשי.", ValidationScope.Employee, employee.Id));
             if (string.IsNullOrWhiteSpace(employee.NationalId))
                 issues.Add(new("NATIONAL_ID_REQUIRED", $"לעובד {employeeName} חסרה תעודת זהות.", ValidationScope.Employee, employee.Id));
             if (employeeProducts.Count == 0)
@@ -143,12 +148,8 @@ public static class ReportValidationEndpoints
 
             foreach (var product in employeeProducts)
             {
-                if (product.Salary <= 0)
-                    issues.Add(new("INSURED_SALARY_REQUIRED", $"למוצר {ProductLabel(product)} של {employeeName} חסר שכר מבוטח.", ValidationScope.Product, employee.Id, product.Id));
                 if (product.ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(product.FundExternalKey))
                     issues.Add(new("FUND_REQUIRED", $"למוצר {ProductLabel(product)} של {employeeName} לא נבחרה קופה.", ValidationScope.Product, employee.Id, product.Id));
-                if (string.IsNullOrWhiteSpace(product.PolicyNumber))
-                    issues.Add(new("POLICY_NUMBER_REQUIRED", $"למוצר של {employeeName} חסר מספר פוליסה/חשבון.", ValidationScope.Product, employee.Id, product.Id));
             }
 
             var inputs = employeeProducts.Select(product => new ManualProductInput(
@@ -160,10 +161,12 @@ public static class ReportValidationEndpoints
                 product.SalaryLayer,
                 product.Section14,
                 product.Section14StartDate,
+                product.Section14Code,
                 product.FundExternalKey,
                 product.FundCode,
                 product.FundName,
                 product.FundCompanyName,
+                product.FundClassification,
                 product.SalaryAllocationType,
                 product.SalaryAllocationValue,
                 product.AllocationOrder,
@@ -173,7 +176,7 @@ public static class ReportValidationEndpoints
                     .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray()
             )).ToArray();
 
-            foreach (var error in ApiInputValidation.Products(inputs, limits))
+            foreach (var error in ApiInputValidation.Products(inputs, limits, enforcePolicyPercentageLimits: false))
                 issues.Add(new("PRODUCT_VALIDATION", $"{employeeName}: {error}", ValidationScope.Contribution, employee.Id));
         }
 
@@ -181,25 +184,55 @@ public static class ReportValidationEndpoints
         {
             var payments = await db.ManualReportPayments.AsNoTracking()
                 .Where(x => productIds.Contains(x.ReportProductId)).ToDictionaryAsync(x => x.ReportProductId, ct);
+            var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+                .Where(x => productIds.Contains(x.ReportProductId)).ToDictionaryAsync(x => x.ReportProductId, ct);
             var employeeById = employees.ToDictionary(x => x.Id);
             foreach (var product in products)
             {
                 var employee = employeeById[product.ReportEmployeeId];
                 var employeeName = $"{employee.FirstName} {employee.LastName}".Trim();
+                metadata.TryGetValue(product.Id, out var productMetadata);
+                var negativeCancellationWithoutRefund = report.ReportKind == ManualReportKind.Negative
+                    && productMetadata?.OperationCode == 6;
+
                 if (!payments.TryGetValue(product.Id, out var payment))
                 {
-                    issues.Add(new("PAYMENT_REQUIRED", $"חסרים פרטי אמצעי תשלום עבור {employeeName}, פוליסה {product.PolicyNumber}.", ValidationScope.Payment, employee.Id, product.Id));
+                    if (!negativeCancellationWithoutRefund)
+                        issues.Add(new("PAYMENT_REQUIRED", $"חסרים פרטי אמצעי תשלום עבור {employeeName}, פוליסה {product.PolicyNumber}.", ValidationScope.Payment, employee.Id, product.Id));
                     continue;
                 }
+
+                if (negativeCancellationWithoutRefund)
+                    continue;
+
                 var request = new SaveManualReportPaymentRequest(payment.ProviderName, payment.ProviderAccount,
                     payment.PaymentMethod, payment.ValueDate, payment.ReferenceNumber, payment.EmployerBankName,
-                    payment.EmployerBankCode, payment.EmployerBranch, payment.EmployerAccount, payment.ConfirmationFileName);
-                foreach (var error in ApiInputValidation.Payment(request))
+                    payment.EmployerBankCode, payment.EmployerBranch, payment.EmployerAccount, payment.ConfirmationFileName,
+                    payment.TrustAccountValueDate, payment.ActualDepositAmount, payment.MasavSenderCode);
+                var totalDeposit = contributions.Where(x => x.ReportProductId == product.Id).Sum(x => x.Amount);
+                foreach (var error in ApiInputValidation.Payment(request, totalDeposit,
+                    productMetadata?.OperationCode, productMetadata?.EmployerAccountType, productMetadata?.ReceiverAccountType))
                     issues.Add(new("PAYMENT_VALIDATION", $"{employeeName}, פוליסה {product.PolicyNumber}: {error}", ValidationScope.Payment, employee.Id, product.Id));
             }
         }
 
         return new ValidationContext(report, employees, products, productsByEmployee, issues);
+    }
+
+    private static async Task AppendEmployerInterfacePreflightAsync(
+        ValidationContext result,
+        ValidationStage stage,
+        EmployerInterface006ExportService exporter,
+        CancellationToken ct)
+    {
+        if (stage != ValidationStage.Final || result.Issues.Count > 0 || result.Report.ReportKind == ManualReportKind.Differences)
+            return;
+
+        var generated = await exporter.ExportAsync(result.Report, ct);
+        if (generated.Validation.IsValid) return;
+
+        foreach (var issue in generated.Validation.Issues.Distinct(StringComparer.Ordinal).Take(100))
+            result.Issues.Add(new("EMPLOYER_INTERFACE_006", issue, ValidationScope.Report));
     }
 
     private static object ToResponse(ValidationContext result) => new

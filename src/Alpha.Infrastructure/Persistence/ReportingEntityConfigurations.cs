@@ -24,6 +24,7 @@ public sealed class EmployeePensionProductConfiguration : IEntityTypeConfigurati
         b.Property(x => x.FundCode).HasColumnName("fund_code").HasMaxLength(100);
         b.Property(x => x.FundName).HasColumnName("fund_name").HasMaxLength(300);
         b.Property(x => x.FundCompanyName).HasColumnName("fund_company_name").HasMaxLength(300);
+        b.Property(x => x.FundClassification).HasColumnName("fund_classification").HasMaxLength(200);
         b.Property(x => x.SalaryAllocationType).HasConversion<string>().HasMaxLength(30);
         b.Property(x => x.SalaryAllocationValue).HasPrecision(18, 4);
         b.HasIndex(x => x.EmploymentId);
@@ -100,6 +101,7 @@ public sealed class ManualReportProductConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.FundCode).HasColumnName("fund_code").HasMaxLength(100);
         b.Property(x => x.FundName).HasColumnName("fund_name").HasMaxLength(300);
         b.Property(x => x.FundCompanyName).HasColumnName("fund_company_name").HasMaxLength(300);
+        b.Property(x => x.FundClassification).HasColumnName("fund_classification").HasMaxLength(200);
         b.Property(x => x.SalaryAllocationType).HasConversion<string>().HasMaxLength(30);
         b.Property(x => x.SalaryAllocationValue).HasPrecision(18, 4);
         b.Property(x => x.ValidationStatus).HasConversion<string>().HasMaxLength(40);
@@ -125,6 +127,25 @@ public sealed class ManualContributionConfiguration : IEntityTypeConfiguration<M
     }
 }
 
+public sealed class ManualReportAttachmentConfiguration : IEntityTypeConfiguration<ManualReportAttachment>
+{
+    public void Configure(EntityTypeBuilder<ManualReportAttachment> b)
+    {
+        b.ToTable("manual_report_attachments", "reporting");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.OriginalFileName).HasMaxLength(260).IsRequired();
+        b.Property(x => x.TransmissionFileName).HasMaxLength(100).IsRequired();
+        b.Property(x => x.ContentType).HasMaxLength(120).IsRequired();
+        b.Property(x => x.Content).IsRequired();
+        b.Property(x => x.Sha256).HasMaxLength(64).IsRequired();
+        b.HasIndex(x => x.ReportId);
+        b.HasIndex(x => x.ReportProductId);
+        b.HasIndex(x => new { x.ReportId, x.TransmissionFileName }).IsUnique();
+        b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ManualReportProduct>().WithMany().HasForeignKey(x => x.ReportProductId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class ManualReportPaymentConfiguration : IEntityTypeConfiguration<ManualReportPayment>
 {
     public void Configure(EntityTypeBuilder<ManualReportPayment> b)
@@ -134,6 +155,9 @@ public sealed class ManualReportPaymentConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.ProviderName).HasMaxLength(160);
         b.Property(x => x.ProviderAccount).HasMaxLength(120);
         b.Property(x => x.PaymentMethod).HasMaxLength(80);
+        b.Property(x => x.TrustAccountValueDate);
+        b.Property(x => x.ActualDepositAmount).HasPrecision(15, 2);
+        b.Property(x => x.MasavSenderCode).HasMaxLength(16);
         b.Property(x => x.ReferenceNumber).HasMaxLength(120);
         b.Property(x => x.EmployerBankName).HasMaxLength(120);
         b.Property(x => x.EmployerBankCode).HasMaxLength(30);

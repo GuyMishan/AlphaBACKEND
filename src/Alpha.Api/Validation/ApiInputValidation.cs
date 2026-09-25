@@ -42,7 +42,7 @@ public static class ApiInputValidation
     }
 
     public static IReadOnlyList<string> Products(IReadOnlyCollection<ManualProductInput> products,
-        IReadOnlyCollection<ContributionPercentageLimit> limits)
+        IReadOnlyCollection<ContributionPercentageLimit> limits, bool enforcePolicyPercentageLimits = true)
     {
         var errors = new List<string>();
         if (products.Count == 0) errors.Add("יש להגדיר לפחות מוצר פנסיוני אחד לעובד.");
@@ -56,37 +56,64 @@ public static class ApiInputValidation
         {
             index++;
             var prefix = $"מוצר {index}: ";
-            if (string.IsNullOrWhiteSpace(product.PolicyNumber)) errors.Add(prefix + "מספר פוליסה הוא שדה חובה.");
-            if (product.PolicyNumber?.Trim().Length > 100) errors.Add(prefix + "מספר פוליסה ארוך מדי.");
-            if (product.Salary <= 0) errors.Add(prefix + "השכר חייב להיות גדול מאפס.");
+            if (product.PolicyNumber?.Trim().Length > 20) errors.Add(prefix + "מספר פוליסה/חשבון יכול להכיל עד 20 תווים לפי ממשק מעסיקים 006.");
+            if (product.Salary < 0) errors.Add(prefix + "השכר לא יכול להיות שלילי.");
             if (product.Salary > 10_000_000) errors.Add(prefix + "השכר חורג מהטווח המותר.");
             if (product.SalaryMonth.Year < 2000 || product.SalaryMonth > DateOnly.FromDateTime(DateTime.UtcNow.AddYears(1))) errors.Add(prefix + "חודש השכר אינו תקין.");
             if (string.IsNullOrWhiteSpace(product.ReportingType)) errors.Add(prefix + "סוג דיווח הוא שדה חובה.");
             if (string.IsNullOrWhiteSpace(product.SalaryLayer)) errors.Add(prefix + "רובד שכר הוא שדה חובה.");
-            if (product.Section14 && product.Section14StartDate is null) errors.Add(prefix + "יש להזין תאריך תחילת סעיף 14.");
-            if (product.Section14StartDate is { } section14Date && section14Date > DateOnly.FromDateTime(DateTime.UtcNow)) errors.Add(prefix + "תאריך תחילת סעיף 14 לא יכול להיות בעתיד.");
-
-            if (!product.EmployerContributions.Concat(product.EmployeeContributions).Any(x => x.Amount > 0))
-                errors.Add(prefix + "יש להזין לפחות רכיב הפקדה אחד עם סכום גדול מאפס.");
+            var section14Code = product.Section14Code ?? (product.Section14
+                ? product.Section14StartDate.HasValue ? 2 : 1
+                : product.Section14StartDate.HasValue ? 4 : 3);
+            if (section14Code is < 1 or > 5)
+                errors.Add(prefix + "קוד סעיף 14 אינו תקין.");
+            if (section14Code is 2 or 4 && product.Section14StartDate is null)
+                errors.Add(prefix + "יש להזין תאריך תחולה/ביטול לסעיף 14.");
+            if (section14Code is not (2 or 4) && product.Section14StartDate is not null)
+                errors.Add(prefix + "אין להעביר תאריך סעיף 14 עבור הקוד שנבחר.");
+            if (product.Section14StartDate is { } section14Date && section14Date > DateOnly.FromDateTime(DateTime.UtcNow))
+                errors.Add(prefix + "תאריך תחולה/ביטול סעיף 14 לא יכול להיות בעתיד.");
 
             ValidateContributions(errors, prefix, product.SalaryMonth.Year, product.ProductType, ContributionParty.Employer,
-                product.Salary, product.EmployerContributions, limits);
+                product.Salary, product.EmployerContributions, limits, enforcePolicyPercentageLimits);
             ValidateContributions(errors, prefix, product.SalaryMonth.Year, product.ProductType, ContributionParty.Employee,
-                product.Salary, product.EmployeeContributions, limits);
+                product.Salary, product.EmployeeContributions, limits, enforcePolicyPercentageLimits);
         }
         return errors;
     }
 
-    public static IReadOnlyList<string> Payment(SaveManualReportPaymentRequest request)
+    public static IReadOnlyList<string> Payment(SaveManualReportPaymentRequest request, decimal? totalDeposit = null,
+        int? operationCode = null, int? employerAccountType = null, int? receiverAccountType = null)
     {
         var errors = new List<string>();
+        var paymentMethod = request.PaymentMethod?.Trim() ?? string.Empty;
+        var bankTransfer = paymentMethod is "1" or "העברה בנקאית";
+        var masav = paymentMethod is "7" or "מס״ב" or "מס\"ב";
+        var noMoneyCorrection = operationCode is 2 or 7;
+        var effectiveDeposit = operationCode == 3 ? request.ActualDepositAmount : totalDeposit;
+        var hasPositiveDeposit = !noMoneyCorrection && (!effectiveDeposit.HasValue || effectiveDeposit.Value > 0);
+        var receiverAccountRequired = !noMoneyCorrection && (masav || (bankTransfer && hasPositiveDeposit));
+        var employerBranchAccountRequired = (bankTransfer || masav) && hasPositiveDeposit;
+
         if (string.IsNullOrWhiteSpace(request.ProviderName)) errors.Add("שם יצרן / מוצר הוא שדה חובה.");
-        if (string.IsNullOrWhiteSpace(request.ProviderAccount)) errors.Add("חשבון יצרן לזיכוי הוא שדה חובה.");
-        if (string.IsNullOrWhiteSpace(request.PaymentMethod)) errors.Add("אופן התשלום הוא שדה חובה.");
-        if (request.PaymentMethod == "העברה בנקאית" || request.PaymentMethod == "מס״ב")
+        if (receiverAccountRequired && string.IsNullOrWhiteSpace(request.ProviderAccount)) errors.Add("חשבון יצרן לזיכוי הוא שדה חובה לפי כללי אמצעי התשלום בממשק 006.");
+        if (string.IsNullOrWhiteSpace(paymentMethod)) errors.Add("אופן התשלום הוא שדה חובה.");
+
+        if (!noMoneyCorrection && receiverAccountType == 1 && paymentMethod is not ("6" or "9") && request.ValueDate is null)
+            errors.Add("תאריך ערך הפקדה לקופה הוא שדה חובה כאשר החשבון הקולט הוא חשבון יצרן.");
+        if (!noMoneyCorrection && employerAccountType == 2 && request.TrustAccountValueDate is null)
+            errors.Add("בהעברה באמצעות חשבון נאמנות חובה להזין תאריך ערך הפקדה לחשבון הנאמנות.");
+        if (operationCode == 3 && (request.ActualDepositAmount is null or <= 0))
+            errors.Add("בקוד פעולה 3 יש להזין סכום הפקדה נוספת בפועל הגדול מאפס.");
+        if (masav && (string.IsNullOrWhiteSpace(request.MasavSenderCode)
+            || request.MasavSenderCode.Trim().Length is < 8 or > 16))
+            errors.Add("בסליקה באמצעות מס״ב יש להזין קוד מס״ב פנימי באורך 8–16 תווים.");
+        if (!noMoneyCorrection && hasPositiveDeposit && (paymentMethod is "1" or "העברה בנקאית" or "3")
+            && string.IsNullOrWhiteSpace(request.ReferenceNumber))
+            errors.Add("מספר אסמכתא בפועל הוא שדה חובה באמצעי תשלום זה.");
+
+        if (employerBranchAccountRequired)
         {
-            if (request.ValueDate is null) errors.Add("תאריך ערך הוא שדה חובה בהעברה בנקאית / מס״ב.");
-            if (string.IsNullOrWhiteSpace(request.ReferenceNumber)) errors.Add("מספר אסמכתא הוא שדה חובה בהעברה בנקאית / מס״ב.");
             if (string.IsNullOrWhiteSpace(request.EmployerBankCode) || !Digits.IsMatch(request.EmployerBankCode.Trim())) errors.Add("מספר בנק חייב להכיל ספרות בלבד.");
             if (string.IsNullOrWhiteSpace(request.EmployerBranch) || !Digits.IsMatch(request.EmployerBranch.Trim())) errors.Add("מספר סניף חייב להכיל ספרות בלבד.");
             if (string.IsNullOrWhiteSpace(request.EmployerAccount) || !Digits.IsMatch(request.EmployerAccount.Trim())) errors.Add("מספר חשבון מעסיק חייב להכיל ספרות בלבד.");
@@ -97,33 +124,33 @@ public static class ApiInputValidation
 
     private static void ValidateContributions(List<string> errors, string prefix, int year, PensionProductType productType,
         ContributionParty party, decimal salary, IReadOnlyCollection<ManualContributionInput> items,
-        IReadOnlyCollection<ContributionPercentageLimit> limits)
+        IReadOnlyCollection<ContributionPercentageLimit> limits, bool enforcePolicyPercentageLimits)
     {
-        if (items.GroupBy(x => x.Component).Any(g => g.Count() > 1))
+        if (items.GroupBy(x => x.Component).Any(g => g.Count() > 1
+            && !(party == ContributionParty.Employee && g.Key == ContributionComponent.Benefits)))
         {
-            errors.Add(prefix + "כל רכיב הפקדה יכול להופיע פעם אחת בלבד לכל צד.");
+            errors.Add(prefix + "כל רכיב הפקדה יכול להופיע פעם אחת בלבד לכל צד, למעט תגמולים 47 (קוד 4).");
             return;
         }
 
         foreach (var item in items)
         {
             var side = party == ContributionParty.Employer ? "מעסיק" : "עובד";
-            if (item.Amount < 0 || item.Percentage < 0 || item.ExemptPayments < 0)
+            if (item.Amount < 0 || item.Percentage < 0)
                 errors.Add(prefix + $"ערכי הפקדת {side} לא יכולים להיות שליליים.");
-            if (item.Amount > 0 && item.Percentage <= 0)
-                errors.Add(prefix + $"יש להזין אחוז עבור {ComponentName(item.Component)} של {side}.");
-            if (item.Percentage > 0 && item.Amount <= 0)
-                errors.Add(prefix + $"יש להזין סכום עבור {ComponentName(item.Component)} של {side}.");
 
-            var limit = limits.FirstOrDefault(x => x.Year == year && x.ProductType == productType
-                && x.Party == party && x.Component == item.Component);
-            if (limit is null)
+            if (enforcePolicyPercentageLimits)
             {
-                errors.Add(prefix + $"לא הוגדר גבול אחוזים לשנת {year}, {ProductName(productType)}, {ComponentName(item.Component)} ({side}).");
-            }
-            else if (item.Percentage > limit.MaxPercentage)
-            {
-                errors.Add(prefix + $"אחוז {ComponentName(item.Component)} של {side} חורג מהמקסימום לשנת {year} ({limit.MaxPercentage:0.##}%).");
+                var limit = limits.FirstOrDefault(x => x.Year == year && x.ProductType == productType
+                    && x.Party == party && x.Component == item.Component);
+                if (limit is null)
+                {
+                    errors.Add(prefix + $"לא הוגדר גבול אחוזים לשנת {year}, {ProductName(productType)}, {ComponentName(item.Component)} ({side}).");
+                }
+                else if (item.Percentage > limit.MaxPercentage)
+                {
+                    errors.Add(prefix + $"אחוז {ComponentName(item.Component)} של {side} חורג מהמקסימום לשנת {year} ({limit.MaxPercentage:0.##}%).");
+                }
             }
 
             if (item.ExemptPayments > item.Amount)

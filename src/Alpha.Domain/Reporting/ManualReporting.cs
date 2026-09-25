@@ -93,11 +93,11 @@ public sealed class ManualReportEmployee : Entity
 public sealed class ManualReportProduct : Entity
 {
     private ManualReportProduct() { }
-    public ManualReportProduct(Guid reportEmployeeId, PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary, string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate, string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null, SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null, int allocationOrder = 0, int? section14Code = null)
+    public ManualReportProduct(Guid reportEmployeeId, PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary, string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate, string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null, SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null, int allocationOrder = 0, int? section14Code = null, string? fundClassification = null)
     {
         ReportEmployeeId = reportEmployeeId;
         Update(productType, policyNumber, salaryMonth, salary, reportingType, salaryLayer, section14, section14StartDate,
-            fundExternalKey, fundCode, fundName, fundCompanyName, salaryAllocationType, salaryAllocationValue, allocationOrder, section14Code);
+            fundExternalKey, fundCode, fundName, fundCompanyName, salaryAllocationType, salaryAllocationValue, allocationOrder, section14Code, fundClassification);
     }
 
     public Guid ReportEmployeeId { get; private set; }
@@ -114,6 +114,7 @@ public sealed class ManualReportProduct : Entity
     public string FundCode { get; private set; } = string.Empty;
     public string FundName { get; private set; } = string.Empty;
     public string FundCompanyName { get; private set; } = string.Empty;
+    public string FundClassification { get; private set; } = string.Empty;
     public SalaryAllocationType SalaryAllocationType { get; private set; } = SalaryAllocationType.Fixed;
     public decimal? SalaryAllocationValue { get; private set; }
     public int AllocationOrder { get; private set; }
@@ -124,15 +125,17 @@ public sealed class ManualReportProduct : Entity
         string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate,
         string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null,
         SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
-        int allocationOrder = 0, int? section14Code = null)
+        int allocationOrder = 0, int? section14Code = null, string? fundClassification = null)
     {
         if (salary < 0) throw new ArgumentOutOfRangeException(nameof(salary));
+        if ((policyNumber?.Trim().Length ?? 0) > 20)
+            throw new ArgumentOutOfRangeException(nameof(policyNumber), "Policy/account number cannot exceed 20 characters in Employer Interface 006.");
         if (allocationOrder < 0) throw new ArgumentOutOfRangeException(nameof(allocationOrder));
         if (salaryAllocationValue < 0) throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue));
         if (salaryAllocationType == SalaryAllocationType.Percentage && salaryAllocationValue > 100)
             throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue));
         var resolvedSection14Code = section14Code ?? (!section14 && section14StartDate.HasValue ? 4 : !section14 ? 3 : section14StartDate.HasValue ? 2 : 1);
-        if (resolvedSection14Code is < 1 or > 4) throw new ArgumentOutOfRangeException(nameof(section14Code));
+        if (resolvedSection14Code is < 1 or > 5) throw new ArgumentOutOfRangeException(nameof(section14Code));
         if (resolvedSection14Code is 2 or 4 && !section14StartDate.HasValue)
             throw new ArgumentException("Section 14 effective/cancellation date is required for codes 2 and 4.", nameof(section14StartDate));
 
@@ -149,6 +152,7 @@ public sealed class ManualReportProduct : Entity
         FundCode = fundCode?.Trim() ?? string.Empty;
         FundName = fundName?.Trim() ?? string.Empty;
         FundCompanyName = fundCompanyName?.Trim() ?? string.Empty;
+        FundClassification = fundClassification?.Trim() ?? string.Empty;
         SalaryAllocationType = salaryAllocationType;
         SalaryAllocationValue = salaryAllocationType == SalaryAllocationType.Remainder ? null : salaryAllocationValue;
         AllocationOrder = allocationOrder;
@@ -165,13 +169,40 @@ public sealed class ManualContribution : Entity
     private ManualContribution() { }
     public ManualContribution(Guid reportProductId, ContributionParty party, ContributionComponent component, decimal amount, decimal percentage, decimal exemptPayments) { ReportProductId = reportProductId; Party = party; Component = component; Update(amount, percentage, exemptPayments); }
     public Guid ReportProductId { get; private set; } public ContributionParty Party { get; private set; } public ContributionComponent Component { get; private set; } public decimal Amount { get; private set; } public decimal Percentage { get; private set; } public decimal ExemptPayments { get; private set; }
-    public void Update(decimal amount, decimal percentage, decimal exemptPayments) { if (amount < 0 || percentage < 0 || exemptPayments < 0) throw new ArgumentOutOfRangeException(nameof(amount), "Contribution values cannot be negative."); Amount = amount; Percentage = percentage; ExemptPayments = exemptPayments; Touch(); }
+    public void Update(decimal amount, decimal percentage, decimal exemptPayments)
+    {
+        if (amount < 0 || percentage < 0)
+            throw new ArgumentOutOfRangeException(nameof(amount), "Contribution amount and percentage cannot be negative.");
+        if (percentage > 100)
+            throw new ArgumentOutOfRangeException(nameof(percentage), "Contribution percentage cannot exceed 100%.");
+        Amount = amount;
+        Percentage = percentage;
+        ExemptPayments = exemptPayments;
+        Touch();
+    }
 }
 
 public sealed class ManualReportPayment : Entity
 {
     private ManualReportPayment() { }
     public ManualReportPayment(Guid reportProductId) { ReportProductId = reportProductId; }
-    public Guid ReportProductId { get; private set; } public string ProviderName { get; private set; } = string.Empty; public string ProviderAccount { get; private set; } = string.Empty; public string PaymentMethod { get; private set; } = "העברה בנקאית"; public DateOnly? ValueDate { get; private set; } public string ReferenceNumber { get; private set; } = string.Empty; public string EmployerBankName { get; private set; } = string.Empty; public string EmployerBankCode { get; private set; } = string.Empty; public string EmployerBranch { get; private set; } = string.Empty; public string EmployerAccount { get; private set; } = string.Empty; public string ConfirmationFileName { get; private set; } = string.Empty;
-    public void Update(string? providerName, string? providerAccount, string? paymentMethod, DateOnly? valueDate, string? referenceNumber, string? employerBankName, string? employerBankCode, string? employerBranch, string? employerAccount, string? confirmationFileName) { ProviderName = providerName?.Trim() ?? string.Empty; ProviderAccount = providerAccount?.Trim() ?? string.Empty; PaymentMethod = string.IsNullOrWhiteSpace(paymentMethod) ? "העברה בנקאית" : paymentMethod.Trim(); ValueDate = valueDate; ReferenceNumber = referenceNumber?.Trim() ?? string.Empty; EmployerBankName = employerBankName?.Trim() ?? string.Empty; EmployerBankCode = employerBankCode?.Trim() ?? string.Empty; EmployerBranch = employerBranch?.Trim() ?? string.Empty; EmployerAccount = employerAccount?.Trim() ?? string.Empty; ConfirmationFileName = confirmationFileName?.Trim() ?? string.Empty; Touch(); }
+    public Guid ReportProductId { get; private set; } public string ProviderName { get; private set; } = string.Empty; public string ProviderAccount { get; private set; } = string.Empty; public string PaymentMethod { get; private set; } = "העברה בנקאית"; public DateOnly? ValueDate { get; private set; } public DateOnly? TrustAccountValueDate { get; private set; } public decimal? ActualDepositAmount { get; private set; } public string MasavSenderCode { get; private set; } = string.Empty; public string ReferenceNumber { get; private set; } = string.Empty; public string EmployerBankName { get; private set; } = string.Empty; public string EmployerBankCode { get; private set; } = string.Empty; public string EmployerBranch { get; private set; } = string.Empty; public string EmployerAccount { get; private set; } = string.Empty; public string ConfirmationFileName { get; private set; } = string.Empty;
+    public void Update(string? providerName, string? providerAccount, string? paymentMethod, DateOnly? valueDate,
+        string? referenceNumber, string? employerBankName, string? employerBankCode, string? employerBranch,
+        string? employerAccount, string? confirmationFileName) =>
+        Update(providerName, providerAccount, paymentMethod, valueDate, null, referenceNumber, employerBankName,
+            employerBankCode, employerBranch, employerAccount, confirmationFileName);
+
+    public void Update(string? providerName, string? providerAccount, string? paymentMethod, DateOnly? valueDate, DateOnly? trustAccountValueDate, string? referenceNumber, string? employerBankName, string? employerBankCode, string? employerBranch, string? employerAccount, string? confirmationFileName, decimal? actualDepositAmount = null, string? masavSenderCode = null)
+    {
+        if (actualDepositAmount < 0) throw new ArgumentOutOfRangeException(nameof(actualDepositAmount));
+        if ((masavSenderCode?.Trim().Length ?? 0) > 16) throw new ArgumentOutOfRangeException(nameof(masavSenderCode));
+        ProviderName = providerName?.Trim() ?? string.Empty; ProviderAccount = providerAccount?.Trim() ?? string.Empty;
+        PaymentMethod = string.IsNullOrWhiteSpace(paymentMethod) ? "העברה בנקאית" : paymentMethod.Trim();
+        ValueDate = valueDate; TrustAccountValueDate = trustAccountValueDate; ActualDepositAmount = actualDepositAmount;
+        MasavSenderCode = masavSenderCode?.Trim() ?? string.Empty; ReferenceNumber = referenceNumber?.Trim() ?? string.Empty;
+        EmployerBankName = employerBankName?.Trim() ?? string.Empty; EmployerBankCode = employerBankCode?.Trim() ?? string.Empty;
+        EmployerBranch = employerBranch?.Trim() ?? string.Empty; EmployerAccount = employerAccount?.Trim() ?? string.Empty;
+        ConfirmationFileName = confirmationFileName?.Trim() ?? string.Empty; Touch();
+    }
 }

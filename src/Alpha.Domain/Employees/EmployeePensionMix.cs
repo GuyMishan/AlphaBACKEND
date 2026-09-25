@@ -12,12 +12,12 @@ public sealed class EmployeePensionProduct : Entity
         bool isActive, DateOnly effectiveFrom, DateOnly? effectiveTo, string institutionalBody, string manufacturer,
         string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null,
         SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
-        int allocationOrder = 0, int? section14Code = null)
+        int allocationOrder = 0, int? section14Code = null, string? fundClassification = null)
     {
         EmploymentId = employmentId;
         Update(productType, policyNumber, salary, reportingType, salaryLayer, section14, section14StartDate,
             isActive, effectiveFrom, effectiveTo, institutionalBody, manufacturer, fundExternalKey, fundCode, fundName,
-            fundCompanyName, salaryAllocationType, salaryAllocationValue, allocationOrder, section14Code);
+            fundCompanyName, salaryAllocationType, salaryAllocationValue, allocationOrder, section14Code, fundClassification);
     }
 
     public Guid EmploymentId { get; private set; }
@@ -38,6 +38,7 @@ public sealed class EmployeePensionProduct : Entity
     public string FundCode { get; private set; } = string.Empty;
     public string FundName { get; private set; } = string.Empty;
     public string FundCompanyName { get; private set; } = string.Empty;
+    public string FundClassification { get; private set; } = string.Empty;
     public SalaryAllocationType SalaryAllocationType { get; private set; } = SalaryAllocationType.Fixed;
     public decimal? SalaryAllocationValue { get; private set; }
     public int AllocationOrder { get; private set; }
@@ -47,9 +48,11 @@ public sealed class EmployeePensionProduct : Entity
         DateOnly? effectiveTo, string institutionalBody, string manufacturer, string? fundExternalKey = null,
         string? fundCode = null, string? fundName = null, string? fundCompanyName = null,
         SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
-        int allocationOrder = 0, int? section14Code = null)
+        int allocationOrder = 0, int? section14Code = null, string? fundClassification = null)
     {
         if (salary < 0) throw new ArgumentOutOfRangeException(nameof(salary));
+        if ((policyNumber?.Trim().Length ?? 0) > 20)
+            throw new ArgumentOutOfRangeException(nameof(policyNumber), "Policy/account number cannot exceed 20 characters in Employer Interface 006.");
         if (effectiveTo is not null && effectiveTo.Value < effectiveFrom)
             throw new ArgumentException("Product effective end date cannot be earlier than the start date.", nameof(effectiveTo));
         if (allocationOrder < 0) throw new ArgumentOutOfRangeException(nameof(allocationOrder));
@@ -60,8 +63,8 @@ public sealed class EmployeePensionProduct : Entity
             throw new ArgumentOutOfRangeException(nameof(salaryAllocationValue), "Salary allocation percentage cannot exceed 100%.");
 
         var resolvedSection14Code = section14Code ?? (!section14 && section14StartDate.HasValue ? 4 : !section14 ? 3 : section14StartDate.HasValue ? 2 : 1);
-        if (resolvedSection14Code is < 1 or > 4)
-            throw new ArgumentOutOfRangeException(nameof(section14Code), "Section 14 code must be 1-4.");
+        if (resolvedSection14Code is < 1 or > 5)
+            throw new ArgumentOutOfRangeException(nameof(section14Code), "Section 14 code must be 1-5.");
         if (resolvedSection14Code is 2 or 4 && !section14StartDate.HasValue)
             throw new ArgumentException("Section 14 effective/cancellation date is required for codes 2 and 4.", nameof(section14StartDate));
 
@@ -82,6 +85,7 @@ public sealed class EmployeePensionProduct : Entity
         FundCode = fundCode?.Trim() ?? string.Empty;
         FundName = fundName?.Trim() ?? string.Empty;
         FundCompanyName = fundCompanyName?.Trim() ?? string.Empty;
+        FundClassification = fundClassification?.Trim() ?? string.Empty;
         SalaryAllocationType = salaryAllocationType;
         SalaryAllocationValue = salaryAllocationType == SalaryAllocationType.Remainder ? null : salaryAllocationValue;
         AllocationOrder = allocationOrder;
@@ -91,11 +95,10 @@ public sealed class EmployeePensionProduct : Entity
     public IReadOnlyCollection<string> MissingDetails()
     {
         var missing = new List<string>();
-        if (string.IsNullOrWhiteSpace(PolicyNumber)) missing.Add("policyNumber");
         if (ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(FundExternalKey)) missing.Add("fund");
         if (string.IsNullOrWhiteSpace(InstitutionalBody)) missing.Add("institutionalBody");
         if (string.IsNullOrWhiteSpace(Manufacturer)) missing.Add("manufacturer");
-        if (Section14Code is < 1 or > 4) missing.Add("section14Code");
+        if (Section14Code is < 1 or > 5) missing.Add("section14Code");
         if (Section14Code is 2 or 4 && Section14StartDate is null) missing.Add("section14StartDate");
         if (SalaryAllocationType != SalaryAllocationType.Remainder && (!SalaryAllocationValue.HasValue || SalaryAllocationValue.Value <= 0))
             missing.Add("salaryAllocationValue");

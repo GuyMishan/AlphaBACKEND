@@ -167,7 +167,8 @@ public static class DerivedReportEndpoints
                 oldProduct.PolicyNumber, oldProduct.SalaryMonth, oldProduct.Salary, reportingType, oldProduct.SalaryLayer,
                 oldProduct.Section14, oldProduct.Section14StartDate,
                 oldProduct.FundExternalKey, oldProduct.FundCode, oldProduct.FundName, oldProduct.FundCompanyName,
-                oldProduct.SalaryAllocationType, oldProduct.SalaryAllocationValue, oldProduct.AllocationOrder);
+                oldProduct.SalaryAllocationType, oldProduct.SalaryAllocationValue, oldProduct.AllocationOrder,
+                oldProduct.Section14Code, oldProduct.FundClassification);
             db.ManualReportProducts.Add(clone);
             productMap[oldProduct.Id] = clone;
         }
@@ -183,8 +184,9 @@ public static class DerivedReportEndpoints
         {
             var clone = new ManualReportPayment(productMap[oldPayment.ReportProductId].Id);
             clone.Update(oldPayment.ProviderName, oldPayment.ProviderAccount, oldPayment.PaymentMethod, oldPayment.ValueDate,
-                oldPayment.ReferenceNumber, oldPayment.EmployerBankName, oldPayment.EmployerBankCode,
-                oldPayment.EmployerBranch, oldPayment.EmployerAccount, oldPayment.ConfirmationFileName);
+                oldPayment.TrustAccountValueDate, oldPayment.ReferenceNumber, oldPayment.EmployerBankName, oldPayment.EmployerBankCode,
+                oldPayment.EmployerBranch, oldPayment.EmployerAccount, oldPayment.ConfirmationFileName,
+                oldPayment.ActualDepositAmount, oldPayment.MasavSenderCode);
             db.ManualReportPayments.Add(clone);
         }
 

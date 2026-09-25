@@ -1,3 +1,4 @@
+using Alpha.Api.Services;
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -54,7 +55,7 @@ public static class PublicReferenceDataEndpoints
             return Results.Ok(result);
         });
 
-        group.MapGet("/employer-interface-006/options", async (string category, string? scope, AlphaDbContext db, CancellationToken ct) =>
+        group.MapGet("/employer-interface-006/options", async (string category, string? scope, int? operationCode, AlphaDbContext db, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(category)) return Results.BadRequest(new { error = "category is required." });
             var normalizedCategory = category.Trim().ToLowerInvariant();
@@ -74,8 +75,16 @@ public static class PublicReferenceDataEndpoints
             if (command.Connection!.State != System.Data.ConnectionState.Open)
                 await command.Connection.OpenAsync(ct);
             await using var reader = await command.ExecuteReaderAsync(ct);
+            IReadOnlyCollection<int>? allowedPaymentMethods = null;
+            if (normalizedCategory == "payment-method" && operationCode.HasValue)
+                allowedPaymentMethods = EmployerInterface006WorkbookRules.AllowedPaymentMethods(operationCode.Value);
+
             while (await reader.ReadAsync(ct))
-                result.Add(new { code = reader.GetInt32(0), name = reader.GetString(1), scope = reader.GetString(2) });
+            {
+                var code = reader.GetInt32(0);
+                if (allowedPaymentMethods is not null && !allowedPaymentMethods.Contains(code)) continue;
+                result.Add(new { code, name = reader.GetString(1), scope = reader.GetString(2) });
+            }
             return Results.Ok(result);
         });
 
@@ -249,7 +258,7 @@ public static class PublicReferenceDataEndpoints
         command.CommandText = $"""
             SELECT DISTINCT ON (COALESCE(NULLIF(fund_code, ''), fund_name), fund_name)
                    external_key, fund_code, fund_name, company_name, domain, product_type,
-                   bank_code, bank_name, branch_code, account_number
+                   bank_code, bank_name, branch_code, account_number, classification
             FROM reference_data.pension_products
             WHERE is_active = true
               AND product_type = @product_type
@@ -278,7 +287,8 @@ public static class PublicReferenceDataEndpoints
                 bankCode = reader.IsDBNull(6) ? (int?)null : reader.GetInt32(6),
                 bankName = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
                 branchCode = reader.IsDBNull(8) ? (int?)null : reader.GetInt32(8),
-                accountNumber = reader.IsDBNull(9) ? string.Empty : reader.GetString(9)
+                accountNumber = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
+                classification = reader.IsDBNull(10) ? string.Empty : reader.GetString(10)
             });
         }
 

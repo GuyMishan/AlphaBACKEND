@@ -7,11 +7,30 @@ public static class EmployerInterface006WorkbookRules
 {
     private static readonly XNamespace Xsi = "http://www.w3.org/2001/XMLSchema-instance";
 
+    // Official "קוד אמצעי תשלום וסוג פעולה" matrix supplied with the Version 6
+    // clearinghouse rules.
+    private static readonly IReadOnlyDictionary<int, HashSet<int>> AllowedPaymentMethodsByOperation =
+        new Dictionary<int, HashSet<int>>
+        {
+            [1] = [1, 3, 5, 6, 7, 9],
+            [2] = [1],
+            [3] = [1, 3, 5, 6, 7, 9],
+            [5] = [1, 3, 6, 7, 9],
+            [7] = [1]
+        };
+
+    public static IReadOnlyCollection<int> AllowedPaymentMethods(int operationCode)
+    {
+        return AllowedPaymentMethodsByOperation.TryGetValue(operationCode, out var allowed)
+            ? allowed.OrderBy(x => x).ToArray()
+            : Array.Empty<int>();
+    }
+
     public static IReadOnlyList<string> ValidateAndApply(XDocument document,
         EmployerInterface006XmlBuilder.BuildContext context, bool negative)
     {
         var issues = new List<string>();
-        var groups = context.Products.GroupBy(x => new { x.FundCode, x.FundName }).ToList();
+        var groups = context.Products.GroupBy(x => x.FundCode, StringComparer.Ordinal).ToList();
         var transfers = document.Descendants("PirteiHaavaratKsafim").ToList();
         if (transfers.Count != groups.Count)
         {
@@ -25,17 +44,44 @@ public static class EmployerInterface006WorkbookRules
             var first = context.ProductMetadata.Single(x => x.ReportProductId == products[0].Id);
             var metas = products.Select(p => context.ProductMetadata.Single(x => x.ReportProductId == p.Id)).ToList();
             var label = $"Fund {products[0].FundCode}";
+            if (products.Any(x => !string.Equals(x.FundClassification, products[0].FundClassification, StringComparison.Ordinal)))
+                issues.Add($"{label}: products grouped into one transfer must use the same fund classification snapshot.");
 
             if (metas.Any(x => x.OperationCode != first.OperationCode
                 || x.PaymentMethodCode != first.PaymentMethodCode
                 || x.EmployerAccountType != first.EmployerAccountType
                 || x.ReceiverAccountType != first.ReceiverAccountType
+                || x.OldPensionTypeCode != first.OldPensionTypeCode
                 || !StringEquals(x.PreviousIdentifier, first.PreviousIdentifier)
                 || !StringEquals(x.PreviousClearingIdentifier, first.PreviousClearingIdentifier)
                 || x.PreviousReferenceExceptionCode != first.PreviousReferenceExceptionCode))
             {
                 issues.Add($"{label}: products grouped into one transfer must use the same operation, payment and previous-report reference data.");
                 continue;
+            }
+
+            var payments = products
+                .Select(p => context.Payments.FirstOrDefault(x => x.ReportProductId == p.Id))
+                .Where(x => x is not null)
+                .Cast<ManualReportPayment>()
+                .ToList();
+            if (payments.Count > 1)
+            {
+                var firstPayment = payments[0];
+                if (payments.Skip(1).Any(x =>
+                    x.ValueDate != firstPayment.ValueDate
+                    || x.TrustAccountValueDate != firstPayment.TrustAccountValueDate
+                    || x.ActualDepositAmount != firstPayment.ActualDepositAmount
+                    || !StringEquals(x.MasavSenderCode, firstPayment.MasavSenderCode)
+                    || !StringEquals(x.ReferenceNumber, firstPayment.ReferenceNumber)
+                    || !StringEquals(x.EmployerBankCode, firstPayment.EmployerBankCode)
+                    || !StringEquals(x.EmployerBranch, firstPayment.EmployerBranch)
+                    || !StringEquals(x.EmployerAccount, firstPayment.EmployerAccount)
+                    || !StringEquals(x.ProviderAccount, firstPayment.ProviderAccount)))
+                {
+                    issues.Add($"{label}: products grouped into one transfer must use identical transfer/payment details.");
+                    continue;
+                }
             }
 
             var requiresPrevious = negative
@@ -48,6 +94,24 @@ public static class EmployerInterface006WorkbookRules
 
             if (first.PreviousReferenceExceptionCode is not null && first.PreviousReferenceExceptionCode is not (1 or 2 or 3))
                 issues.Add($"{label}: unsupported previous-report reference exception code.");
+
+            if (first.OperationCode is int operationCode)
+            {
+                if (operationCode == 6)
+                {
+                    if (first.PaymentMethodCode.HasValue)
+                        issues.Add($"{label}: operation 6 must not carry a payment-method value; KOD-EMTZAI-TASHLUM is emitted as xsi:nil per the Version 6 workbook.");
+                }
+                else if (first.PaymentMethodCode is not int paymentMethodCode)
+                {
+                    issues.Add($"{label}: operation {operationCode} requires a payment method according to the official Version 6 rules.");
+                }
+                else if (!AllowedPaymentMethodsByOperation.TryGetValue(operationCode, out var allowedPaymentMethods)
+                    || !allowedPaymentMethods.Contains(paymentMethodCode))
+                {
+                    issues.Add($"{label}: payment method {paymentMethodCode} is not allowed for operation {operationCode} according to the official Version 6 operation/payment matrix.");
+                }
+            }
 
             if (negative) NormalizeNegativeTransfer(transfers[i], first);
             SetNullable(transfers[i].Element("MISPAR-ZIHUI-KODEM"), requiresPrevious ? first.PreviousIdentifier : null);
@@ -78,9 +142,9 @@ public static class EmployerInterface006WorkbookRules
         EnsureBefore(previous, "MISPAR-SNIF-KOLET");
         EnsureBefore(previous, "MISPAR-CHESHBON-KOLET");
 
-        // Operation 6 is explicitly a cancellation without refund. The payment-method element is optional
-        // in the XSD and must remain absent according to the Version 6 workbook.
-        if (metadata.OperationCode == 6) transfer.Element("KOD-EMTZAI-TASHLUM")?.Remove();
+        // KOD-EMTZAI-TASHLUM is structurally required by the negative 006 XSD but
+        // the Version 6 workbook explicitly says that operation 6 carries no value,
+        // therefore the builder emits the element with xsi:nil.
     }
 
     private static void EnsureBefore(XElement anchor, string name)

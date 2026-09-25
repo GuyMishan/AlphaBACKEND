@@ -40,13 +40,18 @@ public static class EmployerInterfacePreviousReferenceEndpoints
         EmployerInterfacePreviousReferenceRequest request, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
-        var reportKind = await (from product in db.ManualReportProducts.AsNoTracking()
-                                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                                join report in db.ManualReports.AsNoTracking() on employee.ReportId equals report.Id
-                                where product.Id == reportProductId && employee.ReportId == reportId
-                                    && employee.OrganizationId == organizationId && employee.EmployerId == employerId
-                                select (ManualReportKind?)report.ReportKind).SingleOrDefaultAsync(ct);
-        if (reportKind is null) return Results.NotFound();
+        var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId
+            && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
+
+        var belongsToReport = await (from product in db.ManualReportProducts.AsNoTracking()
+                                     join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                                     where product.Id == reportProductId && employee.ReportId == reportId
+                                         && employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                                     select product.Id).AnyAsync(ct);
+        if (!belongsToReport) return Results.NotFound();
+        var reportKind = report.ReportKind;
 
         var item = await db.EmployerInterfaceReportProductData.SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
         if (item is null)
@@ -59,12 +64,14 @@ public static class EmployerInterfacePreviousReferenceEndpoints
             item.Update(item.OperationCode, item.DepositStatus, item.EmployeeStatus, item.StatusStartDate,
                 item.EmploymentPercentage, item.WorkDaysInMonth, item.LastDeposit, item.RefundReason,
                 item.PaymentMethodCode, item.EmployerAccountType, item.ReceiverAccountType,
-                request.PreviousIdentifier, request.PreviousClearingIdentifier, request.PreviousReferenceExceptionCode);
+                request.PreviousIdentifier, request.PreviousClearingIdentifier, request.PreviousReferenceExceptionCode,
+                item.OldPensionTypeCode);
         }
         catch (ArgumentException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+        report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.Ok(new
         {

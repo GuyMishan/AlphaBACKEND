@@ -46,6 +46,7 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<ManualReportProduct> ManualReportProducts => Set<ManualReportProduct>();
     public DbSet<ManualContribution> ManualContributions => Set<ManualContribution>();
     public DbSet<ManualReportPayment> ManualReportPayments => Set<ManualReportPayment>();
+    public DbSet<ManualReportAttachment> ManualReportAttachments => Set<ManualReportAttachment>();
     public DbSet<EmployerInterfaceReportProductData> EmployerInterfaceReportProductData => Set<EmployerInterfaceReportProductData>();
     public DbSet<ReportTransmission> ReportTransmissions => Set<ReportTransmission>();
     public DbSet<EmployerInterfaceFeedback> EmployerInterfaceFeedback => Set<EmployerInterfaceFeedback>();

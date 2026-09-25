@@ -197,8 +197,9 @@ public static class ManualReportEndpoints
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.EmploymentIds.Count > MaxEmployeesPerDraft)
             return Results.BadRequest(new { error = $"Manual reports are limited to {MaxEmployeesPerDraft} employees per draft." });
-        var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
+        if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
 
         var requested = request.EmploymentIds.Distinct().ToHashSet();
         var existing = await db.ManualReportEmployees.Where(x => x.ReportId == reportId).ToListAsync(ct);
@@ -223,6 +224,7 @@ public static class ManualReportEndpoints
                 await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
             }
         }
+        report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -311,6 +313,7 @@ public static class ManualReportEndpoints
                 x.Product.FundCode,
                 x.Product.FundName,
                 x.Product.FundCompanyName,
+                x.Product.FundClassification,
                 x.Product.SalaryMonth,
                 x.Product.Salary,
                 x.Product.SalaryAllocationType,
@@ -325,6 +328,9 @@ public static class ManualReportEndpoints
                 providerAccount = payment?.ProviderAccount ?? string.Empty,
                 paymentMethod = payment?.PaymentMethod ?? "העברה בנקאית",
                 valueDate = payment?.ValueDate,
+                trustAccountValueDate = payment?.TrustAccountValueDate,
+                actualDepositAmount = payment?.ActualDepositAmount,
+                masavSenderCode = payment?.MasavSenderCode ?? string.Empty,
                 referenceNumber = payment?.ReferenceNumber ?? string.Empty,
                 employerBankName = payment?.EmployerBankName ?? string.Empty,
                 employerBankCode = payment?.EmployerBankCode ?? string.Empty,
@@ -341,6 +347,11 @@ public static class ManualReportEndpoints
         OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId
+            && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
+
         var exists = await (from product in db.ManualReportProducts.AsNoTracking()
                             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
                             where product.Id == reportProductId && employee.ReportId == reportId
@@ -355,8 +366,10 @@ public static class ManualReportEndpoints
             db.ManualReportPayments.Add(payment);
         }
         payment.Update(request.ProviderName, request.ProviderAccount, request.PaymentMethod, request.ValueDate,
-            request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode, request.EmployerBranch,
-            request.EmployerAccount, request.ConfirmationFileName);
+            request.TrustAccountValueDate, request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode,
+            request.EmployerBranch, request.EmployerAccount, request.ConfirmationFileName,
+            request.ActualDepositAmount, request.MasavSenderCode);
+        report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -376,9 +389,9 @@ public static class ManualReportEndpoints
             employee.Id, employee.EmploymentId, employee.PersonId, employee.NationalId, employee.FirstName, employee.LastName, employee.EmployeeNumber, employee.MonthlySalary,
             products = products.Select(p => new
             {
-                p.Id, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName,
+                p.Id, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName, p.FundClassification,
                 p.SalaryMonth, p.Salary, p.SalaryAllocationType, p.SalaryAllocationValue, p.AllocationOrder,
-                p.ReportingType, p.SalaryLayer, p.Section14, p.Section14StartDate,
+                p.ReportingType, p.SalaryLayer, p.Section14, p.Section14Code, p.Section14StartDate,
                 employerContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employer).OrderBy(c => c.Component),
                 employeeContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employee).OrderBy(c => c.Component)
             })
@@ -392,6 +405,10 @@ public static class ManualReportEndpoints
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.Products.Count > MaxProductsPerEmployee)
             return Results.BadRequest(new { error = $"An employee can have up to {MaxProductsPerEmployee} products in a report." });
+
+        var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
 
         var employee = await db.ManualReportEmployees.SingleOrDefaultAsync(x => x.Id == reportEmployeeId && x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (employee is null) return Results.NotFound();
@@ -424,11 +441,12 @@ public static class ManualReportEndpoints
             var product = new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
                 input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
                 input.Section14StartDate, input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
-                item.AllocationType, item.AllocationValue, item.AllocationOrder);
+                item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
             db.ManualReportProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
         }
+        report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -493,7 +511,7 @@ public static class ManualReportEndpoints
             var product = new ManualReportProduct(reportEmployee.Id, mix.ProductType, mix.PolicyNumber,
                 reportingMonth, mix.Salary, mix.ReportingType, mix.SalaryLayer, mix.Section14, mix.Section14StartDate,
                 mix.FundExternalKey, mix.FundCode, mix.FundName, mix.FundCompanyName,
-                mix.SalaryAllocationType, mix.SalaryAllocationValue, mix.AllocationOrder);
+                mix.SalaryAllocationType, mix.SalaryAllocationValue, mix.AllocationOrder, mix.Section14Code, mix.FundClassification);
             db.ManualReportProducts.Add(product);
 
             foreach (var contribution in mixContributions.Where(x => x.EmployeePensionProductId == mix.Id))
@@ -528,11 +546,12 @@ public sealed record UpdateReportPaymentAccountRequest(Guid PaymentAccountId);
 public sealed record UpdateManualReportSelectionRequest(IReadOnlyCollection<Guid> EmploymentIds);
 public sealed record SaveManualReportEmployeeRequest(decimal MonthlySalary, IReadOnlyCollection<ManualProductInput> Products);
 public sealed record ManualProductInput(PensionProductType ProductType, string PolicyNumber, DateOnly SalaryMonth,
-    decimal Salary, string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate,
-    string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName,
+    decimal Salary, string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate, int? Section14Code,
+    string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName, string? FundClassification,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions);
 public sealed record ManualContributionInput(ContributionComponent Component, decimal Amount, decimal Percentage, decimal ExemptPayments);
 public sealed record SaveManualReportPaymentRequest(string ProviderName, string ProviderAccount, string PaymentMethod,
     DateOnly? ValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,
-    string EmployerBranch, string EmployerAccount, string ConfirmationFileName);
+    string EmployerBranch, string EmployerAccount, string ConfirmationFileName, DateOnly? TrustAccountValueDate = null,
+    decimal? ActualDepositAmount = null, string? MasavSenderCode = null);

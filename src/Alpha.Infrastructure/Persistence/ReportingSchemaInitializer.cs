@@ -59,6 +59,14 @@ CREATE TABLE IF NOT EXISTS employees.employee_pension_contributions (
     CONSTRAINT "UX_employee_pension_contribution" UNIQUE ("EmployeePensionProductId", "Party", "Component")
 );
 
+CREATE TABLE IF NOT EXISTS reporting.employer_interface_file_sequences (
+    "SenderIdentifier" varchar(16) NOT NULL,
+    "BusinessDate" date NOT NULL,
+    "LastSequence" integer NOT NULL,
+    PRIMARY KEY ("SenderIdentifier", "BusinessDate"),
+    CONSTRAINT "CK_employer_interface_file_sequence" CHECK ("LastSequence" BETWEEN 1 AND 9999)
+);
+
 CREATE TABLE IF NOT EXISTS reporting.manual_reports (
     "Id" uuid PRIMARY KEY,
     "OrganizationId" uuid NOT NULL REFERENCES organizations.organizations("Id") ON DELETE RESTRICT,
@@ -228,6 +236,9 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_payments (
     "ProviderAccount" varchar(120) NOT NULL DEFAULT '',
     "PaymentMethod" varchar(80) NOT NULL DEFAULT 'העברה בנקאית',
     "ValueDate" date NULL,
+    "TrustAccountValueDate" date NULL,
+    "ActualDepositAmount" numeric(15,2) NULL,
+    "MasavSenderCode" varchar(16) NOT NULL DEFAULT '',
     "ReferenceNumber" varchar(120) NOT NULL DEFAULT '',
     "EmployerBankName" varchar(120) NOT NULL DEFAULT '',
     "EmployerBankCode" varchar(30) NOT NULL DEFAULT '',
@@ -238,6 +249,41 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_payments (
     "UpdatedAt" timestamptz NOT NULL,
     CONSTRAINT "UX_manual_report_payment_product" UNIQUE ("ReportProductId")
 );
+
+CREATE TABLE IF NOT EXISTS reporting.manual_report_attachments (
+    "Id" uuid PRIMARY KEY,
+    "ReportId" uuid NOT NULL REFERENCES reporting.manual_reports("Id") ON DELETE CASCADE,
+    "ReportProductId" uuid NULL REFERENCES reporting.manual_report_products("Id") ON DELETE CASCADE,
+    "DocumentTypeCode" integer NOT NULL,
+    "OriginalFileName" varchar(260) NOT NULL,
+    "TransmissionFileName" varchar(100) NOT NULL,
+    "ContentType" varchar(120) NOT NULL,
+    "Content" bytea NOT NULL,
+    "SizeBytes" bigint NOT NULL,
+    "Sha256" varchar(64) NOT NULL,
+    "CreatedAt" timestamptz NOT NULL,
+    "UpdatedAt" timestamptz NOT NULL,
+    CONSTRAINT "CK_manual_report_attachments_document_type" CHECK ("DocumentTypeCode" IN (3,4,5,6))
+);
+CREATE INDEX IF NOT EXISTS "IX_manual_report_attachments_report"
+    ON reporting.manual_report_attachments ("ReportId");
+CREATE INDEX IF NOT EXISTS "IX_manual_report_attachments_product"
+    ON reporting.manual_report_attachments ("ReportProductId");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_manual_report_attachments_transmission_name"
+    ON reporting.manual_report_attachments ("ReportId", "TransmissionFileName");
+
+ALTER TABLE reporting.manual_report_attachments
+    DROP CONSTRAINT IF EXISTS "CK_manual_report_attachments_document_type";
+ALTER TABLE reporting.manual_report_attachments
+    ADD CONSTRAINT "CK_manual_report_attachments_document_type"
+    CHECK ("DocumentTypeCode" IN (3,4,5,6));
+
+ALTER TABLE reporting.manual_report_payments
+    ADD COLUMN IF NOT EXISTS "TrustAccountValueDate" date NULL;
+ALTER TABLE reporting.manual_report_payments
+    ADD COLUMN IF NOT EXISTS "ActualDepositAmount" numeric(15,2) NULL;
+ALTER TABLE reporting.manual_report_payments
+    ADD COLUMN IF NOT EXISTS "MasavSenderCode" varchar(16) NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS reporting.contribution_percentage_limits (
     "Id" uuid PRIMARY KEY,

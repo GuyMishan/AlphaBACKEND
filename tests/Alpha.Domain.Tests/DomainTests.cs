@@ -1,6 +1,7 @@
 using Alpha.Domain.Employees;
 using Alpha.Domain.Organizations;
 using Alpha.Domain.Identity;
+using Alpha.Domain.Reporting;
 using Xunit;
 
 namespace Alpha.Domain.Tests;
@@ -61,6 +62,31 @@ public sealed class DomainTests
 
         Assert.Equal(UserInvitationStatus.Cancelled, invitation.Status);
         Assert.False(invitation.IsUsableAt(DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
+    public void Pension_product_accepts_section14_code_5()
+    {
+        var product = new EmployeePensionProduct(
+            Guid.NewGuid(),
+            PensionProductType.PensionFund,
+            "POL-1",
+            1000m,
+            "1",
+            "1",
+            false,
+            null,
+            true,
+            new DateOnly(2026, 1, 1),
+            null,
+            "Institutional body",
+            "Manufacturer",
+            section14Code: 5);
+
+        Assert.Equal(5, product.Section14Code);
+        Assert.False(product.Section14);
+        Assert.Null(product.Section14StartDate);
+        Assert.DoesNotContain("section14Code", product.MissingDetails());
     }
 
     [Fact]

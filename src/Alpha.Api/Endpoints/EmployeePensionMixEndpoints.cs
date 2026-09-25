@@ -53,6 +53,7 @@ public static class EmployeePensionMixEndpoints
             p.FundCode,
             p.FundName,
             p.FundCompanyName,
+            p.FundClassification,
             p.SalaryAllocationType,
             p.SalaryAllocationValue,
             p.AllocationOrder,
@@ -84,7 +85,10 @@ public static class EmployeePensionMixEndpoints
         {
             var existing = existingProducts.FirstOrDefault(x =>
                 x.ProductType == input.ProductType &&
-                string.Equals(x.PolicyNumber.Trim(), input.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+                (!string.IsNullOrWhiteSpace(input.PolicyNumber)
+                    ? string.Equals(x.PolicyNumber.Trim(), input.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase)
+                    : !string.IsNullOrWhiteSpace(input.FundExternalKey)
+                      && string.Equals(x.FundExternalKey, input.FundExternalKey, StringComparison.OrdinalIgnoreCase)));
             var lifecycleProvided = input.IsActive.HasValue || input.EffectiveFrom.HasValue || input.InstitutionalBody is not null || input.Manufacturer is not null;
 
             var isActive = lifecycleProvided ? input.IsActive ?? true : existing?.IsActive ?? true;
@@ -96,6 +100,7 @@ public static class EmployeePensionMixEndpoints
             var fundCode = input.FundCode ?? existing?.FundCode ?? string.Empty;
             var fundName = input.FundName ?? existing?.FundName ?? string.Empty;
             var fundCompanyName = input.FundCompanyName ?? existing?.FundCompanyName ?? string.Empty;
+            var fundClassification = input.FundClassification ?? existing?.FundClassification ?? string.Empty;
             var allocationType = input.SalaryAllocationType ?? existing?.SalaryAllocationType ?? SalaryAllocationType.Fixed;
             var allocationValue = input.SalaryAllocationType.HasValue || input.SalaryAllocationValue.HasValue
                 ? input.SalaryAllocationValue
@@ -105,8 +110,8 @@ public static class EmployeePensionMixEndpoints
 
             if (effectiveTo is not null && effectiveTo.Value < effectiveFrom)
                 return Results.BadRequest(new { error = "Product effective end date cannot be earlier than the start date." });
-            if (isActive && string.IsNullOrWhiteSpace(input.PolicyNumber))
-                return Results.BadRequest(new { error = "Active pension products must have a policy number." });
+            if ((input.PolicyNumber?.Trim().Length ?? 0) > 20)
+                return Results.BadRequest(new { error = "Policy/account number can contain up to 20 characters in Employer Interface 006." });
             if (isActive && input.ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(fundExternalKey))
                 return Results.BadRequest(new { error = "Active pension products must have a selected fund." });
             if (allocationType != SalaryAllocationType.Remainder && (!allocationValue.HasValue || allocationValue.Value <= 0))
@@ -115,13 +120,13 @@ public static class EmployeePensionMixEndpoints
                 return Results.BadRequest(new { error = "Salary allocation percentage cannot exceed 100%." });
             if (allocationOrder < 0)
                 return Results.BadRequest(new { error = "Salary allocation order cannot be negative." });
-            if (section14Code is < 1 or > 4)
-                return Results.BadRequest(new { error = "Section14Code must be one of 1,2,3,4." });
+            if (section14Code is < 1 or > 5)
+                return Results.BadRequest(new { error = "Section14Code must be one of 1,2,3,4,5." });
             if (section14Code is 2 or 4 && !input.Section14StartDate.HasValue)
                 return Results.BadRequest(new { error = "Section 14 effective/cancellation date is required for codes 2 and 4." });
 
             resolved.Add(new ResolvedProductInput(input, isActive, effectiveFrom, effectiveTo, institutionalBody,
-                manufacturer, fundExternalKey, fundCode, fundName, fundCompanyName,
+                manufacturer, fundExternalKey, fundCode, fundName, fundCompanyName, fundClassification,
                 allocationType, allocationValue, allocationOrder, section14Code));
         }
 
@@ -154,7 +159,7 @@ public static class EmployeePensionMixEndpoints
                 Math.Max(legacySalary, 0), input.ReportingType, input.SalaryLayer, item.Section14Code is 1 or 2, input.Section14StartDate,
                 item.IsActive, item.EffectiveFrom, item.EffectiveTo, item.InstitutionalBody, item.Manufacturer,
                 item.FundExternalKey, item.FundCode, item.FundName, item.FundCompanyName,
-                item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder, item.Section14Code);
+                item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder, item.Section14Code, item.FundClassification);
             db.EmployeePensionProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, input.EmployeeContributions);
@@ -204,7 +209,7 @@ public static class EmployeePensionMixEndpoints
 
     private sealed record ResolvedProductInput(EmployeePensionProductInput Input, bool IsActive, DateOnly EffectiveFrom,
         DateOnly? EffectiveTo, string InstitutionalBody, string Manufacturer, string FundExternalKey,
-        string FundCode, string FundName, string FundCompanyName, SalaryAllocationType SalaryAllocationType,
+        string FundCode, string FundName, string FundCompanyName, string FundClassification, SalaryAllocationType SalaryAllocationType,
         decimal? SalaryAllocationValue, int AllocationOrder, int Section14Code);
 }
 
@@ -212,7 +217,7 @@ public sealed record SaveEmployeePensionMixRequest(decimal? MonthlySalary, IRead
 public sealed record EmployeePensionProductInput(PensionProductType ProductType, string PolicyNumber, decimal Salary,
     string ReportingType, string SalaryLayer, bool Section14, int? Section14Code, DateOnly? Section14StartDate,
     bool? IsActive, DateOnly? EffectiveFrom, DateOnly? EffectiveTo, string? InstitutionalBody, string? Manufacturer,
-    string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName,
+    string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName, string? FundClassification,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployerContributions,
     IReadOnlyCollection<EmployeePensionContributionInput> EmployeeContributions);

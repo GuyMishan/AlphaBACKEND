@@ -14,7 +14,8 @@ public sealed class EmployerInterface006ExportService(
 {
     private static readonly UTF8Encoding Utf8NoBom = new(false);
 
-    public async Task<EmployerInterfaceService.GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct)
+    public async Task<EmployerInterfaceService.GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct,
+        int fileSequence = 1, DateTimeOffset? preparedAtOverride = null)
     {
         if (report.ReportKind == ManualReportKind.Differences)
             return Invalid(EmployerInterfaceDocumentType.CurrentReport,
@@ -25,6 +26,8 @@ public sealed class EmployerInterface006ExportService(
             : EmployerInterfaceDocumentType.CurrentReport;
 
         var employer = await db.Employers.AsNoTracking().SingleAsync(x => x.Id == report.EmployerId, ct);
+        var profileSettings = await db.EmployerProfileSettings.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.EmployerId == report.EmployerId, ct);
         var employees = await db.ManualReportEmployees.AsNoTracking()
             .Where(x => x.ReportId == report.Id).OrderBy(x => x.EmployeeNumber).ToListAsync(ct);
         var personIds = employees.Select(x => x.PersonId).Distinct().ToArray();
@@ -38,9 +41,60 @@ public sealed class EmployerInterface006ExportService(
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var payments = await db.ManualReportPayments.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var attachments = await db.ManualReportAttachments.AsNoTracking()
+            .Where(x => x.ReportId == report.Id).ToListAsync(ct);
+
+        var annualEmployerAffidavitSatisfied = attachments.Any(x => x.DocumentTypeCode == 3);
+        if (!annualEmployerAffidavitSatisfied && report.ReportKind == ManualReportKind.Negative)
+        {
+            var yearStart = new DateOnly(report.ReportingMonth.Year, 1, 1);
+            var yearEnd = yearStart.AddYears(1);
+            annualEmployerAffidavitSatisfied = await (
+                from attachment in db.ManualReportAttachments.AsNoTracking()
+                join previousReport in db.ManualReports.AsNoTracking() on attachment.ReportId equals previousReport.Id
+                where attachment.DocumentTypeCode == 3
+                      && previousReport.Id != report.Id
+                      && previousReport.EmployerId == report.EmployerId
+                      && previousReport.ReportingMonth >= yearStart
+                      && previousReport.ReportingMonth < yearEnd
+                      && (previousReport.Status == ManualReportStatus.Sent || previousReport.Status == ManualReportStatus.Completed)
+                select attachment.Id).AnyAsync(ct);
+        }
+
+        var preparedAt = preparedAtOverride ?? IsraelNow();
+        var senderIdentifier = string.IsNullOrWhiteSpace(options.Value.SenderIdentifier) && options.Value.SenderCode == 5
+            ? new string(employer.RegistrationNumber.Where(char.IsDigit).ToArray())
+            : options.Value.SenderIdentifier.Trim();
+        if (string.IsNullOrWhiteSpace(senderIdentifier))
+            return Invalid(documentType, "Employer Interface sender identity is not configured. Configure the actual vault/sender identifier before generating a transmission package.");
+
+        EmployerInterface006FileNaming.PackageName packageName;
+        Dictionary<Guid, string> attachmentNames;
+        try
+        {
+            packageName = EmployerInterface006FileNaming.Build(senderIdentifier, options.Value.FileDirectionCode,
+                documentType == EmployerInterfaceDocumentType.NegativeReport, preparedAt, fileSequence,
+                testFile: options.Value.EnvironmentCode == 1);
+            attachmentNames = attachments
+                .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ThenBy(x => x.Id)
+                .Select((attachment, index) => new
+                {
+                    attachment.Id,
+                    FileName = EmployerInterface006FileNaming.BuildAttachmentFileName(packageName.BaseName, index + 1,
+                        Path.GetExtension(attachment.OriginalFileName).TrimStart('.'))
+                })
+                .ToDictionary(x => x.Id, x => x.FileName);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return Invalid(documentType, $"Employer Interface transmission package naming is invalid: {ex.Message}");
+        }
 
         var context = new EmployerInterface006XmlBuilder.BuildContext(employer, employees, people, employments,
-            products, contributions, payments, metadata, options.Value);
+            products, contributions, payments, metadata, options.Value,
+            profileSettings?.DefaultDepositorTypeCode ?? 1,
+            profileSettings?.DefaultEmployerIdentifierTypeCode ?? 1,
+            attachments, annualEmployerAffidavitSatisfied, preparedAt, attachmentNames, fileSequence);
         var negative = documentType == EmployerInterfaceDocumentType.NegativeReport;
         var built = negative
             ? EmployerInterface006XmlBuilder.BuildNegative(context)
@@ -54,8 +108,25 @@ public sealed class EmployerInterface006ExportService(
 
         var bytes = Serialize(built.Document);
         var validation = schemas.Validate(bytes, documentType);
+        var attachmentFiles = attachments
+            .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ThenBy(x => x.Id)
+            .Select(x => new EmployerInterfaceService.GeneratedAttachment(
+                attachmentNames[x.Id], x.ContentType, x.Content, x.Sha256))
+            .ToArray();
         return new(bytes, new(validation.IsValid, documentType, EmployerInterfaceSchemaRegistry.Version,
-            validation.SchemaFileName, validation.Issues));
+            validation.SchemaFileName, validation.Issues), packageName.PayloadFileName, attachmentFiles);
+    }
+
+    private static DateTimeOffset IsraelNow()
+    {
+        try
+        {
+            return TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Jerusalem"));
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return DateTimeOffset.UtcNow;
+        }
     }
 
     private static byte[] Serialize(System.Xml.Linq.XDocument document)
