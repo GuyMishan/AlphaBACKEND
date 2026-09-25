@@ -583,6 +583,34 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_operation_7_allows_negative_exempt_payment_adjustment_only()
+    {
+        var fixture = CreateFixture(false, operationCode: 7, paymentMethodCode: 1);
+        fixture.Context.Contributions[0].Update(0m, 0m, -300m);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal("0.00", Assert.Single(result.Document!.Descendants("SCHUM-HAFRASHA")).Value);
+        Assert.Equal("-300.00", Assert.Single(result.Document.Descendants("SACH-TASHLUMIM-PTURIM")).Value);
+        Assert.Equal("0.00", Assert.Single(result.Document.Descendants("SACH-HAFKADA-KUPA-H-P")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_operation_7_rejects_regular_contribution_amount()
+    {
+        var fixture = CreateFixture(false, operationCode: 7, paymentMethodCode: 1);
+        fixture.Context.Contributions[0].Update(100m, 0m, -300m);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("SCHUM-HAFRASHA must be 0", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Current_no_money_correction_uses_file_date_and_reference_000()
     {
         var fixture = CreateFixture(false, operationCode: 2, paymentMethodCode: 1);
