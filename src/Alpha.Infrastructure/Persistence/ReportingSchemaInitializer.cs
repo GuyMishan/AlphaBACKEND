@@ -116,6 +116,34 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_employees (
     CONSTRAINT "UX_manual_report_employee" UNIQUE ("ReportId", "EmploymentId")
 );
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "MonthlySalary" numeric(18,2) NOT NULL DEFAULT 0;
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "InterfaceIdentifierType" integer NOT NULL DEFAULT 1;
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "InterfaceIdentifier" varchar(60) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "BirthDateSnapshot" date NULL;
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "GenderSnapshot" integer NULL;
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "EmailSnapshot" varchar(100) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "MobileSnapshot" varchar(30) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "CitySnapshot" varchar(120) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "StreetSnapshot" varchar(120) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "HouseNumberSnapshot" varchar(30) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "ApartmentSnapshot" varchar(30) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "PostalCodeSnapshot" varchar(20) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "PostOfficeBoxSnapshot" varchar(30) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "EmploymentStartDateSnapshot" date NULL;
+UPDATE reporting.manual_report_employees re
+SET "InterfaceIdentifier" = CASE WHEN re."InterfaceIdentifier" = '' THEN re."NationalId" ELSE re."InterfaceIdentifier" END,
+    "BirthDateSnapshot" = COALESCE(re."BirthDateSnapshot", p."BirthDate"),
+    "GenderSnapshot" = COALESCE(re."GenderSnapshot", CASE p."Gender" WHEN 'Male' THEN 1 WHEN 'Female' THEN 2 ELSE NULL END),
+    "EmailSnapshot" = CASE WHEN re."EmailSnapshot" = '' THEN COALESCE(p."Email", '') ELSE re."EmailSnapshot" END,
+    "MobileSnapshot" = CASE WHEN re."MobileSnapshot" = '' THEN COALESCE(p."Mobile", '') ELSE re."MobileSnapshot" END,
+    "CitySnapshot" = CASE WHEN re."CitySnapshot" = '' THEN COALESCE(p."City", '') ELSE re."CitySnapshot" END,
+    "StreetSnapshot" = CASE WHEN re."StreetSnapshot" = '' THEN COALESCE(p."Street", '') ELSE re."StreetSnapshot" END,
+    "HouseNumberSnapshot" = CASE WHEN re."HouseNumberSnapshot" = '' THEN COALESCE(p."HouseNumber", '') ELSE re."HouseNumberSnapshot" END,
+    "ApartmentSnapshot" = CASE WHEN re."ApartmentSnapshot" = '' THEN COALESCE(p."Apartment", '') ELSE re."ApartmentSnapshot" END,
+    "PostalCodeSnapshot" = CASE WHEN re."PostalCodeSnapshot" = '' THEN COALESCE(p."PostalCode", '') ELSE re."PostalCodeSnapshot" END,
+    "PostOfficeBoxSnapshot" = CASE WHEN re."PostOfficeBoxSnapshot" = '' THEN COALESCE(p."PostOfficeBox", '') ELSE re."PostOfficeBoxSnapshot" END,
+    "EmploymentStartDateSnapshot" = COALESCE(re."EmploymentStartDateSnapshot", e."StartDate")
+FROM employees.people p, employees.employments e
+WHERE re."PersonId" = p."Id" AND re."EmploymentId" = e."Id";
 CREATE INDEX IF NOT EXISTS "IX_manual_report_employees_scope"
     ON reporting.manual_report_employees ("OrganizationId", "EmployerId", "ReportId");
 
@@ -153,10 +181,13 @@ CREATE TABLE IF NOT EXISTS reporting.manual_contributions (
     "Amount" numeric(18,2) NOT NULL,
     "Percentage" numeric(9,4) NOT NULL,
     "ExemptPayments" numeric(18,2) NOT NULL,
+    "PreviousRecordIdentifier" varchar(36) NOT NULL DEFAULT '',
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL,
     CONSTRAINT "UX_manual_contribution" UNIQUE ("ReportProductId", "Party", "Component")
 );
+
+ALTER TABLE reporting.manual_contributions ADD COLUMN IF NOT EXISTS "PreviousRecordIdentifier" varchar(36) NOT NULL DEFAULT '';
 
 CREATE OR REPLACE FUNCTION reporting.seed_employee_mix_into_report()
 RETURNS trigger

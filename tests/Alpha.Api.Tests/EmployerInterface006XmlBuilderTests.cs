@@ -92,6 +92,41 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_preserves_employee_identifier_type_and_raw_identifier()
+    {
+        var fixture = CreateFixture(false);
+        fixture.Context.Employees[0].SetInterfaceSnapshot(2, "AB-12345", new DateOnly(1990, 1, 1), 1,
+            "employee@example.com", "0507654321", "Tel Aviv", "Herzl", "10", "4", "6100001", "123",
+            new DateOnly(2020, 1, 1));
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal("2", Assert.Single(result.Document!.Descendants("SUG-MEZAHE-OVED")).Value);
+        Assert.Equal("AB-12345", Assert.Single(result.Document.Descendants("MISPAR-MEZAHE")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_report_uses_employee_snapshot_instead_of_live_person_and_employment()
+    {
+        var fixture = CreateFixture(false);
+        fixture.Context.Employees[0].SetInterfaceSnapshot(1, "123456789", new DateOnly(1988, 2, 3), 2,
+            "snapshot@example.com", "0521112233", "Snapshot City", "Snapshot Street", "77", "8", "7654321", "",
+            new DateOnly(2019, 4, 5));
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        var employee = Assert.Single(result.Document!.Descendants("PirteiOved"));
+        Assert.Equal("1988-02-03", employee.Element("TAARICH-LEIDA")?.Value);
+        Assert.Equal("snapshot@example.com", employee.Element("E-MAIL")?.Value);
+        Assert.Equal("0521112233", employee.Element("MISPAR-CELLULARI")?.Value);
+        Assert.Equal("2019-04-05", employee.Element("MOED-TCHILAT-AHASAKAT-OVED")?.Value);
+    }
+
+    [Fact]
     public void Current_report_rejects_invalid_employer_mobile_format()
     {
         var fixture = CreateFixture(false, employerMobile: "031234567");
@@ -366,6 +401,21 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_emits_previous_contribution_record_identifier()
+    {
+        var fixture = CreateFixture(false);
+        var previous = Guid.NewGuid().ToString("D");
+        fixture.Context.Contributions[0].SetPreviousRecordIdentifier(previous);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.Equal(previous.ToUpperInvariant(),
+            Assert.Single(result.Document!.Descendants("MISPAR-MEZAHE-RESHUMA-KODEM")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Current_report_rejects_transfer_reference_longer_than_50_characters()
     {
         var fixture = CreateFixture(false);
@@ -589,6 +639,9 @@ public sealed class EmployerInterface006XmlBuilderTests
         var reportId = Guid.NewGuid();
         var reportEmployee = new ManualReportEmployee(reportId, organizationId, employer.Id, employment.Id, person.Id,
             person.NationalId, person.FirstName, person.LastName, employment.EmployeeNumber, employment.MonthlySalary);
+        reportEmployee.SetInterfaceSnapshot(1, person.NationalId, person.BirthDate, person.Gender.HasValue ? (int)person.Gender.Value : null,
+            person.Email, person.Mobile, person.City, person.Street, person.HouseNumber, person.Apartment,
+            person.PostalCode, person.PostOfficeBox, employment.StartDate);
         var product = new ManualReportProduct(reportEmployee.Id, productType, policyNumber,
             new DateOnly(2026, 9, 1), 1000m, "1", "1", false, null,
             fundCode: new string('1', 30), fundName: "Test Fund", section14Code: section14Code,

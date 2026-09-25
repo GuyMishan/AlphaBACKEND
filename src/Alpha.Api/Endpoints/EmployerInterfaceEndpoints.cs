@@ -100,7 +100,7 @@ public static class EmployerInterfaceEndpoints
         var generated = await exporter.ExportAsync(report, ct);
         if (!generated.Validation.IsValid)
             return Results.BadRequest(new { error = "Generated Employer Interface XML does not validate against its official report-type-specific 006 XSD.", generated.Validation });
-        return Results.File(generated.Bytes, "application/xml", $"employer-interface-{report.ReportingMonth:yyyy-MM}-{report.Id:N}.xml");
+        return Results.File(generated.Bytes, "application/xml", generated.PayloadFileName);
     }
 
     private static async Task<(byte[]? Bytes, string? FileName, Guid? PaymentAccountId, DateOnly? SalaryPaymentDate, string? Error)> ReadXmlAsync(HttpRequest request, CancellationToken ct)

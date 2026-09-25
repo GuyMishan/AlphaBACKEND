@@ -141,6 +141,9 @@ public static class DerivedReportEndpoints
         var sourcePayments = await db.ManualReportPayments.AsNoTracking()
             .Where(x => sourceProductIds.Contains(x.ReportProductId))
             .ToListAsync(ct);
+        var sourceMetadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+            .Where(x => sourceProductIds.Contains(x.ReportProductId))
+            .ToDictionaryAsync(x => x.ReportProductId, ct);
 
         var report = new ManualReport(organizationId, employerId, request.ReportingMonth, request.SalaryPaymentDate,
             request.ReportKind, source.Id);
@@ -155,9 +158,21 @@ public static class DerivedReportEndpoints
             var clone = new ManualReportEmployee(report.Id, organizationId, employerId, oldEmployee.EmploymentId,
                 oldEmployee.PersonId, oldEmployee.NationalId, oldEmployee.FirstName, oldEmployee.LastName,
                 oldEmployee.EmployeeNumber, oldEmployee.MonthlySalary);
+            clone.SetInterfaceSnapshot(oldEmployee.InterfaceIdentifierType, oldEmployee.InterfaceIdentifier,
+                oldEmployee.BirthDateSnapshot, oldEmployee.GenderSnapshot, oldEmployee.EmailSnapshot,
+                oldEmployee.MobileSnapshot, oldEmployee.CitySnapshot, oldEmployee.StreetSnapshot,
+                oldEmployee.HouseNumberSnapshot, oldEmployee.ApartmentSnapshot, oldEmployee.PostalCodeSnapshot,
+                oldEmployee.PostOfficeBoxSnapshot, oldEmployee.EmploymentStartDateSnapshot);
             db.ManualReportEmployees.Add(clone);
             employeeMap[oldEmployee.Id] = clone;
         }
+
+        var sourceTransferIdentifierByFund = sourceProducts
+            .GroupBy(x => x.FundCode, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).First().Id,
+                StringComparer.Ordinal);
 
         var productMap = new Dictionary<Guid, ManualReportProduct>(sourceProducts.Count);
         foreach (var oldProduct in sourceProducts)
@@ -170,13 +185,35 @@ public static class DerivedReportEndpoints
                 oldProduct.Section14Code, oldProduct.FundClassification);
             db.ManualReportProducts.Add(clone);
             productMap[oldProduct.Id] = clone;
+
+            if (sourceMetadata.TryGetValue(oldProduct.Id, out var oldMetadata))
+            {
+                var metadataClone = new EmployerInterfaceReportProductData(clone.Id);
+                metadataClone.Update(
+                    request.ReportKind == ManualReportKind.Negative ? 5 : oldMetadata.OperationCode,
+                    oldMetadata.DepositStatus,
+                    oldMetadata.EmployeeStatus,
+                    oldMetadata.StatusStartDate,
+                    oldMetadata.EmploymentPercentage,
+                    oldMetadata.WorkDaysInMonth,
+                    oldMetadata.LastDeposit,
+                    request.ReportKind == ManualReportKind.Negative ? null : oldMetadata.RefundReason,
+                    oldMetadata.PaymentMethodCode,
+                    oldMetadata.EmployerAccountType,
+                    oldMetadata.ReceiverAccountType,
+                    sourceTransferIdentifierByFund[oldProduct.FundCode].ToString("D"),
+                    null,
+                    null,
+                    oldMetadata.OldPensionTypeCode);
+                db.EmployerInterfaceReportProductData.Add(metadataClone);
+            }
         }
 
         foreach (var oldContribution in sourceContributions)
         {
             db.ManualContributions.Add(new ManualContribution(productMap[oldContribution.ReportProductId].Id,
                 oldContribution.Party, oldContribution.Component, oldContribution.Amount, oldContribution.Percentage,
-                oldContribution.ExemptPayments));
+                oldContribution.ExemptPayments, oldContribution.Id.ToString("D")));
         }
 
         foreach (var oldPayment in sourcePayments)
