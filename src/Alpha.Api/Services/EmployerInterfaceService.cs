@@ -236,45 +236,53 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         var kind = validation.DocumentType == EmployerInterfaceDocumentType.NegativeReport
             ? ManualReportKind.Negative : ManualReportKind.Current;
 
-        var previousIdentifiers = Desc(doc, "PirteiHaavaratKsafim")
+        var transfers = Desc(doc, "PirteiHaavaratKsafim").ToList();
+        var previousIdentifiers = transfers
             .SelectMany(x => new[] { Value(x, "MISPAR-ZIHUI-KODEM"), Value(x, "MISPAR-MISLAKA-KODEM") })
-            .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var operationCodes = transfers.Select(x => IntValue(x, "SUG-PEULA")).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
+        var isImportedCorrection = kind == ManualReportKind.Negative || (kind == ManualReportKind.Current && operationCodes.Any(x => x is 2 or 3 or 7));
+
         Guid? sourceId = null;
-        if (kind == ManualReportKind.Negative)
+        if (isImportedCorrection && previousIdentifiers.Length > 0)
         {
             var previousProductIds = previousIdentifiers
                 .Select(x => Guid.TryParse(x, out var parsed) ? (Guid?)parsed : null)
                 .Where(x => x.HasValue).Select(x => x!.Value).ToArray();
 
-            if (previousProductIds.Length > 0)
-            {
-                sourceId = await (
-                    from product in db.ManualReportProducts.AsNoTracking()
-                    join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                    join sourceReport in db.ManualReports.AsNoTracking() on employee.ReportId equals sourceReport.Id
-                    where previousProductIds.Contains(product.Id)
-                        && sourceReport.OrganizationId == organizationId && sourceReport.EmployerId == employerId
-                    select (Guid?)sourceReport.Id).FirstOrDefaultAsync(ct);
-            }
+            sourceId = await (
+                from product in db.ManualReportProducts.AsNoTracking()
+                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                join sourceReport in db.ManualReports.AsNoTracking() on employee.ReportId equals sourceReport.Id
+                join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId into metadataJoin
+                from metadata in metadataJoin.DefaultIfEmpty()
+                where sourceReport.OrganizationId == organizationId && sourceReport.EmployerId == employerId
+                    && (previousProductIds.Contains(product.Id)
+                        || (metadata != null && (previousIdentifiers.Contains(metadata.InterfaceTransferIdentifier)
+                            || previousIdentifiers.Contains(metadata.ClearingIdentifier))))
+                select (Guid?)sourceReport.Id).FirstOrDefaultAsync(ct);
 
-            if (sourceId is null && previousIdentifiers.Length > 0)
+            if (sourceId is null)
             {
                 sourceId = await (
                     from transmission in db.ReportTransmissions.AsNoTracking()
                     join sourceReport in db.ManualReports.AsNoTracking() on transmission.ReportId equals sourceReport.Id
                     where sourceReport.OrganizationId == organizationId && sourceReport.EmployerId == employerId
-                        && transmission.ExternalId != null && previousIdentifiers.Contains(transmission.ExternalId)
+                        && !string.IsNullOrEmpty(transmission.ExternalId)
+                        && previousIdentifiers.Contains(transmission.ExternalId.ToUpper())
                     orderby transmission.CreatedAt descending
                     select (Guid?)sourceReport.Id).FirstOrDefaultAsync(ct);
             }
-
-            // An externally-created valid 006 negative report may legitimately reference a report
-            // that is not stored in Alpha. Preserve the official previous identifiers when present,
-            // but do not invent a local source report merely because one cannot be resolved.
         }
 
+        // A valid externally-created correction may legitimately reference a report that is not
+        // stored in Alpha. Keep the official previous identifiers and mark the source as external
+        // instead of inventing a local report.
         var report = new ManualReport(organizationId, employerId, reportingMonth, salaryPaymentDate, kind, sourceId,
-            externalSourceReference: kind == ManualReportKind.Negative && sourceId is null);
+            externalSourceReference: isImportedCorrection && sourceId is null);
 
         var liveEmployer = await db.Employers.AsNoTracking().SingleAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
         var transferSnapshot = Desc(doc, "PirteiHaavaratKsafim").FirstOrDefault();
