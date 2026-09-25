@@ -752,6 +752,27 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_correction_emits_previous_transfer_and_clearing_identifiers()
+    {
+        var fixture = CreateFixture(false, operationCode: 2, previousExceptionCode: null);
+        var previousTransfer = Guid.NewGuid().ToString("D");
+        var previousClearing = Guid.NewGuid().ToString("D");
+        fixture.Context.ProductMetadata[0].Update(
+            2, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null,
+            1, 1, 1, previousTransfer, previousClearing);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document!, fixture.Context, false);
+        Assert.Empty(workbookIssues);
+        Assert.Equal(previousTransfer.ToUpperInvariant(), Assert.Single(result.Document.Descendants("MISPAR-ZIHUI-KODEM")).Value);
+        Assert.Equal(previousClearing.ToUpperInvariant(), Assert.Single(result.Document.Descendants("MISPAR-MISLAKA-KODEM")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Corrective_report_requires_previous_reference_or_official_exception()
     {
         var fixture = CreateFixture(false, operationCode: 2, previousExceptionCode: null);
