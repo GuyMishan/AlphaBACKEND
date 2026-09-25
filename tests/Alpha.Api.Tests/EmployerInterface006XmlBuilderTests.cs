@@ -479,6 +479,23 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_preserves_imported_transfer_and_record_identifiers()
+    {
+        var fixture = CreateFixture(false);
+        var transferId = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var recordId = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        fixture.Context.ProductMetadata[0].SetInterfaceTransferIdentifier(transferId);
+        fixture.Context.Contributions[0].SetInterfaceRecordIdentifier(recordId);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.Equal(transferId, Assert.Single(result.Document!.Descendants("MISPAR-ZIHUI")).Value);
+        Assert.Equal(recordId, Assert.Single(result.Document.Descendants("MISPAR-MEZAHE-RESHUMA")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Current_report_emits_previous_contribution_record_identifier()
     {
         var fixture = CreateFixture(false);
