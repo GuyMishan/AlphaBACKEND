@@ -437,6 +437,36 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_type_5_attachment_is_rejected_for_new_employee()
+    {
+        var fixture = CreateFixture(false);
+        var metadata = fixture.Context.ProductMetadata[0];
+        metadata.Update(1, 1, 14, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1);
+        var request = new ManualReportAttachment(Guid.NewGuid(), fixture.Product.Id, 5, "default-fund-request.pdf",
+            "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.4\nrequest"));
+        var context = fixture.Context with { Attachments = [request] };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("existing employee", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Current_type_5_attachment_is_rejected_for_non_pension_product()
+    {
+        var fixture = CreateFixture(false, productType: PensionProductType.StudyFund);
+        var request = new ManualReportAttachment(Guid.NewGuid(), fixture.Product.Id, 5, "default-fund-request.pdf",
+            "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.4\nrequest"));
+        var context = fixture.Context with { Attachments = [request] };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("pension fund", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Negative_operation_5_emits_attachment_references_and_employee_flags()
     {
         var fixture = CreateFixture(true, operationCode: 5);
