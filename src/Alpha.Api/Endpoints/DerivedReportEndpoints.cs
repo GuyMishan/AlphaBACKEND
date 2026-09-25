@@ -191,7 +191,7 @@ public static class DerivedReportEndpoints
             {
                 var metadataClone = new EmployerInterfaceReportProductData(clone.Id);
                 metadataClone.Update(
-                    request.ReportKind == ManualReportKind.Negative ? 5 : oldMetadata.OperationCode,
+                    request.ReportKind == ManualReportKind.Negative ? null : oldMetadata.OperationCode,
                     oldMetadata.DepositStatus,
                     oldMetadata.EmployeeStatus,
                     oldMetadata.StatusStartDate,
@@ -199,7 +199,7 @@ public static class DerivedReportEndpoints
                     oldMetadata.WorkDaysInMonth,
                     oldMetadata.LastDeposit,
                     request.ReportKind == ManualReportKind.Negative ? null : oldMetadata.RefundReason,
-                    oldMetadata.PaymentMethodCode,
+                    request.ReportKind == ManualReportKind.Negative ? null : oldMetadata.PaymentMethodCode,
                     oldMetadata.EmployerAccountType,
                     oldMetadata.ReceiverAccountType,
                     sourceTransferIdentifierByFund[oldProduct.FundCode].ToString("D"),
