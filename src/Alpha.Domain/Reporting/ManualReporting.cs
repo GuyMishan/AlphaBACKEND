@@ -253,8 +253,25 @@ public sealed class ManualReportProduct : Entity
 public sealed class ManualContribution : Entity
 {
     private ManualContribution() { }
-    public ManualContribution(Guid reportProductId, ContributionParty party, ContributionComponent component, decimal amount, decimal percentage, decimal exemptPayments) { ReportProductId = reportProductId; Party = party; Component = component; Update(amount, percentage, exemptPayments); }
-    public Guid ReportProductId { get; private set; } public ContributionParty Party { get; private set; } public ContributionComponent Component { get; private set; } public decimal Amount { get; private set; } public decimal Percentage { get; private set; } public decimal ExemptPayments { get; private set; }
+
+    public ManualContribution(Guid reportProductId, ContributionParty party, ContributionComponent component,
+        decimal amount, decimal percentage, decimal exemptPayments, string? previousRecordIdentifier = null)
+    {
+        ReportProductId = reportProductId;
+        Party = party;
+        Component = component;
+        Update(amount, percentage, exemptPayments);
+        SetPreviousRecordIdentifier(previousRecordIdentifier);
+    }
+
+    public Guid ReportProductId { get; private set; }
+    public ContributionParty Party { get; private set; }
+    public ContributionComponent Component { get; private set; }
+    public decimal Amount { get; private set; }
+    public decimal Percentage { get; private set; }
+    public decimal ExemptPayments { get; private set; }
+    public string PreviousRecordIdentifier { get; private set; } = string.Empty;
+
     public void Update(decimal amount, decimal percentage, decimal exemptPayments)
     {
         if (amount < 0 || percentage < 0)
@@ -264,6 +281,20 @@ public sealed class ManualContribution : Entity
         Amount = amount;
         Percentage = percentage;
         ExemptPayments = exemptPayments;
+        Touch();
+    }
+
+    public void SetPreviousRecordIdentifier(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            PreviousRecordIdentifier = string.Empty;
+            return;
+        }
+
+        if (!Guid.TryParseExact(value.Trim(), "D", out var parsed))
+            throw new ArgumentException("Previous contribution record identifier must be a GUID.", nameof(value));
+        PreviousRecordIdentifier = parsed.ToString("D").ToUpperInvariant();
         Touch();
     }
 }
