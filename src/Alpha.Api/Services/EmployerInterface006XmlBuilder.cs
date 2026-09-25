@@ -466,6 +466,14 @@ public static class EmployerInterface006XmlBuilder
                         issues.Add($"{label}: no-money correction operation {meta.OperationCode} must use payment method 1.");
                     if (meta.OperationCode == 7 && meta.EmployerAccountType != 1)
                         issues.Add($"{label}: operation 7 has no payment and must report employer account type 1.");
+                    if (meta.OperationCode == 7)
+                    {
+                        var exemptCorrectionRows = EffectiveContributions(c, product, false);
+                        if (exemptCorrectionRows.Any(x => x.Amount != 0))
+                            issues.Add($"{label}: operation 7 corrects exempt payments only; SCHUM-HAFRASHA must be 0 for every row.");
+                        if (exemptCorrectionRows.All(x => x.ExemptPayments == 0))
+                            issues.Add($"{label}: operation 7 requires at least one non-zero SACH-TASHLUMIM-PTURIM correction.");
+                    }
                     // For operation 2, and for the receiver account on any no-money correction,
                     // Version 006 requires the account type used by the previous report being corrected.
                 }
