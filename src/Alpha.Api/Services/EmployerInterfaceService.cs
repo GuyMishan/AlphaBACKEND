@@ -225,6 +225,21 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
         var report = new ManualReport(organizationId, employerId, reportingMonth, salaryPaymentDate, kind, sourceId,
             externalSourceReference: kind == ManualReportKind.Negative && sourceId is null);
+
+        var liveEmployer = await db.Employers.AsNoTracking().SingleAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
+        var transferSnapshot = Desc(doc, "PirteiHaavaratKsafim").FirstOrDefault();
+        report.SetEmployerInterfaceSnapshot(
+            Value(transferSnapshot, "SHEM-MAASIK") ?? liveEmployer.LegalName,
+            Value(transferSnapshot, "MISPAR-ZIHUY-MAASIK") ?? liveEmployer.RegistrationNumber,
+            Value(transferSnapshot, "MISPAR-TIK-NIKUIM-MAASIK") ?? liveEmployer.WithholdingFileNumber,
+            Value(transferSnapshot, "SHEM-PRATI-ISH-KESHER-MAASIK") ?? liveEmployer.ContactFirstName,
+            Value(transferSnapshot, "SHEM-MISHPACHA-ISH-KESHER-MAASIK") ?? liveEmployer.ContactLastName,
+            Value(transferSnapshot, "MISPAR-TELEPHONE-KAVI-ISH-KESHER-MAASIK") ?? liveEmployer.ContactPhone,
+            Value(transferSnapshot, "E-MAIL-ISH-KESHER-MAASIK") ?? liveEmployer.ContactEmail,
+            Value(transferSnapshot, "MISPAR-CELLULARI-ISH-KESHER-MAASIK") ?? liveEmployer.ContactMobile,
+            IntValue(transferSnapshot, "SUG-MAFKID") ?? 1,
+            IntValue(transferSnapshot, "SUG-MEZAHE-MAASIK") ?? 1);
+
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, paymentAccountId, ct);
         if (paymentAccount is null)
             return InvalidIngest(validation, "payment_account_required");
