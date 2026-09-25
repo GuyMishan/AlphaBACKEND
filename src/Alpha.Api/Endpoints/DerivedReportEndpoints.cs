@@ -155,6 +155,11 @@ public static class DerivedReportEndpoints
             var clone = new ManualReportEmployee(report.Id, organizationId, employerId, oldEmployee.EmploymentId,
                 oldEmployee.PersonId, oldEmployee.NationalId, oldEmployee.FirstName, oldEmployee.LastName,
                 oldEmployee.EmployeeNumber, oldEmployee.MonthlySalary);
+            clone.SetInterfaceSnapshot(oldEmployee.InterfaceIdentifierType, oldEmployee.InterfaceIdentifier,
+                oldEmployee.BirthDateSnapshot, oldEmployee.GenderSnapshot, oldEmployee.EmailSnapshot,
+                oldEmployee.MobileSnapshot, oldEmployee.CitySnapshot, oldEmployee.StreetSnapshot,
+                oldEmployee.HouseNumberSnapshot, oldEmployee.ApartmentSnapshot, oldEmployee.PostalCodeSnapshot,
+                oldEmployee.PostOfficeBoxSnapshot, oldEmployee.EmploymentStartDateSnapshot);
             db.ManualReportEmployees.Add(clone);
             employeeMap[oldEmployee.Id] = clone;
         }
@@ -176,7 +181,7 @@ public static class DerivedReportEndpoints
         {
             db.ManualContributions.Add(new ManualContribution(productMap[oldContribution.ReportProductId].Id,
                 oldContribution.Party, oldContribution.Component, oldContribution.Amount, oldContribution.Percentage,
-                oldContribution.ExemptPayments));
+                oldContribution.ExemptPayments, oldContribution.Id.ToString("D")));
         }
 
         foreach (var oldPayment in sourcePayments)
