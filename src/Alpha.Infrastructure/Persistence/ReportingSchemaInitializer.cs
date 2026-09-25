@@ -111,7 +111,7 @@ SET "EmployerLegalNameSnapshot" = CASE WHEN r."EmployerLegalNameSnapshot" = '' T
 FROM employers.employers e
 LEFT JOIN employers.employer_profile_settings s ON s."EmployerId" = e."Id"
 WHERE r."EmployerId" = e."Id";
-DO $
+DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_manual_reports_source') THEN
         ALTER TABLE reporting.manual_reports
