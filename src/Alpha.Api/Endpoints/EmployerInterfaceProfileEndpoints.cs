@@ -47,12 +47,8 @@ public static class EmployerInterfaceProfileEndpoints
         if (employer is null) return Results.NotFound();
         employer.UpdateInterfaceContact(request.ContactFirstName, request.ContactLastName, request.ContactPhone,
             request.ContactEmail, request.ContactMobile);
-        var editableReports = await db.ManualReports
-            .Where(x => x.EmployerId == employerId && x.OrganizationId == organizationId
-                && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
-                    || x.Status == ManualReportStatus.Validated || x.Status == ManualReportStatus.Error))
-            .ToListAsync(ct);
-        foreach (var report in editableReports) report.MarkDirty();
+        // Existing reports retain their immutable Employer Interface employer snapshot.
+        // Updating the master employer profile only affects reports created afterwards.
         await db.SaveChangesAsync(ct);
         return Results.Ok(new
         {
