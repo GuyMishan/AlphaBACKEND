@@ -36,7 +36,8 @@ public static class ReportTransmissionEndpoints
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
         if (!entitlement.Allowed)
             return Results.Json(new { error = entitlement.Error, feature = entitlement.Feature }, statusCode: StatusCodes.Status409Conflict);
-        var report = await db.ManualReports.FirstOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        var report = await db.ManualReports.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
         if (report.Status != ManualReportStatus.Validated) return Results.Conflict(new { error = "Only a report that passed final validation can be transmitted.", status = report.Status.ToString() });
 
@@ -61,6 +62,19 @@ public static class ReportTransmissionEndpoints
         var provider = providers.FirstOrDefault(x => string.Equals(x.Name, providerName, StringComparison.OrdinalIgnoreCase));
         if (provider is null) return Results.BadRequest(new { error = "The selected transmission provider does not exist.", provider = providerName });
 
+        // Atomically claim the validated report before reserving a file number or contacting
+        // the provider. Only one concurrent sender can transition Validated -> Processing.
+        var claimed = await db.ManualReports
+            .Where(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId
+                && x.Status == ManualReportStatus.Validated)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, ManualReportStatus.Processing)
+                .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow), ct);
+        if (claimed != 1)
+            return Results.Conflict(new { error = "The report is already being transmitted or is no longer validated." });
+
+        report = await db.ManualReports.SingleAsync(x => x.Id == reportId, ct);
+
         EmployerInterfaceFileSequenceService.Reservation reservation;
         try
         {
@@ -68,12 +82,18 @@ public static class ReportTransmissionEndpoints
         }
         catch (InvalidOperationException ex)
         {
+            report.MarkTransmissionError(ex.Message);
+            await db.SaveChangesAsync(ct);
             return Results.Conflict(new { error = ex.Message });
         }
 
         var generated = await exporter.ExportAsync(report, ct, reservation.Sequence, reservation.PreparedAt);
         if (!generated.Validation.IsValid)
+        {
+            report.MarkTransmissionError("Generated Employer Interface 006 payload failed final validation.");
+            await db.SaveChangesAsync(ct);
             return Results.BadRequest(new { error = "Generated Employer Interface XML failed its report-type-specific official Version 006 XSD validation and was not transmitted.", generated.Validation });
+        }
 
         var payloadBytes = generated.Bytes;
         var hash = EmployerInterfaceService.Hash(payloadBytes);
@@ -84,7 +104,6 @@ public static class ReportTransmissionEndpoints
         var transmission = new ReportTransmission(reportId, organizationId, employerId, provider.Name, attemptNumber);
         transmission.Start(hash);
         db.ReportTransmissions.Add(transmission);
-        report.MarkTransmissionStarted();
         await db.SaveChangesAsync(ct);
 
         try
