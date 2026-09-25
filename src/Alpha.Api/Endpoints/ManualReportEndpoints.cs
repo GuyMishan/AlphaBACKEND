@@ -530,7 +530,9 @@ public static class ManualReportEndpoints
             throw new ArgumentException("Each contribution component may appear only once per party.");
         foreach (var item in items)
         {
-            var amount = Math.Round(insuredSalary * item.Percentage / 100m, 2, MidpointRounding.AwayFromZero);
+            var amount = item.Amount > 0
+                ? item.Amount
+                : Math.Round(insuredSalary * item.Percentage / 100m, 2, MidpointRounding.AwayFromZero);
             db.ManualContributions.Add(new ManualContribution(productId, party, item.Component, amount, item.Percentage, item.ExemptPayments));
         }
     }
