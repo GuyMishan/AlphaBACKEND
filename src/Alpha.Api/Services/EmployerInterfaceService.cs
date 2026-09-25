@@ -117,6 +117,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         return issues;
     }
 
+    [Obsolete("Legacy exporter is disabled. Use EmployerInterface006ExportService for every outgoing Employer Interface payload.", error: true)]
     public async Task<GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct)
     {
         if (report.ReportKind == ManualReportKind.Differences)
