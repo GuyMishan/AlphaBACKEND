@@ -13,6 +13,7 @@ public sealed class EmployerInterfaceReportProductDataConfiguration : IEntityTyp
         b.HasIndex(x => x.ReportProductId).IsUnique();
         b.Property(x => x.EmploymentPercentage).HasPrecision(5, 2);
         b.Property(x => x.InterfaceTransferIdentifier).HasMaxLength(36);
+        b.Property(x => x.ClearingIdentifier).HasMaxLength(36);
         b.Property(x => x.PreviousIdentifier).HasMaxLength(36);
         b.Property(x => x.PreviousClearingIdentifier).HasMaxLength(36);
         b.HasOne<ManualReportProduct>().WithOne()
