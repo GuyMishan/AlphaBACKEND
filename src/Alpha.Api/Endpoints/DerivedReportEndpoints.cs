@@ -172,7 +172,14 @@ public static class DerivedReportEndpoints
             .GroupBy(x => x.FundCode, StringComparer.Ordinal)
             .ToDictionary(
                 g => g.Key,
-                g => g.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).First().Id,
+                g =>
+                {
+                    var first = g.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).First();
+                    return sourceMetadata.TryGetValue(first.Id, out var metadata)
+                        && !string.IsNullOrWhiteSpace(metadata.InterfaceTransferIdentifier)
+                            ? metadata.InterfaceTransferIdentifier
+                            : first.Id.ToString("D");
+                },
                 StringComparer.Ordinal);
 
         var productMap = new Dictionary<Guid, ManualReportProduct>(sourceProducts.Count);
@@ -202,7 +209,7 @@ public static class DerivedReportEndpoints
                     request.ReportKind == ManualReportKind.Negative ? null : oldMetadata.PaymentMethodCode,
                     oldMetadata.EmployerAccountType,
                     oldMetadata.ReceiverAccountType,
-                    sourceTransferIdentifierByFund[oldProduct.FundCode].ToString("D"),
+                    sourceTransferIdentifierByFund[oldProduct.FundCode],
                     null,
                     null,
                     oldMetadata.OldPensionTypeCode);
@@ -214,7 +221,10 @@ public static class DerivedReportEndpoints
         {
             db.ManualContributions.Add(new ManualContribution(productMap[oldContribution.ReportProductId].Id,
                 oldContribution.Party, oldContribution.Component, oldContribution.Amount, oldContribution.Percentage,
-                oldContribution.ExemptPayments, oldContribution.Id.ToString("D")));
+                oldContribution.ExemptPayments,
+                string.IsNullOrWhiteSpace(oldContribution.InterfaceRecordIdentifier)
+                    ? oldContribution.Id.ToString("D")
+                    : oldContribution.InterfaceRecordIdentifier)));
         }
 
         foreach (var oldPayment in sourcePayments)
