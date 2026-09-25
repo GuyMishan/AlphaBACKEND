@@ -17,6 +17,8 @@ public static class ReportTransmissionSchemaInitializer
                 "Status" varchar(30) NOT NULL,
                 "ExternalId" varchar(200) NOT NULL DEFAULT '',
                 "PayloadHash" varchar(128) NOT NULL DEFAULT '',
+                "PayloadFileName" varchar(100) NOT NULL DEFAULT '',
+                "Payload" bytea NOT NULL DEFAULT '\\x',
                 "ResponsePayload" text NOT NULL DEFAULT '',
                 "ErrorMessage" varchar(4000) NOT NULL DEFAULT '',
                 "StartedAt" timestamptz NULL,
@@ -27,6 +29,8 @@ public static class ReportTransmissionSchemaInitializer
                 CONSTRAINT "FK_report_transmissions_manual_reports_ReportId"
                     FOREIGN KEY ("ReportId") REFERENCES reporting.manual_reports("Id") ON DELETE CASCADE
             );
+            ALTER TABLE reporting.report_transmissions ADD COLUMN IF NOT EXISTS "PayloadFileName" varchar(100) NOT NULL DEFAULT '';
+            ALTER TABLE reporting.report_transmissions ADD COLUMN IF NOT EXISTS "Payload" bytea NOT NULL DEFAULT '\\x';
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_report_transmissions_ReportId_AttemptNumber"
                 ON reporting.report_transmissions ("ReportId", "AttemptNumber");
             CREATE INDEX IF NOT EXISTS "IX_report_transmissions_OrganizationId_EmployerId_ReportId"
