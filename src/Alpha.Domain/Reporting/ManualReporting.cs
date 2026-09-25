@@ -81,13 +81,99 @@ public sealed class ManualReport : Entity
 public sealed class ManualReportEmployee : Entity
 {
     private ManualReportEmployee() { }
-    public ManualReportEmployee(Guid reportId, Guid organizationId, Guid employerId, Guid employmentId, Guid personId, string nationalId, string firstName, string lastName, string employeeNumber, decimal monthlySalary = 0) { ReportId = reportId; OrganizationId = organizationId; EmployerId = employerId; EmploymentId = employmentId; PersonId = personId; NationalId = nationalId.Trim(); FirstName = firstName.Trim(); LastName = lastName.Trim(); EmployeeNumber = employeeNumber.Trim(); UpdateMonthlySalary(monthlySalary); }
-    public Guid ReportId { get; private set; } public Guid OrganizationId { get; private set; } public Guid EmployerId { get; private set; } public Guid EmploymentId { get; private set; } public Guid PersonId { get; private set; }
-    public string NationalId { get; private set; } = string.Empty; public string FirstName { get; private set; } = string.Empty; public string LastName { get; private set; } = string.Empty; public string EmployeeNumber { get; private set; } = string.Empty;
-    public decimal MonthlySalary { get; private set; } public ManualReportItemStatus ValidationStatus { get; private set; } = ManualReportItemStatus.Draft; public string ValidationError { get; private set; } = string.Empty;
-    public void UpdateMonthlySalary(decimal monthlySalary) { if (monthlySalary < 0) throw new ArgumentOutOfRangeException(nameof(monthlySalary)); MonthlySalary = monthlySalary; ValidationStatus = ManualReportItemStatus.Draft; ValidationError = string.Empty; Touch(); }
-    public void SetValidationResult(bool isValid, string? error = null) { ValidationStatus = isValid ? ManualReportItemStatus.Validated : ManualReportItemStatus.Error; ValidationError = isValid ? string.Empty : error?.Trim() ?? string.Empty; Touch(); }
-    public void MarkReadyForValidation() { ValidationStatus = ManualReportItemStatus.ReadyForValidation; ValidationError = string.Empty; Touch(); }
+
+    public ManualReportEmployee(Guid reportId, Guid organizationId, Guid employerId, Guid employmentId, Guid personId,
+        string nationalId, string firstName, string lastName, string employeeNumber, decimal monthlySalary = 0)
+    {
+        ReportId = reportId;
+        OrganizationId = organizationId;
+        EmployerId = employerId;
+        EmploymentId = employmentId;
+        PersonId = personId;
+        NationalId = nationalId.Trim();
+        FirstName = firstName.Trim();
+        LastName = lastName.Trim();
+        EmployeeNumber = employeeNumber.Trim();
+        InterfaceIdentifierType = 1;
+        InterfaceIdentifier = NationalId;
+        UpdateMonthlySalary(monthlySalary);
+    }
+
+    public Guid ReportId { get; private set; }
+    public Guid OrganizationId { get; private set; }
+    public Guid EmployerId { get; private set; }
+    public Guid EmploymentId { get; private set; }
+    public Guid PersonId { get; private set; }
+
+    public string NationalId { get; private set; } = string.Empty;
+    public string FirstName { get; private set; } = string.Empty;
+    public string LastName { get; private set; } = string.Empty;
+    public string EmployeeNumber { get; private set; } = string.Empty;
+    public decimal MonthlySalary { get; private set; }
+
+    // Employer Interface 006 immutable report snapshot. Export must use these values rather
+    // than the live Person/Employment records so a draft/report cannot silently change later.
+    public int InterfaceIdentifierType { get; private set; } = 1;
+    public string InterfaceIdentifier { get; private set; } = string.Empty;
+    public DateOnly? BirthDateSnapshot { get; private set; }
+    public int? GenderSnapshot { get; private set; }
+    public string EmailSnapshot { get; private set; } = string.Empty;
+    public string MobileSnapshot { get; private set; } = string.Empty;
+    public string CitySnapshot { get; private set; } = string.Empty;
+    public string StreetSnapshot { get; private set; } = string.Empty;
+    public string HouseNumberSnapshot { get; private set; } = string.Empty;
+    public string ApartmentSnapshot { get; private set; } = string.Empty;
+    public string PostalCodeSnapshot { get; private set; } = string.Empty;
+    public string PostOfficeBoxSnapshot { get; private set; } = string.Empty;
+    public DateOnly? EmploymentStartDateSnapshot { get; private set; }
+
+    public ManualReportItemStatus ValidationStatus { get; private set; } = ManualReportItemStatus.Draft;
+    public string ValidationError { get; private set; } = string.Empty;
+
+    public void SetInterfaceSnapshot(int identifierType, string identifier, DateOnly? birthDate, int? gender,
+        string? email, string? mobile, string? city, string? street, string? houseNumber, string? apartment,
+        string? postalCode, string? postOfficeBox, DateOnly? employmentStartDate)
+    {
+        if (identifierType <= 0) throw new ArgumentOutOfRangeException(nameof(identifierType));
+        if (string.IsNullOrWhiteSpace(identifier)) throw new ArgumentException("Employee interface identifier is required.", nameof(identifier));
+        InterfaceIdentifierType = identifierType;
+        InterfaceIdentifier = identifier.Trim();
+        BirthDateSnapshot = birthDate;
+        GenderSnapshot = gender;
+        EmailSnapshot = email?.Trim() ?? string.Empty;
+        MobileSnapshot = mobile?.Trim() ?? string.Empty;
+        CitySnapshot = city?.Trim() ?? string.Empty;
+        StreetSnapshot = street?.Trim() ?? string.Empty;
+        HouseNumberSnapshot = houseNumber?.Trim() ?? string.Empty;
+        ApartmentSnapshot = apartment?.Trim() ?? string.Empty;
+        PostalCodeSnapshot = postalCode?.Trim() ?? string.Empty;
+        PostOfficeBoxSnapshot = postOfficeBox?.Trim() ?? string.Empty;
+        EmploymentStartDateSnapshot = employmentStartDate;
+        Touch();
+    }
+
+    public void UpdateMonthlySalary(decimal monthlySalary)
+    {
+        if (monthlySalary < 0) throw new ArgumentOutOfRangeException(nameof(monthlySalary));
+        MonthlySalary = monthlySalary;
+        ValidationStatus = ManualReportItemStatus.Draft;
+        ValidationError = string.Empty;
+        Touch();
+    }
+
+    public void SetValidationResult(bool isValid, string? error = null)
+    {
+        ValidationStatus = isValid ? ManualReportItemStatus.Validated : ManualReportItemStatus.Error;
+        ValidationError = isValid ? string.Empty : error?.Trim() ?? string.Empty;
+        Touch();
+    }
+
+    public void MarkReadyForValidation()
+    {
+        ValidationStatus = ManualReportItemStatus.ReadyForValidation;
+        ValidationError = string.Empty;
+        Touch();
+    }
 }
 
 public sealed class ManualReportProduct : Entity
