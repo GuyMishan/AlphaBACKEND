@@ -242,31 +242,29 @@ public static class EmployerInterface006XmlBuilder
     {
         var firstProduct = products[0];
         var employee = c.Employees.Single(x => x.Id == firstProduct.ReportEmployeeId);
-        var person = c.People[employee.PersonId];
-        var employment = c.Employments[employee.EmploymentId];
 
         var node = new XElement("PirteiOved",
-            E("SUG-MEZAHE-OVED", 1),
-            E("MISPAR-MEZAHE", Digits(employee.NationalId)),
+            E("SUG-MEZAHE-OVED", employee.InterfaceIdentifierType),
+            E("MISPAR-MEZAHE", employee.InterfaceIdentifier),
             E("SHEM-PRATI", employee.FirstName),
             E("SHEM-MISHPACHA", employee.LastName));
 
-        if (!negative) node.Add(E("TAARICH-LEIDA", person.BirthDate!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+        if (!negative) node.Add(E("TAARICH-LEIDA", employee.BirthDateSnapshot!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         node.Add(Nil("MISPAR-OVED-ETZEL-MAASIK", employee.EmployeeNumber));
 
         if (!negative)
         {
             node.Add(
-                Nil("SHEM-YISHUV", person.City),
-                Nil("SHEM-RECHOV", person.Street),
-                Nil("MISPAR-BAIT", person.HouseNumber),
-                Nil("MISPAR-DIRA", string.IsNullOrWhiteSpace(person.Apartment) ? null : person.Apartment),
-                Nil("MIKUD", string.IsNullOrWhiteSpace(person.PostalCode) ? null : Digits(person.PostalCode)),
-                Nil("TA-DOAR", string.IsNullOrWhiteSpace(person.PostOfficeBox) ? null : Digits(person.PostOfficeBox)),
-                E("E-MAIL", person.Email.Trim()),
-                E("MISPAR-CELLULARI", Digits(person.Mobile)),
-                E("MIN", (int)person.Gender!.Value),
-                E("MOED-TCHILAT-AHASAKAT-OVED", employment.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                Nil("SHEM-YISHUV", employee.CitySnapshot),
+                Nil("SHEM-RECHOV", employee.StreetSnapshot),
+                Nil("MISPAR-BAIT", employee.HouseNumberSnapshot),
+                Nil("MISPAR-DIRA", string.IsNullOrWhiteSpace(employee.ApartmentSnapshot) ? null : employee.ApartmentSnapshot),
+                Nil("MIKUD", string.IsNullOrWhiteSpace(employee.PostalCodeSnapshot) ? null : Digits(employee.PostalCodeSnapshot)),
+                Nil("TA-DOAR", string.IsNullOrWhiteSpace(employee.PostOfficeBoxSnapshot) ? null : Digits(employee.PostOfficeBoxSnapshot)),
+                E("E-MAIL", employee.EmailSnapshot.Trim()),
+                E("MISPAR-CELLULARI", Digits(employee.MobileSnapshot)),
+                E("MIN", employee.GenderSnapshot!.Value),
+                E("MOED-TCHILAT-AHASAKAT-OVED", employee.EmploymentStartDateSnapshot!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
                 E("SEIF-ARBA-ESRE-LAOVED", firstProduct.Section14Code),
                 Nil("SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF", firstProduct.Section14StartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         }
@@ -534,30 +532,34 @@ public static class EmployerInterface006XmlBuilder
         {
             foreach (var employee in c.Employees)
             {
-                if (!c.People.TryGetValue(employee.PersonId, out var person)) { issues.Add($"Employee {employee.Id}: person profile was not found."); continue; }
-                if (!person.BirthDate.HasValue) issues.Add($"Employee {employee.Id}: BirthDate is required.");
-                if (!person.Gender.HasValue) issues.Add($"Employee {employee.Id}: Gender is required.");
-                if (string.IsNullOrWhiteSpace(person.Email))
-                    issues.Add($"Employee {employee.Id}: Email is required by the current Version 006 employee block.");
-                else if (person.Email.Length > 50 || !person.Email.Contains('@') || person.Email.StartsWith('@') || person.Email.EndsWith('@'))
-                    issues.Add($"Employee {employee.Id}: Email must be a real valid address containing up to 50 characters.");
-                var employeeMobile = Digits(person.Mobile);
+                if (employee.InterfaceIdentifierType is not (1 or 2))
+                    issues.Add($"Employee {employee.Id}: SUG-MEZAHE-OVED must be 1 or 2.");
+                if (string.IsNullOrWhiteSpace(employee.InterfaceIdentifier) || employee.InterfaceIdentifier.Length > 16)
+                    issues.Add($"Employee {employee.Id}: MISPAR-MEZAHE is required and cannot exceed 16 characters.");
+                if (!employee.BirthDateSnapshot.HasValue) issues.Add($"Employee {employee.Id}: BirthDate snapshot is required.");
+                if (employee.GenderSnapshot is not (1 or 2)) issues.Add($"Employee {employee.Id}: Gender snapshot is required.");
+                if (string.IsNullOrWhiteSpace(employee.EmailSnapshot))
+                    issues.Add($"Employee {employee.Id}: Email snapshot is required by the current Version 006 employee block.");
+                else if (employee.EmailSnapshot.Length > 50 || !employee.EmailSnapshot.Contains('@') || employee.EmailSnapshot.StartsWith('@') || employee.EmailSnapshot.EndsWith('@'))
+                    issues.Add($"Employee {employee.Id}: Email snapshot must be a real valid address containing up to 50 characters.");
+                var employeeMobile = Digits(employee.MobileSnapshot);
                 if (employeeMobile.Length is < 7 or > 15)
-                    issues.Add($"Employee {employee.Id}: Mobile is required and must contain 7-15 digits. Alpha does not invent placeholder employee contact details.");
+                    issues.Add($"Employee {employee.Id}: Mobile snapshot is required and must contain 7-15 digits.");
+                if (!employee.EmploymentStartDateSnapshot.HasValue)
+                    issues.Add($"Employee {employee.Id}: Employment start-date snapshot is required.");
 
                 var employeeProducts = c.Products.Where(x => x.ReportEmployeeId == employee.Id).ToList();
                 var isNewEmployee = employeeProducts.Any(p => c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == p.Id)?.EmployeeStatus == 14);
                 if (isNewEmployee)
                 {
-                    var hasPostalBox = Digits(person.PostOfficeBox).Length > 0;
-                    var hasStreetAddress = !string.IsNullOrWhiteSpace(person.City)
-                        && !string.IsNullOrWhiteSpace(person.Street)
-                        && !string.IsNullOrWhiteSpace(person.HouseNumber)
-                        && Digits(person.PostalCode).Length > 0;
+                    var hasPostalBox = Digits(employee.PostOfficeBoxSnapshot).Length > 0;
+                    var hasStreetAddress = !string.IsNullOrWhiteSpace(employee.CitySnapshot)
+                        && !string.IsNullOrWhiteSpace(employee.StreetSnapshot)
+                        && !string.IsNullOrWhiteSpace(employee.HouseNumberSnapshot)
+                        && Digits(employee.PostalCodeSnapshot).Length > 0;
                     if (!hasPostalBox && !hasStreetAddress)
                         issues.Add($"Employee {employee.Id}: status 14 requires either a postal box or the required street-address fields.");
                 }
-                if (!c.Employments.ContainsKey(employee.EmploymentId)) issues.Add($"Employee {employee.Id}: employment profile was not found.");
             }
         }
         return issues;
