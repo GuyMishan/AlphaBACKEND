@@ -104,13 +104,23 @@ public static class ReportAttachmentEndpoints
         {
             if (reportProductId is null)
                 return Results.BadRequest(new { error = "Document types 4, 5 and 6 must be linked to the employee/product they apply to." });
-            var belongsToReport = await (
+            var linkedProduct = await (
                 from product in db.ManualReportProducts.AsNoTracking()
                 join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
                 where product.Id == reportProductId.Value && employee.ReportId == reportId
-                select product.Id).AnyAsync(ct);
-            if (!belongsToReport)
+                select product).SingleOrDefaultAsync(ct);
+            if (linkedProduct is null)
                 return Results.BadRequest(new { error = "The selected report product does not belong to this report." });
+
+            if (documentTypeCode == 5)
+            {
+                if (linkedProduct.ProductType != PensionProductType.PensionFund)
+                    return Results.BadRequest(new { error = "Version 006 document type 5 is relevant only to a pension fund." });
+                var linkedMetadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.ReportProductId == linkedProduct.Id, ct);
+                if (linkedMetadata?.EmployeeStatus == 14)
+                    return Results.BadRequest(new { error = "Version 006 document type 5 is for an existing employee and cannot be attached when employee status is 14 (new employee)." });
+            }
         }
         else
         {
