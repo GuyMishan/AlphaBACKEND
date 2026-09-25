@@ -93,15 +93,8 @@ public static class EmployerInterfaceProfileEndpoints
         var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
         person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile,
             request.City, request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
-        var affectedReportIds = await db.ManualReportEmployees.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.EmploymentId == employmentId)
-            .Select(x => x.ReportId).Distinct().ToArrayAsync(ct);
-        var editableReports = await db.ManualReports
-            .Where(x => affectedReportIds.Contains(x.Id)
-                && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
-                    || x.Status == ManualReportStatus.Validated || x.Status == ManualReportStatus.Error))
-            .ToListAsync(ct);
-        foreach (var report in editableReports) report.MarkDirty();
+        // Existing reports keep their immutable Employer Interface snapshot. Updating the
+        // employee master profile affects only reports created after this change.
         await db.SaveChangesAsync(ct);
         return Results.Ok(new
         {
