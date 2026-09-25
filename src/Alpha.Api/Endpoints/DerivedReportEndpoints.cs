@@ -147,6 +147,7 @@ public static class DerivedReportEndpoints
 
         var report = new ManualReport(organizationId, employerId, request.ReportingMonth, request.SalaryPaymentDate,
             request.ReportKind, source.Id);
+        report.CopyEmployerInterfaceSnapshotFrom(source);
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
         if (paymentAccount is null) return Results.Conflict(new { error = "payment_account_required" });
         await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, ct);
