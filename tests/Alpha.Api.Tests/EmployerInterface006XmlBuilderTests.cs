@@ -344,6 +344,51 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_transfer_to_trust_account_requires_trust_value_date()
+    {
+        var fixture = CreateFixture(false, paymentMethodCode: 1);
+        var metadata = fixture.Context.ProductMetadata[0];
+        metadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 2);
+        fixture.Context.Payments[0].Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16),
+            null, "REF-1", "Test Bank", "10", "123", "123456", "");
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("trust account", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Current_transfer_to_trust_account_emits_trust_value_date()
+    {
+        var fixture = CreateFixture(false, paymentMethodCode: 1);
+        var metadata = fixture.Context.ProductMetadata[0];
+        metadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 2);
+        fixture.Context.Payments[0].Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16),
+            new DateOnly(2026, 9, 15), "REF-1", "Test Bank", "10", "123", "123456", "");
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.Equal("2026-09-15",
+            Assert.Single(result.Document!.Descendants("TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_payment_method_9_requires_both_account_types_1()
+    {
+        var fixture = CreateFixture(false, paymentMethodCode: 9);
+        fixture.Context.ProductMetadata[0].Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2,
+            null, 9, 2, 1);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("payment method 9", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Current_masav_requires_receiver_account_even_when_amount_is_zero()
     {
         var fixture = CreateFixture(false, paymentMethodCode: 7);
