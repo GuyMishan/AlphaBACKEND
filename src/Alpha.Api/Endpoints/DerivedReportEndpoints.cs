@@ -256,7 +256,7 @@ public static class DerivedReportEndpoints
                 oldContribution.ExemptPayments,
                 string.IsNullOrWhiteSpace(oldContribution.InterfaceRecordIdentifier)
                     ? oldContribution.Id.ToString("D")
-                    : oldContribution.InterfaceRecordIdentifier)));
+                    : oldContribution.InterfaceRecordIdentifier));
         }
 
         foreach (var oldPayment in sourcePayments)
