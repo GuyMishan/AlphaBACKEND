@@ -111,8 +111,9 @@ public static class DerivedReportEndpoints
         ReportPaymentAccountService paymentAccounts, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
-        if (request.ReportKind is not (ManualReportKind.Differences or ManualReportKind.Negative))
-            return Results.BadRequest(new { error = "Derived reports must be Differences or Negative." });
+        var isCurrentCorrection = request.ReportKind == ManualReportKind.Current && request.CorrectionOperationCode is 2 or 3;
+        if (request.ReportKind is not (ManualReportKind.Differences or ManualReportKind.Negative) && !isCurrentCorrection)
+            return Results.BadRequest(new { error = "Derived reports must be Differences, Negative, or a Current correction using operation 2 or 3." });
 
         var source = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.SourceReportId &&
             x.OrganizationId == organizationId && x.EmployerId == employerId && x.Status != ManualReportStatus.Cancelled, ct);
@@ -144,6 +145,16 @@ public static class DerivedReportEndpoints
         var sourceMetadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
             .Where(x => sourceProductIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
+
+        if (isCurrentCorrection)
+        {
+            if (source.ReportKind != ManualReportKind.Negative)
+                return Results.BadRequest(new { error = "A current operation 2/3 correction must be based on a negative report." });
+            if (source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed) && !source.ExternalSourceReference)
+                return Results.Conflict(new { error = "The negative source must already have been transmitted, or be an imported external negative report." });
+            if (sourceProducts.Count == 0 || sourceProducts.Any(p => !sourceMetadata.TryGetValue(p.Id, out var m) || m.OperationCode != 6))
+                return Results.BadRequest(new { error = "A current operation 2/3 correction must reference a negative operation 6 report." });
+        }
 
         var report = new ManualReport(organizationId, employerId, request.ReportingMonth, request.SalaryPaymentDate,
             request.ReportKind, source.Id);
@@ -198,15 +209,20 @@ public static class DerivedReportEndpoints
             {
                 var metadataClone = new EmployerInterfaceReportProductData(clone.Id);
                 metadataClone.Update(
-                    request.ReportKind == ManualReportKind.Negative ? null : oldMetadata.OperationCode,
+                    request.ReportKind == ManualReportKind.Negative ? null
+                        : isCurrentCorrection ? request.CorrectionOperationCode
+                        : oldMetadata.OperationCode,
                     oldMetadata.DepositStatus,
                     oldMetadata.EmployeeStatus,
                     oldMetadata.StatusStartDate,
                     oldMetadata.EmploymentPercentage,
                     oldMetadata.WorkDaysInMonth,
                     oldMetadata.LastDeposit,
-                    request.ReportKind == ManualReportKind.Negative ? null : oldMetadata.RefundReason,
-                    request.ReportKind == ManualReportKind.Negative ? null : oldMetadata.PaymentMethodCode,
+                    request.ReportKind == ManualReportKind.Negative || isCurrentCorrection ? null : oldMetadata.RefundReason,
+                    request.ReportKind == ManualReportKind.Negative ? null
+                        : isCurrentCorrection && request.CorrectionOperationCode == 2 ? 1
+                        : isCurrentCorrection ? null
+                        : oldMetadata.PaymentMethodCode,
                     oldMetadata.EmployerAccountType,
                     oldMetadata.ReceiverAccountType,
                     sourceTransferIdentifierByFund[oldProduct.FundCode],
@@ -257,4 +273,5 @@ public static class DerivedReportEndpoints
 }
 
 public sealed record CreateDerivedManualReportRequest(Guid SourceReportId, ManualReportKind ReportKind,
-    DateOnly ReportingMonth, DateOnly? SalaryPaymentDate, Guid? PaymentAccountId = null);
+    DateOnly ReportingMonth, DateOnly? SalaryPaymentDate, Guid? PaymentAccountId = null,
+    int? CorrectionOperationCode = null);
