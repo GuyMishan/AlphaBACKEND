@@ -131,6 +131,7 @@ public sealed class ManualContributionConfiguration : IEntityTypeConfiguration<M
         b.Property(x => x.Amount).HasPrecision(18, 2);
         b.Property(x => x.Percentage).HasPrecision(9, 4);
         b.Property(x => x.ExemptPayments).HasPrecision(18, 2);
+        b.Property(x => x.PreviousRecordIdentifier).HasMaxLength(36);
         b.HasIndex(x => new { x.ReportProductId, x.Party, x.Component }).IsUnique();
         b.HasOne<ManualReportProduct>().WithMany().HasForeignKey(x => x.ReportProductId).OnDelete(DeleteBehavior.Cascade);
     }
