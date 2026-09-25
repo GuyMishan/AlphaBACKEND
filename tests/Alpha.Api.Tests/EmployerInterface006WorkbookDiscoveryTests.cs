@@ -139,8 +139,9 @@ public sealed class EmployerInterface006OfficialWorkbookTests
             var target = _sheetTargets[sheetName.Trim()];
             var entry = _zip.GetEntry(target) ?? throw new InvalidOperationException($"Workbook entry {target} was not found.");
             return ReadRows(entry, _shared)
+                .Where(row => row.Any(cell => string.Equals(cell.Trim(), xmlElement, StringComparison.OrdinalIgnoreCase)))
                 .Select(row => string.Join(" | ", row))
-                .FirstOrDefault(row => row.Contains(xmlElement, StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
+                .FirstOrDefault() ?? string.Empty;
         }
 
         public void Dispose() => _zip.Dispose();
