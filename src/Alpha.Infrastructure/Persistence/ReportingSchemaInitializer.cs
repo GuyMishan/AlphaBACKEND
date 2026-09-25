@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS reporting.manual_reports (
 );
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "ReportKind" varchar(30) NOT NULL DEFAULT 'Current';
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "SourceReportId" uuid NULL;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "ExternalSourceReference" boolean NOT NULL DEFAULT false;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentAccountId" uuid NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentBankId" integer NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentBranchId" integer NULL;
