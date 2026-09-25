@@ -212,7 +212,7 @@ public static class EmployerInterface006XmlBuilder
     {
         var first = products[0];
         var firstMetadata = c.ProductMetadata.First(x => x.ReportProductId == first.Id);
-        var oldPensionTypeCode = !negative && IsOldPensionFund(first) ? firstMetadata.OldPensionTypeCode : null;
+        var oldPensionTypeCode = !negative ? firstMetadata.OldPensionTypeCode : null;
         var fund = new XElement("PirteiKupa",
             E("SUG-KUPA", MapProductCode(first.ProductType)),
             Nil("SUG-KEREN-PENSIA", oldPensionTypeCode),
@@ -450,12 +450,12 @@ public static class EmployerInterface006XmlBuilder
                 if (!meta.EmployeeStatus.HasValue) issues.Add($"{label}: EmployeeStatus is required for a current report.");
                 if (!meta.StatusStartDate.HasValue) issues.Add($"{label}: StatusStartDate is required for a current report.");
                 if (!meta.LastDeposit.HasValue) issues.Add($"{label}: LastDeposit is required for a current report.");
-                var oldPension = IsOldPensionFund(product);
+                var oldPension = IsOldPensionFund(product) || meta.OldPensionTypeCode.HasValue;
                 if (oldPension && meta.OldPensionTypeCode is not (1 or 2))
                     issues.Add($"{label}: old pension funds require SUG-KEREN-PENSIA code 1 (מקיפה) or 2 (יסוד).");
                 if (oldPension && !meta.EmploymentPercentage.HasValue && !meta.WorkDaysInMonth.HasValue)
                     issues.Add($"{label}: old pension funds require either employment percentage or work days in month.");
-                if (!oldPension && meta.OldPensionTypeCode.HasValue)
+                if (!IsOldPensionFund(product) && meta.OldPensionTypeCode.HasValue && !string.IsNullOrWhiteSpace(product.FundClassification))
                     issues.Add($"{label}: SUG-KEREN-PENSIA is relevant only to an old pension fund.");
                 if (meta.EmployeeStatus == 14 && product.Section14Code == 5)
                     issues.Add($"{label}: Section14Code 5 must not be used for a new employee/status 14.");
