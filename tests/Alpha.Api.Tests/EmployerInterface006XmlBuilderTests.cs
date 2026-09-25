@@ -119,10 +119,11 @@ public sealed class EmployerInterface006XmlBuilderTests
         var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
 
         Assert.Empty(result.Issues);
-        Assert.Equal("1988-02-03", Assert.Single(result.Document!.Descendants("TAARICH-LEIDA")).Value);
-        Assert.Equal("snapshot@example.com", Assert.Single(result.Document.Descendants("E-MAIL")).Value);
-        Assert.Equal("0521112233", Assert.Single(result.Document.Descendants("MISPAR-CELLULARI")).Value);
-        Assert.Equal("2019-04-05", Assert.Single(result.Document.Descendants("MOED-TCHILAT-AHASAKAT-OVED")).Value);
+        var employee = Assert.Single(result.Document!.Descendants("PirteiOved"));
+        Assert.Equal("1988-02-03", employee.Element("TAARICH-LEIDA")?.Value);
+        Assert.Equal("snapshot@example.com", employee.Element("E-MAIL")?.Value);
+        Assert.Equal("0521112233", employee.Element("MISPAR-CELLULARI")?.Value);
+        Assert.Equal("2019-04-05", employee.Element("MOED-TCHILAT-AHASAKAT-OVED")?.Value);
     }
 
     [Fact]
@@ -397,6 +398,21 @@ public sealed class EmployerInterface006XmlBuilderTests
         Assert.NotNull(result.Document);
         Assert.Contains(result.Document!.Descendants("SUG-HAFRASHA"), x => x.Value == expectedCode);
         AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_report_emits_previous_contribution_record_identifier()
+    {
+        var fixture = CreateFixture(false);
+        var previous = Guid.NewGuid().ToString("D");
+        fixture.Context.Contributions[0].SetPreviousRecordIdentifier(previous);
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Empty(result.Issues);
+        Assert.Equal(previous.ToUpperInvariant(),
+            Assert.Single(result.Document!.Descendants("MISPAR-MEZAHE-RESHUMA-KODEM")).Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
     }
 
     [Fact]
