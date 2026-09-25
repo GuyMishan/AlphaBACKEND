@@ -27,10 +27,10 @@ public sealed class ManualReport : Entity
     private ManualReport() { }
 
     public ManualReport(Guid organizationId, Guid employerId, DateOnly reportingMonth, DateOnly? salaryPaymentDate,
-        ManualReportKind reportKind = ManualReportKind.Current, Guid? sourceReportId = null)
+        ManualReportKind reportKind = ManualReportKind.Current, Guid? sourceReportId = null, bool externalSourceReference = false)
     {
-        if (reportKind != ManualReportKind.Current && sourceReportId is null)
-            throw new ArgumentException("A source report is required for differences and negative reports.", nameof(sourceReportId));
+        if (reportKind != ManualReportKind.Current && sourceReportId is null && !externalSourceReference)
+            throw new ArgumentException("A source report is required for differences and negative reports unless the report carries an official external previous-report reference.", nameof(sourceReportId));
         OrganizationId = organizationId; EmployerId = employerId;
         ReportingMonth = new DateOnly(reportingMonth.Year, reportingMonth.Month, 1);
         SalaryPaymentDate = salaryPaymentDate; ReportKind = reportKind; SourceReportId = sourceReportId;
