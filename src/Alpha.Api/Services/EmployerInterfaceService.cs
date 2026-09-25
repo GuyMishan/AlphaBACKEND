@@ -345,11 +345,13 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         foreach (var contributionNode in Desc(salaryNode, "PizulHafrashotOvedBeKupa"))
         {
             var mapped = MapContribution(Value(contributionNode, "SUG-HAFRASHA"));
-            context.ManualContributions.Add(new ManualContribution(product.Id, mapped.Item1, mapped.Item2,
+            var contribution = new ManualContribution(product.Id, mapped.Item1, mapped.Item2,
                 Number(Value(contributionNode, "SCHUM-HAFRASHA")),
                 Number(Value(contributionNode, "SHIUR-HAFRASHA")),
                 Number(Value(contributionNode, "SACH-TASHLUMIM-PTURIM")),
-                Value(contributionNode, "MISPAR-MEZAHE-RESHUMA-KODEM")));
+                Value(contributionNode, "MISPAR-MEZAHE-RESHUMA-KODEM"));
+            contribution.SetInterfaceRecordIdentifier(Value(contributionNode, "MISPAR-MEZAHE-RESHUMA"));
+            context.ManualContributions.Add(contribution);
         }
 
         var metadata = new EmployerInterfaceReportProductData(product.Id);
@@ -369,6 +371,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             Value(paymentNode, "MISPAR-MISLAKA-KODEM"),
             null,
             IntValue(fundNode, "SUG-KEREN-PENSIA"));
+        metadata.SetInterfaceTransferIdentifier(Value(paymentNode, "MISPAR-ZIHUI"));
         context.EmployerInterfaceReportProductData.Add(metadata);
 
         if (paymentNode is null || metadata.OperationCode == 6) return;
