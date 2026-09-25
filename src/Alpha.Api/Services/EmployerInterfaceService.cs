@@ -181,9 +181,6 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         var previousIdentifiers = Desc(doc, "PirteiHaavaratKsafim")
             .SelectMany(x => new[] { Value(x, "MISPAR-ZIHUI-KODEM"), Value(x, "MISPAR-MISLAKA-KODEM") })
             .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        var hasPreviousReferenceException = Desc(doc, "PirteiHaavaratKsafim")
-            .Any(x => IntValue(x, "SIBAT-EI-DIVUACH-MISPAR-ZIHUI-KODEM", "KOD-CHARIG-MISPAR-ZIHUI-KODEM") is 1 or 2 or 3);
-
         Guid? sourceId = null;
         if (kind == ManualReportKind.Negative)
         {
@@ -213,9 +210,9 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                     select (Guid?)report.Id).FirstOrDefaultAsync(ct);
             }
 
-            if (sourceId is null && !hasPreviousReferenceException)
-                return InvalidIngest(validation,
-                    "Negative XML could not be linked to the original Alpha report. Supply MISPAR-ZIHUI-KODEM/MISPAR-MISLAKA-KODEM that identifies an existing report, or an official Version 006 previous-reference exception.");
+            // An externally-created valid 006 negative report may legitimately reference a report
+            // that is not stored in Alpha. Preserve the official previous identifiers when present,
+            // but do not invent a local source report merely because one cannot be resolved.
         }
 
         var report = new ManualReport(organizationId, employerId, reportingMonth, salaryPaymentDate, kind, sourceId,
@@ -349,7 +346,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             IntValue(paymentNode, "SUG-CHESHBON-KOLET-TASHLUM"),
             Value(paymentNode, "MISPAR-ZIHUI-KODEM"),
             Value(paymentNode, "MISPAR-MISLAKA-KODEM"),
-            IntValue(paymentNode, "SIBAT-EI-DIVUACH-MISPAR-ZIHUI-KODEM", "KOD-CHARIG-MISPAR-ZIHUI-KODEM"),
+            null,
             IntValue(fundNode, "SUG-KEREN-PENSIA"));
         context.EmployerInterfaceReportProductData.Add(metadata);
 
