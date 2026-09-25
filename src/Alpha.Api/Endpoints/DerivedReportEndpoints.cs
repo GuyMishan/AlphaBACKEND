@@ -141,6 +141,9 @@ public static class DerivedReportEndpoints
         var sourcePayments = await db.ManualReportPayments.AsNoTracking()
             .Where(x => sourceProductIds.Contains(x.ReportProductId))
             .ToListAsync(ct);
+        var sourceMetadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+            .Where(x => sourceProductIds.Contains(x.ReportProductId))
+            .ToDictionaryAsync(x => x.ReportProductId, ct);
 
         var report = new ManualReport(organizationId, employerId, request.ReportingMonth, request.SalaryPaymentDate,
             request.ReportKind, source.Id);
@@ -175,6 +178,28 @@ public static class DerivedReportEndpoints
                 oldProduct.Section14Code, oldProduct.FundClassification);
             db.ManualReportProducts.Add(clone);
             productMap[oldProduct.Id] = clone;
+
+            if (sourceMetadata.TryGetValue(oldProduct.Id, out var oldMetadata))
+            {
+                var metadataClone = new EmployerInterfaceReportProductData(clone.Id);
+                metadataClone.Update(
+                    request.ReportKind == ManualReportKind.Negative ? 5 : oldMetadata.OperationCode,
+                    oldMetadata.DepositStatus,
+                    oldMetadata.EmployeeStatus,
+                    oldMetadata.StatusStartDate,
+                    oldMetadata.EmploymentPercentage,
+                    oldMetadata.WorkDaysInMonth,
+                    oldMetadata.LastDeposit,
+                    request.ReportKind == ManualReportKind.Negative ? null : oldMetadata.RefundReason,
+                    oldMetadata.PaymentMethodCode,
+                    oldMetadata.EmployerAccountType,
+                    oldMetadata.ReceiverAccountType,
+                    oldProduct.Id.ToString("D"),
+                    null,
+                    null,
+                    oldMetadata.OldPensionTypeCode);
+                db.EmployerInterfaceReportProductData.Add(metadataClone);
+            }
         }
 
         foreach (var oldContribution in sourceContributions)
