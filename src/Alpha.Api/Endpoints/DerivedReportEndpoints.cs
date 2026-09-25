@@ -70,6 +70,19 @@ public static class DerivedReportEndpoints
                 select new { ReportId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.ReportId, x => x.Count, ct);
 
+        var sourceOperations = await (
+                from metadata in db.EmployerInterfaceReportProductData.AsNoTracking()
+                join product in db.ManualReportProducts.AsNoTracking() on metadata.ReportProductId equals product.Id
+                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                where ids.Contains(employee.ReportId)
+                select new { employee.ReportId, metadata.OperationCode })
+            .ToListAsync(ct);
+        var operation6Reports = sourceOperations
+            .GroupBy(x => x.ReportId)
+            .Where(g => g.Any() && g.All(x => x.OperationCode == 6))
+            .Select(g => g.Key)
+            .ToHashSet();
+
         return Results.Ok(new
         {
             items = page.Select(x => new
@@ -80,6 +93,9 @@ public static class DerivedReportEndpoints
                 x.Status,
                 x.ReportKind,
                 x.SourceReportId,
+                canBeCurrentCorrectionSource = x.ReportKind == ManualReportKind.Negative
+                    && operation6Reports.Contains(x.Id)
+                    && (x.Status == ManualReportStatus.Sent || x.Status == ManualReportStatus.Completed || x.ExternalSourceReference),
                 x.CreatedAt,
                 x.UpdatedAt,
                 employeeCount = employeeCounts.GetValueOrDefault(x.Id),
