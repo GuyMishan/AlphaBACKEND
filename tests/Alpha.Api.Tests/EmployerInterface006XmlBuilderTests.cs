@@ -283,6 +283,8 @@ public sealed class EmployerInterface006XmlBuilderTests
     public void Current_report_accepts_every_official_operation_payment_combination(int operationCode, int paymentMethodCode)
     {
         var fixture = CreateFixture(false, operationCode: operationCode, paymentMethodCode: paymentMethodCode);
+        if (operationCode == 7)
+            fixture.Context.Contributions[0].Update(0m, 0m, -100m);
         var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
         Assert.Empty(result.Issues);
         Assert.NotNull(result.Document);
@@ -314,6 +316,8 @@ public sealed class EmployerInterface006XmlBuilderTests
     public void Current_non_deposit_corrections_report_zero_deposit_totals(int operationCode)
     {
         var fixture = CreateFixture(false, operationCode: operationCode, paymentMethodCode: 1);
+        if (operationCode == 7)
+            fixture.Context.Contributions[0].Update(0m, 0m, -100m);
         var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
         Assert.Empty(result.Issues);
         Assert.NotNull(result.Document);
