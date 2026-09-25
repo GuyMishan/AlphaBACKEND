@@ -230,12 +230,15 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
         foreach (var node in nodes)
         {
-            var nationalId = Digits(Value(node, "MISPAR-MEZAHE", "MISPAR-ZEHUT", "MISPAR-ZIHUI-OVED"));
-            if (nationalId.Length == 0) { unmatched++; continue; }
+            var identifierType = IntValue(node, "SUG-MEZAHE-OVED") ?? 1;
+            var rawIdentifier = Value(node, "MISPAR-MEZAHE", "MISPAR-ZEHUT", "MISPAR-ZIHUI-OVED")?.Trim() ?? string.Empty;
+            var normalizedIdentifier = identifierType == 1 ? Digits(rawIdentifier) : rawIdentifier;
+            if (normalizedIdentifier.Length == 0) { unmatched++; continue; }
+            var employeeMapKey = $"{identifierType}:{normalizedIdentifier}";
 
             var firstName = Value(node, "SHEM-PRATI") ?? string.Empty;
             var lastName = Value(node, "SHEM-MISHPACHA") ?? string.Empty;
-            var employeeNumber = Value(node, "MISPAR-OVED-ETZEL-MAASIK", "MISPAR-OVED") ?? nationalId;
+            var employeeNumber = Value(node, "MISPAR-OVED-ETZEL-MAASIK", "MISPAR-OVED") ?? normalizedIdentifier;
             var startDate = ParseDate(Value(node, "MOED-TCHILAT-AHASAKAT-OVED")) ?? reportingMonth;
             var birthDate = ParseDate(Value(node, "TAARICH-LEIDA"));
             var gender = IntValue(node, "MIN") switch { 1 => PersonGender.Male, 2 => PersonGender.Female, _ => (PersonGender?)null };
@@ -248,27 +251,18 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             var postalCode = Value(node, "MIKUD") ?? string.Empty;
             var postOfficeBox = Value(node, "TA-DOAR") ?? string.Empty;
 
-            if (!employeeMap.TryGetValue(nationalId, out var reportEmployee))
+            if (!employeeMap.TryGetValue(employeeMapKey, out var reportEmployee))
             {
-                var person = await db.People.FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.NationalId == nationalId, ct);
+                // Importing a report must not mutate existing employee master data. The incoming
+                // values are preserved on ManualReportEmployee as an immutable report snapshot.
+                var person = await db.People.FirstOrDefaultAsync(x =>
+                    x.OrganizationId == organizationId && x.NationalId == normalizedIdentifier, ct);
                 if (person is null)
                 {
                     if (firstName.Length == 0 || lastName.Length == 0) { unmatched++; continue; }
-                    person = new Person(organizationId, nationalId, firstName, lastName, birthDate, gender, email, mobile,
+                    person = new Person(organizationId, normalizedIdentifier, firstName, lastName, birthDate, gender, email, mobile,
                         city, street, houseNumber, apartment, postalCode, postOfficeBox);
                     db.People.Add(person);
-                }
-                else
-                {
-                    person.UpdateInterfaceDetails(birthDate ?? person.BirthDate, gender ?? person.Gender,
-                        string.IsNullOrWhiteSpace(email) ? person.Email : email,
-                        string.IsNullOrWhiteSpace(mobile) ? person.Mobile : mobile,
-                        string.IsNullOrWhiteSpace(city) ? person.City : city,
-                        string.IsNullOrWhiteSpace(street) ? person.Street : street,
-                        string.IsNullOrWhiteSpace(houseNumber) ? person.HouseNumber : houseNumber,
-                        string.IsNullOrWhiteSpace(apartment) ? person.Apartment : apartment,
-                        string.IsNullOrWhiteSpace(postalCode) ? person.PostalCode : postalCode,
-                        string.IsNullOrWhiteSpace(postOfficeBox) ? person.PostOfficeBox : postOfficeBox);
                 }
 
                 var employment = await db.Employments.FirstOrDefaultAsync(x =>
@@ -282,11 +276,14 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 }
 
                 reportEmployee = new ManualReportEmployee(report.Id, organizationId, employerId, employment.Id, person.Id,
-                    nationalId, firstName.Length == 0 ? person.FirstName : firstName,
+                    normalizedIdentifier, firstName.Length == 0 ? person.FirstName : firstName,
                     lastName.Length == 0 ? person.LastName : lastName, employeeNumber,
                     xmlSalary > 0 ? xmlSalary : employment.MonthlySalary);
+                reportEmployee.SetInterfaceSnapshot(identifierType, rawIdentifier, birthDate,
+                    gender.HasValue ? (int)gender.Value : null, email, mobile, city, street, houseNumber, apartment,
+                    postalCode, postOfficeBox, startDate);
                 db.ManualReportEmployees.Add(reportEmployee);
-                employeeMap[nationalId] = reportEmployee;
+                employeeMap[employeeMapKey] = reportEmployee;
                 imported++;
             }
 
