@@ -167,6 +167,56 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         var doc = EmployerInterfaceSchemaRegistry.LoadXml(bytes);
         var feedback = new EmployerInterfaceFeedback(organizationId, employerId, validation.DocumentType!.Value,
             validation.Version ?? CurrentVersion, sourceFileName, hash, DecodeXml(bytes), Value(doc, "MISPAR-HAKOVETZ"));
+
+        var correlatedReportIds = new HashSet<Guid>();
+        foreach (var transferStatus in Desc(doc, "StatosPirteiHaavaratKsafim"))
+        {
+            var transferIdentifier = Value(transferStatus, "MISPAR-ZIHUI")?.Trim();
+            if (string.IsNullOrWhiteSpace(transferIdentifier)) continue;
+
+            var normalizedTransfer = Guid.TryParse(transferIdentifier, out var parsedTransfer)
+                ? parsedTransfer.ToString("D").ToUpperInvariant()
+                : transferIdentifier.ToUpperInvariant();
+
+            var matchedProducts = await (
+                from product in db.ManualReportProducts
+                join employee in db.ManualReportEmployees on product.ReportEmployeeId equals employee.Id
+                join metadata in db.EmployerInterfaceReportProductData on product.Id equals metadata.ReportProductId
+                where employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                    && (product.Id == (Guid.TryParse(transferIdentifier, out var directId) ? directId : Guid.Empty)
+                        || metadata.InterfaceTransferIdentifier == normalizedTransfer)
+                select new { Product = product, Employee = employee, Metadata = metadata })
+                .ToListAsync(ct);
+
+            foreach (var matched in matchedProducts)
+            {
+                correlatedReportIds.Add(matched.Employee.ReportId);
+                var clearingIdentifier = Value(transferStatus, "MISPAR-MISLAKA");
+                if (!string.IsNullOrWhiteSpace(clearingIdentifier))
+                {
+                    var sameFundProductIds = await (
+                        from p in db.ManualReportProducts.AsNoTracking()
+                        join e in db.ManualReportEmployees.AsNoTracking() on p.ReportEmployeeId equals e.Id
+                        where e.ReportId == matched.Employee.ReportId && p.FundCode == matched.Product.FundCode
+                        select p.Id).ToArrayAsync(ct);
+                    var sameFundMetadata = await db.EmployerInterfaceReportProductData
+                        .Where(x => sameFundProductIds.Contains(x.ReportProductId)).ToListAsync(ct);
+                    foreach (var item in sameFundMetadata) item.SetClearingIdentifier(clearingIdentifier);
+                }
+            }
+        }
+
+        if (correlatedReportIds.Count == 1)
+        {
+            var reportId = correlatedReportIds.Single();
+            var transmissionId = await db.ReportTransmissions.AsNoTracking()
+                .Where(x => x.ReportId == reportId)
+                .OrderByDescending(x => x.AttemptNumber)
+                .Select(x => (Guid?)x.Id)
+                .FirstOrDefaultAsync(ct);
+            feedback.Correlate(reportId, transmissionId);
+        }
+
         db.EmployerInterfaceFeedback.Add(feedback);
         await db.SaveChangesAsync(ct);
         return new(null, feedback.Id, validation, 0, 0);
@@ -372,6 +422,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             null,
             IntValue(fundNode, "SUG-KEREN-PENSIA"));
         metadata.SetInterfaceTransferIdentifier(Value(paymentNode, "MISPAR-ZIHUI"));
+        metadata.SetClearingIdentifier(Value(paymentNode, "MISPAR-MISLAKA"));
         context.EmployerInterfaceReportProductData.Add(metadata);
 
         if (paymentNode is null || metadata.OperationCode == 6) return;
