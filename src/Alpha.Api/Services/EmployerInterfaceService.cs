@@ -284,7 +284,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 reportEmployee = new ManualReportEmployee(report.Id, organizationId, employerId, employment.Id, person.Id,
                     nationalId, firstName.Length == 0 ? person.FirstName : firstName,
                     lastName.Length == 0 ? person.LastName : lastName, employeeNumber,
-                    employment.MonthlySalary > 0 ? employment.MonthlySalary : xmlSalary);
+                    xmlSalary > 0 ? xmlSalary : employment.MonthlySalary);
                 db.ManualReportEmployees.Add(reportEmployee);
                 employeeMap[nationalId] = reportEmployee;
                 imported++;
