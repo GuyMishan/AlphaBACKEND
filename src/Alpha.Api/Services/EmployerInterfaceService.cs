@@ -240,10 +240,19 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         {
             var reportId = correlatedReportIds.Single();
             var transmissionId = await db.ReportTransmissions.AsNoTracking()
-                .Where(x => x.ReportId == reportId)
+                .Where(x => x.ReportId == reportId
+                    && (x.Status == ReportTransmissionStatus.Sent || x.Status == ReportTransmissionStatus.Accepted))
                 .OrderByDescending(x => x.AttemptNumber)
                 .Select(x => (Guid?)x.Id)
                 .FirstOrDefaultAsync(ct);
+            if (transmissionId is null)
+            {
+                transmissionId = await db.ReportTransmissions.AsNoTracking()
+                    .Where(x => x.ReportId == reportId)
+                    .OrderByDescending(x => x.AttemptNumber)
+                    .Select(x => (Guid?)x.Id)
+                    .FirstOrDefaultAsync(ct);
+            }
             feedback.Correlate(reportId, transmissionId);
         }
 
