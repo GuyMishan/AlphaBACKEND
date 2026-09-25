@@ -36,7 +36,8 @@ public sealed class EmployerInterface006ExportService(
         var employments = await db.Employments.AsNoTracking().Where(x => employmentIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
         var employeeIds = employees.Select(x => x.Id).ToArray();
         var products = await db.ManualReportProducts.AsNoTracking()
-            .Where(x => employeeIds.Contains(x.ReportEmployeeId)).OrderBy(x => x.AllocationOrder).ToListAsync(ct);
+            .Where(x => employeeIds.Contains(x.ReportEmployeeId))
+            .OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToListAsync(ct);
         var productIds = products.Select(x => x.Id).ToArray();
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var payments = await db.ManualReportPayments.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
