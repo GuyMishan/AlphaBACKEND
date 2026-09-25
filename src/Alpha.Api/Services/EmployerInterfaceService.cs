@@ -30,12 +30,84 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             if (!string.Equals(version, CurrentVersion, StringComparison.Ordinal))
                 return new(false, detected.DocumentType, version, detected.SchemaFileName,
                     [$"Expected Employer Interface version {CurrentVersion}, received {version ?? "missing"}."]);
-            return new(true, detected.DocumentType, version, detected.SchemaFileName, []);
+            var businessIssues = ValidateIncomingBusinessRules(document, detected.DocumentType.Value);
+            return new(businessIssues.Count == 0, detected.DocumentType, version, detected.SchemaFileName, businessIssues);
         }
         catch (Exception ex)
         {
             return new(false, detected.DocumentType, null, detected.SchemaFileName, [ex.Message]);
         }
+    }
+
+    private static IReadOnlyList<string> ValidateIncomingBusinessRules(XDocument document, EmployerInterfaceDocumentType type)
+    {
+        if (type is not (EmployerInterfaceDocumentType.CurrentReport or EmployerInterfaceDocumentType.NegativeReport))
+            return [];
+
+        var issues = new List<string>();
+        var negative = type == EmployerInterfaceDocumentType.NegativeReport;
+        var allowedByOperation = new Dictionary<int, HashSet<int>>
+        {
+            [1] = [1, 3, 5, 6, 7, 9],
+            [2] = [1],
+            [3] = [1, 3, 5, 6, 7, 9],
+            [5] = [1, 3, 6, 7, 9],
+            [7] = [1]
+        };
+
+        foreach (var transfer in Desc(document, "PirteiHaavaratKsafim"))
+        {
+            var mobile = Digits(Value(transfer, "MISPAR-CELLULARI-ISH-KESHER-MAASIK"));
+            if (mobile.Length != 10 || !mobile.StartsWith("05", StringComparison.Ordinal))
+                issues.Add("MISPAR-CELLULARI-ISH-KESHER-MAASIK must be a 10-digit Israeli mobile number beginning with 05; use 0500000000 only when the employer has no mobile.");
+
+            var operation = IntValue(transfer, "SUG-PEULA");
+            var paymentMethod = IntValue(transfer, "KOD-EMTZAI-TASHLUM");
+            var deposit = DecimalValue(transfer, "SACH-HAFKADA-KUPA-H-P") ?? 0m;
+
+            if (operation.HasValue)
+            {
+                if (negative && operation is not (5 or 6))
+                    issues.Add($"Negative report contains invalid SUG-PEULA={operation}.");
+                if (!negative && operation is not (1 or 2 or 3 or 7))
+                    issues.Add($"Current report contains invalid SUG-PEULA={operation}.");
+
+                if (operation == 6)
+                {
+                    if (paymentMethod.HasValue)
+                        issues.Add("SUG-PEULA=6 must not contain a KOD-EMTZAI-TASHLUM value.");
+                }
+                else if (!paymentMethod.HasValue || !allowedByOperation.TryGetValue(operation.Value, out var allowed) || !allowed.Contains(paymentMethod.Value))
+                {
+                    issues.Add($"KOD-EMTZAI-TASHLUM is missing or incompatible with SUG-PEULA={operation}.");
+                }
+            }
+
+            if (!negative)
+            {
+                var zeroEmployer = deposit == 0m || paymentMethod is 3 or 5 or 6 or 9;
+                var employerBranch = Digits(Value(transfer, "MISPAR-SNIF-MAASIK"));
+                var employerAccount = Digits(Value(transfer, "MISPAR-CHESHBON-MAASIK"));
+                if (zeroEmployer && ((employerBranch.Length > 0 && employerBranch.Any(ch => ch != '0'))
+                    || (employerAccount.Length > 0 && employerAccount.Any(ch => ch != '0'))))
+                    issues.Add("Employer branch/account must be zero when no money is transferred or payment method is 3, 5, 6 or 9.");
+
+                var receiverRequired = (paymentMethod == 1 && deposit > 0m) || paymentMethod == 7;
+                var receiverBank = IntValue(transfer, "MISPAR-BANK-KOLET");
+                var receiverBranch = Digits(Value(transfer, "MISPAR-SNIF-KOLET"));
+                var receiverAccount = Digits(Value(transfer, "MISPAR-CHESHBON-KOLET"));
+                if (receiverRequired && (receiverBank is null or <= 0 || receiverBranch.Length == 0
+                    || receiverBranch.All(ch => ch == '0') || receiverAccount.Length == 0 || receiverAccount.All(ch => ch == '0')))
+                    issues.Add("Receiving bank, branch and account are required for bank transfer with money and for MASAV payment method 7.");
+
+                var ids = Desc(transfer, "PirteiOved")
+                    .Select(x => Digits(Value(x, "MISPAR-MEZAHE"))).Where(x => x.Length > 0).ToArray();
+                if (ids.GroupBy(x => x, StringComparer.Ordinal).Any(g => g.Count() > 1))
+                    issues.Add("PirteiOved must appear only once per employee within a transfer batch.");
+            }
+        }
+
+        return issues;
     }
 
     public async Task<GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct)
