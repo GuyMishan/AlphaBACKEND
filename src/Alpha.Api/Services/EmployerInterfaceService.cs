@@ -30,12 +30,84 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             if (!string.Equals(version, CurrentVersion, StringComparison.Ordinal))
                 return new(false, detected.DocumentType, version, detected.SchemaFileName,
                     [$"Expected Employer Interface version {CurrentVersion}, received {version ?? "missing"}."]);
-            return new(true, detected.DocumentType, version, detected.SchemaFileName, []);
+            var businessIssues = ValidateIncomingBusinessRules(document, detected.DocumentType.Value);
+            return new(businessIssues.Count == 0, detected.DocumentType, version, detected.SchemaFileName, businessIssues);
         }
         catch (Exception ex)
         {
             return new(false, detected.DocumentType, null, detected.SchemaFileName, [ex.Message]);
         }
+    }
+
+    private static IReadOnlyList<string> ValidateIncomingBusinessRules(XDocument document, EmployerInterfaceDocumentType type)
+    {
+        if (type is not (EmployerInterfaceDocumentType.CurrentReport or EmployerInterfaceDocumentType.NegativeReport))
+            return [];
+
+        var issues = new List<string>();
+        var negative = type == EmployerInterfaceDocumentType.NegativeReport;
+        var allowedByOperation = new Dictionary<int, HashSet<int>>
+        {
+            [1] = [1, 3, 5, 6, 7, 9],
+            [2] = [1],
+            [3] = [1, 3, 5, 6, 7, 9],
+            [5] = [1, 3, 6, 7, 9],
+            [7] = [1]
+        };
+
+        foreach (var transfer in Desc(document, "PirteiHaavaratKsafim"))
+        {
+            var mobile = Digits(Value(transfer, "MISPAR-CELLULARI-ISH-KESHER-MAASIK"));
+            if (mobile.Length != 10 || !mobile.StartsWith("05", StringComparison.Ordinal))
+                issues.Add("MISPAR-CELLULARI-ISH-KESHER-MAASIK must be a 10-digit Israeli mobile number beginning with 05; use 0500000000 only when the employer has no mobile.");
+
+            var operation = IntValue(transfer, "SUG-PEULA");
+            var paymentMethod = IntValue(transfer, "KOD-EMTZAI-TASHLUM");
+            var deposit = DecimalValue(transfer, "SACH-HAFKADA-KUPA-H-P") ?? 0m;
+
+            if (operation.HasValue)
+            {
+                if (negative && operation is not (5 or 6))
+                    issues.Add($"Negative report contains invalid SUG-PEULA={operation}.");
+                if (!negative && operation is not (1 or 2 or 3 or 7))
+                    issues.Add($"Current report contains invalid SUG-PEULA={operation}.");
+
+                if (operation == 6)
+                {
+                    if (paymentMethod.HasValue)
+                        issues.Add("SUG-PEULA=6 must not contain a KOD-EMTZAI-TASHLUM value.");
+                }
+                else if (!paymentMethod.HasValue || !allowedByOperation.TryGetValue(operation.Value, out var allowed) || !allowed.Contains(paymentMethod.Value))
+                {
+                    issues.Add($"KOD-EMTZAI-TASHLUM is missing or incompatible with SUG-PEULA={operation}.");
+                }
+            }
+
+            if (!negative)
+            {
+                var zeroEmployer = deposit == 0m || paymentMethod is 3 or 5 or 6 or 9;
+                var employerBranch = Digits(Value(transfer, "MISPAR-SNIF-MAASIK"));
+                var employerAccount = Digits(Value(transfer, "MISPAR-CHESHBON-MAASIK"));
+                if (zeroEmployer && ((employerBranch.Length > 0 && employerBranch.Any(ch => ch != '0'))
+                    || (employerAccount.Length > 0 && employerAccount.Any(ch => ch != '0'))))
+                    issues.Add("Employer branch/account must be zero when no money is transferred or payment method is 3, 5, 6 or 9.");
+
+                var receiverRequired = (paymentMethod == 1 && deposit > 0m) || paymentMethod == 7;
+                var receiverBank = IntValue(transfer, "MISPAR-BANK-KOLET");
+                var receiverBranch = Digits(Value(transfer, "MISPAR-SNIF-KOLET"));
+                var receiverAccount = Digits(Value(transfer, "MISPAR-CHESHBON-KOLET"));
+                if (receiverRequired && (receiverBank is null or <= 0 || receiverBranch.Length == 0
+                    || receiverBranch.All(ch => ch == '0') || receiverAccount.Length == 0 || receiverAccount.All(ch => ch == '0')))
+                    issues.Add("Receiving bank, branch and account are required for bank transfer with money and for MASAV payment method 7.");
+
+                var ids = Desc(transfer, "PirteiOved")
+                    .Select(x => Digits(Value(x, "MISPAR-MEZAHE"))).Where(x => x.Length > 0).ToArray();
+                if (ids.GroupBy(x => x, StringComparer.Ordinal).Any(g => g.Count() > 1))
+                    issues.Add("PirteiOved must appear only once per employee within a transfer batch.");
+            }
+        }
+
+        return issues;
     }
 
     public async Task<GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct)
@@ -62,14 +134,15 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         return new(bytes, new(schemaValidation.IsValid, type, CurrentVersion, schemaValidation.SchemaFileName, schemaValidation.Issues));
     }
 
-    public async Task<IngestResult> IngestAsync(Guid organizationId, Guid employerId, string sourceFileName, byte[] xmlBytes, Guid? paymentAccountId, CancellationToken ct)
+    public async Task<IngestResult> IngestAsync(Guid organizationId, Guid employerId, string sourceFileName, byte[] xmlBytes,
+        Guid? paymentAccountId, DateOnly? salaryPaymentDate, CancellationToken ct)
     {
         var validation = Validate(xmlBytes);
         if (!validation.IsValid || validation.DocumentType is null)
             return new(null, null, validation, 0, 0);
         return validation.DocumentType is EmployerInterfaceDocumentType.SummaryFeedback or EmployerInterfaceDocumentType.AnnualSummaryFeedback
             ? await IngestFeedbackAsync(organizationId, employerId, sourceFileName, xmlBytes, validation, ct)
-            : await ImportReportAsync(organizationId, employerId, xmlBytes, validation, paymentAccountId, ct);
+            : await ImportReportAsync(organizationId, employerId, xmlBytes, validation, paymentAccountId, salaryPaymentDate, ct);
     }
 
     public static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
@@ -92,7 +165,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
     }
 
     private async Task<IngestResult> ImportReportAsync(Guid organizationId, Guid employerId, byte[] bytes,
-        FileValidation validation, Guid? paymentAccountId, CancellationToken ct)
+        FileValidation validation, Guid? paymentAccountId, DateOnly? salaryPaymentDate, CancellationToken ct)
     {
         var doc = EmployerInterfaceSchemaRegistry.LoadXml(bytes);
         var nodes = Desc(doc, "PirteiOved").ToList();
@@ -102,20 +175,48 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             .Select(n => ParseDate(Value(n, "CHODESH-MASKORET"))).FirstOrDefault(d => d is not null);
         if (month is null) return InvalidIngest(validation, "CHODESH-MASKORET is required.");
         var reportingMonth = new DateOnly(month.Value.Year, month.Value.Month, 1);
-        var kind = validation.DocumentType == EmployerInterfaceDocumentType.NegativeReport ? ManualReportKind.Negative : ManualReportKind.Current;
+        var kind = validation.DocumentType == EmployerInterfaceDocumentType.NegativeReport
+            ? ManualReportKind.Negative : ManualReportKind.Current;
 
+        var previousIdentifiers = Desc(doc, "PirteiHaavaratKsafim")
+            .SelectMany(x => new[] { Value(x, "MISPAR-ZIHUI-KODEM"), Value(x, "MISPAR-MISLAKA-KODEM") })
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         Guid? sourceId = null;
         if (kind == ManualReportKind.Negative)
         {
-            sourceId = await db.ManualReports.AsNoTracking()
-                .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.ReportingMonth == reportingMonth && x.ReportKind == ManualReportKind.Current)
-                .OrderByDescending(x => x.CreatedAt).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
-            if (sourceId is null) return InvalidIngest(validation,
-                "Negative XML requires an existing current Alpha report for the same employer and reporting month.");
+            var previousProductIds = previousIdentifiers
+                .Select(x => Guid.TryParse(x, out var parsed) ? (Guid?)parsed : null)
+                .Where(x => x.HasValue).Select(x => x!.Value).ToArray();
+
+            if (previousProductIds.Length > 0)
+            {
+                sourceId = await (
+                    from product in db.ManualReportProducts.AsNoTracking()
+                    join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                    join sourceReport in db.ManualReports.AsNoTracking() on employee.ReportId equals sourceReport.Id
+                    where previousProductIds.Contains(product.Id)
+                        && sourceReport.OrganizationId == organizationId && sourceReport.EmployerId == employerId
+                    select (Guid?)sourceReport.Id).FirstOrDefaultAsync(ct);
+            }
+
+            if (sourceId is null && previousIdentifiers.Length > 0)
+            {
+                sourceId = await (
+                    from transmission in db.ReportTransmissions.AsNoTracking()
+                    join sourceReport in db.ManualReports.AsNoTracking() on transmission.ReportId equals sourceReport.Id
+                    where sourceReport.OrganizationId == organizationId && sourceReport.EmployerId == employerId
+                        && transmission.ExternalId != null && previousIdentifiers.Contains(transmission.ExternalId)
+                    orderby transmission.CreatedAt descending
+                    select (Guid?)sourceReport.Id).FirstOrDefaultAsync(ct);
+            }
+
+            // An externally-created valid 006 negative report may legitimately reference a report
+            // that is not stored in Alpha. Preserve the official previous identifiers when present,
+            // but do not invent a local source report merely because one cannot be resolved.
         }
 
-        var valueDate = Desc(doc, "PirteiHaavaratKsafim").Select(n => ParseDate(Value(n, "TAARICH-ERECH-HAFKADA-LEKUPA"))).FirstOrDefault(d => d is not null);
-        var report = new ManualReport(organizationId, employerId, reportingMonth, valueDate, kind, sourceId);
+        var report = new ManualReport(organizationId, employerId, reportingMonth, salaryPaymentDate, kind, sourceId,
+            externalSourceReference: kind == ManualReportKind.Negative && sourceId is null);
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, paymentAccountId, ct);
         if (paymentAccount is null)
             return InvalidIngest(validation, "payment_account_required");
@@ -131,10 +232,21 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         {
             var nationalId = Digits(Value(node, "MISPAR-MEZAHE", "MISPAR-ZEHUT", "MISPAR-ZIHUI-OVED"));
             if (nationalId.Length == 0) { unmatched++; continue; }
+
             var firstName = Value(node, "SHEM-PRATI") ?? string.Empty;
             var lastName = Value(node, "SHEM-MISHPACHA") ?? string.Empty;
             var employeeNumber = Value(node, "MISPAR-OVED-ETZEL-MAASIK", "MISPAR-OVED") ?? nationalId;
             var startDate = ParseDate(Value(node, "MOED-TCHILAT-AHASAKAT-OVED")) ?? reportingMonth;
+            var birthDate = ParseDate(Value(node, "TAARICH-LEIDA"));
+            var gender = IntValue(node, "MIN") switch { 1 => PersonGender.Male, 2 => PersonGender.Female, _ => (PersonGender?)null };
+            var email = Value(node, "E-MAIL") ?? string.Empty;
+            var mobile = Digits(Value(node, "MISPAR-CELLULARI"));
+            var city = Value(node, "SHEM-YISHUV") ?? string.Empty;
+            var street = Value(node, "SHEM-RECHOV") ?? string.Empty;
+            var houseNumber = Value(node, "MISPAR-BAIT") ?? string.Empty;
+            var apartment = Value(node, "MISPAR-DIRA") ?? string.Empty;
+            var postalCode = Value(node, "MIKUD") ?? string.Empty;
+            var postOfficeBox = Value(node, "TA-DOAR") ?? string.Empty;
 
             if (!employeeMap.TryGetValue(nationalId, out var reportEmployee))
             {
@@ -142,12 +254,27 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 if (person is null)
                 {
                     if (firstName.Length == 0 || lastName.Length == 0) { unmatched++; continue; }
-                    person = new Person(organizationId, nationalId, firstName, lastName);
+                    person = new Person(organizationId, nationalId, firstName, lastName, birthDate, gender, email, mobile,
+                        city, street, houseNumber, apartment, postalCode, postOfficeBox);
                     db.People.Add(person);
                 }
+                else
+                {
+                    person.UpdateInterfaceDetails(birthDate ?? person.BirthDate, gender ?? person.Gender,
+                        string.IsNullOrWhiteSpace(email) ? person.Email : email,
+                        string.IsNullOrWhiteSpace(mobile) ? person.Mobile : mobile,
+                        string.IsNullOrWhiteSpace(city) ? person.City : city,
+                        string.IsNullOrWhiteSpace(street) ? person.Street : street,
+                        string.IsNullOrWhiteSpace(houseNumber) ? person.HouseNumber : houseNumber,
+                        string.IsNullOrWhiteSpace(apartment) ? person.Apartment : apartment,
+                        string.IsNullOrWhiteSpace(postalCode) ? person.PostalCode : postalCode,
+                        string.IsNullOrWhiteSpace(postOfficeBox) ? person.PostOfficeBox : postOfficeBox);
+                }
 
-                var employment = await db.Employments.FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.PersonId == person.Id, ct);
-                var xmlSalary = Desc(node, "ChodeshMaskoretVestatusOved").Select(x => Number(Value(x, "SACHAR-MEDUVACH"))).DefaultIfEmpty(0m).Max();
+                var employment = await db.Employments.FirstOrDefaultAsync(x =>
+                    x.OrganizationId == organizationId && x.EmployerId == employerId && x.PersonId == person.Id, ct);
+                var xmlSalary = Desc(node, "ChodeshMaskoretVestatusOved")
+                    .Select(x => Number(Value(x, "SACHAR-MEDUVACH"))).DefaultIfEmpty(0m).Max();
                 if (employment is null)
                 {
                     employment = new Employment(organizationId, employerId, person.Id, startDate, employeeNumber, xmlSalary);
@@ -155,14 +282,16 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 }
 
                 reportEmployee = new ManualReportEmployee(report.Id, organizationId, employerId, employment.Id, person.Id,
-                    nationalId, firstName.Length == 0 ? person.FirstName : firstName, lastName.Length == 0 ? person.LastName : lastName,
-                    employeeNumber, employment.MonthlySalary > 0 ? employment.MonthlySalary : xmlSalary);
+                    nationalId, firstName.Length == 0 ? person.FirstName : firstName,
+                    lastName.Length == 0 ? person.LastName : lastName, employeeNumber,
+                    xmlSalary > 0 ? xmlSalary : employment.MonthlySalary);
                 db.ManualReportEmployees.Add(reportEmployee);
                 employeeMap[nationalId] = reportEmployee;
                 imported++;
             }
 
-            AddProduct(node, reportEmployee, reportingMonth, orderMap, db);
+            foreach (var salaryNode in Desc(node, "ChodeshMaskoretVestatusOved").ToList())
+                AddProduct(node, salaryNode, reportEmployee, reportingMonth, orderMap, db);
         }
 
         if (imported == 0) return InvalidIngest(validation, "No employee records could be mapped into Alpha.", unmatched);
@@ -170,42 +299,68 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         return new(report.Id, null, validation, imported, unmatched);
     }
 
-    private static void AddProduct(XElement employeeNode, ManualReportEmployee reportEmployee, DateOnly reportingMonth,
-        IDictionary<Guid, int> orderMap, IAlphaDbContext context)
+    private static void AddProduct(XElement employeeNode, XElement salaryNode, ManualReportEmployee reportEmployee,
+        DateOnly reportingMonth, IDictionary<Guid, int> orderMap, IAlphaDbContext context)
     {
-        var salaryNode = Desc(employeeNode, "ChodeshMaskoretVestatusOved").FirstOrDefault();
-        if (salaryNode is null) return;
         var fundNode = employeeNode.Ancestors().FirstOrDefault(x => NameIs(x, "PirteiKupa"));
         var paymentNode = employeeNode.Ancestors().FirstOrDefault(x => NameIs(x, "PirteiHaavaratKsafim"));
         var salary = Number(Value(salaryNode, "SACHAR-MEDUVACH"));
         var order = orderMap.TryGetValue(reportEmployee.Id, out var previous) ? previous + 1 : 1;
         orderMap[reportEmployee.Id] = order;
+        var fundCode = Value(fundNode, "KOD-MEZAHE-KUPA-H-P") ?? string.Empty;
+        var section14Code = IntValue(employeeNode, "SEIF-ARBA-ESRE-LAOVED") ?? 3;
+        var section14Date = ParseDate(Value(employeeNode, "SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF"));
 
         var product = new ManualReportProduct(reportEmployee.Id, MapProductType(Value(fundNode, "SUG-KUPA")),
             Value(salaryNode, "MISPAR-POLISA-O-HESHBON") ?? Value(fundNode, "MISPAR-KUPA-ETZEL-MAASIK") ?? string.Empty,
             ParseDate(Value(salaryNode, "CHODESH-MASKORET")) ?? reportingMonth, salary,
             Value(salaryNode, "SUG-TAKBUL") ?? string.Empty, Value(salaryNode, "ROVED-SACHAR") ?? string.Empty,
-            Value(employeeNode, "SEIF-ARBA-ESRE-LAOVED") is "1" or "2" or "3",
-            ParseDate(Value(employeeNode, "SEIF-ARBA-ESRE-TAHRIH-KNISA-LETOKEF")),
-            fundCode: Value(fundNode, "KOD-MEZAHE-KUPA-H-P"), fundName: Value(fundNode, "SHEM-KUPA-ETZEL-MAASIK"),
-            salaryAllocationType: SalaryAllocationType.Fixed, salaryAllocationValue: salary, allocationOrder: order);
+            section14Code is 1 or 2, section14Date,
+            fundExternalKey: fundCode, fundCode: fundCode,
+            fundName: Value(fundNode, "SHEM-KUPA-ETZEL-MAASIK") ?? string.Empty,
+            salaryAllocationType: SalaryAllocationType.Fixed, salaryAllocationValue: salary, allocationOrder: order,
+            section14Code: section14Code);
         context.ManualReportProducts.Add(product);
 
-        var seen = new HashSet<(ContributionParty, ContributionComponent)>();
-        foreach (var c in Desc(salaryNode, "PizulHafrashotOvedBeKupa"))
+        foreach (var contributionNode in Desc(salaryNode, "PizulHafrashotOvedBeKupa"))
         {
-            var mapped = MapContribution(Value(c, "SUG-HAFRASHA"));
-            if (!seen.Add(mapped)) continue;
+            var mapped = MapContribution(Value(contributionNode, "SUG-HAFRASHA"));
             context.ManualContributions.Add(new ManualContribution(product.Id, mapped.Item1, mapped.Item2,
-                Number(Value(c, "SCHUM-HAFRASHA")), Number(Value(c, "SHIUR-HAFRASHA")), Number(Value(c, "SACH-TASHLUMIM-PTURIM"))));
+                Number(Value(contributionNode, "SCHUM-HAFRASHA")),
+                Number(Value(contributionNode, "SHIUR-HAFRASHA")),
+                Number(Value(contributionNode, "SACH-TASHLUMIM-PTURIM"))));
         }
 
-        if (paymentNode is null) return;
+        var metadata = new EmployerInterfaceReportProductData(product.Id);
+        metadata.Update(
+            IntValue(paymentNode, "SUG-PEULA"),
+            IntValue(salaryNode, "MAHAMAD-HAFKADA-BEKUPA"),
+            IntValue(salaryNode, "STATUS-OVED-BECHODESH-MASKORET"),
+            ParseDate(Value(salaryNode, "TAARICH-TCHILAT-STATUS")),
+            DecimalValue(salaryNode, "CHELKIUT-MISRA"),
+            IntValue(salaryNode, "YEMEI-AVODA-BECHODESH"),
+            IntValue(salaryNode, "HAFKADA-ACHRONA"),
+            IntValue(salaryNode, "SIBAT-BAKASH-LECHZER-KSAFIM"),
+            IntValue(paymentNode, "KOD-EMTZAI-TASHLUM"),
+            IntValue(paymentNode, "SUG-CHESHBON-MAASIK"),
+            IntValue(paymentNode, "SUG-CHESHBON-KOLET-TASHLUM"),
+            Value(paymentNode, "MISPAR-ZIHUI-KODEM"),
+            Value(paymentNode, "MISPAR-MISLAKA-KODEM"),
+            null,
+            IntValue(fundNode, "SUG-KEREN-PENSIA"));
+        context.EmployerInterfaceReportProductData.Add(metadata);
+
+        if (paymentNode is null || metadata.OperationCode == 6) return;
         var payment = new ManualReportPayment(product.Id);
+        var reportedDeposit = DecimalValue(paymentNode, "SACH-HAFKADA-KUPA-H-P");
         payment.Update(Value(fundNode, "SHEM-KUPA-ETZEL-MAASIK"), BuildReceiverAccountText(paymentNode),
-            Value(paymentNode, "KOD-EMTZAI-TASHLUM"), ParseDate(Value(paymentNode, "TAARICH-ERECH-HAFKADA-LEKUPA")),
-            Value(paymentNode, "MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM"), null, Value(paymentNode, "MISPAR-BANK-MAASIK"),
-            Value(paymentNode, "MISPAR-SNIF-MAASIK"), Value(paymentNode, "MISPAR-CHESHBON-MAASIK"), null);
+            Value(paymentNode, "KOD-EMTZAI-TASHLUM"),
+            ParseDate(Value(paymentNode, "TAARICH-ERECH-HAFKADA-LEKUPA")),
+            ParseDate(Value(paymentNode, "TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT")),
+            Value(paymentNode, "MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM"), null,
+            Value(paymentNode, "MISPAR-BANK-MAASIK"), Value(paymentNode, "MISPAR-SNIF-MAASIK"),
+            Value(paymentNode, "MISPAR-CHESHBON-MAASIK"), null,
+            metadata.OperationCode == 3 ? reportedDeposit : null, Value(paymentNode, "KOD-MASAV"));
         context.ManualReportPayments.Add(payment);
     }
 
@@ -291,6 +446,10 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
     private static bool NameIs(XElement x, string name) => x.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase);
     private static string Digits(string? value) => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
     private static decimal Number(string? value) => decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var number) ? number : 0m;
+    private static int? IntValue(XContainer? x, params string[] names) =>
+        int.TryParse(Value(x, names), NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) ? number : null;
+    private static decimal? DecimalValue(XContainer? x, params string[] names) =>
+        decimal.TryParse(Value(x, names), NumberStyles.Any, CultureInfo.InvariantCulture, out var number) ? number : null;
     private static DateOnly? ParseDate(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
@@ -313,14 +472,27 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
     private static string MapProductCode(PensionProductType type) => type switch { PensionProductType.ManagersInsurance => "1", PensionProductType.PensionFund => "2", PensionProductType.ProvidentFund => "3", PensionProductType.StudyFund => "4", _ => "99" };
     private static (ContributionParty, ContributionComponent) MapContribution(string? code) => code switch
     {
-        "1" => (ContributionParty.Employee, ContributionComponent.Benefits), "2" => (ContributionParty.Employer, ContributionComponent.Benefits),
-        "3" => (ContributionParty.Employer, ContributionComponent.Severance), "4" => (ContributionParty.Employer, ContributionComponent.Disability),
-        _ => (ContributionParty.Employer, ContributionComponent.Other)
+        "1" => (ContributionParty.Employer, ContributionComponent.Severance),
+        "2" => (ContributionParty.Employee, ContributionComponent.Severance),
+        "3" => (ContributionParty.Employer, ContributionComponent.Benefits),
+        "4" => (ContributionParty.Employee, ContributionComponent.Benefits),
+        "5" => (ContributionParty.Employee, ContributionComponent.Disability),
+        "6" => (ContributionParty.Employer, ContributionComponent.Disability),
+        "7" => (ContributionParty.Employee, ContributionComponent.Other),
+        "8" => (ContributionParty.Employer, ContributionComponent.Other),
+        _ => throw new InvalidDataException($"Unsupported SUG-HAFRASHA code '{code}'.")
     };
     private static string MapContributionCode(ManualContribution c) => (c.Party, c.Component) switch
     {
-        (ContributionParty.Employee, ContributionComponent.Benefits) => "1", (ContributionParty.Employer, ContributionComponent.Benefits) => "2",
-        (ContributionParty.Employer, ContributionComponent.Severance) => "3", (ContributionParty.Employer, ContributionComponent.Disability) => "4", _ => "9"
+        (ContributionParty.Employer, ContributionComponent.Severance) => "1",
+        (ContributionParty.Employee, ContributionComponent.Severance) => "2",
+        (ContributionParty.Employer, ContributionComponent.Benefits) => "3",
+        (ContributionParty.Employee, ContributionComponent.Benefits) => "4",
+        (ContributionParty.Employee, ContributionComponent.Disability) => "5",
+        (ContributionParty.Employer, ContributionComponent.Disability) => "6",
+        (ContributionParty.Employee, ContributionComponent.Other) => "7",
+        (ContributionParty.Employer, ContributionComponent.Other) => "8",
+        _ => throw new InvalidOperationException("Unsupported contribution mapping.")
     };
 
     public sealed record FileValidation(bool IsValid, EmployerInterfaceDocumentType? DocumentType, string? Version, string? SchemaFileName, IReadOnlyList<string> Issues);

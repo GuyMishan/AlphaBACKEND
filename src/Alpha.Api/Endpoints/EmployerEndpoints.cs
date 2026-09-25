@@ -220,16 +220,28 @@ public static class EmployerEndpoints
     private static string? ValidateEmployeeProfile(DateOnly birthDate, PersonGender gender, string? email, string? mobile,
         string? city, string? street, string? houseNumber, string? apartment, string? postalCode, string? postOfficeBox)
     {
-        if (birthDate >= DateOnly.FromDateTime(DateTime.UtcNow)) return "Birth date must be in the past.";
-        if (!Enum.IsDefined(gender)) return "Employee gender is invalid.";
-        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) return "Employee email is required.";
-        if (string.IsNullOrWhiteSpace(mobile) || !mobile.Any(char.IsDigit)) return "Employee mobile is required.";
-        if (string.IsNullOrWhiteSpace(city)) return "Employee city is required.";
-        if (string.IsNullOrWhiteSpace(street)) return "Employee street is required.";
-        if (string.IsNullOrWhiteSpace(houseNumber)) return "Employee house number is required.";
-        if (string.IsNullOrWhiteSpace(apartment)) return "Employee apartment is required.";
-        if (string.IsNullOrWhiteSpace(postalCode) || !postalCode.All(char.IsDigit)) return "Employee postal code is required and must be numeric.";
-        if (string.IsNullOrWhiteSpace(postOfficeBox)) return "Employee post office box is required.";
+        if (birthDate >= DateOnly.FromDateTime(DateTime.UtcNow)) return "תאריך הלידה חייב להיות בעבר.";
+        if (!Enum.IsDefined(gender)) return "מין העובד אינו תקין.";
+
+        var normalizedEmail = email?.Trim() ?? string.Empty;
+        if (normalizedEmail.Length == 0 || normalizedEmail.Length > 50
+            || !normalizedEmail.Contains('@') || normalizedEmail.StartsWith('@') || normalizedEmail.EndsWith('@'))
+            return "יש להזין כתובת אימייל תקינה לעובד, עד 50 תווים.";
+
+        var normalizedMobile = new string((mobile ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (normalizedMobile.Length is < 7 or > 15)
+            return "יש להזין מספר נייד אמיתי לעובד, 7-15 ספרות.";
+
+        var hasPostOfficeBox = !string.IsNullOrWhiteSpace(postOfficeBox)
+            && new string(postOfficeBox.Where(char.IsDigit).ToArray()).Length > 0;
+        var normalizedPostalCode = new string((postalCode ?? string.Empty).Where(char.IsDigit).ToArray());
+        var hasStreetAddress = !string.IsNullOrWhiteSpace(city)
+            && !string.IsNullOrWhiteSpace(street)
+            && !string.IsNullOrWhiteSpace(houseNumber)
+            && normalizedPostalCode.Length > 0;
+
+        if (!hasPostOfficeBox && !hasStreetAddress)
+            return "יש להזין כתובת מלאה (יישוב, רחוב, מספר בית ומיקוד) או תא דואר. דירה היא שדה אופציונלי.";
         return null;
     }
 

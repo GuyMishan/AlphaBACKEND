@@ -212,7 +212,7 @@ public static class EmployerInterface006XmlBuilder
     {
         var first = products[0];
         var firstMetadata = c.ProductMetadata.First(x => x.ReportProductId == first.Id);
-        var oldPensionTypeCode = !negative && IsOldPensionFund(first) ? firstMetadata.OldPensionTypeCode : null;
+        var oldPensionTypeCode = !negative ? firstMetadata.OldPensionTypeCode : null;
         var fund = new XElement("PirteiKupa",
             E("SUG-KUPA", MapProductCode(first.ProductType)),
             Nil("SUG-KEREN-PENSIA", oldPensionTypeCode),
@@ -263,8 +263,8 @@ public static class EmployerInterface006XmlBuilder
                 Nil("MISPAR-DIRA", string.IsNullOrWhiteSpace(person.Apartment) ? null : person.Apartment),
                 Nil("MIKUD", string.IsNullOrWhiteSpace(person.PostalCode) ? null : Digits(person.PostalCode)),
                 Nil("TA-DOAR", string.IsNullOrWhiteSpace(person.PostOfficeBox) ? null : Digits(person.PostOfficeBox)),
-                E("E-MAIL", string.IsNullOrWhiteSpace(person.Email) ? "israel1234@notrelevant.com" : person.Email.Trim()),
-                E("MISPAR-CELLULARI", EmployeeMobile(person.Mobile)),
+                E("E-MAIL", person.Email.Trim()),
+                E("MISPAR-CELLULARI", Digits(person.Mobile)),
                 E("MIN", (int)person.Gender!.Value),
                 E("MOED-TCHILAT-AHASAKAT-OVED", employment.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
                 E("SEIF-ARBA-ESRE-LAOVED", firstProduct.Section14Code),
@@ -450,12 +450,12 @@ public static class EmployerInterface006XmlBuilder
                 if (!meta.EmployeeStatus.HasValue) issues.Add($"{label}: EmployeeStatus is required for a current report.");
                 if (!meta.StatusStartDate.HasValue) issues.Add($"{label}: StatusStartDate is required for a current report.");
                 if (!meta.LastDeposit.HasValue) issues.Add($"{label}: LastDeposit is required for a current report.");
-                var oldPension = IsOldPensionFund(product);
+                var oldPension = IsOldPensionFund(product) || meta.OldPensionTypeCode.HasValue;
                 if (oldPension && meta.OldPensionTypeCode is not (1 or 2))
                     issues.Add($"{label}: old pension funds require SUG-KEREN-PENSIA code 1 (מקיפה) or 2 (יסוד).");
                 if (oldPension && !meta.EmploymentPercentage.HasValue && !meta.WorkDaysInMonth.HasValue)
                     issues.Add($"{label}: old pension funds require either employment percentage or work days in month.");
-                if (!oldPension && meta.OldPensionTypeCode.HasValue)
+                if (!IsOldPensionFund(product) && meta.OldPensionTypeCode.HasValue && !string.IsNullOrWhiteSpace(product.FundClassification))
                     issues.Add($"{label}: SUG-KEREN-PENSIA is relevant only to an old pension fund.");
                 if (meta.EmployeeStatus == 14 && product.Section14Code == 5)
                     issues.Add($"{label}: Section14Code 5 must not be used for a new employee/status 14.");
@@ -537,11 +537,13 @@ public static class EmployerInterface006XmlBuilder
                 if (!c.People.TryGetValue(employee.PersonId, out var person)) { issues.Add($"Employee {employee.Id}: person profile was not found."); continue; }
                 if (!person.BirthDate.HasValue) issues.Add($"Employee {employee.Id}: BirthDate is required.");
                 if (!person.Gender.HasValue) issues.Add($"Employee {employee.Id}: Gender is required.");
-                if (!string.IsNullOrWhiteSpace(person.Email) && (person.Email.Length > 50 || !person.Email.Contains('@')))
-                    issues.Add($"Employee {employee.Id}: Email must be valid and contain up to 50 characters.");
+                if (string.IsNullOrWhiteSpace(person.Email))
+                    issues.Add($"Employee {employee.Id}: Email is required by the current Version 006 employee block.");
+                else if (person.Email.Length > 50 || !person.Email.Contains('@') || person.Email.StartsWith('@') || person.Email.EndsWith('@'))
+                    issues.Add($"Employee {employee.Id}: Email must be a real valid address containing up to 50 characters.");
                 var employeeMobile = Digits(person.Mobile);
-                if (!string.IsNullOrWhiteSpace(person.Mobile) && (employeeMobile.Length == 0 || employeeMobile.Length > 15))
-                    issues.Add($"Employee {employee.Id}: Mobile must contain digits only and up to 15 digits.");
+                if (employeeMobile.Length is < 7 or > 15)
+                    issues.Add($"Employee {employee.Id}: Mobile is required and must contain 7-15 digits. Alpha does not invent placeholder employee contact details.");
 
                 var employeeProducts = c.Products.Where(x => x.ReportEmployeeId == employee.Id).ToList();
                 var isNewEmployee = employeeProducts.Any(p => c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == p.Id)?.EmployeeStatus == 14);

@@ -159,12 +159,11 @@ public static class DerivedReportEndpoints
             employeeMap[oldEmployee.Id] = clone;
         }
 
-        var reportingType = request.ReportKind == ManualReportKind.Negative ? "שלילי" : "הפרשים";
         var productMap = new Dictionary<Guid, ManualReportProduct>(sourceProducts.Count);
         foreach (var oldProduct in sourceProducts)
         {
             var clone = new ManualReportProduct(employeeMap[oldProduct.ReportEmployeeId].Id, oldProduct.ProductType,
-                oldProduct.PolicyNumber, oldProduct.SalaryMonth, oldProduct.Salary, reportingType, oldProduct.SalaryLayer,
+                oldProduct.PolicyNumber, oldProduct.SalaryMonth, oldProduct.Salary, oldProduct.ReportingType, oldProduct.SalaryLayer,
                 oldProduct.Section14, oldProduct.Section14StartDate,
                 oldProduct.FundExternalKey, oldProduct.FundCode, oldProduct.FundName, oldProduct.FundCompanyName,
                 oldProduct.SalaryAllocationType, oldProduct.SalaryAllocationValue, oldProduct.AllocationOrder,
