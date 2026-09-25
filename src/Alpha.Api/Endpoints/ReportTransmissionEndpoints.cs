@@ -96,20 +96,27 @@ public static class ReportTransmissionEndpoints
         }
 
         var payloadBytes = generated.Bytes;
+        if (string.IsNullOrWhiteSpace(generated.PayloadFileName))
+        {
+            report.MarkTransmissionError("Generated Employer Interface 006 payload did not include an official file name.");
+            await db.SaveChangesAsync(ct);
+            return Results.BadRequest(new { error = "Generated Employer Interface 006 payload did not include an official DAT/TST file name." });
+        }
+        var payloadFileName = generated.PayloadFileName;
         var hash = EmployerInterfaceService.Hash(payloadBytes);
         var attachmentFiles = (generated.AttachmentFiles ?? [])
             .Select(x => new ReportTransmissionAttachment(x.FileName, x.ContentType, x.Content, x.Sha256))
             .ToArray();
         var attemptNumber = (await db.ReportTransmissions.Where(x => x.ReportId == reportId).MaxAsync(x => (int?)x.AttemptNumber, ct) ?? 0) + 1;
         var transmission = new ReportTransmission(reportId, organizationId, employerId, provider.Name, attemptNumber);
-        transmission.Start(hash, generated.PayloadFileName, payloadBytes);
+        transmission.Start(hash, payloadFileName, payloadBytes);
         db.ReportTransmissions.Add(transmission);
         await db.SaveChangesAsync(ct);
 
         try
         {
             var result = await provider.SendAsync(new ReportTransmissionEnvelope(reportId, organizationId, employerId,
-                payloadBytes, hash, attachmentFiles, generated.PayloadFileName), ct);
+                payloadBytes, hash, attachmentFiles, payloadFileName), ct);
             transmission.Complete(result.Success ? ReportTransmissionStatus.Accepted : ReportTransmissionStatus.Rejected, result.ExternalId, result.ResponsePayload, result.ErrorMessage);
             if (result.Success) report.MarkSent(); else report.MarkTransmissionError(result.ErrorMessage ?? "The report was rejected by the transmission provider.");
             await db.SaveChangesAsync(ct);
