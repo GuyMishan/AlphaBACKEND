@@ -193,21 +193,21 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 sourceId = await (
                     from product in db.ManualReportProducts.AsNoTracking()
                     join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                    join report in db.ManualReports.AsNoTracking() on employee.ReportId equals report.Id
+                    join sourceReport in db.ManualReports.AsNoTracking() on employee.ReportId equals sourceReport.Id
                     where previousProductIds.Contains(product.Id)
-                        && report.OrganizationId == organizationId && report.EmployerId == employerId
-                    select (Guid?)report.Id).FirstOrDefaultAsync(ct);
+                        && sourceReport.OrganizationId == organizationId && sourceReport.EmployerId == employerId
+                    select (Guid?)sourceReport.Id).FirstOrDefaultAsync(ct);
             }
 
             if (sourceId is null && previousIdentifiers.Length > 0)
             {
                 sourceId = await (
                     from transmission in db.ReportTransmissions.AsNoTracking()
-                    join report in db.ManualReports.AsNoTracking() on transmission.ReportId equals report.Id
-                    where report.OrganizationId == organizationId && report.EmployerId == employerId
+                    join sourceReport in db.ManualReports.AsNoTracking() on transmission.ReportId equals sourceReport.Id
+                    where sourceReport.OrganizationId == organizationId && sourceReport.EmployerId == employerId
                         && transmission.ExternalId != null && previousIdentifiers.Contains(transmission.ExternalId)
                     orderby transmission.CreatedAt descending
-                    select (Guid?)report.Id).FirstOrDefaultAsync(ct);
+                    select (Guid?)sourceReport.Id).FirstOrDefaultAsync(ct);
             }
 
             // An externally-created valid 006 negative report may legitimately reference a report
