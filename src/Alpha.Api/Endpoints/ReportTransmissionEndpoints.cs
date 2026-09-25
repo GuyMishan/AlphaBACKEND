@@ -23,7 +23,7 @@ public static class ReportTransmissionEndpoints
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (!await db.ManualReports.AsNoTracking().AnyAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct)) return Results.NotFound();
-        return Results.Ok(await db.ReportTransmissions.AsNoTracking().Where(x => x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId).OrderByDescending(x => x.AttemptNumber).Select(x => new { x.Id, x.Provider, x.AttemptNumber, x.Status, x.ExternalId, x.PayloadHash, x.ErrorMessage, x.StartedAt, x.SentAt, x.CompletedAt, x.CreatedAt }).ToListAsync(ct));
+        return Results.Ok(await db.ReportTransmissions.AsNoTracking().Where(x => x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId).OrderByDescending(x => x.AttemptNumber).Select(x => new { x.Id, x.Provider, x.AttemptNumber, x.Status, x.ExternalId, x.PayloadHash, x.PayloadFileName, payloadSizeBytes = x.Payload.Length, x.ErrorMessage, x.StartedAt, x.SentAt, x.CompletedAt, x.CreatedAt }).ToListAsync(ct));
     }
 
     private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid reportId, SendReportRequest? request,
@@ -102,7 +102,7 @@ public static class ReportTransmissionEndpoints
             .ToArray();
         var attemptNumber = (await db.ReportTransmissions.Where(x => x.ReportId == reportId).MaxAsync(x => (int?)x.AttemptNumber, ct) ?? 0) + 1;
         var transmission = new ReportTransmission(reportId, organizationId, employerId, provider.Name, attemptNumber);
-        transmission.Start(hash);
+        transmission.Start(hash, generated.PayloadFileName, payloadBytes);
         db.ReportTransmissions.Add(transmission);
         await db.SaveChangesAsync(ct);
 
@@ -133,7 +133,7 @@ public static class ReportTransmissionEndpoints
         interfaceVersion = EmployerInterfaceService.CurrentVersion,
         documentType = validation.DocumentType?.ToString(),
         schema = validation.SchemaFileName,
-        transmission = new { transmission.Id, transmission.Provider, transmission.AttemptNumber, transmission.Status, transmission.ExternalId, transmission.PayloadHash, transmission.ErrorMessage, transmission.StartedAt, transmission.SentAt, transmission.CompletedAt }
+        transmission = new { transmission.Id, transmission.Provider, transmission.AttemptNumber, transmission.Status, transmission.ExternalId, transmission.PayloadHash, transmission.PayloadFileName, payloadSizeBytes = transmission.Payload.Length, transmission.ErrorMessage, transmission.StartedAt, transmission.SentAt, transmission.CompletedAt }
     };
 
     public sealed record SendReportRequest(string? Provider);
