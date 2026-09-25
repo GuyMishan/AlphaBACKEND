@@ -181,10 +181,13 @@ CREATE TABLE IF NOT EXISTS reporting.manual_contributions (
     "Amount" numeric(18,2) NOT NULL,
     "Percentage" numeric(9,4) NOT NULL,
     "ExemptPayments" numeric(18,2) NOT NULL,
+    "PreviousRecordIdentifier" varchar(36) NOT NULL DEFAULT '',
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL,
     CONSTRAINT "UX_manual_contribution" UNIQUE ("ReportProductId", "Party", "Component")
 );
+
+ALTER TABLE reporting.manual_contributions ADD COLUMN IF NOT EXISTS "PreviousRecordIdentifier" varchar(36) NOT NULL DEFAULT '';
 
 CREATE OR REPLACE FUNCTION reporting.seed_employee_mix_into_report()
 RETURNS trigger
