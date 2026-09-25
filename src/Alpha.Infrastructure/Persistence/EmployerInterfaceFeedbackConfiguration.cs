@@ -20,6 +20,8 @@ public sealed class EmployerInterfaceFeedbackConfiguration : IEntityTypeConfigur
         b.Property(x => x.RawXml).HasColumnType("text").IsRequired();
         b.HasIndex(x => new { x.EmployerId, x.PayloadHash }).IsUnique();
         b.HasIndex(x => new { x.OrganizationId, x.EmployerId, x.ReceivedAt });
+        b.HasIndex(x => x.ReportId);
+        b.HasIndex(x => x.TransmissionId);
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Restrict);
     }
