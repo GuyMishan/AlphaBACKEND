@@ -25,7 +25,7 @@ public static class EmployerInterface006XmlBuilder
         var now = c.PreparedAt ?? DateTimeOffset.UtcNow;
         var sender = ResolveSender(c);
         var senderId = sender.Identifier;
-        var groups = c.Products.GroupBy(x => x.FundCode, StringComparer.Ordinal).ToList();
+        var groups = c.Products.GroupBy(x => FundIdentifier(c, x), StringComparer.Ordinal).ToList();
         var root = new XElement("MimshakMaasikim", new XAttribute(XNamespace.Xmlns + "xsi", Xsi));
         root.Add(BuildHeader(c, negative, now, senderId));
 
@@ -86,7 +86,7 @@ public static class EmployerInterface006XmlBuilder
         var receiverAccount = ParseReceiverAccount(payment?.ProviderAccount);
 
         var transfer = new XElement("PirteiHaavaratKsafim",
-            E("KOD-MEZAHE-KUPA-H-P", Digits(first.FundCode)),
+            E("KOD-MEZAHE-KUPA-H-P", FundIdentifier(c, first)),
             E("SUG-MAFKID", c.DepositorTypeCode),
             E("SUG-MEZAHE-MAASIK", c.EmployerIdentifierTypeCode),
             E("MISPAR-ZIHUY-MAASIK", c.Employer.RegistrationNumber.Trim()),
@@ -425,8 +425,9 @@ public static class EmployerInterface006XmlBuilder
             var label = $"Product {product.Id}";
             if (product.ProductType == PensionProductType.Other)
                 issues.Add($"{label}: ProductType Other cannot be serialized to Employer Interface 006 because SUG-KUPA only allows codes 1-4.");
-            if (product.FundCode.Length is < 1 or > 30 || !IsDigits(product.FundCode))
-                issues.Add($"{label}: fund code must contain 1-30 digits (KOD-MEZAHE-KUPA-H-P).");
+            var interfaceFundCode = FundIdentifier(c, product);
+            if (interfaceFundCode.Length != 30 || !IsDigits(interfaceFundCode))
+                issues.Add($"{label}: KOD-MEZAHE-KUPA-H-P could not be built as the required 30-digit uniform product code.");
             if (!TryCode(product.ReportingType, CurrentReceiptCodes, out _)) issues.Add($"{label}: ReportingType must be one of 1,2,4,6,8 for Version 006.");
             if (!TryCode(product.SalaryLayer, SalaryLayerCodes, out _)) issues.Add($"{label}: SalaryLayer must be one of 1,3,5,6,7 for Version 006.");
             if (!negative)
@@ -484,7 +485,7 @@ public static class EmployerInterface006XmlBuilder
 
                 if (meta.OperationCode == 3)
                 {
-                    var groupIds = c.Products.Where(x => string.Equals(x.FundCode, product.FundCode, StringComparison.Ordinal))
+                    var groupIds = c.Products.Where(x => string.Equals(FundIdentifier(c, x), FundIdentifier(c, product), StringComparison.Ordinal))
                         .Select(x => x.Id).ToHashSet();
                     var actualAmounts = c.Payments.Where(x => groupIds.Contains(x.ReportProductId) && x.ActualDepositAmount.HasValue)
                         .Select(x => x.ActualDepositAmount!.Value).Distinct().ToArray();
@@ -511,7 +512,7 @@ public static class EmployerInterface006XmlBuilder
             if (!negative)
             {
                 var sameEmployeeFundProducts = c.Products.Where(x => x.ReportEmployeeId == product.ReportEmployeeId
-                    && string.Equals(x.FundCode, product.FundCode, StringComparison.Ordinal)
+                    && string.Equals(FundIdentifier(c, x), FundIdentifier(c, product), StringComparison.Ordinal)
                     && string.Equals(x.FundName, product.FundName, StringComparison.Ordinal)).ToList();
                 if (sameEmployeeFundProducts.Any(x => x.Section14Code != product.Section14Code
                     || x.Section14StartDate != product.Section14StartDate))
@@ -788,6 +789,9 @@ public static class EmployerInterface006XmlBuilder
 
     private static bool IsDigits(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().All(char.IsDigit);
+    private static string FundIdentifier(BuildContext c, ManualReportProduct product) =>
+        c.InterfaceFundCodes.TryGetValue(product.Id, out var code) ? code : Digits(product.FundCode);
+
     private static string Money(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
     private static string UpperGuid(Guid value) => value.ToString("D").ToUpperInvariant();
     private static string BuildFileNumber(DateTimeOffset now, string senderId, int sequence)
@@ -803,8 +807,9 @@ public static class EmployerInterface006XmlBuilder
         EmployerInterface006Options Options, int DepositorTypeCode = 1, int EmployerIdentifierTypeCode = 1,
         IReadOnlyList<ManualReportAttachment>? AttachmentItems = null, bool AnnualEmployerAffidavitSatisfied = false,
         DateTimeOffset? PreparedAt = null, IReadOnlyDictionary<Guid, string>? AttachmentFileNames = null,
-        int FileSequence = 1)
+        int FileSequence = 1, IReadOnlyDictionary<Guid, string>? InterfaceFundCodeItems = null)
     {
+        public IReadOnlyDictionary<Guid, string> InterfaceFundCodes { get; } = InterfaceFundCodeItems ?? new Dictionary<Guid, string>();
         public IReadOnlyList<ManualReportAttachment> Attachments { get; init; } = AttachmentItems ?? [];
         public IReadOnlyDictionary<Guid, string> AttachmentTransmissionNames { get; init; } = AttachmentFileNames ?? new Dictionary<Guid, string>();
     }

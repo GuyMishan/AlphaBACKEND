@@ -1,6 +1,7 @@
 using System.Text;
 using System.Xml;
 using Alpha.Application.Abstractions;
+using Alpha.Infrastructure.Persistence;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -8,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Alpha.Api.Services;
 
 public sealed class EmployerInterface006ExportService(
-    IAlphaDbContext db,
+    AlphaDbContext db,
     EmployerInterfaceSchemaRegistry schemas,
     IOptions<EmployerInterface006Options> options)
 {
@@ -42,6 +43,7 @@ public sealed class EmployerInterface006ExportService(
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var payments = await db.ManualReportPayments.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var interfaceFundCodes = await ResolveInterfaceFundCodesAsync(db, products, ct);
 
         // Complete standard current-report metadata in memory so a normal deposit row does not
         // require opening/saving its payment modal before final validation or transmission.
@@ -136,7 +138,7 @@ public sealed class EmployerInterface006ExportService(
             products, contributions, payments, metadata, options.Value,
             report.DepositorTypeCodeSnapshot,
             report.EmployerIdentifierTypeCodeSnapshot,
-            attachments, annualEmployerAffidavitSatisfied, preparedAt, attachmentNames, fileSequence);
+            attachments, annualEmployerAffidavitSatisfied, preparedAt, attachmentNames, fileSequence, interfaceFundCodes);
         var negative = documentType == EmployerInterfaceDocumentType.NegativeReport;
         var built = negative
             ? EmployerInterface006XmlBuilder.BuildNegative(context)
@@ -157,6 +159,38 @@ public sealed class EmployerInterface006ExportService(
             .ToArray();
         return new(bytes, new(validation.IsValid, documentType, EmployerInterfaceSchemaRegistry.Version,
             validation.SchemaFileName, validation.Issues), packageName.PayloadFileName, attachmentFiles);
+    }
+
+    private static async Task<IReadOnlyDictionary<Guid, string>> ResolveInterfaceFundCodesAsync(
+        AlphaDbContext db, IReadOnlyList<ManualReportProduct> products, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, string>();
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open) await connection.OpenAsync(ct);
+
+        foreach (var product in products)
+        {
+            if (string.IsNullOrWhiteSpace(product.FundExternalKey)) continue;
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT company_legal_id, fund_code
+                FROM reference_data.pension_products
+                WHERE external_key = @external_key AND is_active = true
+                LIMIT 1
+                """;
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "external_key";
+            parameter.Value = product.FundExternalKey;
+            command.Parameters.Add(parameter);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) continue;
+
+            var companyId = reader.IsDBNull(0) ? string.Empty : new string(reader.GetString(0).Where(char.IsDigit).ToArray());
+            var fundCode = reader.IsDBNull(1) ? string.Empty : new string(reader.GetString(1).Where(char.IsDigit).ToArray());
+            if (companyId.Length == 9 && fundCode.Length is > 0 and <= 14)
+                result[product.Id] = companyId + fundCode.PadLeft(14, '0') + "0000000";
+        }
+        return result;
     }
 
     private static DateTimeOffset IsraelNow()
