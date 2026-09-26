@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="../../docs/specifications/employer-interface/006/*.xsd.xml">
+      <TargetPath>Specifications/EmployerInterface/006/%(Filename)%(Extension)</TargetPath>
       <Link>Specifications/EmployerInterface/006/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
