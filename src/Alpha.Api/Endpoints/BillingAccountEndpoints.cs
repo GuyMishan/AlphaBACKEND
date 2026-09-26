@@ -289,7 +289,12 @@ public static class BillingAccountEndpoints
             account.BillingMode,
             account.Status,
             account.DefaultPaymentMethodId,
-            configured = true,
+            configured = !string.IsNullOrWhiteSpace(account.BillingName)
+                || !string.IsNullOrWhiteSpace(account.TaxId)
+                || !string.IsNullOrWhiteSpace(account.InvoiceEmail)
+                || !string.IsNullOrWhiteSpace(account.BillingAddress)
+                || account.PaymentMethodStatus != BillingPaymentMethodStatus.NotConfigured
+                || account.DefaultPaymentMethodId.HasValue,
             account.CreatedAt,
             account.UpdatedAt
         };
