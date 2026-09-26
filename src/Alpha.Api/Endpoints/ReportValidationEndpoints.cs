@@ -197,7 +197,13 @@ public static class ReportValidationEndpoints
 
                 if (!payments.TryGetValue(product.Id, out var payment))
                 {
-                    if (!negativeCancellationWithoutRefund)
+                    // In the normal managed-debit flow there is intentionally no per-product payment row.
+                    // The report-level pension payment account + active mandate are the source of truth and
+                    // Employer Interface 006 emits method 6 with its prescribed zero/reference defaults.
+                    var managedDebit = report.ReportKind == ManualReportKind.Current
+                        && report.PaymentAccountId.HasValue
+                        && !string.IsNullOrWhiteSpace(report.PaymentMandateReference);
+                    if (!negativeCancellationWithoutRefund && !managedDebit)
                         issues.Add(new("PAYMENT_REQUIRED", $"חסרים פרטי אמצעי תשלום עבור {employeeName}, פוליסה {product.PolicyNumber}.", ValidationScope.Payment, employee.Id, product.Id));
                     continue;
                 }
