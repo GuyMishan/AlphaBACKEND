@@ -104,25 +104,34 @@ public static class EmployerInterfaceProfileEndpoints
         Guid reportProductId, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-        var reportKind = await (from product in db.ManualReportProducts.AsNoTracking()
-                                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                                join report in db.ManualReports.AsNoTracking() on employee.ReportId equals report.Id
-                                where product.Id == reportProductId && employee.ReportId == reportId
-                                    && employee.OrganizationId == organizationId && employee.EmployerId == employerId
-                                select (ManualReportKind?)report.ReportKind).SingleOrDefaultAsync(ct);
-        if (reportKind is null) return Results.NotFound();
+        var context = await (from product in db.ManualReportProducts.AsNoTracking()
+                             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                             join report in db.ManualReports.AsNoTracking() on employee.ReportId equals report.Id
+                             join employment in db.Employments.AsNoTracking() on employee.EmploymentId equals employment.Id
+                             where product.Id == reportProductId && employee.ReportId == reportId
+                                 && employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                             select new { report.ReportKind, report.ReportingMonth, employment.Status, employment.EndDate,
+                                 employee.EmploymentStartDateSnapshot }).SingleOrDefaultAsync(ct);
+        if (context is null) return Results.NotFound();
+        var reportKind = context.ReportKind;
         var item = await db.EmployerInterfaceReportProductData.AsNoTracking()
             .SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
+        var current = reportKind != ManualReportKind.Negative && reportKind != ManualReportKind.Differences;
+        var endedByMonth = context.Status == EmploymentStatus.Ended && context.EndDate.HasValue
+            && context.EndDate.Value <= context.ReportingMonth.AddMonths(1).AddDays(-1);
+        var startedInMonth = context.EmploymentStartDateSnapshot.HasValue
+            && context.EmploymentStartDateSnapshot.Value.Year == context.ReportingMonth.Year
+            && context.EmploymentStartDateSnapshot.Value.Month == context.ReportingMonth.Month;
         return Results.Ok(new
         {
             reportKind,
-            operationCode = item?.OperationCode,
-            depositStatus = item?.DepositStatus,
-            employeeStatus = item?.EmployeeStatus,
-            statusStartDate = item?.StatusStartDate,
+            operationCode = item?.OperationCode ?? (current ? 1 : null),
+            depositStatus = item?.DepositStatus ?? (current ? 1 : null),
+            employeeStatus = item?.EmployeeStatus ?? (current ? (startedInMonth ? 14 : endedByMonth ? 2 : 1) : null),
+            statusStartDate = item?.StatusStartDate ?? (current ? (endedByMonth ? context.EndDate : context.EmploymentStartDateSnapshot ?? context.ReportingMonth) : null),
             employmentPercentage = item?.EmploymentPercentage,
             workDaysInMonth = item?.WorkDaysInMonth,
-            lastDeposit = item?.LastDeposit,
+            lastDeposit = item?.LastDeposit ?? (current ? (endedByMonth ? 1 : 2) : null),
             refundReason = item?.RefundReason,
             paymentMethodCode = item?.PaymentMethodCode,
             employerAccountType = item?.EmployerAccountType,
