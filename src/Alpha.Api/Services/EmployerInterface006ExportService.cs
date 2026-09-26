@@ -42,6 +42,47 @@ public sealed class EmployerInterface006ExportService(
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var payments = await db.ManualReportPayments.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+
+        // Complete standard current-report metadata in memory so a normal deposit row does not
+        // require opening/saving its payment modal before final validation or transmission.
+        if (report.ReportKind == ManualReportKind.Current)
+        {
+            var employmentIds = employees.Select(x => x.EmploymentId).Distinct().ToArray();
+            var employmentRows = await db.Employments.AsNoTracking()
+                .Where(x => employmentIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+            var mandate = report.PaymentAccountId.HasValue
+                ? await db.BankDebitMandates.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.EmployerPaymentAccountId == report.PaymentAccountId.Value, ct)
+                : null;
+            var managedDebit = mandate?.IsActive == true;
+            var byProduct = metadata.ToDictionary(x => x.ReportProductId);
+
+            foreach (var product in products)
+            {
+                var employee = employees.First(x => x.Id == product.ReportEmployeeId);
+                employmentRows.TryGetValue(employee.EmploymentId, out var employment);
+                var monthEnd = report.ReportingMonth.AddMonths(1).AddDays(-1);
+                var endedByMonth = employment?.EndDate is DateOnly endDate && endDate <= monthEnd;
+                var startedInMonth = employee.EmploymentStartDateSnapshot is DateOnly startDate
+                    && startDate.Year == report.ReportingMonth.Year && startDate.Month == report.ReportingMonth.Month;
+
+                if (!byProduct.TryGetValue(product.Id, out var item))
+                {
+                    item = new EmployerInterfaceReportProductData(product.Id);
+                    metadata.Add(item);
+                    byProduct[product.Id] = item;
+                }
+
+                item.Update(item.OperationCode ?? 1, item.DepositStatus ?? 1,
+                    item.EmployeeStatus ?? (startedInMonth ? 14 : endedByMonth ? 2 : 1),
+                    item.StatusStartDate ?? (endedByMonth ? employment!.EndDate : employee.EmploymentStartDateSnapshot ?? report.ReportingMonth),
+                    item.EmploymentPercentage, item.WorkDaysInMonth, item.LastDeposit ?? (endedByMonth ? 1 : 2),
+                    item.RefundReason, item.PaymentMethodCode ?? (managedDebit ? 6 : null),
+                    item.EmployerAccountType ?? (managedDebit ? 1 : null), item.ReceiverAccountType ?? (managedDebit ? 1 : null),
+                    item.PreviousIdentifier, item.PreviousClearingIdentifier, item.PreviousReferenceExceptionCode, item.OldPensionTypeCode);
+            }
+        }
+
         var attachments = await db.ManualReportAttachments.AsNoTracking()
             .Where(x => x.ReportId == report.Id).ToListAsync(ct);
 

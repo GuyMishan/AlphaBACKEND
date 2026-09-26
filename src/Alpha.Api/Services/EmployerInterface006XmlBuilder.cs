@@ -97,7 +97,7 @@ public static class EmployerInterface006XmlBuilder
             E("SHEM-MAASIK", c.Employer.LegalName),
             E("SHEM-PRATI-ISH-KESHER-MAASIK", c.Employer.ContactFirstName),
             E("SHEM-MISHPACHA-ISH-KESHER-MAASIK", c.Employer.ContactLastName),
-            E("MISPAR-TELEPHONE-KAVI-ISH-KESHER-MAASIK", Digits(c.Employer.ContactPhone)),
+            E("MISPAR-TELEPHONE-KAVI-ISH-KESHER-MAASIK", EmployerContactPhone(c.Employer)),
             E("E-MAIL-ISH-KESHER-MAASIK", c.Employer.ContactEmail),
             E("MISPAR-CELLULARI-ISH-KESHER-MAASIK", EmployerContactMobile(c.Employer.ContactMobile)),
             E("SUG-PEULA", metadata.OperationCode!.Value));
@@ -365,7 +365,7 @@ public static class EmployerInterface006XmlBuilder
         }
         if ((c.Employer.ContactFirstName?.Trim().Length ?? 0) is < 2 or > 20) issues.Add("Employer Interface contact first name must contain 2-20 characters.");
         if ((c.Employer.ContactLastName?.Trim().Length ?? 0) is < 2 or > 20) issues.Add("Employer Interface contact last name must contain 2-20 characters.");
-        if (Digits(c.Employer.ContactPhone).Length is < 9 or > 20) issues.Add("Employer Interface contact phone must contain 9-20 digits.");
+        if (EmployerContactPhone(c.Employer).Length is < 9 or > 20) issues.Add("Employer Interface contact phone must contain 9-20 digits.");
         if (string.IsNullOrWhiteSpace(c.Employer.ContactEmail) || c.Employer.ContactEmail.Length > 50 || !c.Employer.ContactEmail.Contains('@')) issues.Add("Employer Interface contact email must be a valid address up to 50 characters.");
         var employerMobile = c.Employer.ContactMobile?.Trim() ?? string.Empty;
         if (employerMobile.Length > 0 && (!IsDigits(employerMobile) || employerMobile.Length != 10 || !employerMobile.StartsWith("05", StringComparison.Ordinal)))
@@ -425,8 +425,8 @@ public static class EmployerInterface006XmlBuilder
             var label = $"Product {product.Id}";
             if (product.ProductType == PensionProductType.Other)
                 issues.Add($"{label}: ProductType Other cannot be serialized to Employer Interface 006 because SUG-KUPA only allows codes 1-4.");
-            if (product.FundCode.Length != 30 || !IsDigits(product.FundCode))
-                issues.Add($"{label}: fund code must be exactly 30 digits (KOD-MEZAHE-KUPA-H-P).");
+            if (product.FundCode.Length is < 1 or > 30 || !IsDigits(product.FundCode))
+                issues.Add($"{label}: fund code must contain 1-30 digits (KOD-MEZAHE-KUPA-H-P).");
             if (!TryCode(product.ReportingType, CurrentReceiptCodes, out _)) issues.Add($"{label}: ReportingType must be one of 1,2,4,6,8 for Version 006.");
             if (!TryCode(product.SalaryLayer, SalaryLayerCodes, out _)) issues.Add($"{label}: SalaryLayer must be one of 1,3,5,6,7 for Version 006.");
             if (!negative)
@@ -644,12 +644,12 @@ public static class EmployerInterface006XmlBuilder
             string.IsNullOrWhiteSpace(o.SenderName) && directEmployer ? c.Employer.LegalName : o.SenderName.Trim(),
             string.IsNullOrWhiteSpace(o.SenderContactFirstName) && directEmployer ? c.Employer.ContactFirstName : o.SenderContactFirstName.Trim(),
             string.IsNullOrWhiteSpace(o.SenderContactLastName) && directEmployer ? c.Employer.ContactLastName : o.SenderContactLastName.Trim(),
-            Digits(string.IsNullOrWhiteSpace(o.SenderContactPhone) && directEmployer ? c.Employer.ContactPhone : o.SenderContactPhone),
+            Digits(string.IsNullOrWhiteSpace(o.SenderContactPhone) && directEmployer ? (string.IsNullOrWhiteSpace(c.Employer.ContactPhone) ? c.Employer.ContactMobile : c.Employer.ContactPhone) : o.SenderContactPhone),
             string.IsNullOrWhiteSpace(o.SenderContactEmail) && directEmployer ? c.Employer.ContactEmail : o.SenderContactEmail.Trim(),
             Digits(string.IsNullOrWhiteSpace(o.SenderContactMobile) && directEmployer ? c.Employer.ContactMobile : o.SenderContactMobile));
     }
 
-    private static decimal ReportedDepositAmount(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative)
+    private static string EmployerContactPhone(Alpha.Domain.Employers.Employer employer) =>\n        Digits(string.IsNullOrWhiteSpace(employer.ContactPhone) ? employer.ContactMobile : employer.ContactPhone);\n\n    private static decimal ReportedDepositAmount(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative)
     {
         var ids = products.Select(x => x.Id).ToHashSet();
         var total = products.SelectMany(product => EffectiveContributions(c, product, negative)).Sum(x => x.Amount);
