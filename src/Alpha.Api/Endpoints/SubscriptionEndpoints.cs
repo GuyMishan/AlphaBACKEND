@@ -81,7 +81,7 @@ public static class SubscriptionEndpoints
                 plan.MaxEmployees,
                 plan.MaxUsers,
                 plan.IsActive,
-                employeeUnitPrice = pricing.FirstOrDefault(x => x.PlanId == plan.Id && (int)x.MetricType == 2)?.UnitPrice,
+                employeeUnitPrice = pricing.FirstOrDefault(x => x.PlanId == plan.Id && (int)x.MetricType == 3)?.UnitPrice,
                 rowUnitPrice = pricing.FirstOrDefault(x => x.PlanId == plan.Id && (int)x.MetricType == 3)?.UnitPrice
             }));
         }).RequireAuthorization().WithTags("Subscriptions");
