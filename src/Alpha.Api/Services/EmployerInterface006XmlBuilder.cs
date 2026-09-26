@@ -520,8 +520,9 @@ public static class EmployerInterface006XmlBuilder
 
             var contributions = EffectiveContributions(c, product, negative);
             var contributionCodes = contributions.Select(MapContributionCode).ToList();
-            if (contributionCodes.GroupBy(x => x).Any(g => g.Key != "4" && g.Count() > 1))
-                issues.Add($"{label}: the same SUG-HAFRASHA contribution type cannot be reported more than once in one salary/status block, except code 4.");
+            // Multiple ALPHA contribution components can legitimately collapse into the same
+            // Version 006 benefits code. They are emitted as one aggregated SUG-HAFRASHA row
+            // by EffectiveContributions/serialization, so do not reject the product here.
 
             if (product.ProductType == PensionProductType.StudyFund)
             {
