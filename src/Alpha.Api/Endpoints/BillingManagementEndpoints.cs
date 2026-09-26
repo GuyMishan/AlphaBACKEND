@@ -864,11 +864,16 @@ public static class BillingManagementEndpoints
             if (existing is not null && existing.MetricType == targetMetric) unitPrice = existing.UnitPrice;
             else
             {
-                var defaultPrice = await db.PlanPricingComponents.AsNoTracking()
-                    .Where(x => x.EffectiveTo == null && x.IsEnabled && x.MetricType == targetMetric && x.UnitPrice > 0)
-                    .OrderByDescending(x => x.EffectiveFrom).Select(x => (decimal?)x.UnitPrice).FirstOrDefaultAsync(ct);
-                if (!defaultPrice.HasValue) return Results.Conflict(new { error = "billing_default_price_not_configured", contactSupport = true });
-                unitPrice = defaultPrice.Value;
+                // Self-service never invents a tariff. A paid tariff must already be configured
+                // for this billing account by the billing admin.
+                var configuredPrice = await db.BillingAccountPricingComponents.AsNoTracking()
+                    .Where(x => x.BillingAccountId == account.Id && x.MetricType == targetMetric && x.UnitPrice > 0)
+                    .OrderByDescending(x => x.EffectiveFrom)
+                    .Select(x => (decimal?)x.UnitPrice)
+                    .FirstOrDefaultAsync(ct);
+                if (!configuredPrice.HasValue)
+                    return Results.Conflict(new { error = "billing_tariff_not_configured", contactSupport = true });
+                unitPrice = configuredPrice.Value;
             }
         }
 
