@@ -15,7 +15,8 @@ public static class IdentitySchemaInitializer
             DROP INDEX IF EXISTS identity."IX_users_Email";
             CREATE INDEX IF NOT EXISTS "IX_users_Email" ON identity.users ("Email");
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_users_NationalId" ON identity.users ("NationalId") WHERE "NationalId" IS NOT NULL;
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_users_Phone" ON identity.users ("Phone") WHERE "Phone" IS NOT NULL;
+            DROP INDEX IF EXISTS identity."IX_users_Phone";
+            CREATE INDEX IF NOT EXISTS "IX_users_Phone" ON identity.users ("Phone") WHERE "Phone" IS NOT NULL;
 
             CREATE TABLE IF NOT EXISTS identity.data_fixes
             (
