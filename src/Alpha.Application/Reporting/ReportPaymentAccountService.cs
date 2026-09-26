@@ -38,7 +38,7 @@ public sealed class ReportPaymentAccountService(IAlphaDbContext db)
             account.BankId,
             account.BranchId,
             Mask(account.AccountNumber),
-            mandate?.ExternalMandateId ?? mandate?.Id.ToString() ?? string.Empty);
+            mandate is { IsActive: true } ? (mandate.ExternalMandateId ?? mandate.Id.ToString()) : string.Empty);
     }
 
     public async Task<(bool IsValid, string? Error)> ValidateForTransmissionAsync(ManualReport report, CancellationToken ct)
