@@ -776,7 +776,7 @@ public static class BillingManagementEndpoints
 
     private static async Task<object> SelfServicePricingResponse(IAlphaDbContext db, BillingAccount? account, CancellationToken ct)
     {
-        if (account is null) return new { billingType = "Free", unitPrice = 0m, accountValid = false };
+        if (account is null) return new { billingType = "Free", unitPrice = 0m, employeeUnitPrice = 10m, rowUnitPrice = 2m, accountValid = false };
         var component = await db.BillingAccountPricingComponents.AsNoTracking()
             .Where(x => x.BillingAccountId == account.Id && x.EffectiveTo == null && x.IsEnabled &&
                         (x.MetricType == BillingMetricType.Employee || x.MetricType == BillingMetricType.ReportRow))
@@ -787,7 +787,22 @@ public static class BillingManagementEndpoints
                     (account.PaymentMethodType == BillingPaymentMethodType.CreditCard
                         ? !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId)
                         : !string.IsNullOrWhiteSpace(account.BankDebitMandateReference));
-        return new { billingType = type, unitPrice = component?.UnitPrice ?? 0m, accountValid = valid };
+        var defaults = await GetDefaultSelfServiceTariffs(db, ct);
+        return new { billingType = type, unitPrice = component?.UnitPrice ?? 0m, employeeUnitPrice = defaults.Employee, rowUnitPrice = defaults.Row, accountValid = valid };
+    }
+
+    private static async Task<(decimal Employee, decimal Row)> GetDefaultSelfServiceTariffs(IAlphaDbContext db, CancellationToken ct)
+    {
+        var businessPlanId = await db.Plans.AsNoTracking().Where(x => x.Code == "BUSINESS").Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
+        if (!businessPlanId.HasValue) return (10m, 2m);
+        var components = await db.PlanPricingComponents.AsNoTracking()
+            .Where(x => x.PlanId == businessPlanId.Value && x.EffectiveTo == null && x.IsEnabled &&
+                        (x.MetricType == BillingMetricType.Employee || x.MetricType == BillingMetricType.ReportRow))
+            .ToListAsync(ct);
+        return (
+            components.FirstOrDefault(x => x.MetricType == BillingMetricType.Employee)?.UnitPrice ?? 10m,
+            components.FirstOrDefault(x => x.MetricType == BillingMetricType.ReportRow)?.UnitPrice ?? 2m
+        );
     }
 
     private static async Task<IResult> UpdateOrganizationSelfServicePricingAsync(
@@ -864,16 +879,17 @@ public static class BillingManagementEndpoints
             if (existing is not null && existing.MetricType == targetMetric) unitPrice = existing.UnitPrice;
             else
             {
-                // Self-service never invents a tariff. A paid tariff must already be configured
-                // for this billing account by the billing admin.
                 var configuredPrice = await db.BillingAccountPricingComponents.AsNoTracking()
                     .Where(x => x.BillingAccountId == account.Id && x.MetricType == targetMetric && x.UnitPrice > 0)
                     .OrderByDescending(x => x.EffectiveFrom)
                     .Select(x => (decimal?)x.UnitPrice)
                     .FirstOrDefaultAsync(ct);
-                if (!configuredPrice.HasValue)
-                    return Results.Conflict(new { error = "billing_tariff_not_configured", contactSupport = true });
-                unitPrice = configuredPrice.Value;
+                if (configuredPrice.HasValue) unitPrice = configuredPrice.Value;
+                else
+                {
+                    var defaults = await GetDefaultSelfServiceTariffs(db, ct);
+                    unitPrice = targetMetric == BillingMetricType.Employee ? defaults.Employee : defaults.Row;
+                }
             }
         }
 
