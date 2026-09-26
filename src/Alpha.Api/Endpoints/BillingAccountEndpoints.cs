@@ -63,8 +63,8 @@ public static class BillingAccountEndpoints
         HttpContext http, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
-        if (!Enum.IsDefined(request.PaymentMethodType))
-            return Results.BadRequest(new { error = "invalid_payment_method_type" });
+        var validationError = ValidateBillingDetails(request);
+        if (validationError is not null) return Results.BadRequest(new { error = validationError });
         if (!await db.Organizations.AnyAsync(x => x.Id == organizationId, ct)) return Results.NotFound();
 
         var account = await db.BillingAccounts
@@ -146,8 +146,8 @@ public static class BillingAccountEndpoints
         OrganizationAccessService access, HttpContext http, CancellationToken ct)
     {
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-        if (!Enum.IsDefined(request.PaymentMethodType))
-            return Results.BadRequest(new { error = "invalid_payment_method_type" });
+        var validationError = ValidateBillingDetails(request);
+        if (validationError is not null) return Results.BadRequest(new { error = validationError });
         if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
             return Results.NotFound();
 
@@ -200,6 +200,17 @@ public static class BillingAccountEndpoints
         AddAudit(db, currentUser, http, "billing.employer.provider-metadata.updated", account, organizationId, employerId);
         await db.SaveChangesAsync(ct);
         return Results.Ok(ToResponse(account, null, employerId));
+    }
+
+    private static string? ValidateBillingDetails(BillingAccountDetailsRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.BillingName)) return "billing_name_required";
+        if (string.IsNullOrWhiteSpace(request.TaxId)) return "tax_id_required";
+        if (string.IsNullOrWhiteSpace(request.InvoiceEmail)) return "invoice_email_required";
+        if (!System.Net.Mail.MailAddress.TryCreate(request.InvoiceEmail.Trim(), out _)) return "invoice_email_invalid";
+        if (string.IsNullOrWhiteSpace(request.BillingAddress)) return "billing_address_required";
+        if (!Enum.IsDefined(request.PaymentMethodType)) return "invalid_payment_method_type";
+        return null;
     }
 
     private static string? ApplyProviderMetadata(BillingAccount account, BillingProviderMetadataRequest request)
