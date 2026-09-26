@@ -649,7 +649,10 @@ public static class EmployerInterface006XmlBuilder
             Digits(string.IsNullOrWhiteSpace(o.SenderContactMobile) && directEmployer ? c.Employer.ContactMobile : o.SenderContactMobile));
     }
 
-    private static string EmployerContactPhone(Alpha.Domain.Employers.Employer employer) =>\n        Digits(string.IsNullOrWhiteSpace(employer.ContactPhone) ? employer.ContactMobile : employer.ContactPhone);\n\n    private static decimal ReportedDepositAmount(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative)
+    private static string EmployerContactPhone(Alpha.Domain.Employers.Employer employer) =>
+        Digits(string.IsNullOrWhiteSpace(employer.ContactPhone) ? employer.ContactMobile : employer.ContactPhone);
+
+    private static decimal ReportedDepositAmount(BuildContext c, IReadOnlyList<ManualReportProduct> products, bool negative)
     {
         var ids = products.Select(x => x.Id).ToHashSet();
         var total = products.SelectMany(product => EffectiveContributions(c, product, negative)).Sum(x => x.Amount);
