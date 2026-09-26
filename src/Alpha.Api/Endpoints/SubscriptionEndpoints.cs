@@ -3,6 +3,8 @@ using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Application.Entitlements;
 using Alpha.Domain.Auditing;
+using Alpha.Domain.Employees;
+using Alpha.Domain.Employers;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Endpoints;
@@ -90,7 +92,6 @@ public static class SubscriptionEndpoints
             IAlphaDbContext db,
             ICurrentUser currentUser,
             OrganizationAccessService access,
-            EntitlementService entitlementService,
             HttpContext http,
             CancellationToken ct) =>
         {
@@ -111,14 +112,25 @@ public static class SubscriptionEndpoints
             if (subscription is null) return Results.NotFound();
             if (subscription.PlanId == target.Id) return Results.Ok(new { unchanged = true });
 
-            var usage = await entitlementService.GetSnapshot(organizationId, ct);
+            var employers = await db.Employers.AsNoTracking()
+                .CountAsync(x => x.OrganizationId == organizationId && x.Status != EmployerStatus.Closed, ct);
+            var activeEmployees = await db.Employments.AsNoTracking()
+                .CountAsync(x => x.OrganizationId == organizationId && x.Status == EmploymentStatus.Active, ct);
+            var membershipUserIds = db.OrganizationMemberships.AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.IsActive &&
+                            (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow))
+                .Select(x => x.UserId);
+            var employerUserIds = db.EmployerUserAccesses.AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId).Select(x => x.UserId);
+            var users = await membershipUserIds.Union(employerUserIds).CountAsync(ct);
+
             var violations = new List<object>();
-            if (target.MaxEmployers >= 0 && usage.Employers.Current > target.MaxEmployers)
-                violations.Add(new { resource = "employers", current = usage.Employers.Current, maximum = target.MaxEmployers });
-            if (target.MaxEmployees >= 0 && usage.ActiveEmployees.Current > target.MaxEmployees)
-                violations.Add(new { resource = "activeEmployees", current = usage.ActiveEmployees.Current, maximum = target.MaxEmployees });
-            if (target.MaxUsers >= 0 && usage.Users.Current > target.MaxUsers)
-                violations.Add(new { resource = "users", current = usage.Users.Current, maximum = target.MaxUsers });
+            if (target.MaxEmployers >= 0 && employers > target.MaxEmployers)
+                violations.Add(new { resource = "employers", current = employers, maximum = target.MaxEmployers });
+            if (target.MaxEmployees >= 0 && activeEmployees > target.MaxEmployees)
+                violations.Add(new { resource = "activeEmployees", current = activeEmployees, maximum = target.MaxEmployees });
+            if (target.MaxUsers >= 0 && users > target.MaxUsers)
+                violations.Add(new { resource = "users", current = users, maximum = target.MaxUsers });
             if (violations.Count > 0)
                 return Results.Conflict(new { error = "plan_downgrade_limits_exceeded", violations, contactSupport = true });
 
