@@ -24,8 +24,12 @@ public sealed class EmployerInterface006Options
     // A service bureau/vault owner must configure its assigned/appropriate direction.
     public int FileDirectionCode { get; set; } = 3;
 
-    public int RecipientCode { get; set; }
-    public int RecipientIdentifierType { get; set; }
-    public string RecipientIdentifier { get; set; } = string.Empty;
+    // TEMPORARY ALPHA FLOW PLACEHOLDERS.
+    // Replace these with the real recipient/vault values assigned to ALPHA before the first
+    // clearinghouse transmission. These defaults only unblock end-to-end local/product testing.
+    // They are NOT real clearinghouse credentials.
+    public int RecipientCode { get; set; } = 6;
+    public int RecipientIdentifierType { get; set; } = 1;
+    public string RecipientIdentifier { get; set; } = "000000000";
     public string? RecipientInternalIdentifier { get; set; }
 }
