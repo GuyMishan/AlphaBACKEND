@@ -277,8 +277,8 @@ public static class ManualReportEndpoints
         string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-        if (!await db.ManualReports.AsNoTracking().AnyAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct))
-            return Results.NotFound();
+        var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
 
         skip = Math.Max(0, skip);
         take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
@@ -310,10 +310,22 @@ public static class ManualReportEndpoints
         var payments = await db.ManualReportPayments.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
+        var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .ToDictionaryAsync(x => x.ReportProductId, ct);
+        var employments = await db.Employments.AsNoTracking()
+            .Where(x => page.Select(p => p.Employee.EmploymentId).Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, ct);
 
         var items = page.Select(x =>
         {
             payments.TryGetValue(x.Product.Id, out var payment);
+            metadata.TryGetValue(x.Product.Id, out var productMetadata);
+            employments.TryGetValue(x.Employee.EmploymentId, out var employment);
+            var monthEnd = report.ReportingMonth.AddMonths(1).AddDays(-1);
+            var endedByMonth = employment?.Status == Alpha.Domain.Employees.EmploymentStatus.Ended && employment.EndDate.HasValue && employment.EndDate.Value <= monthEnd;
+            var startedInMonth = x.Employee.EmploymentStartDateSnapshot.HasValue && x.Employee.EmploymentStartDateSnapshot.Value.Year == report.ReportingMonth.Year && x.Employee.EmploymentStartDateSnapshot.Value.Month == report.ReportingMonth.Month;
+            var automaticDebit = report.ReportKind != ManualReportKind.Negative && report.ReportKind != ManualReportKind.Differences && !string.IsNullOrWhiteSpace(report.PaymentMandateReference);
             return new
             {
                 id = x.Product.Id,
@@ -351,7 +363,16 @@ public static class ManualReportEndpoints
                 employerBankCode = payment?.EmployerBankCode ?? string.Empty,
                 employerBranch = payment?.EmployerBranch ?? string.Empty,
                 employerAccount = payment?.EmployerAccount ?? string.Empty,
-                confirmationFileName = payment?.ConfirmationFileName ?? string.Empty
+                confirmationFileName = payment?.ConfirmationFileName ?? string.Empty,
+                operationCode = productMetadata?.OperationCode ?? (report.ReportKind == ManualReportKind.Current ? 1 : null),
+                depositStatus = productMetadata?.DepositStatus ?? (report.ReportKind == ManualReportKind.Current ? 1 : null),
+                employeeStatus = productMetadata?.EmployeeStatus ?? (report.ReportKind == ManualReportKind.Current ? (startedInMonth ? 14 : endedByMonth ? 2 : 1) : null),
+                statusStartDate = productMetadata?.StatusStartDate ?? (report.ReportKind == ManualReportKind.Current ? (endedByMonth ? employment!.EndDate : x.Employee.EmploymentStartDateSnapshot ?? report.ReportingMonth) : null),
+                lastDeposit = productMetadata?.LastDeposit ?? (report.ReportKind == ManualReportKind.Current ? (endedByMonth ? 1 : 2) : null),
+                paymentMethodCode = productMetadata?.PaymentMethodCode ?? (automaticDebit ? 6 : null),
+                employerAccountType = productMetadata?.EmployerAccountType ?? (automaticDebit ? 1 : null),
+                receiverAccountType = productMetadata?.ReceiverAccountType ?? (automaticDebit ? 1 : null),
+                requiresCompletion = report.ReportKind == ManualReportKind.Negative || (x.Product.ProductType == PensionProductType.PensionFund && x.Product.FundClassification.Contains("ותיק") && productMetadata?.OldPensionTypeCode == null)
             };
         });
         return Results.Ok(new { items, hasMore });
