@@ -27,6 +27,10 @@ ENV DOTNET_EnableDiagnostics=0
 
 COPY --from=build /app/publish .
 
+# Keep the official Employer Interface 006 schemas in a deterministic runtime path.
+# The validator resolves them from /app/Specifications/EmployerInterface/006.
+COPY --from=build /src/docs/specifications/employer-interface/006/*.xsd.xml /app/Specifications/EmployerInterface/006/
+
 EXPOSE 10000
 
 ENTRYPOINT ["dotnet", "Alpha.Api.dll"]
