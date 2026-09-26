@@ -587,7 +587,7 @@ public static class EmployerInterface006XmlBuilder
         var correctionWithoutMoney = metadata?.OperationCode is 2 or 7;
         if (payment is null)
         {
-            if (correctionWithoutMoney) return;
+            if (correctionWithoutMoney || metadata?.PaymentMethodCode is 6 or 9) return;
             issues.Add($"{label}: payment details are required.");
             return;
         }
@@ -734,10 +734,10 @@ public static class EmployerInterface006XmlBuilder
         (ContributionParty.Employee, ContributionComponent.Severance) => "2",
         (ContributionParty.Employer, ContributionComponent.Benefits) => "3",
         (ContributionParty.Employee, ContributionComponent.Benefits) => "4",
-        (ContributionParty.Employee, ContributionComponent.Disability) => "5",
-        (ContributionParty.Employer, ContributionComponent.Disability) => "6",
-        (ContributionParty.Employee, ContributionComponent.Other) => "7",
-        (ContributionParty.Employer, ContributionComponent.Other) => "8",
+        (ContributionParty.Employee, ContributionComponent.Disability) => "4",
+        (ContributionParty.Employer, ContributionComponent.Disability) => "3",
+        (ContributionParty.Employee, ContributionComponent.Other) => "4",
+        (ContributionParty.Employer, ContributionComponent.Other) => "3",
         _ => throw new InvalidOperationException($"Contribution pair {c.Party}/{c.Component} has no SUG-HAFRASHA mapping.")
     };
     private static XElement E(string name, object? value) => new(name, Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
