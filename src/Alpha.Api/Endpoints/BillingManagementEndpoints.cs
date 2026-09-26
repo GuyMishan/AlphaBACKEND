@@ -3,6 +3,8 @@ using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Application.Billing;
 using Alpha.Domain.Billing;
+using Alpha.Domain.Employees;
+using Alpha.Domain.Employers;
 using Alpha.Domain.Subscriptions;
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -50,6 +52,7 @@ public sealed record RunBillingPeriodRequest(DateTimeOffset PeriodStart, DateTim
 public sealed record RefundPaymentRequest(decimal Amount, string? Reason, string IdempotencyKey);
 public sealed record BillingAccountPricingRequest(string BillingType, decimal? UnitPrice);
 public sealed record BillingCustomerPricingRequest(string PayerType, Guid PayerId, string BillingType, decimal? UnitPrice);
+public sealed record SelfServiceBillingPlanRequest(string BillingType);
 
 public static class BillingManagementEndpoints
 {
@@ -80,12 +83,16 @@ public static class BillingManagementEndpoints
         organization.MapGet("/context", GetOrganizationBillingContextAsync);
         organization.MapGet("/periods", GetOrganizationPeriodsAsync);
         organization.MapGet("/payments", GetOrganizationPaymentsAsync);
+        organization.MapGet("/pricing", GetOrganizationSelfServicePricingAsync);
+        organization.MapPut("/pricing", UpdateOrganizationSelfServicePricingAsync);
 
         var employer = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/billing")
             .RequireAuthorization().WithTags("Alpha Billing");
         employer.MapGet("/context", GetEmployerBillingContextAsync);
         employer.MapGet("/periods", GetEmployerPeriodsAsync);
         employer.MapGet("/payments", GetEmployerPaymentsAsync);
+        employer.MapGet("/pricing", GetEmployerSelfServicePricingAsync);
+        employer.MapPut("/pricing", UpdateEmployerSelfServicePricingAsync);
 
         return endpoints;
     }
@@ -746,6 +753,133 @@ public static class BillingManagementEndpoints
             ? Results.Ok(new { refund.Id, refund.PaymentId, refund.Amount, refund.Status, refund.ProviderRefundId })
             : Results.Json(new { refund.Id, refund.Status, result.ErrorCode, result.ErrorMessage },
                 statusCode: StatusCodes.Status502BadGateway);
+    }
+
+    private static async Task<IResult> GetOrganizationSelfServicePricingAsync(
+        Guid organizationId, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        var account = await db.BillingAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == null, ct);
+        return Results.Ok(await SelfServicePricingResponse(db, account, ct));
+    }
+
+    private static async Task<IResult> GetEmployerSelfServicePricingAsync(
+        Guid organizationId, Guid employerId, IAlphaDbContext db, OrganizationAccessService access,
+        BillingInheritanceService inheritance, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var resolution = await inheritance.ResolveBillingAccountAsync(employerId, ct);
+        if (resolution is null || resolution.OrganizationId != organizationId) return Results.NotFound();
+        return Results.Ok(await SelfServicePricingResponse(db, resolution.Account, ct));
+    }
+
+    private static async Task<object> SelfServicePricingResponse(IAlphaDbContext db, BillingAccount? account, CancellationToken ct)
+    {
+        if (account is null) return new { billingType = "Free", unitPrice = 0m, accountValid = false };
+        var component = await db.BillingAccountPricingComponents.AsNoTracking()
+            .Where(x => x.BillingAccountId == account.Id && x.EffectiveTo == null && x.IsEnabled &&
+                        (x.MetricType == BillingMetricType.Employee || x.MetricType == BillingMetricType.ReportRow))
+            .OrderBy(x => x.MetricType).FirstOrDefaultAsync(ct);
+        var type = component?.MetricType == BillingMetricType.Employee ? "PerEmployee"
+            : component?.MetricType == BillingMetricType.ReportRow ? "PerReportRow" : "Free";
+        var valid = account.PaymentMethodStatus == BillingPaymentMethodStatus.Active &&
+                    (account.PaymentMethodType == BillingPaymentMethodType.CreditCard
+                        ? !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId)
+                        : !string.IsNullOrWhiteSpace(account.BankDebitMandateReference));
+        return new { billingType = type, unitPrice = component?.UnitPrice ?? 0m, accountValid = valid };
+    }
+
+    private static async Task<IResult> UpdateOrganizationSelfServicePricingAsync(
+        Guid organizationId, SelfServiceBillingPlanRequest request, IAlphaDbContext db,
+        OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        var account = await db.BillingAccounts.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.EmployerId == null, ct);
+        return await ApplySelfServicePricing(organizationId, null, account, request, db, ct);
+    }
+
+    private static async Task<IResult> UpdateEmployerSelfServicePricingAsync(
+        Guid organizationId, Guid employerId, SelfServiceBillingPlanRequest request, IAlphaDbContext db,
+        OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var employer = await db.Employers.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
+        if (employer is null) return Results.NotFound();
+        var account = await db.BillingAccounts.SingleOrDefaultAsync(
+            x => x.EmployerId == employerId && x.OrganizationId == null, ct);
+        return await ApplySelfServicePricing(organizationId, employerId, account, request, db, ct);
+    }
+
+    private static async Task<IResult> ApplySelfServicePricing(
+        Guid organizationId, Guid? employerId, BillingAccount? account, SelfServiceBillingPlanRequest request,
+        IAlphaDbContext db, CancellationToken ct)
+    {
+        var billingType = (request.BillingType ?? string.Empty).Trim();
+        if (billingType is not ("Free" or "PerEmployee" or "PerReportRow"))
+            return Results.BadRequest(new { error = "invalid_billing_type" });
+
+        if (billingType == "Free")
+        {
+            var employers = await db.Employers.AsNoTracking()
+                .CountAsync(x => x.OrganizationId == organizationId && x.Status != EmployerStatus.Closed, ct);
+            var employees = await db.Employments.AsNoTracking()
+                .CountAsync(x => x.OrganizationId == organizationId && x.Status == EmploymentStatus.Active, ct);
+            var orgUsers = db.OrganizationMemberships.AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.IsActive &&
+                            (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow)).Select(x => x.UserId);
+            var employerUsers = db.EmployerUserAccesses.AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId).Select(x => x.UserId);
+            var users = await orgUsers.Union(employerUsers).CountAsync(ct);
+            if (employers > 1 || users > 1 || employees > 3)
+                return Results.Conflict(new { error = "free_plan_limits_exceeded", employers, users, activeEmployees = employees, contactSupport = true });
+        }
+        else
+        {
+            if (account is null) return Results.Conflict(new { error = "billing_account_required" });
+            var validPayment = account.PaymentMethodStatus == BillingPaymentMethodStatus.Active &&
+                (account.PaymentMethodType == BillingPaymentMethodType.CreditCard
+                    ? !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId)
+                    : !string.IsNullOrWhiteSpace(account.BankDebitMandateReference));
+            if (!validPayment) return Results.Conflict(new { error = "billing_payment_method_invalid" });
+        }
+
+        if (account is null)
+        {
+            // Free is represented by the absence of an active pricing component.
+            return Results.Ok(new { billingType = "Free", unitPrice = 0m, accountValid = false });
+        }
+
+        var current = await db.BillingAccountPricingComponents
+            .Where(x => x.BillingAccountId == account.Id && x.EffectiveTo == null).ToListAsync(ct);
+        var existing = current.FirstOrDefault(x => x.IsEnabled &&
+            (x.MetricType == BillingMetricType.Employee || x.MetricType == BillingMetricType.ReportRow));
+        var targetMetric = billingType == "PerEmployee" ? BillingMetricType.Employee : BillingMetricType.ReportRow;
+
+        decimal unitPrice = 0m;
+        if (billingType != "Free")
+        {
+            if (existing is not null && existing.MetricType == targetMetric) unitPrice = existing.UnitPrice;
+            else
+            {
+                var defaultPrice = await db.PlanPricingComponents.AsNoTracking()
+                    .Where(x => x.EffectiveTo == null && x.IsEnabled && x.MetricType == targetMetric && x.UnitPrice > 0)
+                    .OrderByDescending(x => x.EffectiveFrom).Select(x => (decimal?)x.UnitPrice).FirstOrDefaultAsync(ct);
+                if (!defaultPrice.HasValue) return Results.Conflict(new { error = "billing_default_price_not_configured", contactSupport = true });
+                unitPrice = defaultPrice.Value;
+            }
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var version = current.Count == 0 ? 1 : current.Max(x => x.Version) + 1;
+        foreach (var item in current) item.Close(now);
+        if (billingType != "Free")
+            db.BillingAccountPricingComponents.Add(new BillingAccountPricingComponent(
+                account.Id, targetMetric, BillingPricingType.PerUnit, unitPrice, 0, null, null, true, version, now));
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { billingType, unitPrice, accountValid = billingType == "Free" || true });
     }
 
     private static async Task<IResult> GetOrganizationBillingContextAsync(
