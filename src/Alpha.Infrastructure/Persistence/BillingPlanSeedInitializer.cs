@@ -15,7 +15,7 @@ public static class BillingPlanSeedInitializer
             "מסלול התנסות ללא חיוב.",
             maxEmployers: 1,
             maxEmployees: 3,
-            maxUsers: 3,
+            maxUsers: 1,
             CorrectionBillingMode.Free,
             correctionUnitPrice: null,
             components:
