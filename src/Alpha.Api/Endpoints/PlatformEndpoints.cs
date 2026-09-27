@@ -13,6 +13,15 @@ public static class PlatformEndpoints
     {
         var group = endpoints.MapGroup("/api/platform").RequireAuthorization().WithTags("Platform");
 
+        group.MapGet("/security/events", async (IAlphaDbContext db, ICurrentUser currentUser, int? take, CancellationToken ct) =>
+        {
+            if (!currentUser.IsPlatformAdmin) return Results.Forbid();
+            var limit = Math.Clamp(take ?? 100, 1, 500);
+            var events = await db.AuditEvents.AsNoTracking().OrderByDescending(x => x.CreatedAt).Take(limit)
+                .Select(x => new { x.Id, x.CreatedAt, x.ActorUserId, x.Action, x.EntityType, x.EntityId, x.OrganizationId, x.EmployerId, x.CorrelationId, x.Data }).ToListAsync(ct);
+            return Results.Ok(new { auditLogging = true, rateLimiting = true, securityHeaders = true, retention = true, items = events });
+        });
+
         group.MapGet("/users", async (IAlphaDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
         {
             if (!currentUser.IsPlatformAdmin) return Results.Forbid();
