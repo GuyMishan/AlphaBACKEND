@@ -19,7 +19,7 @@ CREATE OR REPLACE FUNCTION reporting.seed_employee_mix_into_report()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = reporting, employees, pg_temp
-AS $
+AS $function$
 DECLARE
     mix_product record;
     mix_contribution record;
@@ -114,6 +114,6 @@ BEGIN
 
     RETURN NEW;
 END;
-$$;
+$function$;
 """;
 }
