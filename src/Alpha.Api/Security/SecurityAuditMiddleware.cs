@@ -14,7 +14,10 @@ public sealed class SecurityAuditMiddleware(RequestDelegate next, ILogger<Securi
         context.Response.Headers["X-Correlation-ID"] = correlationId;
         await next(context);
 
-        if (!currentUser.IsAuthenticated || !MutatingMethods.Contains(context.Request.Method)) return;
+        var sensitiveRead = HttpMethods.IsGet(context.Request.Method) &&
+            (context.Request.Path.Value?.EndsWith("/file", StringComparison.OrdinalIgnoreCase) == true ||
+             context.Request.Path.Value?.Contains("/export", StringComparison.OrdinalIgnoreCase) == true);
+        if (!currentUser.IsAuthenticated || (!MutatingMethods.Contains(context.Request.Method) && !sensitiveRead)) return;
         try
         {
             Guid? organizationId = TryGuid(context.Request.RouteValues["organizationId"]);
