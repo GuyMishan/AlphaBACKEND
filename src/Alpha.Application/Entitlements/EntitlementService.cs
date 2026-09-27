@@ -23,8 +23,11 @@ public sealed class EntitlementService(IAlphaDbContext db)
         return billing.IsPaid ? null : 3;
     }
 
-    public async Task<int> GetUserLimit(Guid organizationId, CancellationToken ct = default) =>
-        (await GetPlanAsync(organizationId, ct)).MaxUsers;
+    public async Task<int?> GetUserLimit(Guid organizationId, CancellationToken ct = default)
+    {
+        var billing = await GetOrganizationBillingTierAsync(organizationId, ct);
+        return billing.IsPaid ? null : 3;
+    }
 
     public async Task<EntitlementDecision> CanCreateEmployer(Guid organizationId, CancellationToken ct = default)
     {
@@ -52,7 +55,8 @@ public sealed class EntitlementService(IAlphaDbContext db)
 
     public async Task<EntitlementDecision> CanInviteNewUser(Guid organizationId, CancellationToken ct = default)
     {
-        var plan = await GetPlanAsync(organizationId, ct);
+        var limit = await GetUserLimit(organizationId, ct);
+        if (!limit.HasValue) return EntitlementDecision.Allow();
         var membershipUserIds = db.OrganizationMemberships.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.IsActive &&
                         (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow))
@@ -69,9 +73,9 @@ public sealed class EntitlementService(IAlphaDbContext db)
             .Distinct()
             .CountAsync(ct);
 
-        return current + pendingInvites < plan.MaxUsers
+        return current + pendingInvites < limit.Value
             ? EntitlementDecision.Allow()
-            : EntitlementDecision.LimitReached("users", current + pendingInvites, plan.MaxUsers);
+            : EntitlementDecision.LimitReached("users", current + pendingInvites, limit.Value);
     }
 
     public async Task<EntitlementDecision> CanInviteUser(Guid organizationId, Guid userId, CancellationToken ct = default)
@@ -83,7 +87,8 @@ public sealed class EntitlementService(IAlphaDbContext db)
                 x.OrganizationId == organizationId && x.UserId == userId, ct);
         if (alreadyCounted) return EntitlementDecision.Allow();
 
-        var plan = await GetPlanAsync(organizationId, ct);
+        var limit = await GetUserLimit(organizationId, ct);
+        if (!limit.HasValue) return EntitlementDecision.Allow();
         var membershipUserIds = db.OrganizationMemberships.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.IsActive &&
                         (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow))
@@ -101,14 +106,15 @@ public sealed class EntitlementService(IAlphaDbContext db)
             .CountAsync(ct);
         var reserved = current + pendingInvites;
 
-        return reserved < plan.MaxUsers
+        return reserved < limit.Value
             ? EntitlementDecision.Allow()
-            : EntitlementDecision.LimitReached("users", reserved, plan.MaxUsers);
+            : EntitlementDecision.LimitReached("users", reserved, limit.Value);
     }
 
     public async Task<EntitlementDecision> CanAcceptInvitation(Guid organizationId, CancellationToken ct = default)
     {
-        var plan = await GetPlanAsync(organizationId, ct);
+        var limit = await GetUserLimit(organizationId, ct);
+        if (!limit.HasValue) return EntitlementDecision.Allow();
         var membershipUserIds = db.OrganizationMemberships.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.IsActive &&
                         (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow))
@@ -118,9 +124,9 @@ public sealed class EntitlementService(IAlphaDbContext db)
             .Select(x => x.UserId);
         var current = await membershipUserIds.Union(employerUserIds).CountAsync(ct);
 
-        return current < plan.MaxUsers
+        return current < limit.Value
             ? EntitlementDecision.Allow()
-            : EntitlementDecision.LimitReached("users", current, plan.MaxUsers);
+            : EntitlementDecision.LimitReached("users", current, limit.Value);
     }
 
     public async Task<EntitlementDecision> CanUseFeature(Guid organizationId, string feature, CancellationToken ct = default)
@@ -146,6 +152,7 @@ public sealed class EntitlementService(IAlphaDbContext db)
         var billing = await GetOrganizationBillingTierAsync(organizationId, ct);
         var employerLimit = billing.IsPaid ? (int?)null : 1;
         var employeeLimit = billing.IsPaid ? (int?)null : 3;
+        var userLimit = billing.IsPaid ? (int?)null : 3;
         var employers = await db.Employers.AsNoTracking()
             .CountAsync(x => x.OrganizationId == organizationId && x.Status != EmployerStatus.Closed, ct);
         var employees = await db.Employments.AsNoTracking()
@@ -169,7 +176,7 @@ public sealed class EntitlementService(IAlphaDbContext db)
             },
             employers = new { current = employers, maximum = employerLimit },
             activeEmployees = new { current = employees, maximum = employeeLimit },
-            users = new { current = users, maximum = legacyPlan.MaxUsers }
+            users = new { current = users, maximum = userLimit }
         };
     }
 
