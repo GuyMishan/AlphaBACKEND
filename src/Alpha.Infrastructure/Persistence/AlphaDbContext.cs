@@ -13,8 +13,6 @@ namespace Alpha.Infrastructure.Persistence;
 public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : DbContext(options), IAlphaDbContext
 {
     public DbSet<BillingAccount> BillingAccounts => Set<BillingAccount>();
-    public DbSet<PlanPricingComponent> PlanPricingComponents => Set<PlanPricingComponent>();
-    public DbSet<PlanPricingTier> PlanPricingTiers => Set<PlanPricingTier>();
     public DbSet<BillingAccountPricingComponent> BillingAccountPricingComponents => Set<BillingAccountPricingComponent>();
     public DbSet<BillingAccountPricingTier> BillingAccountPricingTiers => Set<BillingAccountPricingTier>();
     public DbSet<BillingPeriod> BillingPeriods => Set<BillingPeriod>();
