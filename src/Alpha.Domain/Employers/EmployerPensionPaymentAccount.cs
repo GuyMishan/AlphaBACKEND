@@ -25,6 +25,7 @@ public sealed class EmployerPaymentAccount : Entity
     public string? AccountHolderIdEncrypted { get; private set; }
 
     public void SetProtectedValues(string accountNumberEncrypted, string accountHolderIdEncrypted) { AccountNumberEncrypted = accountNumberEncrypted; AccountHolderIdEncrypted = accountHolderIdEncrypted; Touch(); }
+    public void ClearLegacySensitiveValues() { AccountNumber = string.Empty; AccountHolderId = string.Empty; Touch(); }
     public string AccountHolderName { get; private set; } = string.Empty;
     public string AccountHolderId { get; private set; } = string.Empty;
     public bool IsDefault { get; private set; }
