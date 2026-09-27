@@ -2,6 +2,7 @@ using System.Text.Json;
 using Alpha.Api.Contracts;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Entitlements;
 using Alpha.Domain.Auditing;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Organizations;
@@ -56,6 +57,13 @@ public static class OrganizationEndpoints
                 canManageOrganization = await access.CanManageOrganizationAsync(organizationId, ct),
                 canCreateEmployer = await access.CanCreateEmployerAsync(organizationId, ct)
             });
+        });
+
+        group.MapGet("/{organizationId:guid}/entitlements", async (Guid organizationId,
+            OrganizationAccessService access, EntitlementService entitlements, CancellationToken ct) =>
+        {
+            if (!await access.CanAccessOrganizationScopeAsync(organizationId, ct)) return Results.Forbid();
+            return Results.Ok(await entitlements.GetSnapshot(organizationId, ct));
         });
 
         group.MapPost("/{organizationId:guid}/memberships", async (Guid organizationId, AddMembershipRequest request,
