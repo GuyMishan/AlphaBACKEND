@@ -20,6 +20,13 @@ public sealed class AesDataProtectionService(IConfiguration configuration) : IDa
         return Prefix + Convert.ToBase64String(nonce) + ":" + Convert.ToBase64String(tag) + ":" + Convert.ToBase64String(cipher);
     }
 
+    public string LookupHash(string value, string purpose)
+    {
+        using var hmac = new System.Security.Cryptography.HMACSHA256(_key);
+        var input = System.Text.Encoding.UTF8.GetBytes(purpose + "\0" + (value ?? string.Empty).Trim());
+        return Convert.ToHexString(hmac.ComputeHash(input)).ToLowerInvariant();
+    }
+
     public string Unprotect(string value, string purpose)
     {
         if (string.IsNullOrEmpty(value) || !value.StartsWith(Prefix, StringComparison.Ordinal)) return value;
