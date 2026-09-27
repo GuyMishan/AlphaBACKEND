@@ -15,7 +15,7 @@ public static class BillingPlanSeedInitializer
             "מסלול התנסות ללא חיוב.",
             maxEmployers: 1,
             maxEmployees: 3,
-            maxUsers: 1,
+            maxUsers: 3,
             CorrectionBillingMode.Free,
             correctionUnitPrice: null,
             components:
@@ -123,6 +123,16 @@ public static class BillingPlanSeedInitializer
 
         if (hasPricing)
         {
+            plan.UpdateDefinition(name, maxEmployers, maxEmployees, maxUsers, isActive: true);
+            plan.UpdateBillingDefinition(
+                description,
+                "ILS",
+                "Monthly",
+                correctionMode,
+                correctionUnitPrice,
+                includedCorrections: 0,
+                includedCorrectionRows: 0);
+
             if (!activePricing.Any(x => x.MetricType == BillingMetricType.Correction))
             {
                 var included = correctionMode == CorrectionBillingMode.PerCorrection ? 0m : 0m;
@@ -130,6 +140,10 @@ public static class BillingPlanSeedInitializer
                     plan.Id, BillingMetricType.Correction, BillingPricingType.PerUnit,
                     correctionUnitPrice ?? 0m, included, null, null, true,
                     plan.Version, plan.EffectiveFrom, correctionMode));
+                await db.SaveChangesAsync(ct);
+            }
+            else
+            {
                 await db.SaveChangesAsync(ct);
             }
             return;
