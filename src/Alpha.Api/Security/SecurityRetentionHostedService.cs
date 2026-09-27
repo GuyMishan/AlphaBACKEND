@@ -18,7 +18,10 @@ public sealed class SecurityRetentionHostedService(IServiceScopeFactory scopeFac
                 var cutoff = DateTime.UtcNow.AddHours(-otpHours);
                 var login = await db.OtpChallenges.Where(x => x.CreatedAt < cutoff).ExecuteDeleteAsync(stoppingToken);
                 var registration = await db.RegistrationOtpChallenges.Where(x => x.CreatedAt < cutoff).ExecuteDeleteAsync(stoppingToken);
-                logger.LogInformation("Security retention removed {LoginOtp} login OTP and {RegistrationOtp} registration OTP challenges", login, registration);
+                var invitationDays = Math.Max(1, configuration.GetValue("Security:ExpiredInvitationRetentionDays", 30));
+                var invitationCutoff = DateTimeOffset.UtcNow.AddDays(-invitationDays);
+                var invitations = await db.UserInvitations.Where(x => x.ExpiresAt < invitationCutoff && x.Status != Alpha.Domain.Identity.UserInvitationStatus.Pending).ExecuteDeleteAsync(stoppingToken);
+                logger.LogInformation("Security retention removed temporary data only: {LoginOtp} login OTP, {RegistrationOtp} registration OTP, {Invitations} expired/cancelled invitations. Business, pension, employee, report, feedback, document and audit records are never deleted by this job.", login, registration, invitations);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex) { logger.LogError(ex, "Security retention cycle failed"); }
