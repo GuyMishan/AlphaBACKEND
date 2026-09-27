@@ -36,7 +36,8 @@ public static class AccessEndpoints
 
             var query = from membership in db.OrganizationMemberships.AsNoTracking()
                         join user in db.Users.AsNoTracking() on membership.UserId equals user.Id
-                        where membership.OrganizationId == organizationId && membership.IsActive
+                        where membership.OrganizationId == organizationId && membership.IsActive &&
+                              (membership.ExpiresAt == null || membership.ExpiresAt > DateTimeOffset.UtcNow)
                         select new
                         {
                             MembershipId = membership.Id,
