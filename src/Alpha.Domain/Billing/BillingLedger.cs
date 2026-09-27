@@ -179,14 +179,12 @@ public sealed class BillingPeriod : Entity
         if (billingAccountId == Guid.Empty) throw new ArgumentException("Billing account is required.");
         if (periodEnd <= periodStart) throw new ArgumentException("Period end must be after period start.");
         BillingAccountId = billingAccountId;
-        PlanId = planId;
         PeriodStart = periodStart;
         PeriodEnd = periodEnd;
         Currency = string.IsNullOrWhiteSpace(currency) ? "ILS" : currency.Trim().ToUpperInvariant();
     }
 
     public Guid BillingAccountId { get; private set; }
-    public Guid PlanId { get; private set; }
     public DateTimeOffset PeriodStart { get; private set; }
     public DateTimeOffset PeriodEnd { get; private set; }
     public BillingPeriodStatus Status { get; private set; } = BillingPeriodStatus.Open;
