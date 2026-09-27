@@ -1,6 +1,7 @@
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Domain.Reporting;
+using Alpha.Api.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Endpoints;
@@ -69,7 +70,7 @@ public static class ReportAttachmentEndpoints
     }
 
     private static async Task<IResult> UploadAsync(Guid organizationId, Guid employerId, Guid reportId,
-        HttpRequest request, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        HttpRequest request, IAlphaDbContext db, OrganizationAccessService access, IMalwareScanner malwareScanner, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports
@@ -147,6 +148,13 @@ public static class ReportAttachmentEndpoints
         var bytes = memory.ToArray();
         if (bytes.Length < 5 || bytes[0] != (byte)'%' || bytes[1] != (byte)'P' || bytes[2] != (byte)'D' || bytes[3] != (byte)'F' || bytes[4] != (byte)'-')
             return Results.BadRequest(new { error = "The uploaded file is not a valid PDF file." });
+
+        await using var scanStream = new MemoryStream(bytes, writable: false);
+        var scan = await malwareScanner.ScanAsync(scanStream, file.FileName, ct);
+        if (scan.Verdict == MalwareScanVerdict.Unavailable)
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        if (scan.Verdict == MalwareScanVerdict.Infected)
+            return Results.BadRequest(new { error = "The uploaded file failed the security scan." });
 
         var attachment = new ManualReportAttachment(reportId, reportProductId, documentTypeCode,
             Path.GetFileName(file.FileName), "application/pdf", bytes);
