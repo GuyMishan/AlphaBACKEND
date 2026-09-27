@@ -53,6 +53,9 @@ builder.Services.AddScoped<OtpDelivery>();
 builder.Services.AddHttpClient<ReferenceDataSyncService>(client => { client.Timeout = TimeSpan.FromMinutes(5); client.DefaultRequestHeaders.UserAgent.ParseAdd("AlphaReferenceDataSync/1.0"); });
 builder.Services.AddProblemDetails(); builder.Services.AddOpenApi(); builder.Services.AddEndpointsApiExplorer(); builder.Services.AddSwaggerGen(); builder.Services.AddHealthChecks();
 builder.Services.AddHostedService<SecurityRetentionHostedService>();
+builder.Services.AddSingleton<IDataProtectionService, AesDataProtectionService>();
+builder.Services.AddHttpClient("malware-scanner", client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddScoped<IMalwareScanner, ConfiguredMalwareScanner>();
 builder.Services.AddRateLimiter(options => { options.RejectionStatusCode = StatusCodes.Status429TooManyRequests; options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context => RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions { PermitLimit = context.Request.Path.StartsWithSegments("/api/auth") ? 20 : 240, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true })); });
 
 if (builder.Environment.IsDevelopment()) builder.Services.AddAuthentication("DevelopmentHeaders").AddScheme<AuthenticationSchemeOptions, DevelopmentHeaderAuthenticationHandler>("DevelopmentHeaders", null);
