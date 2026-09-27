@@ -21,6 +21,10 @@ public sealed class EmployerPaymentAccount : Entity
     public int BankId { get; private set; }
     public int BranchId { get; private set; }
     public string AccountNumber { get; private set; } = string.Empty;
+    public string? AccountNumberEncrypted { get; private set; }
+    public string? AccountHolderIdEncrypted { get; private set; }
+
+    public void SetProtectedValues(string accountNumberEncrypted, string accountHolderIdEncrypted) { AccountNumberEncrypted = accountNumberEncrypted; AccountHolderIdEncrypted = accountHolderIdEncrypted; Touch(); }
     public string AccountHolderName { get; private set; } = string.Empty;
     public string AccountHolderId { get; private set; } = string.Empty;
     public bool IsDefault { get; private set; }
