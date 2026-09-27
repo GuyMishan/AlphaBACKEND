@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,7 +17,7 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
         {
             var normalized = person.NationalId.Trim();
             person.SetProtectedNationalId(protector.Protect(normalized, "person-national-id"),
-                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant());
+                protector.LookupHash(normalized, "person-national-id-lookup"));
         }
 
         var accounts = await db.EmployerPaymentAccounts.Where(x => x.AccountNumberEncrypted == null || x.AccountHolderIdEncrypted == null).ToListAsync(stoppingToken);
