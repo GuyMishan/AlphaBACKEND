@@ -26,7 +26,7 @@ public static class OrganizationPaymentAccountEndpoints
     }
 
     private static async Task<IResult> GetAsync(Guid organizationId, AlphaDbContext db,
-        OrganizationAccessService access, CancellationToken ct)
+        OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
         var account = await db.EmployerPaymentAccounts.AsNoTracking()
@@ -35,7 +35,7 @@ public static class OrganizationPaymentAccountEndpoints
 
         var mandate = await db.BankDebitMandates.AsNoTracking()
             .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == account.Id, ct);
-        return Results.Ok(new { account = Summary(account, mandate) });
+        return Results.Ok(new { account = Summary(account, mandate, protector) });
     }
 
     private static async Task<IResult> GetForEditAsync(Guid organizationId, Guid accountId, AlphaDbContext db,
@@ -79,7 +79,7 @@ public static class OrganizationPaymentAccountEndpoints
             nameof(EmployerPaymentAccount), account.Id, organizationId, null,
             JsonSerializer.Serialize(new { account.BankId, account.BranchId }), http.TraceIdentifier));
         await db.SaveChangesAsync(ct);
-        return Results.Created($"/api/organizations/{organizationId}/payment-account/{account.Id}", Summary(account, mandate));
+        return Results.Created($"/api/organizations/{organizationId}/payment-account/{account.Id}", Summary(account, mandate, protector));
     }
 
     private static async Task<IResult> UpdateAsync(Guid organizationId, Guid accountId,
@@ -103,7 +103,7 @@ public static class OrganizationPaymentAccountEndpoints
         await db.SaveChangesAsync(ct);
         var mandate = await db.BankDebitMandates.AsNoTracking()
             .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == account.Id, ct);
-        return Results.Ok(Summary(account, mandate));
+        return Results.Ok(Summary(account, mandate, protector));
     }
 
     private static async Task<IResult> UpdateMandateAsync(Guid organizationId, Guid accountId,
@@ -130,7 +130,7 @@ public static class OrganizationPaymentAccountEndpoints
         return Results.Ok(MandateDto(mandate));
     }
 
-    private static object Summary(EmployerPaymentAccount account, BankDebitMandate? mandate) => new
+    private static object Summary(EmployerPaymentAccount account, BankDebitMandate? mandate, IDataProtectionService protector) => new
     {
         account.Id, account.OrganizationId, account.EmployerId, account.BankId, account.BranchId,
         maskedAccountNumber = Mask(protector.Unprotect(account.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number")), account.AccountHolderName,
