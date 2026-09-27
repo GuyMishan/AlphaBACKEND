@@ -12,8 +12,6 @@ namespace Alpha.Application.Abstractions;
 public interface IAlphaDbContext
 {
     DbSet<BillingAccount> BillingAccounts { get; }
-    DbSet<PlanPricingComponent> PlanPricingComponents { get; }
-    DbSet<PlanPricingTier> PlanPricingTiers { get; }
     DbSet<BillingAccountPricingComponent> BillingAccountPricingComponents { get; }
     DbSet<BillingAccountPricingTier> BillingAccountPricingTiers { get; }
     DbSet<BillingPeriod> BillingPeriods { get; }
