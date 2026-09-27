@@ -667,19 +667,8 @@ public static class BillingManagementEndpoints
         return new { billingType = type, unitPrice = component?.UnitPrice ?? 0m, employeeUnitPrice = defaults.Employee, rowUnitPrice = defaults.Row, accountValid = valid };
     }
 
-    private static async Task<(decimal Employee, decimal Row)> GetDefaultSelfServiceTariffs(IAlphaDbContext db, CancellationToken ct)
-    {
-        var businessPlanId = await db.Plans.AsNoTracking().Where(x => x.Code == "BUSINESS").Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
-        if (!businessPlanId.HasValue) return (10m, 2m);
-        var components = await db.PlanPricingComponents.AsNoTracking()
-            .Where(x => x.PlanId == businessPlanId.Value && x.EffectiveTo == null && x.IsEnabled &&
-                        (x.MetricType == BillingMetricType.Employee || x.MetricType == BillingMetricType.ReportRow))
-            .ToListAsync(ct);
-        return (
-            components.FirstOrDefault(x => x.MetricType == BillingMetricType.Employee)?.UnitPrice ?? 10m,
-            components.FirstOrDefault(x => x.MetricType == BillingMetricType.ReportRow)?.UnitPrice ?? 2m
-        );
-    }
+    private static Task<(decimal Employee, decimal Row)> GetDefaultSelfServiceTariffs(IAlphaDbContext db, CancellationToken ct) =>
+        Task.FromResult((10m, 2m));
 
     private static async Task<IResult> UpdateOrganizationSelfServicePricingAsync(
         Guid organizationId, SelfServiceBillingPlanRequest request, IAlphaDbContext db,
@@ -904,50 +893,10 @@ public static class BillingManagementEndpoints
             .OrderByDescending(x => x.PeriodEnd)
             .Select(x => (object)new
             {
-                x.Id, x.BillingAccountId, x.PlanId, x.PeriodStart, x.PeriodEnd,
+                x.Id, x.BillingAccountId, x.PeriodStart, x.PeriodEnd,
                 x.Status, x.Currency, x.Subtotal, x.Total, x.CalculationSnapshotJson,
                 x.CalculatedAt, x.ChargedAt
             }).ToListAsync(ct);
 
-    private static string? ValidatePlanRequest(PlanBillingRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Name))
-            return "code_and_name_required";
-        if (request.MaxEmployers < 0 || request.MaxEmployees < 0 || request.MaxUsers < 0 ||
-            request.IncludedCorrections < 0 || request.IncludedCorrectionRows < 0 ||
-            request.CorrectionUnitPrice < 0)
-            return "negative_values_not_allowed";
-        if (request.Components.GroupBy(x => x.MetricType).Any(x => x.Count() > 1))
-            return "duplicate_metric_component";
-        if (request.Components.Any(x => x.UnitPrice < 0 || x.IncludedQuantity < 0 ||
-                                        x.MinimumCharge < 0 || x.MaximumCharge < 0 ||
-                                        x.MinimumCharge > x.MaximumCharge))
-            return "invalid_pricing_component";
-
-        foreach (var component in request.Components.Where(x => x.PricingType == BillingPricingType.Tiered && x.IsEnabled))
-        {
-            var tiers = (component.Tiers ?? []).OrderBy(x => x.FromQuantity).ToArray();
-            if (tiers.Length == 0 || tiers[0].FromQuantity != 0)
-                return "tiered_pricing_requires_tiers_starting_at_zero";
-
-            for (var index = 0; index < tiers.Length; index++)
-            {
-                var tier = tiers[index];
-                if (tier.FromQuantity < 0 || tier.ToQuantity < 0 || tier.UnitPrice < 0 ||
-                    (tier.ToQuantity.HasValue && tier.ToQuantity <= tier.FromQuantity))
-                    return "invalid_pricing_tier";
-
-                if (index < tiers.Length - 1)
-                {
-                    if (!tier.ToQuantity.HasValue || tier.ToQuantity.Value != tiers[index + 1].FromQuantity)
-                        return "pricing_tiers_must_be_contiguous";
-                }
-                else if (tier.ToQuantity.HasValue)
-                    return "last_pricing_tier_must_be_open_ended";
-            }
-        }
-
-        return null;
-    }
 
 }
