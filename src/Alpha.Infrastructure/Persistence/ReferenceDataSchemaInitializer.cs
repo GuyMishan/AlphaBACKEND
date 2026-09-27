@@ -94,7 +94,7 @@ public static class ReferenceDataSchemaInitializer
                 END IF;
                 RETURN NEW;
             END;
-            $function$ LANGUAGE plpgsql;
+            $function$ LANGUAGE plpgsql SET search_path = reference_data, pg_temp;
 
             DROP TRIGGER IF EXISTS trg_normalize_city_parentheses ON reference_data.cities;
             CREATE TRIGGER trg_normalize_city_parentheses
