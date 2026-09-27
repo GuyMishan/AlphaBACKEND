@@ -26,6 +26,10 @@ public sealed class Person : Entity
 
     public Guid OrganizationId { get; private set; }
     public string NationalId { get; private set; } = string.Empty;
+    public string? NationalIdEncrypted { get; private set; }
+    public string? NationalIdLookupHash { get; private set; }
+
+    public void SetProtectedNationalId(string encrypted, string lookupHash) { NationalIdEncrypted = encrypted; NationalIdLookupHash = lookupHash; Touch(); }
     public string FirstName { get; private set; } = string.Empty;
     public string LastName { get; private set; } = string.Empty;
     public DateOnly? BirthDate { get; private set; }
