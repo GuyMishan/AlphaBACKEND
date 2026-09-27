@@ -220,7 +220,7 @@ CREATE OR REPLACE FUNCTION reporting.seed_employee_mix_into_report()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = reporting, employees, pg_temp
-AS $
+AS $function$
 DECLARE
     mix_product record;
     mix_contribution record;
@@ -282,7 +282,7 @@ BEGIN
 
     RETURN NEW;
 END;
-$$;
+$function$;
 DROP TRIGGER IF EXISTS "TR_manual_report_employee_seed_mix" ON reporting.manual_report_employees;
 CREATE TRIGGER "TR_manual_report_employee_seed_mix"
 AFTER INSERT ON reporting.manual_report_employees
