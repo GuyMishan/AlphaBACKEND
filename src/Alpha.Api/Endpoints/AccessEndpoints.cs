@@ -26,7 +26,7 @@ public static class AccessEndpoints
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/access")
             .RequireAuthorization().WithTags("Access");
 
-        group.MapGet("/users", async (Guid organizationId, string? search, int? skip, int? take,
+        group.MapGet("/users", async (Guid organizationId, Guid? employerId, string? search, int? skip, int? take,
             IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct) =>
         {
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
@@ -51,6 +51,14 @@ public static class AccessEndpoints
                             membership.CanCreateEmployee,
                             membership.CanEditEmployee
                         };
+
+            if (employerId.HasValue)
+                query = query.Where(x =>
+                    x.EmployerAccessMode == EmployerAccessMode.AllEmployers ||
+                    db.EmployerUserAccesses.Any(grant =>
+                        grant.OrganizationId == organizationId &&
+                        grant.UserId == x.UserId &&
+                        grant.EmployerId == employerId.Value));
 
             if (!string.IsNullOrWhiteSpace(term))
                 query = query.Where(x => x.Email.StartsWith(term.ToLower()) || x.DisplayName.StartsWith(term));
