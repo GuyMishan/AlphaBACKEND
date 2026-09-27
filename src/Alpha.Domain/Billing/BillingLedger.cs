@@ -25,12 +25,14 @@ public sealed class PlanPricingComponent : Entity
     {
         if (planId == Guid.Empty) throw new ArgumentException("Plan is required.", nameof(planId));
         if (version <= 0) throw new ArgumentOutOfRangeException(nameof(version));
+        PlanId = planId;
         Version = version;
         EffectiveFrom = effectiveFrom ?? DateTimeOffset.UtcNow;
         CorrectionMode = correctionMode;
         Update(metricType, pricingType, unitPrice, includedQuantity, minimumCharge, maximumCharge, isEnabled);
     }
 
+    public Guid PlanId { get; private set; }
     public int Version { get; private set; } = 1;
     public DateTimeOffset EffectiveFrom { get; private set; }
     public DateTimeOffset? EffectiveTo { get; private set; }
