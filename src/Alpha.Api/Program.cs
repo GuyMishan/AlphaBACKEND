@@ -53,6 +53,7 @@ builder.Services.AddScoped<OtpDelivery>();
 builder.Services.AddHttpClient<ReferenceDataSyncService>(client => { client.Timeout = TimeSpan.FromMinutes(5); client.DefaultRequestHeaders.UserAgent.ParseAdd("AlphaReferenceDataSync/1.0"); });
 builder.Services.AddProblemDetails(); builder.Services.AddOpenApi(); builder.Services.AddEndpointsApiExplorer(); builder.Services.AddSwaggerGen(); builder.Services.AddHealthChecks();
 builder.Services.AddHostedService<SecurityRetentionHostedService>();
+builder.Services.AddHostedService<SensitiveDataBackfillHostedService>();
 builder.Services.AddSingleton<IDataProtectionService, AesDataProtectionService>();
 builder.Services.AddHttpClient("malware-scanner", client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddScoped<IMalwareScanner, ConfiguredMalwareScanner>();
