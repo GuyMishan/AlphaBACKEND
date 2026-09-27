@@ -5,7 +5,6 @@ using Alpha.Application.Abstractions;
 using Alpha.Domain.Auditing;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Organizations;
-using Alpha.Domain.Subscriptions;
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -84,9 +83,6 @@ public static class OnboardingEndpoints
                 EmployerRole.Owner);
             db.EmployerUserAccesses.Add(ownerAccess);
 
-            var freePlan = await db.Plans.SingleAsync(x => x.Code == SubscriptionSchemaInitializer.FreePlanCode && x.IsActive, ct);
-            db.Subscriptions.Add(new Subscription(organization.Id, freePlan.Id));
-
             db.AuditEvents.Add(new AuditEvent(
                 currentUser.UserId,
                 "self_service.onboarding.completed",
@@ -105,8 +101,7 @@ public static class OnboardingEndpoints
                 organizationId = organization.Id,
                 employerId = employer.Id,
                 employer,
-                employerRole = EmployerRole.Owner,
-                subscriptionPlan = freePlan.Code
+                employerRole = EmployerRole.Owner
             });
         });
 
