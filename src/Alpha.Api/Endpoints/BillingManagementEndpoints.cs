@@ -61,10 +61,6 @@ public static class BillingManagementEndpoints
         var platform = endpoints.MapGroup("/api/platform/billing")
             .RequireAuthorization().WithTags("Platform Billing");
 
-        platform.MapGet("/plans", GetPlansAsync);
-        platform.MapPost("/plans", CreatePlanAsync);
-        platform.MapPut("/plans/{planId:guid}", UpdatePlanAsync);
-        platform.MapPost("/plans/{planId:guid}/simulate", SimulateAsync);
         platform.MapGet("/customers", GetBillingCustomersAsync);
         platform.MapPut("/customers/pricing", UpdateBillingCustomerPricingAsync);
         platform.MapGet("/summary", GetPlatformBillingSummaryAsync);
