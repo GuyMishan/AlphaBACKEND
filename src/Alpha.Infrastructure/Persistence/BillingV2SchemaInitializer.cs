@@ -23,56 +23,6 @@ public static class BillingV2SchemaInitializer
             END
             WHERE "Status" = 'PendingSetup' AND "PaymentMethodStatus" <> 'NotConfigured';
 
-            ALTER TABLE subscriptions.plans
-                ADD COLUMN IF NOT EXISTS "Description" varchar(1000) NOT NULL DEFAULT '',
-                ADD COLUMN IF NOT EXISTS "Currency" varchar(3) NOT NULL DEFAULT 'ILS',
-                ADD COLUMN IF NOT EXISTS "BillingInterval" varchar(30) NOT NULL DEFAULT 'Monthly',
-                ADD COLUMN IF NOT EXISTS "Version" integer NOT NULL DEFAULT 1,
-                ADD COLUMN IF NOT EXISTS "EffectiveFrom" timestamptz NOT NULL DEFAULT now(),
-                ADD COLUMN IF NOT EXISTS "EffectiveTo" timestamptz NULL,
-                ADD COLUMN IF NOT EXISTS "CorrectionBillingMode" varchar(40) NOT NULL DEFAULT 'Free',
-                ADD COLUMN IF NOT EXISTS "CorrectionUnitPrice" numeric(18,4) NULL,
-                ADD COLUMN IF NOT EXISTS "IncludedCorrections" numeric(18,4) NOT NULL DEFAULT 0,
-                ADD COLUMN IF NOT EXISTS "IncludedCorrectionRows" numeric(18,4) NOT NULL DEFAULT 0;
-
-            CREATE TABLE IF NOT EXISTS billing.plan_pricing_components (
-                "Id" uuid NOT NULL PRIMARY KEY,
-                "PlanId" uuid NOT NULL REFERENCES subscriptions.plans("Id") ON DELETE CASCADE,
-                "Version" integer NOT NULL DEFAULT 1,
-                "EffectiveFrom" timestamptz NOT NULL DEFAULT now(),
-                "EffectiveTo" timestamptz NULL,
-                "CorrectionMode" varchar(40) NULL,
-                "MetricType" varchar(40) NOT NULL,
-                "PricingType" varchar(40) NOT NULL,
-                "UnitPrice" numeric(18,4) NOT NULL,
-                "IncludedQuantity" numeric(18,4) NOT NULL DEFAULT 0,
-                "MinimumCharge" numeric(18,2) NULL,
-                "MaximumCharge" numeric(18,2) NULL,
-                "IsEnabled" boolean NOT NULL DEFAULT true,
-                "CreatedAt" timestamptz NOT NULL,
-                "UpdatedAt" timestamptz NOT NULL
-            );
-            ALTER TABLE billing.plan_pricing_components
-                ADD COLUMN IF NOT EXISTS "Version" integer NOT NULL DEFAULT 1,
-                ADD COLUMN IF NOT EXISTS "EffectiveFrom" timestamptz NOT NULL DEFAULT now(),
-                ADD COLUMN IF NOT EXISTS "EffectiveTo" timestamptz NULL,
-                ADD COLUMN IF NOT EXISTS "CorrectionMode" varchar(40) NULL;
-            DROP INDEX IF EXISTS billing."UX_plan_pricing_components_plan_metric";
-            CREATE UNIQUE INDEX IF NOT EXISTS "UX_plan_pricing_components_plan_version_metric"
-                ON billing.plan_pricing_components ("PlanId", "Version", "MetricType");
-
-            CREATE TABLE IF NOT EXISTS billing.plan_pricing_tiers (
-                "Id" uuid NOT NULL PRIMARY KEY,
-                "ComponentId" uuid NOT NULL REFERENCES billing.plan_pricing_components("Id") ON DELETE CASCADE,
-                "FromQuantity" numeric(18,4) NOT NULL,
-                "ToQuantity" numeric(18,4) NULL,
-                "UnitPrice" numeric(18,4) NOT NULL,
-                "CreatedAt" timestamptz NOT NULL,
-                "UpdatedAt" timestamptz NOT NULL
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS "UX_plan_pricing_tiers_component_from"
-                ON billing.plan_pricing_tiers ("ComponentId", "FromQuantity");
-
             CREATE TABLE IF NOT EXISTS billing.billing_account_pricing_components (
                 "Id" uuid NOT NULL PRIMARY KEY,
                 "BillingAccountId" uuid NOT NULL REFERENCES billing.billing_accounts("Id") ON DELETE CASCADE,
@@ -108,7 +58,6 @@ public static class BillingV2SchemaInitializer
             CREATE TABLE IF NOT EXISTS billing.billing_periods (
                 "Id" uuid NOT NULL PRIMARY KEY,
                 "BillingAccountId" uuid NOT NULL REFERENCES billing.billing_accounts("Id") ON DELETE RESTRICT,
-                "PlanId" uuid NOT NULL REFERENCES subscriptions.plans("Id") ON DELETE RESTRICT,
                 "PeriodStart" timestamptz NOT NULL,
                 "PeriodEnd" timestamptz NOT NULL,
                 "Status" varchar(40) NOT NULL,
