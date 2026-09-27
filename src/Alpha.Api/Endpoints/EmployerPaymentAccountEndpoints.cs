@@ -45,13 +45,13 @@ public static class EmployerPaymentAccountEndpoints
     }
 
     private static async Task<IResult> ListAsync(Guid organizationId, Guid employerId, AlphaDbContext db,
-        OrganizationAccessService access, CancellationToken ct)
+        OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var resolution = await ResolveAccountAsync(organizationId, employerId, db, ct);
         return Results.Ok(resolution.Account is null
             ? Array.Empty<object>()
-            : new[] { AccountSummary(resolution.Account, resolution.Mandate, resolution.Source) });
+            : new[] { AccountSummary(resolution.Account, resolution.Mandate, protector, resolution.Source) });
     }
 
     private static async Task<IResult> ResolveAsync(Guid organizationId, Guid employerId, AlphaDbContext db,
@@ -79,7 +79,7 @@ public static class EmployerPaymentAccountEndpoints
             mode = resolution.Mode,
             source = resolution.Source,
             inherited = resolution.Source == "Organization",
-            account = resolution.Account is null ? null : AccountSummary(resolution.Account, resolution.Mandate, resolution.Source),
+            account = resolution.Account is null ? null : AccountSummary(resolution.Account, resolution.Mandate, protector, resolution.Source),
             organizationAccount = organizationAccount is null ? null : AccountSummary(organizationAccount, organizationMandate, protector, "Organization"),
             employerAccount = employerAccount is null ? null : AccountSummary(employerAccount, employerMandate, protector, "Employer")
         });
