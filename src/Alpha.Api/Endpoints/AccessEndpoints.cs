@@ -178,13 +178,12 @@ public static class AccessEndpoints
         {
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
             var term = search?.Trim();
-            if (string.IsNullOrWhiteSpace(term) || term.Length < 2)
-                return Results.Ok(Array.Empty<object>());
-            var safeTake = Math.Clamp(take ?? 20, 1, 25);
+            var safeTake = Math.Clamp(take ?? 10, 1, 25);
 
-            var query = db.Employers.AsNoTracking().Where(x => x.OrganizationId == organizationId &&
-                (x.LegalName.StartsWith(term) || x.RegistrationNumber.StartsWith(term) ||
-                 x.WithholdingFileNumber.StartsWith(term)));
+            var query = db.Employers.AsNoTracking().Where(x => x.OrganizationId == organizationId);
+            if (!string.IsNullOrWhiteSpace(term))
+                query = query.Where(x => x.LegalName.StartsWith(term) || x.RegistrationNumber.StartsWith(term) ||
+                    x.WithholdingFileNumber.StartsWith(term));
             var items = await query.OrderBy(x => x.LegalName).ThenBy(x => x.Id)
                 .Select(x => new
                 {
