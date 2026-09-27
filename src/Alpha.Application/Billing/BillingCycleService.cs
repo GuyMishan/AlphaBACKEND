@@ -36,21 +36,6 @@ public sealed class BillingCycleService(
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x => x.Id == billingAccountId, ct)
             ?? throw new InvalidOperationException("Billing account was not found.");
 
-        var organizationId = account.OrganizationId ??
-            await db.Employers.AsNoTracking()
-                .Where(x => x.Id == account.EmployerId)
-                .Select(x => x.OrganizationId)
-                .SingleAsync(ct);
-
-        var subscription = await db.Subscriptions.SingleOrDefaultAsync(
-            x => x.OrganizationId == organizationId &&
-                 x.Status != SubscriptionStatus.Cancelled &&
-                 x.Status != SubscriptionStatus.Expired &&
-                 x.StartedAt < periodEnd &&
-                 (!x.ExpiresAt.HasValue || x.ExpiresAt > periodStart), ct)
-            ?? throw new InvalidOperationException("No billable subscription was found for the billing period.");
-
-        var plan = await db.Plans.AsNoTracking().SingleAsync(x => x.Id == subscription.PlanId, ct);
         var accountComponents = await db.BillingAccountPricingComponents.AsNoTracking()
             .Where(x => x.BillingAccountId == account.Id &&
                         x.EffectiveFrom < periodEnd &&
@@ -58,25 +43,15 @@ public sealed class BillingCycleService(
                         x.IsEnabled)
             .ToListAsync(ct);
 
-        List<PlanPricingComponent> components;
-        List<PlanPricingTier> tiers = [];
-        if (accountComponents.Count == 0)
-        {
-            components =
-            [
-                new PlanPricingComponent(plan.Id, BillingMetricType.Correction, BillingPricingType.PerUnit,
-                    0m, 0m, null, null, true, 1, periodStart, CorrectionBillingMode.Free)
-            ];
-        }
-        else
-        {
-            components = accountComponents.Select(x => new PlanPricingComponent(
-                plan.Id, x.MetricType, BillingPricingType.PerUnit, x.UnitPrice,
-                0m, null, null, true, x.Version, x.EffectiveFrom, null)).ToList();
+        var plan = new Plan("ACCOUNT", "Account pricing", int.MaxValue, int.MaxValue, int.MaxValue);
+        var components = accountComponents.Select(x => new PlanPricingComponent(
+            plan.Id, x.MetricType, x.PricingType, x.UnitPrice, x.IncludedQuantity,
+            x.MinimumCharge, x.MaximumCharge, x.IsEnabled, x.Version, x.EffectiveFrom, x.CorrectionMode)).ToList();
+        if (!components.Any(x => x.MetricType == BillingMetricType.Correction))
             components.Add(new PlanPricingComponent(
                 plan.Id, BillingMetricType.Correction, BillingPricingType.PerUnit,
                 0m, 0m, null, null, true, 1, periodStart, CorrectionBillingMode.Free));
-        }
+        List<PlanPricingTier> tiers = [];
 
         var period = await db.BillingPeriods.SingleOrDefaultAsync(x =>
             x.BillingAccountId == billingAccountId &&
@@ -85,7 +60,7 @@ public sealed class BillingCycleService(
 
         if (period is null)
         {
-            period = new BillingPeriod(account.Id, plan.Id, periodStart, periodEnd, plan.Currency);
+            period = new BillingPeriod(account.Id, periodStart, periodEnd, "ILS");
             db.BillingPeriods.Add(period);
             await db.SaveChangesAsync(ct);
 
@@ -109,7 +84,6 @@ public sealed class BillingCycleService(
         {
             period.MarkCharged();
             account.MarkStatus(BillingAccountStatus.Active);
-            RestoreOrganizationSubscriptionIfNeeded(account, subscription);
             await db.SaveChangesAsync(ct);
             return new BillingRunResult(period.Id, account.Id, period.Status, 0,
                 period.Currency, currentCalculation, null, null, null);
@@ -128,7 +102,6 @@ public sealed class BillingCycleService(
         {
             period.MarkPastDue();
             account.MarkStatus(BillingAccountStatus.PastDue);
-            MarkOrganizationSubscriptionPastDueIfNeeded(account, subscription);
             await db.SaveChangesAsync(ct);
             return new BillingRunResult(period.Id, account.Id, period.Status, period.Total,
                 period.Currency, currentCalculation, null, null, "payment_method_not_active");
@@ -146,7 +119,6 @@ public sealed class BillingCycleService(
         {
             period.MarkCharged();
             account.MarkStatus(BillingAccountStatus.Active);
-            RestoreOrganizationSubscriptionIfNeeded(account, subscription);
             await db.SaveChangesAsync(ct);
             return new BillingRunResult(period.Id, account.Id, period.Status, period.Total,
                 period.Currency, currentCalculation, payment.Id, payment.Status, null);
@@ -192,14 +164,12 @@ public sealed class BillingCycleService(
             payment.Succeed(result.TransactionId, result.InvoiceReference);
             period.MarkCharged();
             account.MarkStatus(BillingAccountStatus.Active);
-            RestoreOrganizationSubscriptionIfNeeded(account, subscription);
         }
         else
         {
             payment.Fail(result.ErrorCode, result.ErrorMessage);
             period.MarkPastDue();
             account.MarkStatus(BillingAccountStatus.PastDue);
-            MarkOrganizationSubscriptionPastDueIfNeeded(account, subscription);
         }
 
         await db.SaveChangesAsync(ct);
@@ -244,35 +214,12 @@ public sealed class BillingCycleService(
                 current.MarkSuspended();
                 var account = await db.BillingAccounts.SingleAsync(x => x.Id == item.BillingAccountId, ct);
                 account.MarkStatus(BillingAccountStatus.Suspended);
-                var organizationId = account.OrganizationId ??
-                    await db.Employers.AsNoTracking().Where(x => x.Id == account.EmployerId)
-                        .Select(x => x.OrganizationId).SingleAsync(ct);
-                var subscription = await db.Subscriptions.SingleOrDefaultAsync(
-                    x => x.OrganizationId == organizationId && x.Status != SubscriptionStatus.Cancelled, ct);
-                if (subscription is not null && account.OrganizationId.HasValue)
-                    subscription.ChangeStatus(SubscriptionStatus.Suspended);
                 await db.SaveChangesAsync(ct);
             }
         }
         return processed;
     }
 
-
-    private static void MarkOrganizationSubscriptionPastDueIfNeeded(
-        BillingAccount account, Subscription subscription)
-    {
-        if (account.OrganizationId.HasValue &&
-            subscription.Status is SubscriptionStatus.Active or SubscriptionStatus.Suspended)
-            subscription.ChangeStatus(SubscriptionStatus.PastDue);
-    }
-
-    private static void RestoreOrganizationSubscriptionIfNeeded(
-        BillingAccount account, Subscription subscription)
-    {
-        if (account.OrganizationId.HasValue &&
-            subscription.Status is SubscriptionStatus.PastDue or SubscriptionStatus.Suspended)
-            subscription.ChangeStatus(SubscriptionStatus.Active);
-    }
 
     private async Task<BillingCalculation> RehydrateCalculationAsync(BillingPeriod period, CancellationToken ct)
     {
