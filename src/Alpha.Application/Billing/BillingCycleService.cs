@@ -1,6 +1,5 @@
 using Alpha.Application.Abstractions;
 using Alpha.Domain.Billing;
-using Alpha.Domain.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Application.Billing;
@@ -43,15 +42,10 @@ public sealed class BillingCycleService(
                         x.IsEnabled)
             .ToListAsync(ct);
 
-        var plan = new Plan("ACCOUNT", "Account pricing", int.MaxValue, int.MaxValue, int.MaxValue);
-        var components = accountComponents.Select(x => new PlanPricingComponent(
-            plan.Id, x.MetricType, x.PricingType, x.UnitPrice, x.IncludedQuantity,
-            x.MinimumCharge, x.MaximumCharge, x.IsEnabled, x.Version, x.EffectiveFrom, x.CorrectionMode)).ToList();
-        if (!components.Any(x => x.MetricType == BillingMetricType.Correction))
-            components.Add(new PlanPricingComponent(
-                plan.Id, BillingMetricType.Correction, BillingPricingType.PerUnit,
-                0m, 0m, null, null, true, 1, periodStart, CorrectionBillingMode.Free));
-        List<PlanPricingTier> tiers = [];
+        var components = accountComponents;
+        var tiers = await db.BillingAccountPricingTiers.AsNoTracking()
+            .Where(x => accountComponents.Select(c => c.Id).Contains(x.ComponentId))
+            .ToListAsync(ct);
 
         var period = await db.BillingPeriods.SingleOrDefaultAsync(x =>
             x.BillingAccountId == billingAccountId &&
@@ -65,8 +59,8 @@ public sealed class BillingCycleService(
             await db.SaveChangesAsync(ct);
 
             var rawUsage = await usageCollector.CollectAsync(account, periodStart, periodEnd, ct);
-            var calculation = calculator.Calculate(plan, components, tiers, rawUsage);
-            period.SaveCalculation(calculation.Subtotal, calculation.Total, calculation.ToSnapshotJson(plan));
+            var calculation = calculator.Calculate(components, tiers, rawUsage);
+            period.SaveCalculation(calculation.Subtotal, calculation.Total, calculation.ToSnapshotJson());
 
             foreach (var line in calculation.Components)
                 db.BillingUsages.Add(new BillingUsage(account.Id, period.Id, line.Metric,
