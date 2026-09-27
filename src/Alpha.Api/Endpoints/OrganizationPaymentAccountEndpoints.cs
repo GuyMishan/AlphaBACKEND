@@ -1,3 +1,4 @@
+using Alpha.Api.Security;
 using System.Data.Common;
 using System.Text.Json;
 using Alpha.Application.Abstractions;
@@ -56,7 +57,7 @@ public static class OrganizationPaymentAccountEndpoints
 
     private static async Task<IResult> CreateAsync(Guid organizationId, EmployerPaymentAccountRequest request,
         AlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
-        HttpContext http, CancellationToken ct)
+        HttpContext http, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         if (!await db.Organizations.AnyAsync(x => x.Id == organizationId, ct)) return Results.NotFound();
@@ -68,6 +69,7 @@ public static class OrganizationPaymentAccountEndpoints
         var account = new EmployerPaymentAccount(organizationId, null, request.BankId, request.BranchId,
             request.AccountNumber, request.AccountHolderName, request.AccountHolderId);
         account.SetDefault(true);
+        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
         db.EmployerPaymentAccounts.Add(account);
         var mandate = new BankDebitMandate(account.Id);
         db.BankDebitMandates.Add(mandate);
@@ -80,7 +82,7 @@ public static class OrganizationPaymentAccountEndpoints
 
     private static async Task<IResult> UpdateAsync(Guid organizationId, Guid accountId,
         EmployerPaymentAccountRequest request, AlphaDbContext db, ICurrentUser currentUser,
-        OrganizationAccessService access, HttpContext http, CancellationToken ct)
+        OrganizationAccessService access, HttpContext http, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         if (!await BankBranchExistsAsync(db, request.BankId, request.BranchId, ct))
@@ -90,8 +92,8 @@ public static class OrganizationPaymentAccountEndpoints
             x.Id == accountId && x.OrganizationId == organizationId && x.EmployerId == null && x.IsActive, ct);
         if (account is null) return Results.NotFound();
 
-        account.Update(request.BankId, request.BranchId, request.AccountNumber,
-            request.AccountHolderName, request.AccountHolderId);
+        account.Update(request.BankId, request.BranchId, request.AccountNumber, request.AccountHolderName, request.AccountHolderId);
+        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
         account.SetDefault(true);
         db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "organization.payment-account.updated",
             nameof(EmployerPaymentAccount), account.Id, organizationId, null,
@@ -104,7 +106,7 @@ public static class OrganizationPaymentAccountEndpoints
 
     private static async Task<IResult> UpdateMandateAsync(Guid organizationId, Guid accountId,
         BankDebitMandateRequest request, AlphaDbContext db, ICurrentUser currentUser,
-        OrganizationAccessService access, HttpContext http, CancellationToken ct)
+        OrganizationAccessService access, HttpContext http, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         if (!Enum.IsDefined(request.Status)) return Results.BadRequest(new { error = "invalid_mandate_status" });
