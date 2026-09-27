@@ -578,7 +578,7 @@ public static class BillingManagementEndpoints
             .Take(take)
             .Select(x => new
             {
-                x.Id, x.BillingAccountId, x.PlanId, x.PeriodStart, x.PeriodEnd,
+                x.Id, x.BillingAccountId, x.PeriodStart, x.PeriodEnd,
                 x.Status, x.Currency, x.Subtotal, x.Total, x.CalculatedAt, x.ChargedAt
             }).ToListAsync(ct);
         return Results.Ok(rows);
