@@ -39,7 +39,7 @@ public static class OrganizationPaymentAccountEndpoints
     }
 
     private static async Task<IResult> GetForEditAsync(Guid organizationId, Guid accountId, AlphaDbContext db,
-        OrganizationAccessService access, CancellationToken ct)
+        OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         var account = await db.EmployerPaymentAccounts.AsNoTracking()
