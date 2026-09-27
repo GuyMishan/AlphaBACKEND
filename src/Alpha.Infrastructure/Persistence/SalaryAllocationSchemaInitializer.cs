@@ -17,8 +17,7 @@ ALTER TABLE employees.employee_pension_contributions
 
 CREATE OR REPLACE FUNCTION reporting.seed_employee_mix_into_report()
 RETURNS trigger
-LANGUAGE plpgsql
-AS $$
+LANGUAGE plpgsql\nSET search_path = reporting, employees, pg_temp\nAS $
 DECLARE
     mix_product record;
     mix_contribution record;
