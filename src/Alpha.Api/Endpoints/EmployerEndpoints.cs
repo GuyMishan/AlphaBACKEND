@@ -1,3 +1,4 @@
+using Alpha.Api.Security;
 using System.Text.Json;
 using Alpha.Api.Contracts;
 using Alpha.Api.Validation;
@@ -139,7 +140,7 @@ public static class EmployerEndpoints
 
         group.MapPost("/{employerId:guid}/employees", async (Guid organizationId, Guid employerId,
             CreateEmployeeRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access,
-            EntitlementService entitlements, HttpContext http, CancellationToken ct) =>
+            EntitlementService entitlements, IDataProtectionService protector, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanCreateEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
             var entitlement = await entitlements.CanCreateEmployee(organizationId, ct);
@@ -151,17 +152,20 @@ public static class EmployerEndpoints
             if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative." });
             if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct)) return Results.NotFound();
             var nationalId = request.NationalId.Trim();
-            var person = await db.People.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.NationalId == nationalId, ct);
+            var nationalIdHash = protector.LookupHash(nationalId, "person-national-id-lookup");
+            var person = await db.People.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.NationalIdLookupHash == nationalIdHash, ct);
             if (person is null)
             {
                 person = new Person(organizationId, nationalId, request.FirstName.Trim(), request.LastName.Trim(),
                     request.BirthDate, request.Gender, request.Email, request.Mobile, request.City, request.Street,
                     request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
+                person.SetProtectedNationalId(protector.Protect(nationalId, "person-national-id"), nationalIdHash);
                 db.People.Add(person);
             }
             else
             {
                 person.Update(request.NationalId, request.FirstName, request.LastName);
+                person.SetProtectedNationalId(protector.Protect(nationalId, "person-national-id"), nationalIdHash);
                 person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City,
                     request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
             }
@@ -181,7 +185,7 @@ public static class EmployerEndpoints
             return item is null ? Results.NotFound() : Results.Ok(item);
         });
 
-        group.MapPut("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId, Guid employerId, Guid employmentId, UpdateEmployeeRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
+        group.MapPut("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId, Guid employerId, Guid employmentId, UpdateEmployeeRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access, IDataProtectionService protector, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
             var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate)
@@ -194,9 +198,11 @@ public static class EmployerEndpoints
             var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
             var nationalId = request.NationalId.Trim();
             var employeeNumber = request.EmployeeNumber.Trim();
-            if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.NationalId == nationalId && x.Id != person.Id, ct)) return Results.Conflict(new { error = "National ID already exists in this organization." });
+            var nationalIdHash = protector.LookupHash(nationalId, "person-national-id-lookup");
+            if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.NationalIdLookupHash == nationalIdHash && x.Id != person.Id, ct)) return Results.Conflict(new { error = "National ID already exists in this organization." });
             if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber && x.Id != employmentId, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
             person.Update(nationalId, request.FirstName.Trim(), request.LastName.Trim());
+            person.SetProtectedNationalId(protector.Protect(nationalId, "person-national-id"), nationalIdHash);
             person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City,
                 request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
             employment.Update(employeeNumber, request.StartDate, request.MonthlySalary);
