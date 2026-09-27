@@ -80,13 +80,13 @@ public static class EmployerPaymentAccountEndpoints
             source = resolution.Source,
             inherited = resolution.Source == "Organization",
             account = resolution.Account is null ? null : AccountSummary(resolution.Account, resolution.Mandate, resolution.Source),
-            organizationAccount = organizationAccount is null ? null : AccountSummary(organizationAccount, organizationMandate, "Organization"),
-            employerAccount = employerAccount is null ? null : AccountSummary(employerAccount, employerMandate, "Employer")
+            organizationAccount = organizationAccount is null ? null : AccountSummary(organizationAccount, organizationMandate, protector, "Organization"),
+            employerAccount = employerAccount is null ? null : AccountSummary(employerAccount, employerMandate, protector, "Employer")
         });
     }
 
     private static async Task<IResult> GetForEditAsync(Guid organizationId, Guid employerId, Guid accountId,
-        AlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        AlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
 
@@ -104,9 +104,9 @@ public static class EmployerPaymentAccountEndpoints
             account.EmployerId,
             account.BankId,
             account.BranchId,
-            account.AccountNumber,
+            accountNumber = protector.Unprotect(account.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number"),
             account.AccountHolderName,
-            account.AccountHolderId,
+            accountHolderId = protector.Unprotect(account.AccountHolderIdEncrypted ?? throw new InvalidOperationException("Encrypted account holder id missing."), "bank-account-holder-id"),
             account.IsDefault,
             account.IsActive,
             mandate = MandateDto(mandate)
@@ -159,7 +159,7 @@ public static class EmployerPaymentAccountEndpoints
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/payment-accounts/{account.Id}",
-            AccountSummary(account, mandate));
+            AccountSummary(account, mandate, protector));
     }
 
     private static async Task<IResult> UpdateAsync(Guid organizationId, Guid employerId, Guid accountId,
@@ -204,7 +204,7 @@ public static class EmployerPaymentAccountEndpoints
 
         var mandate = await db.BankDebitMandates.AsNoTracking()
             .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == account.Id, ct);
-        return Results.Ok(AccountSummary(account, mandate));
+        return Results.Ok(AccountSummary(account, mandate, protector));
     }
 
     private static async Task<IResult> SetDefaultAsync(Guid organizationId, Guid employerId, Guid accountId,
@@ -292,16 +292,16 @@ public static class EmployerPaymentAccountEndpoints
         return Results.Ok(MandateDto(mandate));
     }
 
-    private static object AccountSummary(EmployerPaymentAccount account, BankDebitMandate? mandate, string source = "Employer") => new
+    private static object AccountSummary(EmployerPaymentAccount account, BankDebitMandate? mandate, IDataProtectionService protector, string source = "Employer") => new
     {
         account.Id,
         account.OrganizationId,
         account.EmployerId,
         account.BankId,
         account.BranchId,
-        maskedAccountNumber = Mask(account.AccountNumber),
+        maskedAccountNumber = Mask(protector.Unprotect(account.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number")),
         account.AccountHolderName,
-        maskedAccountHolderId = MaskIdentity(account.AccountHolderId),
+        maskedAccountHolderId = MaskIdentity(protector.Unprotect(account.AccountHolderIdEncrypted ?? throw new InvalidOperationException("Encrypted account holder id missing."), "bank-account-holder-id")),
         account.IsDefault,
         account.IsActive,
         source,
