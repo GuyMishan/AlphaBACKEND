@@ -4,7 +4,6 @@ using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Identity;
 using Alpha.Domain.Organizations;
-using Alpha.Domain.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -157,39 +156,6 @@ public sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEven
         b.Property(x => x.CorrelationId).HasMaxLength(100).IsRequired();
         b.Property(x => x.Data).HasColumnType("jsonb");
         b.HasIndex(x => new { x.OrganizationId, x.CreatedAt });
-    }
-}
-
-
-public sealed class PlanConfiguration : IEntityTypeConfiguration<Plan>
-{
-    public void Configure(EntityTypeBuilder<Plan> b)
-    {
-        b.ToTable("plans", "subscriptions");
-        b.HasKey(x => x.Id);
-        b.Property(x => x.Code).HasMaxLength(50).IsRequired();
-        b.Property(x => x.Name).HasMaxLength(120).IsRequired();
-        b.Property(x => x.Description).HasMaxLength(1000);
-        b.Property(x => x.Currency).HasMaxLength(3).IsRequired();
-        b.Property(x => x.BillingInterval).HasMaxLength(30).IsRequired();
-        b.Property(x => x.CorrectionBillingMode).HasConversion<string>().HasMaxLength(40).IsRequired();
-        b.Property(x => x.CorrectionUnitPrice).HasPrecision(18, 4);
-        b.Property(x => x.IncludedCorrections).HasPrecision(18, 4);
-        b.Property(x => x.IncludedCorrectionRows).HasPrecision(18, 4);
-        b.HasIndex(x => x.Code).IsUnique();
-    }
-}
-
-public sealed class SubscriptionConfiguration : IEntityTypeConfiguration<Subscription>
-{
-    public void Configure(EntityTypeBuilder<Subscription> b)
-    {
-        b.ToTable("subscriptions", "subscriptions");
-        b.HasKey(x => x.Id);
-        b.Property(x => x.Status).HasConversion<string>().HasMaxLength(40).IsRequired();
-        b.HasIndex(x => x.OrganizationId).IsUnique();
-        b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne<Plan>().WithMany().HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
