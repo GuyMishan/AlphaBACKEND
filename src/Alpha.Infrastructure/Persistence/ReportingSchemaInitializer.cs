@@ -218,7 +218,9 @@ ALTER TABLE reporting.manual_contributions ADD COLUMN IF NOT EXISTS "PreviousRec
 
 CREATE OR REPLACE FUNCTION reporting.seed_employee_mix_into_report()
 RETURNS trigger
-LANGUAGE plpgsql\nSET search_path = reporting, employees, pg_temp\nAS $
+LANGUAGE plpgsql
+SET search_path = reporting, employees, pg_temp
+AS $
 DECLARE
     mix_product record;
     mix_contribution record;
