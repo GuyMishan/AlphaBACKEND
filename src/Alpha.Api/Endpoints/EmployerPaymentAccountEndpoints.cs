@@ -1,3 +1,4 @@
+using Alpha.Api.Security;
 using System.Data.Common;
 using System.Text.Json;
 using Alpha.Application.Abstractions;
@@ -114,7 +115,7 @@ public static class EmployerPaymentAccountEndpoints
 
     private static async Task<IResult> CreateAsync(Guid organizationId, Guid employerId,
         EmployerPaymentAccountRequest request, AlphaDbContext db, ICurrentUser currentUser,
-        OrganizationAccessService access, HttpContext http, CancellationToken ct)
+        OrganizationAccessService access, HttpContext http, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
@@ -147,6 +148,7 @@ public static class EmployerPaymentAccountEndpoints
             account.SetDefault(true);
         }
 
+        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
         db.EmployerPaymentAccounts.Add(account);
         var mandate = new BankDebitMandate(account.Id);
         db.BankDebitMandates.Add(mandate);
@@ -162,7 +164,7 @@ public static class EmployerPaymentAccountEndpoints
 
     private static async Task<IResult> UpdateAsync(Guid organizationId, Guid employerId, Guid accountId,
         EmployerPaymentAccountRequest request, AlphaDbContext db, ICurrentUser currentUser,
-        OrganizationAccessService access, HttpContext http, CancellationToken ct)
+        OrganizationAccessService access, HttpContext http, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (!await BankBranchExistsAsync(db, request.BankId, request.BranchId, ct))
@@ -177,8 +179,8 @@ public static class EmployerPaymentAccountEndpoints
 
         try
         {
-            account.Update(request.BankId, request.BranchId, request.AccountNumber,
-                request.AccountHolderName, request.AccountHolderId);
+            account.Update(request.BankId, request.BranchId, request.AccountNumber, request.AccountHolderName, request.AccountHolderId);
+        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
         }
         catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
         {
@@ -207,7 +209,7 @@ public static class EmployerPaymentAccountEndpoints
 
     private static async Task<IResult> SetDefaultAsync(Guid organizationId, Guid employerId, Guid accountId,
         AlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
-        HttpContext http, CancellationToken ct)
+        HttpContext http, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
 
@@ -229,7 +231,7 @@ public static class EmployerPaymentAccountEndpoints
 
     private static async Task<IResult> DeactivateAsync(Guid organizationId, Guid employerId, Guid accountId,
         AlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
-        HttpContext http, CancellationToken ct)
+        HttpContext http, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
 
@@ -266,7 +268,7 @@ public static class EmployerPaymentAccountEndpoints
 
     private static async Task<IResult> UpdateMandateAsync(Guid organizationId, Guid employerId, Guid accountId,
         BankDebitMandateRequest request, AlphaDbContext db, ICurrentUser currentUser,
-        OrganizationAccessService access, HttpContext http, CancellationToken ct)
+        OrganizationAccessService access, HttpContext http, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (!Enum.IsDefined(request.Status)) return Results.BadRequest(new { error = "invalid_mandate_status" });
