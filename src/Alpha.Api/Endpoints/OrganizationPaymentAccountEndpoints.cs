@@ -50,7 +50,9 @@ public static class OrganizationPaymentAccountEndpoints
         return Results.Ok(new
         {
             account.Id, account.OrganizationId, account.EmployerId, account.BankId, account.BranchId,
-            account.AccountNumber, account.AccountHolderName, account.AccountHolderId,
+            accountNumber = protector.Unprotect(account.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number"),
+            account.AccountHolderName,
+            accountHolderId = protector.Unprotect(account.AccountHolderIdEncrypted ?? throw new InvalidOperationException("Encrypted account holder id missing."), "bank-account-holder-id"),
             account.IsDefault, account.IsActive, source = "Organization", mandate = MandateDto(mandate)
         });
     }
@@ -131,8 +133,8 @@ public static class OrganizationPaymentAccountEndpoints
     private static object Summary(EmployerPaymentAccount account, BankDebitMandate? mandate) => new
     {
         account.Id, account.OrganizationId, account.EmployerId, account.BankId, account.BranchId,
-        maskedAccountNumber = Mask(account.AccountNumber), account.AccountHolderName,
-        maskedAccountHolderId = MaskIdentity(account.AccountHolderId), account.IsDefault, account.IsActive,
+        maskedAccountNumber = Mask(protector.Unprotect(account.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number")), account.AccountHolderName,
+        maskedAccountHolderId = MaskIdentity(protector.Unprotect(account.AccountHolderIdEncrypted ?? throw new InvalidOperationException("Encrypted account holder id missing."), "bank-account-holder-id")), account.IsDefault, account.IsActive,
         source = "Organization", mandate = MandateDto(mandate), mandateIsActive = mandate?.IsActive ?? false
     };
 
