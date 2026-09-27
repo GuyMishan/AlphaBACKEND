@@ -2,6 +2,7 @@ using System.Text;
 using Alpha.Api.Authentication;
 using Alpha.Api.Endpoints;
 using Alpha.Api.Services;
+using Alpha.Api.Security;
 using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
@@ -16,6 +17,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -50,6 +52,8 @@ builder.Services.AddHttpClient("otp-email", c => c.Timeout = TimeSpan.FromSecond
 builder.Services.AddScoped<OtpDelivery>();
 builder.Services.AddHttpClient<ReferenceDataSyncService>(client => { client.Timeout = TimeSpan.FromMinutes(5); client.DefaultRequestHeaders.UserAgent.ParseAdd("AlphaReferenceDataSync/1.0"); });
 builder.Services.AddProblemDetails(); builder.Services.AddOpenApi(); builder.Services.AddEndpointsApiExplorer(); builder.Services.AddSwaggerGen(); builder.Services.AddHealthChecks();
+builder.Services.AddHostedService<SecurityRetentionHostedService>();
+builder.Services.AddRateLimiter(options => { options.RejectionStatusCode = StatusCodes.Status429TooManyRequests; options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context => RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions { PermitLimit = context.Request.Path.StartsWithSegments("/api/auth") ? 20 : 240, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true })); });
 
 if (builder.Environment.IsDevelopment()) builder.Services.AddAuthentication("DevelopmentHeaders").AddScheme<AuthenticationSchemeOptions, DevelopmentHeaderAuthenticationHandler>("DevelopmentHeaders", null);
 else builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => { var key = builder.Configuration["PrototypeAuth:SigningKey"]; if (!string.IsNullOrWhiteSpace(key)) options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer = true, ValidIssuer = "alpha-prototype", ValidateAudience = true, ValidAudience = "alpha-frontend", ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), ValidateLifetime = true, ClockSkew = TimeSpan.FromMinutes(1) }; else { options.Authority = builder.Configuration["Authentication:Authority"]; options.Audience = builder.Configuration["Authentication:Audience"]; } });
@@ -59,7 +63,7 @@ if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations")) { await us
 await using (var scope = app.Services.CreateAsyncScope()) { var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await IdentitySchemaInitializer.EnsureUpdatedAsync(db); await EmployerAccessSchemaInitializer.EnsureUpdatedAsync(db); await AccessPermissionsSchemaInitializer.EnsureUpdatedAsync(db); await EmployerProfileSchemaInitializer.EnsureCreatedAsync(db); await OrganizationProfileSchemaInitializer.EnsureCreatedAsync(db); await BillingSchemaInitializer.EnsureCreatedAsync(db); await BillingInheritanceSchemaInitializer.EnsureUpdatedAsync(db); await BillingV2SchemaInitializer.EnsureUpdatedAsync(db); await OtpSchemaInitializer.EnsureCreatedAsync(db); await RegistrationOtpSchemaInitializer.EnsureCreatedAsync(db); await InvitationSchemaInitializer.EnsureCreatedAsync(db); await ReportingSchemaInitializer.EnsureCreatedAsync(db); await Section14SchemaInitializer.EnsureUpdatedAsync(db); await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db); await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db); await ReportLifecycleSchemaInitializer.EnsureUpdatedAsync(db); await ReportTransmissionSchemaInitializer.EnsureUpdatedAsync(db); await EmployerInterfaceFeedbackSchemaInitializer.EnsureCreatedAsync(db); await EmployerInterface006SchemaInitializer.EnsureUpdatedAsync(db); await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db); await SelectOptionsSchemaInitializer.EnsureCreatedAsync(db); await EmployerInterface006CodebookInitializer.EnsureUpdatedAsync(db); await EmployerInterface006ReferenceRulesInitializer.EnsureUpdatedAsync(db); await EmployerInterface006ErrorCodeInitializer.EnsureUpdatedAsync(db); await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db); }
 var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]); var demoDataEnabled = builder.Configuration.GetValue("DemoData:Enabled", true);
 if (prototypeAuthEnabled && demoDataEnabled) { await using var scope = app.Services.CreateAsyncScope(); var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await DemoDataSeeder.SeedAsync(db); }
-app.UseExceptionHandler(); app.UseHttpsRedirection(); app.UseAuthentication(); app.UseAuthorization(); app.UseReportingInputValidation();
+app.UseExceptionHandler(); if (!app.Environment.IsDevelopment()) app.UseHsts(); app.UseHttpsRedirection(); app.UseMiddleware<SecurityHeadersMiddleware>(); app.UseRateLimiter(); app.UseAuthentication(); app.UseAuthorization(); app.UseMiddleware<SecurityAuditMiddleware>(); app.UseReportingInputValidation();
 if (app.Environment.IsDevelopment()) { app.MapOpenApi(); app.UseSwagger(); app.UseSwaggerUI(); }
 app.MapHealthChecks("/health", new HealthCheckOptions { AllowCachingResponses = false }).AllowAnonymous();
 app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) => await db.Database.CanConnectAsync(ct) ? Results.Ok(new { status = "healthy", database = "postgresql" }) : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable)).AllowAnonymous().WithTags("Health");
