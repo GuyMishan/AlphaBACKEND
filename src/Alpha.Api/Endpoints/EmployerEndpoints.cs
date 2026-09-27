@@ -170,6 +170,7 @@ public static class EmployerEndpoints
                     request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
             }
             var employeeNumber = request.EmployeeNumber.Trim();
+            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.PersonId == person.Id, ct)) return Results.Conflict(new { error = "National ID already exists for this employer." });
             if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
             var employment = new Employment(organizationId, employerId, person.Id, request.StartDate, employeeNumber, request.MonthlySalary);
             db.Employments.Add(employment);
