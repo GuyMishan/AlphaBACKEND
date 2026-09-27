@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Claims;
 using Alpha.Api.Authentication;
 using Alpha.Api.Endpoints;
 using Alpha.Api.Services;
