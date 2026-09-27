@@ -56,7 +56,7 @@ public static class SubscriptionSchemaInitializer
         var freePlan = await db.Plans.SingleOrDefaultAsync(x => x.Code == FreePlanCode, ct);
         if (freePlan is null)
         {
-            freePlan = new Plan(FreePlanCode, "Free", maxEmployers: 1, maxEmployees: 3, maxUsers: 1);
+            freePlan = new Plan(FreePlanCode, "Free", maxEmployers: 1, maxEmployees: 3, maxUsers: 3);
             db.Plans.Add(freePlan);
             await db.SaveChangesAsync(ct);
         }
