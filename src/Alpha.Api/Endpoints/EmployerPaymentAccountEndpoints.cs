@@ -55,7 +55,7 @@ public static class EmployerPaymentAccountEndpoints
     }
 
     private static async Task<IResult> ResolveAsync(Guid organizationId, Guid employerId, AlphaDbContext db,
-        OrganizationAccessService access, CancellationToken ct)
+        OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var employer = await db.Employers.AsNoTracking()
