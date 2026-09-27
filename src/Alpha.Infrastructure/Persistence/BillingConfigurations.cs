@@ -1,42 +1,9 @@
 using Alpha.Domain.Billing;
 using Alpha.Domain.Employers;
-using Alpha.Domain.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Alpha.Infrastructure.Persistence;
-
-public sealed class PlanPricingComponentConfiguration : IEntityTypeConfiguration<PlanPricingComponent>
-{
-    public void Configure(EntityTypeBuilder<PlanPricingComponent> b)
-    {
-        b.ToTable("plan_pricing_components", "billing");
-        b.HasKey(x => x.Id);
-        b.Property(x => x.MetricType).HasConversion<string>().HasMaxLength(40).IsRequired();
-        b.Property(x => x.CorrectionMode).HasConversion<string>().HasMaxLength(40);
-        b.Property(x => x.PricingType).HasConversion<string>().HasMaxLength(40).IsRequired();
-        b.Property(x => x.UnitPrice).HasPrecision(18, 4);
-        b.Property(x => x.IncludedQuantity).HasPrecision(18, 4);
-        b.Property(x => x.MinimumCharge).HasPrecision(18, 2);
-        b.Property(x => x.MaximumCharge).HasPrecision(18, 2);
-        b.HasIndex(x => new { x.PlanId, x.Version, x.MetricType }).IsUnique();
-        b.HasOne<Plan>().WithMany().HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Cascade);
-    }
-}
-
-public sealed class PlanPricingTierConfiguration : IEntityTypeConfiguration<PlanPricingTier>
-{
-    public void Configure(EntityTypeBuilder<PlanPricingTier> b)
-    {
-        b.ToTable("plan_pricing_tiers", "billing");
-        b.HasKey(x => x.Id);
-        b.Property(x => x.FromQuantity).HasPrecision(18, 4);
-        b.Property(x => x.ToQuantity).HasPrecision(18, 4);
-        b.Property(x => x.UnitPrice).HasPrecision(18, 4);
-        b.HasIndex(x => new { x.ComponentId, x.FromQuantity }).IsUnique();
-        b.HasOne<PlanPricingComponent>().WithMany().HasForeignKey(x => x.ComponentId).OnDelete(DeleteBehavior.Cascade);
-    }
-}
 
 public sealed class BillingAccountPricingComponentConfiguration : IEntityTypeConfiguration<BillingAccountPricingComponent>
 {
