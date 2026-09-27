@@ -2,7 +2,6 @@ using System.Text.Json;
 using Alpha.Application.Abstractions;
 using Alpha.Domain.Billing;
 using Alpha.Domain.Reporting;
-using Alpha.Domain.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Application.Billing;
@@ -35,20 +34,8 @@ public sealed record BillingCalculationLine(
 
 public sealed record BillingCalculation(decimal Subtotal, decimal Total, IReadOnlyList<BillingCalculationLine> Components)
 {
-    public string ToSnapshotJson(Plan plan) => JsonSerializer.Serialize(new
+    public string ToSnapshotJson() => JsonSerializer.Serialize(new
     {
-        plan = new
-        {
-            plan.Id,
-            plan.Code,
-            plan.Name,
-            plan.Version,
-            plan.Currency,
-            plan.BillingInterval,
-            plan.EffectiveFrom,
-            plan.EffectiveTo,
-            plan.CorrectionBillingMode
-        },
         subtotal = Subtotal,
         total = Total,
         components = Components
@@ -57,14 +44,14 @@ public sealed record BillingCalculation(decimal Subtotal, decimal Total, IReadOn
 
 public interface IBillingCalculator
 {
-    BillingCalculation Calculate(Plan plan, IReadOnlyCollection<PlanPricingComponent> components,
-        IReadOnlyCollection<PlanPricingTier> tiers, BillingUsageSnapshot usage);
+    BillingCalculation Calculate(IReadOnlyCollection<BillingAccountPricingComponent> components,
+        IReadOnlyCollection<BillingAccountPricingTier> tiers, BillingUsageSnapshot usage);
 }
 
 public sealed class BillingCalculator : IBillingCalculator
 {
-    public BillingCalculation Calculate(Plan plan, IReadOnlyCollection<PlanPricingComponent> components,
-        IReadOnlyCollection<PlanPricingTier> tiers, BillingUsageSnapshot usage)
+    public BillingCalculation Calculate(IReadOnlyCollection<BillingAccountPricingComponent> components,
+        IReadOnlyCollection<BillingAccountPricingTier> tiers, BillingUsageSnapshot usage)
     {
         var lines = new List<BillingCalculationLine>();
         foreach (var component in components.Where(x => x.IsEnabled && x.MetricType != BillingMetricType.Correction)
@@ -74,18 +61,18 @@ public sealed class BillingCalculator : IBillingCalculator
             lines.Add(CalculateComponent(component, tiers.Where(x => x.ComponentId == component.Id).ToArray(), quantity));
         }
 
-        lines.Add(CalculateCorrection(plan, components, tiers, usage));
+        lines.Add(CalculateCorrection(components, tiers, usage));
         var normalized = lines.Where(x => x.Amount != 0 || x.Quantity != 0 || x.Metric == BillingMetricType.Base).ToArray();
         var subtotal = normalized.Sum(x => x.Amount);
         return new BillingCalculation(subtotal, subtotal, normalized);
     }
 
-    private static BillingCalculationLine CalculateCorrection(Plan plan,
-        IReadOnlyCollection<PlanPricingComponent> components, IReadOnlyCollection<PlanPricingTier> tiers,
+    private static BillingCalculationLine CalculateCorrection(
+        IReadOnlyCollection<BillingAccountPricingComponent> components, IReadOnlyCollection<BillingAccountPricingTier> tiers,
         BillingUsageSnapshot usage)
     {
         var configured = components.FirstOrDefault(x => x.IsEnabled && x.MetricType == BillingMetricType.Correction);
-        var correctionMode = configured?.CorrectionMode ?? plan.CorrectionBillingMode;
+        var correctionMode = configured?.CorrectionMode ?? CorrectionBillingMode.Free;
         if (correctionMode == CorrectionBillingMode.Free)
             return new BillingCalculationLine(BillingMetricType.Correction, usage.Corrections, 0, 0, 0, 0);
 
@@ -94,13 +81,10 @@ public sealed class BillingCalculator : IBillingCalculator
         var quantity = correctionMode == CorrectionBillingMode.PerCorrection
             ? usage.Corrections
             : usage.CorrectedRows;
-        var included = configured?.IncludedQuantity ??
-            (correctionMode == CorrectionBillingMode.PerCorrection
-                ? plan.IncludedCorrections
-                : plan.IncludedCorrectionRows);
+        var included = configured?.IncludedQuantity ?? 0m;
         var price = correctionMode == CorrectionBillingMode.SameAsRegularRows
             ? reportRows?.UnitPrice ?? 0
-            : configured?.UnitPrice ?? plan.CorrectionUnitPrice ?? 0;
+            : configured?.UnitPrice ?? 0;
 
         var synthetic = configured is null
             ? new PricingDefinition(BillingPricingType.PerUnit, price, included, null, null)
@@ -109,14 +93,14 @@ public sealed class BillingCalculator : IBillingCalculator
             configured is null ? [] : tiers.Where(x => x.ComponentId == configured.Id).ToArray(), quantity);
     }
 
-    private static BillingCalculationLine CalculateComponent(PlanPricingComponent component,
-        IReadOnlyCollection<PlanPricingTier> tiers, decimal quantity) =>
+    private static BillingCalculationLine CalculateComponent(BillingAccountPricingComponent component,
+        IReadOnlyCollection<BillingAccountPricingTier> tiers, decimal quantity) =>
         CalculateDefinition(component.MetricType,
             new PricingDefinition(component.PricingType, component.UnitPrice, component.IncludedQuantity,
                 component.MinimumCharge, component.MaximumCharge), tiers, quantity);
 
     private static BillingCalculationLine CalculateDefinition(BillingMetricType metric, PricingDefinition pricing,
-        IReadOnlyCollection<PlanPricingTier> tiers, decimal quantity)
+        IReadOnlyCollection<BillingAccountPricingTier> tiers, decimal quantity)
     {
         var billable = Math.Max(0, quantity - pricing.IncludedQuantity);
         var raw = pricing.PricingType switch
@@ -135,7 +119,7 @@ public sealed class BillingCalculator : IBillingCalculator
             pricing.UnitPrice, decimal.Round(amount, 2, MidpointRounding.AwayFromZero));
     }
 
-    private static decimal CalculateTiered(decimal billableQuantity, IReadOnlyCollection<PlanPricingTier> tiers)
+    private static decimal CalculateTiered(decimal billableQuantity, IReadOnlyCollection<BillingAccountPricingTier> tiers)
     {
         if (billableQuantity <= 0) return 0;
         decimal amount = 0;
