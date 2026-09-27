@@ -5,7 +5,6 @@ using Alpha.Application.Billing;
 using Alpha.Domain.Billing;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
-using Alpha.Domain.Subscriptions;
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -951,37 +950,4 @@ public static class BillingManagementEndpoints
         return null;
     }
 
-    private static void AddPricingComponents(
-        IAlphaDbContext db, Plan plan, PlanBillingRequest request, DateTimeOffset effectiveFrom)
-    {
-        foreach (var component in request.Components)
-        {
-            CorrectionBillingMode? correctionMode = component.MetricType == BillingMetricType.Correction
-                ? component.CorrectionMode ?? request.CorrectionBillingMode
-                : null;
-            var entity = new PlanPricingComponent(
-                plan.Id, component.MetricType, component.PricingType, component.UnitPrice,
-                component.IncludedQuantity, component.MinimumCharge, component.MaximumCharge,
-                component.IsEnabled, plan.Version, effectiveFrom, correctionMode);
-            db.PlanPricingComponents.Add(entity);
-
-            if (component.PricingType == BillingPricingType.Tiered)
-            {
-                foreach (var tier in (component.Tiers ?? []).OrderBy(x => x.FromQuantity))
-                    db.PlanPricingTiers.Add(new PlanPricingTier(
-                        entity.Id, tier.FromQuantity, tier.ToQuantity, tier.UnitPrice));
-            }
-        }
-
-        if (!request.Components.Any(x => x.MetricType == BillingMetricType.Correction))
-        {
-            var included = request.CorrectionBillingMode == CorrectionBillingMode.PerCorrection
-                ? request.IncludedCorrections
-                : request.IncludedCorrectionRows;
-            db.PlanPricingComponents.Add(new PlanPricingComponent(
-                plan.Id, BillingMetricType.Correction, BillingPricingType.PerUnit,
-                request.CorrectionUnitPrice ?? 0, included, null, null, true,
-                plan.Version, effectiveFrom, request.CorrectionBillingMode));
-        }
-    }
 }
