@@ -83,7 +83,6 @@ public sealed class BillingPeriodConfiguration : IEntityTypeConfiguration<Billin
         b.Property(x => x.CalculationSnapshotJson).HasColumnType("jsonb");
         b.HasIndex(x => new { x.BillingAccountId, x.PeriodStart, x.PeriodEnd }).IsUnique();
         b.HasOne<BillingAccount>().WithMany().HasForeignKey(x => x.BillingAccountId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne<Plan>().WithMany().HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
