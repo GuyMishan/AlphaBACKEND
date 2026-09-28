@@ -30,7 +30,7 @@ public static class AuthEndpoints
                 .SingleOrDefaultAsync(x => x.Id == currentUser.UserId && x.IsActive, ct);
             return user is null
                 ? Results.Unauthorized()
-                : CreateTokenResult(config, user.Id, user.DisplayName, user.IsPlatformAdmin);
+                : Results.Ok(new { userId = user.Id, platformAdmin = user.IsPlatformAdmin, displayName = user.DisplayName });
         }).RequireAuthorization().WithTags("Authentication");
 
         endpoints.MapPost("/api/auth/otp/request", async (RequestOtp request, IConfiguration config, AlphaDbContext db,
