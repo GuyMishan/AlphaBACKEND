@@ -1,3 +1,4 @@
+using Alpha.Api.Security;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -11,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Services;
 
-public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfaceSchemaRegistry schemas, ReportPaymentAccountService paymentAccounts)
+public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfaceSchemaRegistry schemas, ReportPaymentAccountService paymentAccounts, IDataProtectionService protector)
 {
     public const string CurrentVersion = EmployerInterfaceSchemaRegistry.Version;
     private static readonly UTF8Encoding Utf8NoBom = new(false);
@@ -340,7 +341,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, paymentAccountId, ct);
         if (paymentAccount is null)
             return InvalidIngest(validation, "payment_account_required");
-        await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, ct);
+        await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, protector.Unprotect(paymentAccount.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number"), ct);
         db.ManualReports.Add(report);
 
         var imported = 0;
