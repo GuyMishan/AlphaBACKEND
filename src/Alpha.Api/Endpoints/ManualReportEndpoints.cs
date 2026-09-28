@@ -538,10 +538,12 @@ public static class ManualReportEndpoints
     private static async Task SeedProductsFromMixAsync(IAlphaDbContext db, ManualReportEmployee reportEmployee,
         DateOnly reportingMonth, CancellationToken ct)
     {
+        var reportingMonthStart = new DateOnly(reportingMonth.Year, reportingMonth.Month, 1);
+        var reportingMonthEnd = reportingMonthStart.AddMonths(1).AddDays(-1);
         var mixProducts = await db.EmployeePensionProducts.AsNoTracking()
             .Where(x => x.EmploymentId == reportEmployee.EmploymentId && x.IsActive
-                && x.EffectiveFrom <= reportingMonth
-                && (x.EffectiveTo == null || x.EffectiveTo >= reportingMonth))
+                && x.EffectiveFrom <= reportingMonthEnd
+                && (x.EffectiveTo == null || x.EffectiveTo >= reportingMonthStart))
             .OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt)
             .ToListAsync(ct);
         if (mixProducts.Count == 0) return;
