@@ -9,8 +9,10 @@ public static class RegistrationOtpSchemaInitializer
             "Id" uuid PRIMARY KEY,
             "DisplayName" varchar(120) NOT NULL,
             "Email" varchar(320) NOT NULL,
-            "NationalId" varchar(9) NOT NULL,
-            "Phone" varchar(10) NOT NULL,
+            "NationalIdEncrypted" text NOT NULL,
+            "NationalIdLookupHash" varchar(64) NOT NULL,
+            "PhoneEncrypted" text NOT NULL,
+            "PhoneLookupHash" varchar(64) NOT NULL,
             "CodeHash" varchar(64) NOT NULL,
             "CreatedAt" timestamp with time zone NOT NULL,
             "ExpiresAt" timestamp with time zone NOT NULL,
@@ -20,6 +22,6 @@ public static class RegistrationOtpSchemaInitializer
         CREATE INDEX IF NOT EXISTS "IX_registration_otp_email_created"
             ON identity.registration_otp_challenges ("Email", "CreatedAt" DESC);
         CREATE INDEX IF NOT EXISTS "IX_registration_otp_nationalid_created"
-            ON identity.registration_otp_challenges ("NationalId", "CreatedAt" DESC);
+            ON identity.registration_otp_challenges ("NationalIdLookupHash", "CreatedAt" DESC);
         """);
 }
