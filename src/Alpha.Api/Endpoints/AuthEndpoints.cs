@@ -257,7 +257,7 @@ public static class AuthEndpoints
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 
-            return CreateTokenResult(config, user.Id, user.DisplayName, false);
+            return await CreateTokenResultAsync(config, db, user.Id, user.DisplayName, false, ct);
         }).AllowAnonymous().WithTags("Authentication");
 
         endpoints.MapPost("/api/auth/otp/verify", async (VerifyOtp request, IConfiguration config, AlphaDbContext db, CancellationToken ct) =>
