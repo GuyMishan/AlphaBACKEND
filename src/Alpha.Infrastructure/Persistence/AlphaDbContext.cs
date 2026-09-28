@@ -57,6 +57,7 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
         var session = modelBuilder.Entity<UserSession>();
         session.ToTable("user_sessions", "identity");
         session.HasKey(x => x.Id);
+        session.Ignore(x => x.UpdatedAt);
         session.HasIndex(x => x.UserId);
         session.HasIndex(x => x.ExpiresAt);
         var otp = modelBuilder.Entity<OtpChallenge>();
