@@ -23,6 +23,8 @@ public sealed class User : Entity
     public string ExternalSubject { get; private set; } = string.Empty;
     public string Email { get; private set; } = string.Empty;
     public string DisplayName { get; private set; } = string.Empty;
+    public string? NationalId { get; private set; }
+    public string? Phone { get; private set; }
     public string? NationalIdEncrypted { get; private set; }
     public string? NationalIdLookupHash { get; private set; }
     public string? PhoneEncrypted { get; private set; }
