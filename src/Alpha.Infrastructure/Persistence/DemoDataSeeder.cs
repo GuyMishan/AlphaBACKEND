@@ -52,28 +52,6 @@ public static class DemoDataSeeder
         db.Employers.AddRange(employers);
         await db.SaveChangesAsync(ct);
 
-        var admin = new User("demo-dana-admin", "dana.admin@alpha-demo.local", "דנה כהן");
-        var payroll = new User("demo-ron-payroll", "ron.payroll@alpha-demo.local", "רון לוי");
-        var operations = new User("demo-maya-operations", "maya.operations@alpha-demo.local", "מאיה ישראלי");
-        var viewer = new User("demo-noam-viewer", "noam.viewer@alpha-demo.local", "נועם אדרי");
-        db.Users.AddRange(admin, payroll, operations, viewer);
-        await db.SaveChangesAsync(ct);
-
-        db.OrganizationMemberships.AddRange(
-            new OrganizationMembership(admin.Id, organizations[0].Id, OrganizationRole.Admin, EmployerAccessMode.AllEmployers, admin.Id),
-            new OrganizationMembership(payroll.Id, organizations[0].Id, OrganizationRole.PayrollManager, EmployerAccessMode.AllEmployers, admin.Id),
-            new OrganizationMembership(operations.Id, organizations[0].Id, OrganizationRole.OperationsAgent, EmployerAccessMode.SelectedEmployers, admin.Id),
-            new OrganizationMembership(viewer.Id, organizations[0].Id, OrganizationRole.Viewer, EmployerAccessMode.SelectedEmployers, admin.Id),
-            new OrganizationMembership(admin.Id, organizations[1].Id, OrganizationRole.Admin, EmployerAccessMode.AllEmployers, admin.Id),
-            new OrganizationMembership(payroll.Id, organizations[1].Id, OrganizationRole.PayrollManager, EmployerAccessMode.AllEmployers, admin.Id),
-            new OrganizationMembership(admin.Id, organizations[2].Id, OrganizationRole.Admin, EmployerAccessMode.AllEmployers, admin.Id)
-        );
-        db.EmployerUserAccesses.AddRange(
-            new EmployerUserAccess(operations.Id, organizations[0].Id, employers[0].Id, EmployerRole.User),
-            new EmployerUserAccess(operations.Id, organizations[0].Id, employers[1].Id, EmployerRole.User),
-            new EmployerUserAccess(viewer.Id, organizations[0].Id, employers[2].Id, EmployerRole.Viewer)
-        );
-
         var firstNames = new[] { "יעל", "אורי", "נועה", "איתי", "מאיה", "דניאל", "שירה", "עומר", "רוני", "יובל", "תמר", "אלון" };
         var lastNames = new[] { "כהן", "לוי", "מזרחי", "פרץ", "ביטון", "ישראלי", "אברהם", "דהן", "שחר", "ברק", "מלכה", "רוזן" };
         var employeeCounter = 1;
