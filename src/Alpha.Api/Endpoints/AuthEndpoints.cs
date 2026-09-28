@@ -90,8 +90,9 @@ public static class AuthEndpoints
             if ((config["PrototypeAuth:SigningKey"]?.Length ?? 0) < 32)
                 return Results.Problem("Authentication is not configured.", statusCode: 503);
 
+            var registrationNationalIdHash = protector.LookupHash(nationalId, "auth-national-id-lookup");
             if (await db.Users.AsNoTracking().AnyAsync(x =>
-                    x.NationalId == nationalId, ct))
+                    x.NationalIdLookupHash == registrationNationalIdHash, ct))
                 return Results.Conflict(new { error = "user_exists" });
 
             string? invitationTokenHash = null;
@@ -155,7 +156,7 @@ public static class AuthEndpoints
         }).AllowAnonymous().WithTags("Authentication");
 
         endpoints.MapPost("/api/auth/register/verify", async (VerifyRegistrationOtp request, IConfiguration config,
-            AlphaDbContext db, EntitlementService entitlements, InvitationService invitations, CancellationToken ct) =>
+            AlphaDbContext db, EntitlementService entitlements, InvitationService invitations, IDataProtectionService protector, CancellationToken ct) =>
         {
             if (request.ChallengeId == Guid.Empty || request.Code is null || request.Code.Length != 6 || !request.Code.All(char.IsAsciiDigit))
                 return Results.BadRequest(new { error = "invalid_code" });
