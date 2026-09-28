@@ -797,8 +797,8 @@ public sealed class EmployerInterface006XmlBuilderTests
         var employment = new Employment(organizationId, employer.Id, person.Id, new DateOnly(2020, 1, 1), "E1", 1000m);
         var reportId = Guid.NewGuid();
         var reportEmployee = new ManualReportEmployee(reportId, organizationId, employer.Id, employment.Id, person.Id,
-            person.NationalId, person.FirstName, person.LastName, employment.EmployeeNumber, employment.MonthlySalary);
-        reportEmployee.SetInterfaceSnapshot(1, person.NationalId, person.BirthDate, person.Gender.HasValue ? (int)person.Gender.Value : null,
+            "123456789", person.FirstName, person.LastName, employment.EmployeeNumber, employment.MonthlySalary);
+        reportEmployee.SetInterfaceSnapshot(1, "123456789", person.BirthDate, person.Gender.HasValue ? (int)person.Gender.Value : null,
             person.Email, person.Mobile, person.City, person.Street, person.HouseNumber, person.Apartment,
             person.PostalCode, person.PostOfficeBox, employment.StartDate);
         var product = new ManualReportProduct(reportEmployee.Id, productType, policyNumber,
