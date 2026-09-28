@@ -28,7 +28,7 @@ public sealed class ReportPaymentAccountService(IAlphaDbContext db)
         return effective?.Id == requestedAccountId.Value ? effective : null;
     }
 
-    public async Task ApplySnapshotAsync(ManualReport report, EmployerPaymentAccount account, CancellationToken ct)
+    public async Task ApplySnapshotAsync(ManualReport report, EmployerPaymentAccount account, string accountNumber, CancellationToken ct)
     {
         var mandate = await db.BankDebitMandates.AsNoTracking()
             .SingleOrDefaultAsync(x => x.EmployerPaymentAccountId == account.Id, ct);
@@ -37,7 +37,7 @@ public sealed class ReportPaymentAccountService(IAlphaDbContext db)
             account.Id,
             account.BankId,
             account.BranchId,
-            Mask(account.AccountNumber),
+            Mask(accountNumber),
             mandate is { IsActive: true } ? (!string.IsNullOrWhiteSpace(mandate.ExternalMandateId) ? mandate.ExternalMandateId : mandate.Id.ToString()) : string.Empty);
     }
 
