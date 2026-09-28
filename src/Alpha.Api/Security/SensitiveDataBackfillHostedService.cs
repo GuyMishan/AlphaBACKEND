@@ -21,7 +21,7 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
             if (!string.IsNullOrWhiteSpace(person.NationalIdEncrypted))
                 normalized = protector.Unprotect(person.NationalIdEncrypted, "person-national-id").Trim();
             else
-                normalized = person.NationalId.Trim();
+                throw new InvalidOperationException($"Person {person.Id} is missing encrypted national ID.");
 
             if (string.IsNullOrWhiteSpace(normalized))
                 throw new InvalidOperationException($"Person {person.Id} has no recoverable national ID.");
@@ -44,12 +44,10 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
         var refreshedAccountHashes = 0;
         foreach (var account in accounts)
         {
-            var accountNumber = !string.IsNullOrWhiteSpace(account.AccountNumberEncrypted)
-                ? protector.Unprotect(account.AccountNumberEncrypted, "bank-account-number").Trim()
-                : account.AccountNumber.Trim();
-            var holderId = !string.IsNullOrWhiteSpace(account.AccountHolderIdEncrypted)
-                ? protector.Unprotect(account.AccountHolderIdEncrypted, "bank-account-holder-id").Trim()
-                : account.AccountHolderId.Trim();
+            if (string.IsNullOrWhiteSpace(account.AccountNumberEncrypted) || string.IsNullOrWhiteSpace(account.AccountHolderIdEncrypted))
+                throw new InvalidOperationException($"Payment account {account.Id} is missing encrypted sensitive values.");
+            var accountNumber = protector.Unprotect(account.AccountNumberEncrypted, "bank-account-number").Trim();
+            var holderId = protector.Unprotect(account.AccountHolderIdEncrypted, "bank-account-holder-id").Trim();
             if (string.IsNullOrWhiteSpace(accountNumber) || string.IsNullOrWhiteSpace(holderId))
                 throw new InvalidOperationException($"Payment account {account.Id} has no recoverable sensitive values.");
             var accountHash = protector.LookupHash(accountNumber, "bank-account-number-lookup");
