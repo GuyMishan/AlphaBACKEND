@@ -22,9 +22,10 @@ public sealed class EmployerPaymentAccount : Entity
     public int BranchId { get; private set; }
     public string AccountNumber { get; private set; } = string.Empty;
     public string? AccountNumberEncrypted { get; private set; }
+    public string? AccountNumberLookupHash { get; private set; }
     public string? AccountHolderIdEncrypted { get; private set; }
 
-    public void SetProtectedValues(string accountNumberEncrypted, string accountHolderIdEncrypted) { AccountNumberEncrypted = accountNumberEncrypted; AccountHolderIdEncrypted = accountHolderIdEncrypted; Touch(); }
+    public void SetProtectedValues(string accountNumberEncrypted, string accountNumberLookupHash, string accountHolderIdEncrypted) { AccountNumberEncrypted = accountNumberEncrypted; AccountNumberLookupHash = accountNumberLookupHash; AccountHolderIdEncrypted = accountHolderIdEncrypted; Touch(); }
     public void ClearLegacySensitiveValues() { AccountNumber = string.Empty; AccountHolderId = string.Empty; Touch(); }
     public string AccountHolderName { get; private set; } = string.Empty;
     public string AccountHolderId { get; private set; } = string.Empty;
