@@ -18,19 +18,16 @@ public sealed class Person : Entity
         string? postalCode = null, string? postOfficeBox = null)
     {
         OrganizationId = organizationId;
-        NationalId = Require(nationalId, nameof(nationalId));
         FirstName = Require(firstName, nameof(firstName));
         LastName = Require(lastName, nameof(lastName));
         SetInterfaceDetails(birthDate, gender, email, mobile, city, street, houseNumber, apartment, postalCode, postOfficeBox);
     }
 
     public Guid OrganizationId { get; private set; }
-    public string NationalId { get; private set; } = string.Empty;
     public string? NationalIdEncrypted { get; private set; }
     public string? NationalIdLookupHash { get; private set; }
 
     public void SetProtectedNationalId(string encrypted, string lookupHash) { NationalIdEncrypted = encrypted; NationalIdLookupHash = lookupHash; Touch(); }
-    public void ClearLegacyNationalId() { NationalId = string.Empty; Touch(); }
     public string FirstName { get; private set; } = string.Empty;
     public string LastName { get; private set; } = string.Empty;
     public DateOnly? BirthDate { get; private set; }
@@ -46,7 +43,6 @@ public sealed class Person : Entity
 
     public void Update(string nationalId, string firstName, string lastName)
     {
-        NationalId = Require(nationalId, nameof(nationalId));
         FirstName = Require(firstName, nameof(firstName));
         LastName = Require(lastName, nameof(lastName));
         Touch();
