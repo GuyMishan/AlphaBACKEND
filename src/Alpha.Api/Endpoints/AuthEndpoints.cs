@@ -33,7 +33,7 @@ public static class AuthEndpoints
         }).RequireAuthorization().WithTags("Authentication");
 
         endpoints.MapPost("/api/auth/otp/request", async (RequestOtp request, IConfiguration config, AlphaDbContext db,
-            OtpDelivery delivery, ILogger<OtpDelivery> logger, CancellationToken ct) =>
+            OtpDelivery delivery, ILogger<OtpDelivery> logger, IDataProtectionService protector, CancellationToken ct) =>
         {
             var nationalId = request.NationalId?.Trim() ?? "";
             var phone = request.Phone?.Trim() ?? "";
@@ -45,10 +45,12 @@ public static class AuthEndpoints
             if ((config["PrototypeAuth:SigningKey"]?.Length ?? 0) < 32)
                 return Results.Problem("Authentication is not configured.", statusCode: 503);
 
-            var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.IsActive && x.NationalId == nationalId && x.Phone == phone, ct);
+            var nationalIdHash = protector.LookupHash(nationalId, "auth-national-id-lookup");
+            var phoneHash = protector.LookupHash(phone, "auth-phone-lookup");
+            var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.IsActive && x.NationalIdLookupHash == nationalIdHash && x.PhoneLookupHash == phoneHash, ct);
             if (user is null) return Results.Unauthorized();
             var userId = user.Id;
-            var destination = channel == "sms" ? user.Phone : user.Email;
+            var destination = channel == "sms" ? protector.Unprotect(user.PhoneEncrypted ?? throw new InvalidOperationException("Encrypted phone missing."), "auth-phone") : user.Email;
             if (string.IsNullOrWhiteSpace(destination)) return Results.BadRequest(new { error = "channel_unavailable" });
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({userId.ToString()}))", ct);
@@ -76,7 +78,7 @@ public static class AuthEndpoints
         }).AllowAnonymous().WithTags("Authentication");
 
         endpoints.MapPost("/api/auth/register/request", async (RequestRegistrationOtp request, IConfiguration config, AlphaDbContext db,
-            OtpDelivery delivery, ILogger<OtpDelivery> logger, CancellationToken ct) =>
+            OtpDelivery delivery, ILogger<OtpDelivery> logger, IDataProtectionService protector, CancellationToken ct) =>
         {
             var displayName = request.DisplayName?.Trim() ?? "";
             var email = request.Email?.Trim().ToLowerInvariant() ?? "";
@@ -125,8 +127,10 @@ public static class AuthEndpoints
                 Id = Guid.NewGuid(),
                 DisplayName = displayName,
                 Email = email,
-                NationalId = nationalId,
-                Phone = phone,
+                NationalIdEncrypted = protector.Protect(nationalId, "auth-national-id"),
+                NationalIdLookupHash = protector.LookupHash(nationalId, "auth-national-id-lookup"),
+                PhoneEncrypted = protector.Protect(phone, "auth-phone"),
+                PhoneLookupHash = protector.LookupHash(phone, "auth-phone-lookup"),
                 CodeHash = HashCode(config, code),
                 InvitationTokenHash = invitationTokenHash,
                 CreatedAt = now,
@@ -171,7 +175,7 @@ public static class AuthEndpoints
                 return Results.Unauthorized();
 
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
-            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({challenge.NationalId}))", ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({challenge.NationalIdLookupHash}))", ct);
 
             UserInvitation? invitation = null;
             if (!string.IsNullOrWhiteSpace(challenge.InvitationTokenHash))
@@ -230,13 +234,16 @@ public static class AuthEndpoints
             }
 
             if (await db.Users.AnyAsync(x =>
-                    x.NationalId == challenge.NationalId, ct))
+                    x.NationalIdLookupHash == challenge.NationalIdLookupHash, ct))
             {
                 await transaction.RollbackAsync(ct);
                 return Results.Conflict(new { error = "user_exists" });
             }
 
-            var user = new User($"national-id:{challenge.NationalId}", challenge.Email, challenge.DisplayName, challenge.NationalId, challenge.Phone);
+            var nationalId = protector.Unprotect(challenge.NationalIdEncrypted, "auth-national-id");
+            var phone = protector.Unprotect(challenge.PhoneEncrypted, "auth-phone");
+            var user = new User($"national-id-hash:{challenge.NationalIdLookupHash}", challenge.Email, challenge.DisplayName, nationalId, phone);
+            user.SetProtectedIdentity(challenge.NationalIdEncrypted, challenge.NationalIdLookupHash, challenge.PhoneEncrypted, challenge.PhoneLookupHash);
             db.Users.Add(user);
 
             if (invitation is not null)
