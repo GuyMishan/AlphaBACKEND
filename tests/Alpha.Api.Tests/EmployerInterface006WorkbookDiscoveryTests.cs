@@ -31,6 +31,7 @@ public sealed class EmployerInterface006OfficialWorkbookTests
             "1 = קופת ביטוח", "2 = קרן פנסיה", "3 = קופת גמל", "4 = קרן השתלמות");
         AssertRowContains(workbook, CurrentSheet, "SEIF-ARBA-ESRE-LAOVED", "5 = קיים קושי משפטי");
         AssertRowContains(workbook, CurrentSheet, "HAFKADA-ACHRONA", "1 = כן", "2 = לא");
+        AssertRowContains(workbook, CurrentSheet, "MISPAR-CELLULARI-ISH-KESHER-MAASIK", "חובה");
         AssertRowContains(workbook, CurrentSheet, "SUG-HAFRASHA",
             "1 = פיצויים", "2 = תגמולי עובד", "3 = תגמולי מעביד", "4 = תגמולים47",
             "5 = א.כ.ע עובד", "6 = א.כ.ע מעביד", "7 = שונות עובד", "8 = שונות מעביד");
