@@ -50,6 +50,15 @@ public sealed class User : Entity
         Touch();
     }
 
+    public void SetProtectedIdentity(string nationalIdEncrypted, string nationalIdLookupHash, string phoneEncrypted, string phoneLookupHash)
+    {
+        NationalIdEncrypted = Require(nationalIdEncrypted, nameof(nationalIdEncrypted));
+        NationalIdLookupHash = Require(nationalIdLookupHash, nameof(nationalIdLookupHash));
+        PhoneEncrypted = Require(phoneEncrypted, nameof(phoneEncrypted));
+        PhoneLookupHash = Require(phoneLookupHash, nameof(phoneLookupHash));
+        Touch();
+    }
+
     public void SetPlatformAdmin(bool isPlatformAdmin)
     {
         IsPlatformAdmin = isPlatformAdmin;
