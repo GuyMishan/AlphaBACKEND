@@ -1,3 +1,4 @@
+using Alpha.Api.Security;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Application.Reporting;
@@ -97,7 +98,7 @@ public static class ManualReportEndpoints
 
     private static async Task<IResult> CreateDraftAsync(Guid organizationId, Guid employerId,
         CreateManualReportRequest request, IAlphaDbContext db, OrganizationAccessService access,
-        ReportPaymentAccountService paymentAccounts, CancellationToken ct)
+        ReportPaymentAccountService paymentAccounts, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.EmploymentIds.Count > MaxEmployeesPerDraft)
@@ -115,7 +116,7 @@ public static class ManualReportEndpoints
             profileSettings?.DefaultEmployerIdentifierTypeCode ?? 1);
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
         if (paymentAccount is null) return Results.Conflict(new { error = "payment_account_required" });
-        await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, ct);
+        await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, protector.Unprotect(paymentAccount.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number"), ct);
         db.ManualReports.Add(report);
         var selectedIds = request.EmploymentIds.Distinct().ToArray();
         if (selectedIds.Length > 0)
@@ -129,9 +130,9 @@ public static class ManualReportEndpoints
             foreach (var item in employees)
             {
                 var reportEmployee = new ManualReportEmployee(report.Id, organizationId, employerId,
-                    item.Employment.Id, item.Person.Id, item.Person.NationalId, item.Person.FirstName,
+                    item.Employment.Id, item.Person.Id, protector.Unprotect(item.Person.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id"), item.Person.FirstName,
                     item.Person.LastName, item.Employment.EmployeeNumber, item.Employment.MonthlySalary);
-                reportEmployee.SetInterfaceSnapshot(1, item.Person.NationalId, item.Person.BirthDate,
+                reportEmployee.SetInterfaceSnapshot(1, protector.Unprotect(item.Person.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id"), item.Person.BirthDate,
                     item.Person.Gender.HasValue ? (int)item.Person.Gender.Value : null, item.Person.Email, item.Person.Mobile,
                     item.Person.City, item.Person.Street, item.Person.HouseNumber, item.Person.Apartment,
                     item.Person.PostalCode, item.Person.PostOfficeBox, item.Employment.StartDate);
@@ -179,7 +180,7 @@ public static class ManualReportEndpoints
 
     private static async Task<IResult> UpdatePaymentAccountAsync(Guid organizationId, Guid employerId, Guid reportId,
         UpdateReportPaymentAccountRequest request, IAlphaDbContext db, OrganizationAccessService access,
-        ReportPaymentAccountService paymentAccounts, CancellationToken ct)
+        ReportPaymentAccountService paymentAccounts, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId &&
@@ -189,7 +190,7 @@ public static class ManualReportEndpoints
 
         var account = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
         if (account is null) return Results.Conflict(new { error = "payment_account_required" });
-        await paymentAccounts.ApplySnapshotAsync(report, account, ct);
+        await paymentAccounts.ApplySnapshotAsync(report, account, protector.Unprotect(account.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number"), ct);
         await db.SaveChangesAsync(ct);
 
         return Results.Ok(new
@@ -229,9 +230,9 @@ public static class ManualReportEndpoints
             foreach (var item in employees)
             {
                 var reportEmployee = new ManualReportEmployee(reportId, organizationId, employerId,
-                    item.Employment.Id, item.Person.Id, item.Person.NationalId, item.Person.FirstName,
+                    item.Employment.Id, item.Person.Id, protector.Unprotect(item.Person.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id"), item.Person.FirstName,
                     item.Person.LastName, item.Employment.EmployeeNumber, item.Employment.MonthlySalary);
-                reportEmployee.SetInterfaceSnapshot(1, item.Person.NationalId, item.Person.BirthDate,
+                reportEmployee.SetInterfaceSnapshot(1, protector.Unprotect(item.Person.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id"), item.Person.BirthDate,
                     item.Person.Gender.HasValue ? (int)item.Person.Gender.Value : null, item.Person.Email, item.Person.Mobile,
                     item.Person.City, item.Person.Street, item.Person.HouseNumber, item.Person.Apartment,
                     item.Person.PostalCode, item.Person.PostOfficeBox, item.Employment.StartDate);
