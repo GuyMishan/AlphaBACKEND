@@ -39,12 +39,34 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
             }
         }
 
-        var accounts = await db.EmployerPaymentAccounts.Where(x => x.AccountNumberEncrypted == null || x.AccountHolderIdEncrypted == null).ToListAsync(stoppingToken);
+        var accounts = await db.EmployerPaymentAccounts.ToListAsync(stoppingToken);
+        var protectedAccounts = 0;
+        var refreshedAccountHashes = 0;
         foreach (var account in accounts)
-            account.SetProtectedValues(protector.Protect(account.AccountNumber, "bank-account-number"),
-                protector.LookupHash(account.AccountNumber, "bank-account-number-lookup"), protector.Protect(account.AccountHolderId, "bank-account-holder-id"));
+        {
+            var accountNumber = !string.IsNullOrWhiteSpace(account.AccountNumberEncrypted)
+                ? protector.Unprotect(account.AccountNumberEncrypted, "bank-account-number").Trim()
+                : account.AccountNumber.Trim();
+            var holderId = !string.IsNullOrWhiteSpace(account.AccountHolderIdEncrypted)
+                ? protector.Unprotect(account.AccountHolderIdEncrypted, "bank-account-holder-id").Trim()
+                : account.AccountHolderId.Trim();
+            if (string.IsNullOrWhiteSpace(accountNumber) || string.IsNullOrWhiteSpace(holderId))
+                throw new InvalidOperationException($"Payment account {account.Id} has no recoverable sensitive values.");
+            var accountHash = protector.LookupHash(accountNumber, "bank-account-number-lookup");
+            if (string.IsNullOrWhiteSpace(account.AccountNumberEncrypted) || string.IsNullOrWhiteSpace(account.AccountHolderIdEncrypted))
+            {
+                account.SetProtectedValues(protector.Protect(accountNumber, "bank-account-number"), accountHash,
+                    protector.Protect(holderId, "bank-account-holder-id"));
+                protectedAccounts++;
+            }
+            else if (!string.Equals(account.AccountNumberLookupHash, accountHash, StringComparison.Ordinal))
+            {
+                account.SetProtectedValues(account.AccountNumberEncrypted, accountHash, account.AccountHolderIdEncrypted);
+                refreshedAccountHashes++;
+            }
+        }
 
         await db.SaveChangesAsync(stoppingToken);
-        logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {Accounts} payment accounts encrypted. Plaintext compatibility columns remain until encrypted read/write cutover is verified.", protectedPeople, refreshedHashes, accounts.Count);
+        logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {ProtectedAccounts} payment accounts encrypted, {RefreshedAccountHashes} account hashes refreshed.", protectedPeople, refreshedHashes, protectedAccounts, refreshedAccountHashes);
     }
 }
