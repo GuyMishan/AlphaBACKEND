@@ -13,6 +13,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Inspect official 006 contribution rules
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import zipfile, xml.etree.ElementTree as ET, re
+          path='docs/specifications/employer-interface/006/Employer interface V 6.xlsx'
+          ns={'m':'http://schemas.openxmlformats.org/spreadsheetml/2006/main','r':'http://schemas.openxmlformats.org/officeDocument/2006/relationships'}
+          with zipfile.ZipFile(path) as z:
+              ss=[]
+              root=ET.fromstring(z.read('xl/sharedStrings.xml'))
+              for si in root.findall('m:si',ns):
+                  ss.append(''.join(t.text or '' for t in si.iter('{%s}t'%ns['m'])))
+              wb=ET.fromstring(z.read('xl/workbook.xml'))
+              relroot=ET.fromstring(z.read('xl/_rels/workbook.xml.rels'))
+              rels={r.attrib['Id']:r.attrib['Target'] for r in relroot}
+              for sh in wb.find('m:sheets',ns):
+                  name=sh.attrib['name']; target=rels[sh.attrib['{%s}id'%ns['r']]]
+                  xp='xl/'+target.lstrip('/') if not target.startswith('/xl/') else target.lstrip('/')
+                  ws=ET.fromstring(z.read(xp))
+                  for row in ws.findall('.//m:row',ns):
+                      vals=[]
+                      for cell in row.findall('m:c',ns):
+                          v=cell.find('m:v',ns)
+                          if v is None: vals.append(''); continue
+                          val=v.text or ''
+                          if cell.attrib.get('t')=='s': val=ss[int(val)]
+                          vals.append(val)
+                      line=' | '.join(vals)
+                      if re.search(r'SUG.HAFRASHA|סוג הפרשה|א[.״" ]?כ[.״" ]?ע|תגמול|שונות',line,re.I):
+                          print(f'[{name} row {row.attrib.get("r")}] {line}')
+          PY
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
