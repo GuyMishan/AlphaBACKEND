@@ -15,6 +15,18 @@ public static class IdentitySchemaInitializer
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_users_NationalIdLookupHash" ON identity.users ("NationalIdLookupHash") WHERE "NationalIdLookupHash" IS NOT NULL;
             CREATE INDEX IF NOT EXISTS "IX_users_PhoneLookupHash" ON identity.users ("PhoneLookupHash") WHERE "PhoneLookupHash" IS NOT NULL;
 
+            CREATE TABLE IF NOT EXISTS identity.user_sessions
+            (
+                "Id" uuid PRIMARY KEY,
+                "UserId" uuid NOT NULL REFERENCES identity.users("Id") ON DELETE CASCADE,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "LastActivityAt" timestamp with time zone NOT NULL,
+                "ExpiresAt" timestamp with time zone NOT NULL,
+                "RevokedAt" timestamp with time zone NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_user_sessions_UserId" ON identity.user_sessions ("UserId");
+            CREATE INDEX IF NOT EXISTS "IX_user_sessions_ExpiresAt" ON identity.user_sessions ("ExpiresAt");
+
             CREATE TABLE IF NOT EXISTS identity.data_fixes
             (
                 "Key" character varying(200) PRIMARY KEY,
