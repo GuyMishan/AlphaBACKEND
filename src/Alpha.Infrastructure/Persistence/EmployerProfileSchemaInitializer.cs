@@ -55,9 +55,10 @@ public static class EmployerProfileSchemaInitializer
                 "EmployerId" uuid NOT NULL,
                 "BankId" integer NOT NULL,
                 "BranchId" integer NOT NULL,
-                "AccountNumber" character varying(30) NOT NULL,
+                "AccountNumberEncrypted" text NOT NULL,
+                "AccountNumberLookupHash" character varying(64) NOT NULL,
                 "AccountHolderName" character varying(150) NOT NULL,
-                "AccountHolderId" character varying(20) NOT NULL,
+                "AccountHolderIdEncrypted" text NOT NULL,
                 "IsDefault" boolean NOT NULL DEFAULT false,
                 "IsActive" boolean NOT NULL DEFAULT true,
                 "CreatedAt" timestamp with time zone NOT NULL,
@@ -68,8 +69,8 @@ public static class EmployerProfileSchemaInitializer
                     FOREIGN KEY ("EmployerId") REFERENCES employers.employers ("Id") ON DELETE CASCADE
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_employer_payment_accounts_unique"
-                ON employers.employer_payment_accounts ("EmployerId", "BankId", "BranchId", "AccountNumber");
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_employer_payment_accounts_protected_unique"
+                ON employers.employer_payment_accounts ("EmployerId", "BankId", "BranchId", "AccountNumberLookupHash");
             CREATE INDEX IF NOT EXISTS "IX_employer_payment_accounts_EmployerId"
                 ON employers.employer_payment_accounts ("EmployerId");
             ALTER TABLE employers.employer_payment_accounts ALTER COLUMN "EmployerId" DROP NOT NULL;
@@ -119,41 +120,6 @@ public static class EmployerProfileSchemaInitializer
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_bank_debit_mandates_EmployerPaymentAccountId"
                 ON employers.bank_debit_mandates ("EmployerPaymentAccountId");
 
-            DO $$
-            BEGIN
-                IF to_regclass('employers.employer_pension_payment_accounts') IS NOT NULL THEN
-                    INSERT INTO employers.employer_payment_accounts (
-                        "Id", "OrganizationId", "EmployerId", "BankId", "BranchId", "AccountNumber",
-                        "AccountHolderName", "AccountHolderId", "IsDefault", "IsActive", "CreatedAt", "UpdatedAt"
-                    )
-                    SELECT "Id", "OrganizationId", "EmployerId", "BankCode", "BranchCode", "AccountNumber",
-                           "AccountHolderName", '', "IsDefault", true, "CreatedAt", "UpdatedAt"
-                    FROM employers.employer_pension_payment_accounts
-                    ON CONFLICT ("Id") DO NOTHING;
-
-                    INSERT INTO employers.bank_debit_mandates (
-                        "Id", "EmployerPaymentAccountId", "Status", "ExternalMandateId",
-                        "ApprovedAt", "CancelledAt", "DocumentId", "CreatedAt", "UpdatedAt"
-                    )
-                    SELECT gen_random_uuid(), old."Id",
-                           CASE old."DebitAuthorizationStatus"
-                               WHEN 'Active' THEN 'Active'
-                               WHEN 'Revoked' THEN 'Cancelled'
-                               ELSE 'Pending'
-                           END,
-                           '',
-                           CASE WHEN old."DebitAuthorizationStatus" = 'Active' THEN old."UpdatedAt" ELSE NULL END,
-                           CASE WHEN old."DebitAuthorizationStatus" = 'Revoked' THEN old."UpdatedAt" ELSE NULL END,
-                           '',
-                           old."CreatedAt",
-                           old."UpdatedAt"
-                    FROM employers.employer_pension_payment_accounts old
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM employers.bank_debit_mandates m
-                        WHERE m."EmployerPaymentAccountId" = old."Id"
-                    );
-                END IF;
-            END $$;
             """;
 
         await db.Database.ExecuteSqlRawAsync(sql, ct);
