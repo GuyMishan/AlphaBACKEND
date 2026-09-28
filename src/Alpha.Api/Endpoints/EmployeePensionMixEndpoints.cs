@@ -102,8 +102,8 @@ public static class EmployeePensionMixEndpoints
             var fundCompanyName = input.FundCompanyName ?? existing?.FundCompanyName ?? string.Empty;
             var fundClassification = input.FundClassification ?? existing?.FundClassification ?? string.Empty;
             var allocationType = input.SalaryAllocationType ?? existing?.SalaryAllocationType ?? SalaryAllocationType.Fixed;
-            var allocationValue = input.SalaryAllocationValue
-                ?? (allocationType == SalaryAllocationType.Fixed && input.Salary > 0 ? input.Salary : null)
+            decimal? allocationValue = input.SalaryAllocationValue
+                ?? (allocationType == SalaryAllocationType.Fixed && input.Salary > 0 ? input.Salary : (decimal?)null)
                 ?? existing?.SalaryAllocationValue;
             var allocationOrder = input.AllocationOrder ?? existing?.AllocationOrder ?? resolved.Count;
             var section14Code = input.Section14Code ?? existing?.Section14Code ?? (input.Section14 ? 1 : 3);
