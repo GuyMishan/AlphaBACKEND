@@ -64,8 +64,8 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
         registrationOtp.HasKey(x => x.Id);
         registrationOtp.Property(x => x.DisplayName).HasMaxLength(120);
         registrationOtp.Property(x => x.Email).HasMaxLength(320);
-        registrationOtp.Property(x => x.NationalId).HasMaxLength(9);
-        registrationOtp.Property(x => x.Phone).HasMaxLength(10);
+        registrationOtp.Property(x => x.NationalIdLookupHash).HasMaxLength(64);
+        registrationOtp.Property(x => x.PhoneLookupHash).HasMaxLength(64);
         registrationOtp.Property(x => x.CodeHash).HasMaxLength(64);
         registrationOtp.Property(x => x.InvitationTokenHash).HasMaxLength(64);
         registrationOtp.HasIndex(x => new { x.Email, x.CreatedAt });
