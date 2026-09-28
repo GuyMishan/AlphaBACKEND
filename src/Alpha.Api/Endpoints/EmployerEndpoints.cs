@@ -177,7 +177,7 @@ public static class EmployerEndpoints
             if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
             var employment = new Employment(organizationId, employerId, person.Id, request.StartDate, employeeNumber, request.MonthlySalary);
             db.Employments.Add(employment);
-            db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.created", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(request), http.TraceIdentifier));
+            db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.created", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(new { employment.EmployeeNumber, person.FirstName, person.LastName }), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/employees/{employment.Id}", new { employment.Id, PersonId = person.Id, employment.MonthlySalary });
         });
@@ -211,7 +211,7 @@ public static class EmployerEndpoints
             person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City,
                 request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
             employment.Update(employeeNumber, request.StartDate, request.MonthlySalary);
-            db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.updated", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(request), http.TraceIdentifier));
+            db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.updated", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(new { employment.EmployeeNumber, person.FirstName, person.LastName }), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
             var updated = await EmployeeQuery(db, organizationId, employerId).SingleAsync(x => x.Id == employmentId, ct);
             DecryptNationalIds(new[] { updated }, protector);
