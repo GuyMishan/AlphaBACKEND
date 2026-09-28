@@ -39,6 +39,20 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
             }
         }
 
+        var users = await db.Users.ToListAsync(stoppingToken);
+        var protectedUsers = 0;
+        foreach (var user in users.Where(x => !string.IsNullOrWhiteSpace(x.NationalId) && !string.IsNullOrWhiteSpace(x.Phone)))
+        {
+            var nationalId = user.NationalId!.Trim();
+            var phone = user.Phone!.Trim();
+            user.SetProtectedIdentity(
+                protector.Protect(nationalId, "auth-national-id"),
+                protector.LookupHash(nationalId, "auth-national-id-lookup"),
+                protector.Protect(phone, "auth-phone"),
+                protector.LookupHash(phone, "auth-phone-lookup"));
+            protectedUsers++;
+        }
+
         var accounts = await db.EmployerPaymentAccounts.ToListAsync(stoppingToken);
         var protectedAccounts = 0;
         var refreshedAccountHashes = 0;
