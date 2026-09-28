@@ -204,7 +204,7 @@ public static class ManualReportEndpoints
     }
 
     private static async Task<IResult> SyncSelectionAsync(Guid organizationId, Guid employerId, Guid reportId,
-        UpdateManualReportSelectionRequest request, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        UpdateManualReportSelectionRequest request, IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.EmploymentIds.Count > MaxEmployeesPerDraft)
