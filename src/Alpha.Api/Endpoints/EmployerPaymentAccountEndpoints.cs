@@ -148,7 +148,7 @@ public static class EmployerPaymentAccountEndpoints
             account.SetDefault(true);
         }
 
-        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
+        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.LookupHash(request.AccountNumber, "bank-account-number-lookup"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
         db.EmployerPaymentAccounts.Add(account);
         var mandate = new BankDebitMandate(account.Id);
         db.BankDebitMandates.Add(mandate);
@@ -180,7 +180,7 @@ public static class EmployerPaymentAccountEndpoints
         try
         {
             account.Update(request.BankId, request.BranchId, request.AccountNumber, request.AccountHolderName, request.AccountHolderId);
-        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
+        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.LookupHash(request.AccountNumber, "bank-account-number-lookup"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
         }
         catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
         {
