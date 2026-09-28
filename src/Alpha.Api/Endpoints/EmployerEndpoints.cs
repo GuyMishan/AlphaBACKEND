@@ -46,6 +46,7 @@ public static class EmployerEndpoints
             var page = await query.OrderBy(x => x.LegalName).Skip(skip).Take(take + 1).ToListAsync(ct);
             var hasMore = page.Count > take;
             if (hasMore) page.RemoveAt(page.Count - 1);
+            DecryptNationalIds(page, protector);
             return Results.Ok(new { items = page, hasMore });
         });
 
@@ -110,15 +111,16 @@ public static class EmployerEndpoints
         });
 
         group.MapGet("/{employerId:guid}/employees", async (Guid organizationId, Guid employerId, IAlphaDbContext db,
-            OrganizationAccessService access, CancellationToken ct) =>
+            OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct) =>
         {
             if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
             var items = await EmployeeQuery(db, organizationId, employerId).OrderBy(x => x.LastName).ThenBy(x => x.FirstName).Take(500).ToListAsync(ct);
+            DecryptNationalIds(items, protector);
             return Results.Ok(items);
         });
 
         group.MapGet("/{employerId:guid}/employees/search", async (Guid organizationId, Guid employerId,
-            string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct) =>
+            string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct) =>
         {
             if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
             skip = Math.Max(0, skip);
@@ -127,9 +129,10 @@ public static class EmployerEndpoints
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var term = search.Trim().ToLower();
+                var nationalIdHash = protector.LookupHash(search.Trim(), "person-national-id-lookup");
                 query = query.Where(x => x.FirstName.ToLower().Contains(term)
                     || x.LastName.ToLower().Contains(term)
-                    || x.NationalId.Contains(term)
+                    || x.NationalIdLookupHash == nationalIdHash
                     || x.EmployeeNumber.Contains(term));
             }
             var page = await query.OrderBy(x => x.LastName).ThenBy(x => x.FirstName).Skip(skip).Take(take + 1).ToListAsync(ct);
@@ -179,10 +182,11 @@ public static class EmployerEndpoints
             return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/employees/{employment.Id}", new { employment.Id, PersonId = person.Id, employment.MonthlySalary });
         });
 
-        group.MapGet("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId, Guid employerId, Guid employmentId, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct) =>
+        group.MapGet("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId, Guid employerId, Guid employmentId, IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct) =>
         {
             if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
             var item = await EmployeeQuery(db, organizationId, employerId).SingleOrDefaultAsync(x => x.Id == employmentId, ct);
+            if (item is not null) DecryptNationalIds(new[] { item }, protector);
             return item is null ? Results.NotFound() : Results.Ok(item);
         });
 
@@ -209,7 +213,9 @@ public static class EmployerEndpoints
             employment.Update(employeeNumber, request.StartDate, request.MonthlySalary);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.updated", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
-            return Results.Ok(await EmployeeQuery(db, organizationId, employerId).SingleAsync(x => x.Id == employmentId, ct));
+            var updated = await EmployeeQuery(db, organizationId, employerId).SingleAsync(x => x.Id == employmentId, ct);
+            DecryptNationalIds(new[] { updated }, protector);
+            return Results.Ok(updated);
         });
         return endpoints;
     }
@@ -276,7 +282,8 @@ public static class EmployerEndpoints
             EndDate = employment.EndDate,
             MonthlySalary = employment.MonthlySalary,
             PersonId = person.Id,
-            NationalId = person.NationalId,
+            NationalIdEncrypted = person.NationalIdEncrypted,
+            NationalIdLookupHash = person.NationalIdLookupHash,
             FirstName = person.FirstName,
             LastName = person.LastName,
             BirthDate = person.BirthDate,
@@ -291,6 +298,12 @@ public static class EmployerEndpoints
             PostOfficeBox = person.PostOfficeBox
         };
 
+    private static void DecryptNationalIds(IEnumerable<EmployeeListRow> rows, IDataProtectionService protector)
+    {
+        foreach (var row in rows)
+            row.NationalId = protector.Unprotect(row.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id");
+    }
+
     private sealed class EmployeeListRow
     {
         public Guid Id { get; init; }
@@ -300,7 +313,9 @@ public static class EmployerEndpoints
         public DateOnly? EndDate { get; init; }
         public decimal MonthlySalary { get; init; }
         public Guid PersonId { get; init; }
-        public string NationalId { get; init; } = string.Empty;
+        public string NationalId { get; set; } = string.Empty;
+        public string? NationalIdEncrypted { get; init; }
+        public string? NationalIdLookupHash { get; init; }
         public string FirstName { get; init; } = string.Empty;
         public string LastName { get; init; } = string.Empty;
         public DateOnly? BirthDate { get; init; }
