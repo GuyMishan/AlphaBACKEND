@@ -37,7 +37,7 @@ public sealed class ReportPaymentAccountService(IAlphaDbContext db)
             account.Id,
             account.BankId,
             account.BranchId,
-            Mask(accountNumber),
+            accountNumber,
             mandate is { IsActive: true } ? (!string.IsNullOrWhiteSpace(mandate.ExternalMandateId) ? mandate.ExternalMandateId : mandate.Id.ToString()) : string.Empty);
     }
 
