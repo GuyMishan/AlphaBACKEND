@@ -309,7 +309,7 @@ public static class BillingAccountEndpoints
             {
                 account.BillingName,
                 account.TaxId,
-                account.InvoiceEmail,
+                hasInvoiceEmail = !string.IsNullOrWhiteSpace(account.InvoiceEmail),
                 account.PaymentMethodType,
                 account.PaymentMethodStatus,
                 hasProviderCustomerId = !string.IsNullOrWhiteSpace(account.ProviderCustomerId),
