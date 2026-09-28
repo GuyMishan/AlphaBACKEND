@@ -175,38 +175,11 @@ public static class DemoDataSeeder
         await db.SaveChangesAsync(ct);
     }
 
-    private static async Task RepairInvalidEmployeeNationalIdsAsync(AlphaDbContext db, CancellationToken ct)
+    private static Task RepairInvalidEmployeeNationalIdsAsync(AlphaDbContext db, CancellationToken ct)
     {
-        var people = await db.People.OrderBy(x => x.OrganizationId).ThenBy(x => x.Id).ToListAsync(ct);
-        if (people.Count == 0) return;
-
-        var usedByOrganization = people
-            .GroupBy(x => x.OrganizationId)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(x => x.NationalId).ToHashSet(StringComparer.Ordinal));
-
-        var candidate = 700000000;
-        var changed = false;
-
-        foreach (var person in people.Where(x => !IsIsraeliId(x.NationalId)))
-        {
-            var used = usedByOrganization[person.OrganizationId];
-            string replacement;
-            do
-            {
-                replacement = NextValidNationalId(ref candidate);
-            }
-            while (used.Contains(replacement));
-
-            used.Remove(person.NationalId);
-            used.Add(replacement);
-            person.Update(replacement, person.FirstName, person.LastName);
-            changed = true;
-        }
-
-        if (changed)
-            await db.SaveChangesAsync(ct);
+        // Legacy demo repair depended on plaintext national IDs. Production identities are encrypted;
+        // demo data must be seeded correctly instead of inspecting or rewriting protected identifiers.
+        return Task.CompletedTask;
     }
 
     private static string NextValidNationalId(ref int candidate)
