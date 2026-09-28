@@ -42,7 +42,7 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
         var accounts = await db.EmployerPaymentAccounts.Where(x => x.AccountNumberEncrypted == null || x.AccountHolderIdEncrypted == null).ToListAsync(stoppingToken);
         foreach (var account in accounts)
             account.SetProtectedValues(protector.Protect(account.AccountNumber, "bank-account-number"),
-                protector.Protect(account.AccountHolderId, "bank-account-holder-id"));
+                protector.LookupHash(account.AccountNumber, "bank-account-number-lookup"), protector.Protect(account.AccountHolderId, "bank-account-holder-id"));
 
         await db.SaveChangesAsync(stoppingToken);
         logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {Accounts} payment accounts encrypted. Plaintext compatibility columns remain until encrypted read/write cutover is verified.", protectedPeople, refreshedHashes, accounts.Count);
