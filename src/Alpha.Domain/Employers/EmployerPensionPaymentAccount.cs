@@ -20,15 +20,12 @@ public sealed class EmployerPaymentAccount : Entity
     public Guid? EmployerId { get; private set; }
     public int BankId { get; private set; }
     public int BranchId { get; private set; }
-    public string AccountNumber { get; private set; } = string.Empty;
     public string? AccountNumberEncrypted { get; private set; }
     public string? AccountNumberLookupHash { get; private set; }
     public string? AccountHolderIdEncrypted { get; private set; }
 
     public void SetProtectedValues(string accountNumberEncrypted, string accountNumberLookupHash, string accountHolderIdEncrypted) { AccountNumberEncrypted = accountNumberEncrypted; AccountNumberLookupHash = accountNumberLookupHash; AccountHolderIdEncrypted = accountHolderIdEncrypted; Touch(); }
-    public void ClearLegacySensitiveValues() { AccountNumber = string.Empty; AccountHolderId = string.Empty; Touch(); }
     public string AccountHolderName { get; private set; } = string.Empty;
-    public string AccountHolderId { get; private set; } = string.Empty;
     public bool IsDefault { get; private set; }
     public bool IsActive { get; private set; } = true;
 
@@ -38,9 +35,9 @@ public sealed class EmployerPaymentAccount : Entity
         if (branchId <= 0) throw new ArgumentOutOfRangeException(nameof(branchId));
         BankId = bankId;
         BranchId = branchId;
-        AccountNumber = RequireDigits(accountNumber, nameof(accountNumber), 30);
+        _ = RequireDigits(accountNumber, nameof(accountNumber), 30);
         AccountHolderName = Require(accountHolderName, nameof(accountHolderName), 150);
-        AccountHolderId = RequireDigits(accountHolderId, nameof(accountHolderId), 20);
+        _ = RequireDigits(accountHolderId, nameof(accountHolderId), 20);
         Touch();
     }
 
