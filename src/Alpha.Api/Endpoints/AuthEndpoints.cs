@@ -279,7 +279,8 @@ public static class AuthEndpoints
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.ConsumedAt, DateTime.UtcNow), ct);
             if (claimed != 1) return Results.Unauthorized();
             var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == challenge.UserId && x.IsActive, ct);
-            return user is null ? Results.Unauthorized() : CreateTokenResult(config, user.Id, user.DisplayName, user.IsPlatformAdmin);
+            if (user is null) return Results.Unauthorized();
+            return await CreateTokenResultAsync(config, db, user.Id, user.DisplayName, user.IsPlatformAdmin, ct);
         }).AllowAnonymous().WithTags("Authentication");
         return endpoints;
     }
@@ -287,13 +288,16 @@ public static class AuthEndpoints
     private static string HashCode(IConfiguration config, string code) =>
         Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(config["PrototypeAuth:SigningKey"]!), Encoding.UTF8.GetBytes(code)));
 
-    private static IResult CreateTokenResult(IConfiguration configuration, Guid userId, string displayName, bool platformAdmin)
+    private static async Task<IResult> CreateTokenResultAsync(IConfiguration configuration, AlphaDbContext db, Guid userId, string displayName, bool platformAdmin, CancellationToken ct)
     {
         var key = configuration["PrototypeAuth:SigningKey"]!;
         if (key.Length < 32) return Results.StatusCode(503);
         var now = DateTime.UtcNow;
         var credentials = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), SecurityAlgorithms.HmacSha256);
-        var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, userId.ToString()) };
+        var session = new UserSession(userId, now, now.AddHours(12));
+        db.UserSessions.Add(session);
+        await db.SaveChangesAsync(ct);
+        var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, userId.ToString()), new("alpha:session_id", session.Id.ToString()) };
         if (platformAdmin) claims.Add(new Claim("alpha:platform_admin", "true"));
         var token = new JwtSecurityToken(issuer: "alpha-prototype", audience: "alpha-frontend",
             claims: claims, notBefore: now,
