@@ -376,15 +376,16 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             {
                 // Importing a report must not mutate existing employee master data. The incoming
                 // values are preserved on ManualReportEmployee as an immutable report snapshot.
-                var nationalIdHash = protector.LookupHash(normalizedIdentifier, "person-national-id-lookup");
-                var person = await db.People.FirstOrDefaultAsync(x =>
+                var nationalIdHash = identifierType == 1 ? protector.LookupHash(normalizedIdentifier, "person-national-id-lookup") : null;
+                var person = nationalIdHash is null ? null : await db.People.FirstOrDefaultAsync(x =>
                     x.OrganizationId == organizationId && x.NationalIdLookupHash == nationalIdHash, ct);
                 if (person is null)
                 {
                     if (firstName.Length == 0 || lastName.Length == 0) { unmatched++; continue; }
                     person = new Person(organizationId, normalizedIdentifier, firstName, lastName, birthDate, gender, email, mobile,
                         city, street, houseNumber, apartment, postalCode, postOfficeBox);
-                    person.SetProtectedNationalId(protector.Protect(normalizedIdentifier, "person-national-id"), nationalIdHash);
+                    if (identifierType == 1)
+                        person.SetProtectedNationalId(protector.Protect(normalizedIdentifier, "person-national-id"), nationalIdHash!);
                     db.People.Add(person);
                 }
 
