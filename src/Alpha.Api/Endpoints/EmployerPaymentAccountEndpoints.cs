@@ -299,7 +299,7 @@ public static class EmployerPaymentAccountEndpoints
         account.EmployerId,
         account.BankId,
         account.BranchId,
-        maskedAccountNumber = Mask(protector.Unprotect(account.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number")),
+        maskedAccountNumber = protector.Unprotect(account.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number"),
         account.AccountHolderName,
         maskedAccountHolderId = MaskIdentity(protector.Unprotect(account.AccountHolderIdEncrypted ?? throw new InvalidOperationException("Encrypted account holder id missing."), "bank-account-holder-id")),
         account.IsDefault,
