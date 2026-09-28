@@ -1,3 +1,4 @@
+using Alpha.Api.Security;
 using System.Globalization;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
@@ -124,7 +125,7 @@ public static class DerivedReportEndpoints
 
     private static async Task<IResult> CreateDerivedReportAsync(Guid organizationId, Guid employerId,
         CreateDerivedManualReportRequest request, IAlphaDbContext db, OrganizationAccessService access,
-        ReportPaymentAccountService paymentAccounts, CancellationToken ct)
+        ReportPaymentAccountService paymentAccounts, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var isCurrentCorrection = request.ReportKind == ManualReportKind.Current && request.CorrectionOperationCode is 2 or 3;
@@ -177,7 +178,7 @@ public static class DerivedReportEndpoints
         report.CopyEmployerInterfaceSnapshotFrom(source);
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
         if (paymentAccount is null) return Results.Conflict(new { error = "payment_account_required" });
-        await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, ct);
+        await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, protector.Unprotect(paymentAccount.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number"), ct);
         db.ManualReports.Add(report);
 
         var employeeMap = new Dictionary<Guid, ManualReportEmployee>(sourceEmployees.Count);
