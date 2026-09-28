@@ -23,6 +23,7 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<Refund> Refunds => Set<Refund>();
     public DbSet<ProviderWebhookEvent> ProviderWebhookEvents => Set<ProviderWebhookEvent>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
     public DbSet<RegistrationOtpChallenge> RegistrationOtpChallenges => Set<RegistrationOtpChallenge>();
     public DbSet<UserInvitation> UserInvitations => Set<UserInvitation>();
@@ -53,6 +54,11 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AlphaDbContext).Assembly);
+        var session = modelBuilder.Entity<UserSession>();
+        session.ToTable("user_sessions", "identity");
+        session.HasKey(x => x.Id);
+        session.HasIndex(x => x.UserId);
+        session.HasIndex(x => x.ExpiresAt);
         var otp = modelBuilder.Entity<OtpChallenge>();
         otp.ToTable("otp_challenges", "identity");
         otp.HasKey(x => x.Id);
