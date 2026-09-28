@@ -46,7 +46,6 @@ public static class EmployerEndpoints
             var page = await query.OrderBy(x => x.LegalName).Skip(skip).Take(take + 1).ToListAsync(ct);
             var hasMore = page.Count > take;
             if (hasMore) page.RemoveAt(page.Count - 1);
-            DecryptNationalIds(page, protector);
             return Results.Ok(new { items = page, hasMore });
         });
 
@@ -138,6 +137,7 @@ public static class EmployerEndpoints
             var page = await query.OrderBy(x => x.LastName).ThenBy(x => x.FirstName).Skip(skip).Take(take + 1).ToListAsync(ct);
             var hasMore = page.Count > take;
             if (hasMore) page.RemoveAt(page.Count - 1);
+            DecryptNationalIds(page, protector);
             return Results.Ok(new { items = page, hasMore });
         });
 
