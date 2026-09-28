@@ -112,7 +112,6 @@ public sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
     {
         b.ToTable("people", "employees");
         b.HasKey(x => x.Id);
-        b.Property(x => x.NationalId).HasMaxLength(30);
         b.Property(x => x.FirstName).HasMaxLength(100).IsRequired();
         b.Property(x => x.LastName).HasMaxLength(100).IsRequired();
         b.Property(x => x.Gender).HasConversion<string>().HasMaxLength(20);
@@ -191,9 +190,7 @@ public sealed class EmployerPaymentAccountConfiguration : IEntityTypeConfigurati
     {
         b.ToTable("employer_payment_accounts", "employers");
         b.HasKey(x => x.Id);
-        b.Property(x => x.AccountNumber).HasMaxLength(30);
         b.Property(x => x.AccountHolderName).HasMaxLength(150).IsRequired();
-        b.Property(x => x.AccountHolderId).HasMaxLength(20);
         b.HasIndex(x => new { x.EmployerId, x.BankId, x.BranchId, x.AccountNumberLookupHash }).IsUnique();
         b.HasIndex(x => x.EmployerId);
         b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade).IsRequired(false);
