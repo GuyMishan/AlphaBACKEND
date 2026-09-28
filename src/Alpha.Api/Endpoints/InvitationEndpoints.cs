@@ -142,16 +142,7 @@ public static class InvitationEndpoints
         db.UserInvitations.Add(invitation);
         db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "invitation.created", nameof(UserInvitation),
             invitation.Id, organizationId, request.EmployerId,
-            JsonSerializer.Serialize(new
-            {
-                email,
-                nationalId,
-                phone,
-                request.EmployerId,
-                request.OrganizationRole,
-                request.EmployerRole,
-                invitation.ExpiresAt
-            }), http.TraceIdentifier));
+            JsonSerializer.Serialize(new { request.EmployerId, request.OrganizationRole, request.EmployerRole, invitation.ExpiresAt }), http.TraceIdentifier));
         await db.SaveChangesAsync(ct);
 
         var frontendBaseUrl = configuration["Frontend:BaseUrl"]?.TrimEnd('/');
@@ -203,7 +194,7 @@ public static class InvitationEndpoints
         invitation.Cancel();
         db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "invitation.cancelled", nameof(UserInvitation),
             invitation.Id, organizationId, invitation.EmployerId,
-            JsonSerializer.Serialize(new { invitation.Email }), http.TraceIdentifier));
+            JsonSerializer.Serialize(new { invitationId = invitation.Id }), http.TraceIdentifier));
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
