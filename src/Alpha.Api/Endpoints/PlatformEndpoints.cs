@@ -1,3 +1,4 @@
+using Alpha.Api.Security;
 using Alpha.Application.Abstractions;
 using Alpha.Domain.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -28,7 +29,7 @@ public static class PlatformEndpoints
             return Results.Ok(await db.Users.AsNoTracking().OrderBy(x => x.DisplayName).ToListAsync(ct));
         });
 
-        group.MapPost("/users", async (CreateUserRequest request, IAlphaDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
+        group.MapPost("/users", async (CreateUserRequest request, IAlphaDbContext db, ICurrentUser currentUser, IDataProtectionService protector, CancellationToken ct) =>
         {
             if (!currentUser.IsPlatformAdmin) return Results.Forbid();
 
@@ -46,13 +47,17 @@ public static class PlatformEndpoints
             if (phone.Length != 10 || !phone.StartsWith("05", StringComparison.Ordinal) || !phone.All(char.IsDigit))
                 return Results.BadRequest(new { error = "Phone must be a 10-digit Israeli mobile number." });
 
-            var externalSubject = $"national-id-phone:{nationalId}:{phone}";
+            var nationalIdHash = protector.LookupHash(nationalId, "auth-national-id-lookup");
+            var phoneHash = protector.LookupHash(phone, "auth-phone-lookup");
+            var externalSubject = $"national-id-hash:{nationalIdHash}";
             if (await db.Users.AnyAsync(x =>
-                    x.NationalId == nationalId && x.Phone == phone,
+                    x.NationalIdLookupHash == nationalIdHash && x.PhoneLookupHash == phoneHash,
                 ct))
                 return Results.Conflict(new { error = "A user with this national ID and phone already exists." });
 
             var user = new User(externalSubject, email, displayName, nationalId, phone);
+            user.SetProtectedIdentity(protector.Protect(nationalId, "auth-national-id"), nationalIdHash,
+                protector.Protect(phone, "auth-phone"), phoneHash);
             db.Users.Add(user);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/platform/users/{user.Id}", user);
