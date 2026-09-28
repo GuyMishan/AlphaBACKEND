@@ -478,6 +478,45 @@ public sealed class EmployerInterface006XmlBuilderTests
         AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
     }
 
+    [Theory]
+    [InlineData(PensionProductType.PensionFund)]
+    [InlineData(PensionProductType.ProvidentFund)]
+    public void Current_pension_and_provident_reject_disability_and_other_contribution_codes(PensionProductType productType)
+    {
+        var fixture = CreateFixture(false, productType: productType);
+        var contribution = new ManualContribution(fixture.Product.Id, ContributionParty.Employer, ContributionComponent.Disability, 100m, 1m, 0m);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context with { Contributions = [contribution] });
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("must not report SUG-HAFRASHA codes 5-8", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_study_fund_accepts_only_employee_code_2_and_employer_code_3()
+    {
+        var fixture = CreateFixture(false, productType: PensionProductType.StudyFund);
+        var employee = new ManualContribution(fixture.Product.Id, ContributionParty.Employee, ContributionComponent.Severance, 100m, 2.5m, 0m);
+        var employer = new ManualContribution(fixture.Product.Id, ContributionParty.Employer, ContributionComponent.Benefits, 300m, 7.5m, 0m);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context with { Contributions = [employee, employer] });
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        var codes = result.Document!.Descendants("SUG-HAFRASHA").Select(x => x.Value).ToArray();
+        Assert.Contains("2", codes);
+        Assert.Contains("3", codes);
+    }
+
+    [Fact]
+    public void Current_study_fund_rejects_other_contribution_codes()
+    {
+        var fixture = CreateFixture(false, productType: PensionProductType.StudyFund);
+        var contribution = new ManualContribution(fixture.Product.Id, ContributionParty.Employee, ContributionComponent.Benefits, 100m, 2.5m, 0m);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context with { Contributions = [contribution] });
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("study funds may report only", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Current_report_preserves_imported_transfer_and_record_identifiers()
     {
