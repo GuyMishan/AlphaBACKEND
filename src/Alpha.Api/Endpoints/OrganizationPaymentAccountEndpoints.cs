@@ -71,7 +71,7 @@ public static class OrganizationPaymentAccountEndpoints
         var account = new EmployerPaymentAccount(organizationId, null, request.BankId, request.BranchId,
             request.AccountNumber, request.AccountHolderName, request.AccountHolderId);
         account.SetDefault(true);
-        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
+        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.LookupHash(request.AccountNumber, "bank-account-number-lookup"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
         db.EmployerPaymentAccounts.Add(account);
         var mandate = new BankDebitMandate(account.Id);
         db.BankDebitMandates.Add(mandate);
@@ -95,7 +95,7 @@ public static class OrganizationPaymentAccountEndpoints
         if (account is null) return Results.NotFound();
 
         account.Update(request.BankId, request.BranchId, request.AccountNumber, request.AccountHolderName, request.AccountHolderId);
-        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
+        account.SetProtectedValues(protector.Protect(request.AccountNumber, "bank-account-number"), protector.LookupHash(request.AccountNumber, "bank-account-number-lookup"), protector.Protect(request.AccountHolderId, "bank-account-holder-id"));
         account.SetDefault(true);
         db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "organization.payment-account.updated",
             nameof(EmployerPaymentAccount), account.Id, organizationId, null,
