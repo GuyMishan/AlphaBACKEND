@@ -22,7 +22,7 @@ public sealed class OrganizationEntitlementLockConcurrencyTests
         var secondAcquire = new OrganizationEntitlementLock(second).AcquireAsync(organizationId, timeout.Token);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await secondAcquire);
 
-        await firstLease.DisposeAsync();
+        await firstLease.CommitAsync(TestContext.Current.CancellationToken);
 
         await using var third = CreateDb(cs);
         using var successTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
