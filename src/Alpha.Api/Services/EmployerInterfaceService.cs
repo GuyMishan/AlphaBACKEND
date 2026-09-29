@@ -276,10 +276,24 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             .Select(n => ParseDate(Value(n, "CHODESH-MASKORET"))).FirstOrDefault(d => d is not null);
         if (month is null) return InvalidIngest(validation, "CHODESH-MASKORET is required.");
         var reportingMonth = new DateOnly(month.Value.Year, month.Value.Month, 1);
+        var salaryMonths = nodes.SelectMany(n => Desc(n, "ChodeshMaskoretVestatusOved"))
+            .Select(n => ParseDate(Value(n, "CHODESH-MASKORET")))
+            .Where(d => d.HasValue)
+            .Select(d => new DateOnly(d!.Value.Year, d.Value.Month, 1))
+            .Distinct()
+            .ToArray();
+        if (salaryMonths.Length != 1 || salaryMonths[0] != reportingMonth)
+            return InvalidIngest(validation, "Employer Interface import must contain exactly one salary month.");
         var kind = validation.DocumentType == EmployerInterfaceDocumentType.NegativeReport
             ? ManualReportKind.Negative : ManualReportKind.Current;
 
         var transfers = Desc(doc, "PirteiHaavaratKsafim").ToList();
+        var employerIdentifiers = transfers.Select(x => Digits(Value(x, "MISPAR-ZIHUY-MAASIK")))
+            .Where(x => x.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
+        var liveEmployer = await db.Employers.AsNoTracking().SingleAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
+        var liveEmployerIdentifier = Digits(liveEmployer.RegistrationNumber);
+        if (employerIdentifiers.Length == 0 || employerIdentifiers.Any(x => !string.Equals(x, liveEmployerIdentifier, StringComparison.Ordinal)))
+            return InvalidIngest(validation, "The uploaded Employer Interface file belongs to a different employer.");
         var previousIdentifiers = transfers
             .SelectMany(x => new[] { Value(x, "MISPAR-ZIHUI-KODEM"), Value(x, "MISPAR-MISLAKA-KODEM") })
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -327,7 +341,6 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         var report = new ManualReport(organizationId, employerId, reportingMonth, salaryPaymentDate, kind, sourceId,
             externalSourceReference: isImportedCorrection);
 
-        var liveEmployer = await db.Employers.AsNoTracking().SingleAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
         var transferSnapshot = Desc(doc, "PirteiHaavaratKsafim").FirstOrDefault();
         report.SetEmployerInterfaceSnapshot(
             Value(transferSnapshot, "SHEM-MAASIK") ?? liveEmployer.LegalName,
