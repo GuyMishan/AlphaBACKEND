@@ -129,6 +129,26 @@ public sealed class OrganizationEntitlementLockConcurrencyTests
         Assert.Equal(0, Convert.ToInt32(await command.ExecuteScalarAsync(ct)));
     }
 
+    [Fact]
+    public async Task Existing_transaction_can_join_same_organization_lock()
+    {
+        var cs = Environment.GetEnvironmentVariable("ALPHA_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(cs)) return;
+        var ct = TestContext.Current.CancellationToken;
+        var organizationId = Guid.NewGuid();
+
+        await using var first = CreateDb(cs);
+        await using var transaction = await first.Database.BeginTransactionAsync(ct);
+        await new OrganizationEntitlementLock(first).AcquireInCurrentTransactionAsync(organizationId, ct);
+
+        await using var second = CreateDb(cs);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(350));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await new OrganizationEntitlementLock(second).AcquireAsync(organizationId, timeout.Token));
+
+        await transaction.CommitAsync(ct);
+    }
+
     private static AlphaDbContext CreateDb(string connectionString)
     {
         var options = new DbContextOptionsBuilder<AlphaDbContext>()
