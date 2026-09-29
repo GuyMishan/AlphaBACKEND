@@ -114,6 +114,12 @@ public static class ManualReportEndpoints
             employer.ContactFirstName, employer.ContactLastName, employer.ContactPhone, employer.ContactEmail,
             employer.ContactMobile, profileSettings?.DefaultDepositorTypeCode ?? 1,
             profileSettings?.DefaultEmployerIdentifierTypeCode ?? 1);
+        report.SetProtectedEmployerSnapshot(
+            protector.Protect(report.EmployerRegistrationNumberSnapshot, $"report-employer-registration:{report.Id}"),
+            protector.Protect(report.EmployerWithholdingFileNumberSnapshot, $"report-employer-withholding:{report.Id}"),
+            protector.Protect(report.EmployerContactPhoneSnapshot, $"report-employer-phone:{report.Id}"),
+            protector.Protect(report.EmployerContactEmailSnapshot, $"report-employer-email:{report.Id}"),
+            protector.Protect(report.EmployerContactMobileSnapshot, $"report-employer-mobile:{report.Id}"));
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
         if (paymentAccount is null) return Results.Conflict(new { error = "payment_account_required" });
         await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, protector.Unprotect(paymentAccount.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number"), ct);
@@ -140,6 +146,9 @@ public static class ManualReportEndpoints
                     protector.Protect(reportEmployee.NationalId, $"report-employee-national-id:{reportEmployee.Id}"),
                     protector.LookupHash(reportEmployee.NationalId, "report-employee-national-id-lookup"),
                     protector.Protect(reportEmployee.InterfaceIdentifier, $"report-employee-interface-id:{reportEmployee.Id}"));
+                reportEmployee.SetProtectedContactSnapshot(
+                    protector.Protect(reportEmployee.EmailSnapshot, $"report-employee-email:{reportEmployee.Id}"),
+                    protector.Protect(reportEmployee.MobileSnapshot, $"report-employee-mobile:{reportEmployee.Id}"));
                 db.ManualReportEmployees.Add(reportEmployee);
                 await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
             }
@@ -244,6 +253,9 @@ public static class ManualReportEndpoints
                     protector.Protect(reportEmployee.NationalId, $"report-employee-national-id:{reportEmployee.Id}"),
                     protector.LookupHash(reportEmployee.NationalId, "report-employee-national-id-lookup"),
                     protector.Protect(reportEmployee.InterfaceIdentifier, $"report-employee-interface-id:{reportEmployee.Id}"));
+                reportEmployee.SetProtectedContactSnapshot(
+                    protector.Protect(reportEmployee.EmailSnapshot, $"report-employee-email:{reportEmployee.Id}"),
+                    protector.Protect(reportEmployee.MobileSnapshot, $"report-employee-mobile:{reportEmployee.Id}"));
                 db.ManualReportEmployees.Add(reportEmployee);
                 await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
             }
@@ -484,6 +496,9 @@ public static class ManualReportEndpoints
             employee.SetProtectedIdentifiers(employee.NationalId,
                 protector.LookupHash(nationalId, "report-employee-national-id-lookup"),
                 protector.Protect(request.Snapshot.Identifier, $"report-employee-interface-id:{employee.Id}"));
+            employee.SetProtectedContactSnapshot(
+                protector.Protect(request.Snapshot.Email ?? string.Empty, $"report-employee-email:{employee.Id}"),
+                protector.Protect(request.Snapshot.Mobile ?? string.Empty, $"report-employee-mobile:{employee.Id}"));
         }
         var existingProductIds = await db.ManualReportProducts.Where(x => x.ReportEmployeeId == reportEmployeeId).Select(x => x.Id).ToArrayAsync(ct);
         if (existingProductIds.Length > 0)
