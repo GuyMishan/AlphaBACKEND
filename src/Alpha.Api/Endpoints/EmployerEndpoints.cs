@@ -131,10 +131,10 @@ public static class EmployerEndpoints
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var term = search.Trim().ToLower();
-                var nationalIdHash = protector.LookupHash(search.Trim(), "person-national-id-lookup");
+                var identifierHash = protector.LookupHash(search.Trim(), "person-national-id-lookup");
                 query = query.Where(x => x.FirstName.ToLower().Contains(term)
                     || x.LastName.ToLower().Contains(term)
-                    || x.IdentifierType == request.IdentifierType && x.NationalIdLookupHash == identifierHash
+                    || x.NationalIdLookupHash == identifierHash
                     || x.EmployeeNumber.Contains(term));
             }
             var page = await query.OrderBy(x => x.LastName).ThenBy(x => x.FirstName).Skip(skip).Take(take + 1).ToListAsync(ct);
@@ -206,12 +206,12 @@ public static class EmployerEndpoints
             var employment = await db.Employments.SingleOrDefaultAsync(x => x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
             if (employment is null) return Results.NotFound();
             var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
-            var nationalId = request.NationalId.Trim();
+            var identifier = (request.Identifier ?? request.NationalId).Trim();
             var employeeNumber = request.EmployeeNumber.Trim();
-            var nationalIdHash = protector.LookupHash(nationalId, "person-national-id-lookup");
+            var identifierHash = protector.LookupHash(identifier, "person-national-id-lookup");
             if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.IdentifierType == request.IdentifierType && x.NationalIdLookupHash == identifierHash && x.Id != person.Id, ct)) return Results.Conflict(new { error = "Employee identifier already exists in this organization." });
             if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber && x.Id != employmentId, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
-            person.Update(nationalId, request.FirstName.Trim(), request.LastName.Trim());
+            person.Update(identifier, request.FirstName.Trim(), request.LastName.Trim());
             person.SetProtectedIdentifier(request.IdentifierType, protector.Protect(identifier, "person-national-id"), identifierHash);
             person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City,
                 request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
