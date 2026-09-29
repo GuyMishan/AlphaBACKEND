@@ -22,6 +22,14 @@ public sealed class OrganizationEntitlementLock(AlphaDbContext db)
         }
     }
 
+    public async Task AcquireInCurrentTransactionAsync(Guid organizationId, CancellationToken ct = default)
+    {
+        if (db.Database.CurrentTransaction is null)
+            throw new InvalidOperationException("An active database transaction is required.");
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $@"SELECT pg_advisory_xact_lock(hashtextextended({organizationId.ToString()}, 0))", ct);
+    }
+
     public sealed class Lease(IDbContextTransaction transaction) : IAsyncDisposable
     {
         private bool completed;
