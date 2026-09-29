@@ -382,28 +382,22 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
             if (!employeeMap.TryGetValue(employeeMapKey, out var reportEmployee))
             {
-                // Importing a report must not mutate existing employee master data. The incoming
-                // values are preserved on ManualReportEmployee as an immutable report snapshot.
-                // Alpha's employee master currently uses an Israeli national-ID lookup hash as its
-                // canonical identity key. Passport identifiers (SUG-MEZAHE-OVED=2) are valid on the
-                // 006 wire, but must not be silently created as a Person national ID because that would
-                // corrupt the master-data identity model. Preserve them only when a future passport-aware
-                // employee identity model can resolve them explicitly.
-                if (identifierType != 1)
-                {
-                    unmatched++;
-                    continue;
-                }
-
-                var nationalIdHash = protector.LookupHash(normalizedIdentifier, "person-national-id-lookup");
+                // Employer Interface 006 supports Israeli ID (1) and passport (2). The employee
+                // master identity is keyed by both identifier type and protected lookup hash so a valid
+                // passport can be imported without being misclassified as an Israeli national ID.
+                if (identifierType is not (1 or 2)) { unmatched++; continue; }
+                var personIdentifierType = (PersonIdentifierType)identifierType;
+                var identifierHash = protector.LookupHash(normalizedIdentifier, "person-national-id-lookup");
                 var person = await db.People.FirstOrDefaultAsync(x =>
-                    x.OrganizationId == organizationId && x.NationalIdLookupHash == nationalIdHash, ct);
+                    x.OrganizationId == organizationId && x.IdentifierType == personIdentifierType
+                    && x.NationalIdLookupHash == identifierHash, ct);
                 if (person is null)
                 {
                     if (firstName.Length == 0 || lastName.Length == 0) { unmatched++; continue; }
                     person = new Person(organizationId, normalizedIdentifier, firstName, lastName, birthDate, gender, email, mobile,
                         city, street, houseNumber, apartment, postalCode, postOfficeBox);
-                    person.SetProtectedNationalId(protector.Protect(normalizedIdentifier, "person-national-id"), nationalIdHash);
+                    person.SetProtectedIdentifier(personIdentifierType,
+                        protector.Protect(normalizedIdentifier, "person-national-id"), identifierHash);
                     db.People.Add(person);
                 }
 

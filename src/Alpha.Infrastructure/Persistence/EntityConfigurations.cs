@@ -114,6 +114,7 @@ public sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
         b.HasKey(x => x.Id);
         b.Property(x => x.FirstName).HasMaxLength(100).IsRequired();
         b.Property(x => x.LastName).HasMaxLength(100).IsRequired();
+        b.Property(x => x.IdentifierType).HasConversion<int>().IsRequired().HasDefaultValue(PersonIdentifierType.IsraeliId);
         b.Property(x => x.Gender).HasConversion<string>().HasMaxLength(20);
         b.Property(x => x.Email).HasMaxLength(50);
         b.Property(x => x.Mobile).HasMaxLength(15);
@@ -123,7 +124,7 @@ public sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
         b.Property(x => x.Apartment).HasMaxLength(20);
         b.Property(x => x.PostalCode).HasMaxLength(10);
         b.Property(x => x.PostOfficeBox).HasMaxLength(20);
-        b.HasIndex(x => new { x.OrganizationId, x.NationalIdLookupHash }).IsUnique();
+        b.HasIndex(x => new { x.OrganizationId, x.IdentifierType, x.NationalIdLookupHash }).IsUnique();
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
     }
 }

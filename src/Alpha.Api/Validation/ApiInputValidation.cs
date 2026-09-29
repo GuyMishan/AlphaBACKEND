@@ -61,16 +61,23 @@ public static class ApiInputValidation
         return null;
     }
 
-    public static string? Employee(string nationalId, string firstName, string lastName, string employeeNumber, DateOnly startDate)
+    public static string? Employee(PersonIdentifierType identifierType, string identifier, string firstName, string lastName, string employeeNumber, DateOnly startDate)
     {
         if (string.IsNullOrWhiteSpace(firstName) || firstName.Trim().Length is < 2 or > 100) return "שם פרטי הוא שדה חובה ובאורך 2-100 תווים.";
         if (string.IsNullOrWhiteSpace(lastName) || lastName.Trim().Length is < 2 or > 100) return "שם משפחה הוא שדה חובה ובאורך 2-100 תווים.";
-        var id = nationalId.Trim();
-        if (!IsIsraeliId(id)) return "תעודת הזהות אינה תקינה.";
+        if (!Enum.IsDefined(identifierType)) return "סוג המזהה של העובד אינו תקין.";
+        var normalizedIdentifier = identifier.Trim();
+        if (identifierType == PersonIdentifierType.IsraeliId && !IsIsraeliId(normalizedIdentifier)) return "תעודת הזהות אינה תקינה.";
+        if (identifierType == PersonIdentifierType.Passport
+            && (normalizedIdentifier.Length is < 1 or > 16 || normalizedIdentifier.Any(char.IsWhiteSpace) || normalizedIdentifier.Any(char.IsControl)))
+            return "מספר הדרכון הוא שדה חובה ויכול להכיל עד 16 תווים ללא רווחים.";
         if (string.IsNullOrWhiteSpace(employeeNumber) || employeeNumber.Trim().Length > 50) return "מספר עובד הוא שדה חובה ועד 50 תווים.";
         if (startDate < new DateOnly(1950, 1, 1) || startDate > DateOnly.FromDateTime(DateTime.UtcNow.AddYears(1))) return "תאריך תחילת העבודה אינו הגיוני.";
         return null;
     }
+
+    public static string? Employee(string nationalId, string firstName, string lastName, string employeeNumber, DateOnly startDate) =>
+        Employee(PersonIdentifierType.IsraeliId, nationalId, firstName, lastName, employeeNumber, startDate);
 
     public static IReadOnlyList<string> Products(IReadOnlyCollection<ManualProductInput> products,
         IReadOnlyCollection<ContributionPercentageLimit> limits, bool enforcePolicyPercentageLimits = true)

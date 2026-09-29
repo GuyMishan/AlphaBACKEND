@@ -138,7 +138,7 @@ public static class ManualReportEndpoints
                 var reportEmployee = new ManualReportEmployee(report.Id, organizationId, employerId,
                     item.Employment.Id, item.Person.Id, protector.Unprotect(item.Person.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id"), item.Person.FirstName,
                     item.Person.LastName, item.Employment.EmployeeNumber, item.Employment.MonthlySalary);
-                reportEmployee.SetInterfaceSnapshot(1, protector.Unprotect(item.Person.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id"), item.Person.BirthDate,
+                reportEmployee.SetInterfaceSnapshot((int)item.Person.IdentifierType, protector.Unprotect(item.Person.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id"), item.Person.BirthDate,
                     item.Person.Gender.HasValue ? (int)item.Person.Gender.Value : null, item.Person.Email, item.Person.Mobile,
                     item.Person.City, item.Person.Street, item.Person.HouseNumber, item.Person.Apartment,
                     item.Person.PostalCode, item.Person.PostOfficeBox, item.Employment.StartDate);
@@ -245,7 +245,7 @@ public static class ManualReportEndpoints
                 var reportEmployee = new ManualReportEmployee(reportId, organizationId, employerId,
                     item.Employment.Id, item.Person.Id, protector.Unprotect(item.Person.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id"), item.Person.FirstName,
                     item.Person.LastName, item.Employment.EmployeeNumber, item.Employment.MonthlySalary);
-                reportEmployee.SetInterfaceSnapshot(1, protector.Unprotect(item.Person.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id"), item.Person.BirthDate,
+                reportEmployee.SetInterfaceSnapshot((int)item.Person.IdentifierType, protector.Unprotect(item.Person.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id"), item.Person.BirthDate,
                     item.Person.Gender.HasValue ? (int)item.Person.Gender.Value : null, item.Person.Email, item.Person.Mobile,
                     item.Person.City, item.Person.Street, item.Person.HouseNumber, item.Person.Apartment,
                     item.Person.PostalCode, item.Person.PostOfficeBox, item.Employment.StartDate);

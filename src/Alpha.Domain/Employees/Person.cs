@@ -2,6 +2,12 @@ using Alpha.Domain.Common;
 
 namespace Alpha.Domain.Employees;
 
+public enum PersonIdentifierType
+{
+    IsraeliId = 1,
+    Passport = 2
+}
+
 public enum PersonGender
 {
     Male = 1,
@@ -24,10 +30,20 @@ public sealed class Person : Entity
     }
 
     public Guid OrganizationId { get; private set; }
+    public PersonIdentifierType IdentifierType { get; private set; } = PersonIdentifierType.IsraeliId;
     public string? NationalIdEncrypted { get; private set; }
     public string? NationalIdLookupHash { get; private set; }
 
-    public void SetProtectedNationalId(string encrypted, string lookupHash) { NationalIdEncrypted = encrypted; NationalIdLookupHash = lookupHash; Touch(); }
+    public void SetProtectedIdentifier(PersonIdentifierType identifierType, string encrypted, string lookupHash)
+    {
+        IdentifierType = identifierType;
+        NationalIdEncrypted = encrypted;
+        NationalIdLookupHash = lookupHash;
+        Touch();
+    }
+
+    public void SetProtectedNationalId(string encrypted, string lookupHash) =>
+        SetProtectedIdentifier(PersonIdentifierType.IsraeliId, encrypted, lookupHash);
     public string FirstName { get; private set; } = string.Empty;
     public string LastName { get; private set; } = string.Empty;
     public DateOnly? BirthDate { get; private set; }

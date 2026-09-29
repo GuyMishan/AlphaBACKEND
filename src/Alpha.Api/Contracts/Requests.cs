@@ -14,8 +14,8 @@ public sealed record UpdateEmployerRequest(string LegalName, string Registration
 public sealed record CreateEmployeeRequest(string NationalId, string FirstName, string LastName, string EmployeeNumber,
     DateOnly StartDate, decimal MonthlySalary, DateOnly BirthDate, PersonGender Gender,
     string Email, string Mobile, string City, string Street, string HouseNumber, string Apartment,
-    string PostalCode, string PostOfficeBox);
+    string PostalCode, string PostOfficeBox, PersonIdentifierType IdentifierType = PersonIdentifierType.IsraeliId, string? Identifier = null);
 public sealed record UpdateEmployeeRequest(string NationalId, string FirstName, string LastName, string EmployeeNumber,
     DateOnly StartDate, decimal MonthlySalary, DateOnly BirthDate, PersonGender Gender,
     string Email, string Mobile, string City, string Street, string HouseNumber, string Apartment,
-    string PostalCode, string PostOfficeBox);
+    string PostalCode, string PostOfficeBox, PersonIdentifierType IdentifierType = PersonIdentifierType.IsraeliId, string? Identifier = null);
