@@ -76,8 +76,22 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
         return directRole is EmployerRole.Owner or EmployerRole.Admin;
     }
 
-    public Task<bool> CanEditEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
-        CanManageEmployerAsync(organizationId, employerId, cancellationToken);
+    public async Task<bool> CanEditEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken)
+    {
+        if (currentUser.IsPlatformAdmin) return true;
+
+        var membership = await GetMembershipAsync(organizationId, cancellationToken);
+        var directRole = (await GetEmployerAccessAsync(organizationId, employerId, cancellationToken))?.Role;
+
+        if (membership is not null)
+        {
+            if (!membership.CanEditEmployer) return false;
+            if (membership.EmployerAccessMode == EmployerAccessMode.AllEmployers) return true;
+            return directRole is EmployerRole.Owner or EmployerRole.Admin or EmployerRole.User;
+        }
+
+        return directRole is EmployerRole.Owner or EmployerRole.Admin;
+    }
 
     public async Task<bool> CanCreateEmployeeAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
         await CanOperateEmployerAsync(organizationId, employerId, cancellationToken, m => m.CanCreateEmployee);
