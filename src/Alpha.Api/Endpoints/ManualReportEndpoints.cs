@@ -136,6 +136,10 @@ public static class ManualReportEndpoints
                     item.Person.Gender.HasValue ? (int)item.Person.Gender.Value : null, item.Person.Email, item.Person.Mobile,
                     item.Person.City, item.Person.Street, item.Person.HouseNumber, item.Person.Apartment,
                     item.Person.PostalCode, item.Person.PostOfficeBox, item.Employment.StartDate);
+                reportEmployee.SetProtectedIdentifiers(
+                    protector.Protect(reportEmployee.NationalId, $"report-employee-national-id:{reportEmployee.Id}"),
+                    protector.LookupHash(reportEmployee.NationalId, "report-employee-national-id-lookup"),
+                    protector.Protect(reportEmployee.InterfaceIdentifier, $"report-employee-interface-id:{reportEmployee.Id}"));
                 db.ManualReportEmployees.Add(reportEmployee);
                 await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
             }
@@ -236,6 +240,10 @@ public static class ManualReportEndpoints
                     item.Person.Gender.HasValue ? (int)item.Person.Gender.Value : null, item.Person.Email, item.Person.Mobile,
                     item.Person.City, item.Person.Street, item.Person.HouseNumber, item.Person.Apartment,
                     item.Person.PostalCode, item.Person.PostOfficeBox, item.Employment.StartDate);
+                reportEmployee.SetProtectedIdentifiers(
+                    protector.Protect(reportEmployee.NationalId, $"report-employee-national-id:{reportEmployee.Id}"),
+                    protector.LookupHash(reportEmployee.NationalId, "report-employee-national-id-lookup"),
+                    protector.Protect(reportEmployee.InterfaceIdentifier, $"report-employee-interface-id:{reportEmployee.Id}"));
                 db.ManualReportEmployees.Add(reportEmployee);
                 await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
             }
