@@ -33,6 +33,22 @@ public static class AuthEndpoints
                 : Results.Ok(new { userId = user.Id, platformAdmin = user.IsPlatformAdmin, displayName = user.DisplayName });
         }).RequireAuthorization().WithTags("Authentication");
 
+        endpoints.MapPost("/api/auth/logout", async (AlphaDbContext db, ClaimsPrincipal principal, CancellationToken ct) =>
+        {
+            var sidValue = principal.FindFirstValue("alpha:session_id");
+            var uidValue = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
+            if (!Guid.TryParse(sidValue, out var sid) || !Guid.TryParse(uidValue, out var uid))
+                return Results.Unauthorized();
+
+            var session = await db.UserSessions.SingleOrDefaultAsync(x => x.Id == sid && x.UserId == uid, ct);
+            if (session is not null && session.RevokedAt is null)
+            {
+                session.Revoke(DateTime.UtcNow);
+                await db.SaveChangesAsync(ct);
+            }
+            return Results.NoContent();
+        }).RequireAuthorization().WithTags("Authentication");
+
         endpoints.MapPost("/api/auth/otp/request", async (RequestOtp request, IConfiguration config, AlphaDbContext db,
             OtpDelivery delivery, ILogger<OtpDelivery> logger, IDataProtectionService protector, CancellationToken ct) =>
         {
