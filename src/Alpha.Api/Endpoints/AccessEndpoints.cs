@@ -36,25 +36,35 @@ public static class AccessEndpoints
             var safeSkip = Math.Max(skip ?? 0, 0);
             var term = search?.Trim();
 
-            var query = from membership in db.OrganizationMemberships.AsNoTracking()
-                        join user in db.Users.AsNoTracking() on membership.UserId equals user.Id
-                        where membership.OrganizationId == organizationId && membership.IsActive &&
-                              (membership.ExpiresAt == null || membership.ExpiresAt > DateTimeOffset.UtcNow)
+            var memberships = db.OrganizationMemberships.AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.IsActive &&
+                            (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow));
+            var organizationUserIds = memberships.Select(x => x.UserId);
+            var employerUserIds = db.EmployerUserAccesses.AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId)
+                .Select(x => x.UserId);
+            var accessibleUserIds = organizationUserIds.Union(employerUserIds);
+
+            var query = from user in db.Users.AsNoTracking()
+                        where accessibleUserIds.Contains(user.Id)
+                        join membership in memberships on user.Id equals membership.UserId into membershipRows
+                        from membership in membershipRows.DefaultIfEmpty()
                         select new
                         {
-                            MembershipId = membership.Id,
+                            MembershipId = membership == null ? (Guid?)null : membership.Id,
                             UserId = user.Id,
                             user.DisplayName,
                             user.Email,
                             user.IsActive,
-                            membership.Role,
-                            membership.EmployerAccessMode,
-                            membership.CanCreateEmployer,
-                            membership.CanEditEmployer,
-                            membership.CanCreateEmployee,
-                            membership.CanEditEmployee,
-                            membership.CanCreateReport,
-                            membership.CanTransmitReport
+                            Role = membership == null ? (OrganizationRole?)null : membership.Role,
+                            EmployerAccessMode = membership == null ? EmployerAccessMode.SelectedEmployers : membership.EmployerAccessMode,
+                            CanCreateEmployer = membership != null && membership.CanCreateEmployer,
+                            CanEditEmployer = membership != null && membership.CanEditEmployer,
+                            CanCreateEmployee = membership != null && membership.CanCreateEmployee,
+                            CanEditEmployee = membership != null && membership.CanEditEmployee,
+                            CanCreateReport = membership != null && membership.CanCreateReport,
+                            CanTransmitReport = membership != null && membership.CanTransmitReport,
+                            DirectEmployerOnly = membership == null
                         };
 
             if (employerId.HasValue)
@@ -172,15 +182,17 @@ public static class AccessEndpoints
 
             var membership = await db.OrganizationMemberships.SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.UserId == userId && x.IsActive, ct);
-            if (membership is null) return Results.NotFound();
-            if (membership.Role == OrganizationRole.Admin)
+            var hasEmployerAccess = await db.EmployerUserAccesses.AsNoTracking().AnyAsync(x =>
+                x.OrganizationId == organizationId && x.UserId == userId, ct);
+            if (membership is null && !hasEmployerAccess) return Results.NotFound();
+            if (membership?.Role == OrganizationRole.Admin)
             {
                 var otherAdmins = await db.OrganizationMemberships.AsNoTracking().AnyAsync(x =>
                     x.OrganizationId == organizationId && x.UserId != userId && x.IsActive &&
                     (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow) && x.Role == OrganizationRole.Admin, ct);
                 if (!otherAdmins) return Results.Conflict(new { error = "last_organization_admin" });
             }
-            membership.Deactivate();
+            membership?.Deactivate();
             await db.EmployerUserAccesses.Where(x => x.OrganizationId == organizationId && x.UserId == userId)
                 .ExecuteDeleteAsync(ct);
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "membership.removed", nameof(OrganizationMembership),
