@@ -108,6 +108,15 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
             protectedTransmissions++;
         }
 
+        var protectedTransmissionResponses = 0;
+        foreach (var transmission in transmissions)
+        {
+            if (string.IsNullOrWhiteSpace(transmission.ResponsePayload) || transmission.ResponsePayload.StartsWith("alpha:v1:", StringComparison.Ordinal)) continue;
+            db.Entry(transmission).Property(x => x.ResponsePayload).CurrentValue =
+                protector.Protect(transmission.ResponsePayload, $"report-transmission-response:{transmission.Id}");
+            protectedTransmissionResponses++;
+        }
+
         var attachments = await db.ManualReportAttachments.ToListAsync(stoppingToken);
         var protectedAttachments = 0;
         foreach (var attachment in attachments)
@@ -131,6 +140,6 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
         }
 
         await db.SaveChangesAsync(stoppingToken);
-        logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {ProtectedAccounts} payment accounts encrypted, {RefreshedAccountHashes} account hashes refreshed, {ProtectedReportEmployeeIds} report employee identifiers protected, {ProtectedReportAccounts} report payment account snapshots encrypted, {ProtectedTransmissions} report transmission payloads encrypted, {ProtectedFeedback} clearinghouse feedback payloads encrypted, {ProtectedAttachments} report attachments encrypted.", protectedPeople, refreshedHashes, protectedAccounts, refreshedAccountHashes, protectedReportEmployeeIds, protectedReportAccounts, protectedTransmissions, protectedFeedback, protectedAttachments);
+        logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {ProtectedAccounts} payment accounts encrypted, {RefreshedAccountHashes} account hashes refreshed, {ProtectedReportEmployeeIds} report employee identifiers protected, {ProtectedReportAccounts} report payment account snapshots encrypted, {ProtectedTransmissions} report transmission payloads encrypted, {ProtectedTransmissionResponses} transmission responses encrypted, {ProtectedFeedback} clearinghouse feedback payloads encrypted, {ProtectedAttachments} report attachments encrypted.", protectedPeople, refreshedHashes, protectedAccounts, refreshedAccountHashes, protectedReportEmployeeIds, protectedReportAccounts, protectedTransmissions, protectedTransmissionResponses, protectedFeedback, protectedAttachments);
     }
 }
