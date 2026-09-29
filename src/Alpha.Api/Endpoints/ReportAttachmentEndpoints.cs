@@ -17,7 +17,7 @@ public static class ReportAttachmentEndpoints
             .RequireAuthorization().WithTags("Manual reporting");
 
         group.MapGet("/", ListAsync);
-        group.MapPost("/", UploadAsync).DisableAntiforgery();
+        group.MapPost("/", UploadAsync).DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Http.Features.RequestSizeLimitAttribute(11 * 1024 * 1024));
         group.MapGet("/{attachmentId:guid}/file", DownloadAsync);
         group.MapDelete("/{attachmentId:guid}", DeleteAsync);
         return endpoints;
