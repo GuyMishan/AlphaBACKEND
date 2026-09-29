@@ -45,6 +45,13 @@ public sealed class Employer : Entity
         Touch();
     }
 
+    public void UpdateStatus(EmployerStatus status)
+    {
+        if (!Enum.IsDefined(status)) throw new ArgumentOutOfRangeException(nameof(status));
+        Status = status;
+        Touch();
+    }
+
     private void SetInterfaceContact(string? firstName, string? lastName, string? phone, string? email, string? mobile)
     {
         ContactFirstName = firstName?.Trim() ?? string.Empty;

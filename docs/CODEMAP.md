@@ -15,7 +15,7 @@
 - Persistence: identity/access/invitation schema initializers.
 
 ## Organizations, employers and employees
-- Endpoints: `OrganizationEndpoints.cs`, `EmployerEndpoints.cs`, `DashboardEndpoints.cs`, profile endpoints, employee pension mix endpoints. `DashboardEndpoints.cs` returns server-side aggregate counts for the authorized platform/organization/employer scope and never materializes employee lists for dashboard statistics.
+- Endpoints: `OrganizationEndpoints.cs`, `EmployerEndpoints.cs`, `DashboardEndpoints.cs`, profile endpoints, employee pension mix endpoints. `EmployerEndpoints.cs` owns employer lifecycle status changes; authorized employer managers may set Onboarding, Active or Closed and every change is audited. `DashboardEndpoints.cs` returns server-side aggregate counts for the authorized platform/organization/employer scope and never materializes employee lists for dashboard statistics.
 - Domain: `Organizations/*`, `Employers/*`, `Employees/*`. Employee master identity supports Employer Interface 006 identifier types 1 (Israeli ID) and 2 (passport); identifiers are encrypted at rest and uniqueness/search is scoped by organization + identifier type + lookup hash. Existing employees are backfilled as Israeli-ID identities by `EmployeeIdentitySchemaInitializer`.
 
 ## Billing, entitlements and payment providers

@@ -112,6 +112,30 @@ public static class EmployerEndpoints
             return Results.Ok(item);
         });
 
+        group.MapPut("/{employerId:guid}/status", async (Guid organizationId, Guid employerId,
+            UpdateEmployerStatusRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access,
+            HttpContext http, CancellationToken ct) =>
+        {
+            if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            if (request.Status is not (EmployerStatus.Onboarding or EmployerStatus.Active or EmployerStatus.Closed))
+                return Results.BadRequest(new { error = "Employer status must be Onboarding, Active or Closed." });
+
+            var item = await db.Employers.SingleOrDefaultAsync(x =>
+                x.Id == employerId && x.OrganizationId == organizationId, ct);
+            if (item is null) return Results.NotFound();
+
+            var previousStatus = item.Status;
+            if (previousStatus != request.Status)
+            {
+                item.UpdateStatus(request.Status);
+                db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.status_changed", nameof(Employer), item.Id,
+                    organizationId, item.Id, JsonSerializer.Serialize(new { previousStatus, status = request.Status }), http.TraceIdentifier));
+                await db.SaveChangesAsync(ct);
+            }
+
+            return Results.Ok(item);
+        });
+
         group.MapGet("/{employerId:guid}/employees", async (Guid organizationId, Guid employerId, IAlphaDbContext db,
             OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct) =>
         {
