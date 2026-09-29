@@ -83,9 +83,9 @@ public static class ReportTransmissionEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            report.MarkTransmissionError(ex.Message);
+            report.MarkTransmissionError("Transmission file sequence could not be reserved.");
             await db.SaveChangesAsync(ct);
-            return Results.Conflict(new { error = ex.Message });
+            return Results.Conflict(new { error = "Transmission file sequence could not be reserved." });
         }
 
         var generated = await exporter.ExportAsync(report, ct, reservation.Sequence, reservation.PreparedAt);
@@ -133,8 +133,8 @@ public static class ReportTransmissionEndpoints
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            transmission.Complete(ReportTransmissionStatus.Error, null, null, ex.Message);
-            report.MarkTransmissionError(ex.Message);
+            transmission.Complete(ReportTransmissionStatus.Error, null, null, "Transmission provider failed.");
+            report.MarkTransmissionError("Transmission provider failed.");
             await db.SaveChangesAsync(CancellationToken.None);
             return Results.Json(ToResponse(report, transmission, generated.Validation), statusCode: StatusCodes.Status502BadGateway);
         }
