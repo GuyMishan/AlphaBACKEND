@@ -733,9 +733,9 @@ public static class EmployerInterface006XmlBuilder
         // employee component 1 = תג 45 / regular employee benefits (official code 2),
         // employee component 2 = תג 47 (official code 4).
         (ContributionParty.Employer, ContributionComponent.Severance) => "1",
-        (ContributionParty.Employee, ContributionComponent.Severance) => "2",
+        (ContributionParty.Employee, ContributionComponent.Benefits) => "2",
         (ContributionParty.Employer, ContributionComponent.Benefits) => "3",
-        (ContributionParty.Employee, ContributionComponent.Benefits) => "4",
+        (ContributionParty.Employee, ContributionComponent.Severance) => "4",
         (ContributionParty.Employee, ContributionComponent.Disability) => "5",
         (ContributionParty.Employer, ContributionComponent.Disability) => "6",
         (ContributionParty.Employee, ContributionComponent.Other) => "7",

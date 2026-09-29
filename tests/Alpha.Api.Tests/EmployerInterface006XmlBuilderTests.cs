@@ -455,9 +455,9 @@ public sealed class EmployerInterface006XmlBuilderTests
 
     [Theory]
     [InlineData(ContributionParty.Employer, ContributionComponent.Severance, "1")]
-    [InlineData(ContributionParty.Employee, ContributionComponent.Severance, "2")]
+    [InlineData(ContributionParty.Employee, ContributionComponent.Benefits, "2")]
     [InlineData(ContributionParty.Employer, ContributionComponent.Benefits, "3")]
-    [InlineData(ContributionParty.Employee, ContributionComponent.Benefits, "4")]
+    [InlineData(ContributionParty.Employee, ContributionComponent.Severance, "4")]
     [InlineData(ContributionParty.Employee, ContributionComponent.Disability, "5")]
     [InlineData(ContributionParty.Employer, ContributionComponent.Disability, "6")]
     [InlineData(ContributionParty.Employee, ContributionComponent.Other, "7")]

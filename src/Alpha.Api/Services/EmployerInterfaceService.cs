@@ -657,9 +657,9 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
     private static string MapContributionCode(ManualContribution c) => (c.Party, c.Component) switch
     {
         (ContributionParty.Employer, ContributionComponent.Severance) => "1",
-        (ContributionParty.Employee, ContributionComponent.Severance) => "2",
+        (ContributionParty.Employee, ContributionComponent.Benefits) => "2",
         (ContributionParty.Employer, ContributionComponent.Benefits) => "3",
-        (ContributionParty.Employee, ContributionComponent.Benefits) => "4",
+        (ContributionParty.Employee, ContributionComponent.Severance) => "4",
         (ContributionParty.Employee, ContributionComponent.Disability) => "5",
         (ContributionParty.Employer, ContributionComponent.Disability) => "6",
         (ContributionParty.Employee, ContributionComponent.Other) => "7",
