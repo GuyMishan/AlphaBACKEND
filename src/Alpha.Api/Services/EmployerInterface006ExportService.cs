@@ -1,6 +1,7 @@
 using System.Text;
 using System.Xml;
 using Alpha.Application.Abstractions;
+using Alpha.Api.Security;
 using Alpha.Infrastructure.Persistence;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +12,8 @@ namespace Alpha.Api.Services;
 public sealed class EmployerInterface006ExportService(
     AlphaDbContext db,
     EmployerInterfaceSchemaRegistry schemas,
-    IOptions<EmployerInterface006Options> options)
+    IOptions<EmployerInterface006Options> options,
+    IDataProtectionService protector)
 {
     private static readonly UTF8Encoding Utf8NoBom = new(false);
 
@@ -155,7 +157,8 @@ public sealed class EmployerInterface006ExportService(
         var attachmentFiles = attachments
             .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ThenBy(x => x.Id)
             .Select(x => new EmployerInterfaceService.GeneratedAttachment(
-                attachmentNames[x.Id], x.ContentType, x.Content, x.Sha256))
+                attachmentNames[x.Id], x.ContentType,
+                protector.UnprotectBytes(x.Content, $"report-attachment:{x.ReportId}:{x.ReportProductId}:{x.DocumentTypeCode}"), x.Sha256))
             .ToArray();
         return new(bytes, new(validation.IsValid, documentType, EmployerInterfaceSchemaRegistry.Version,
             validation.SchemaFileName, validation.Issues), packageName.PayloadFileName, attachmentFiles);
