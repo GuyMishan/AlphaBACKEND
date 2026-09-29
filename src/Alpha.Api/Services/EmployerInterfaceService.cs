@@ -199,7 +199,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
         var doc = EmployerInterfaceSchemaRegistry.LoadXml(bytes);
         var feedback = new EmployerInterfaceFeedback(organizationId, employerId, validation.DocumentType!.Value,
-            validation.Version ?? CurrentVersion, sourceFileName, hash, DecodeXml(bytes), Value(doc, "MISPAR-HAKOVETZ"));
+            validation.Version ?? CurrentVersion, sourceFileName, hash, protector.Protect(DecodeXml(bytes), $"employer-interface-feedback:{hash}"), Value(doc, "MISPAR-HAKOVETZ"));
 
         var correlatedReportIds = new HashSet<Guid>();
         foreach (var transferStatus in Desc(doc, "StatosPirteiHaavaratKsafim"))
