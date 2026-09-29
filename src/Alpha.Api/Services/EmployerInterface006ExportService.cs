@@ -29,10 +29,10 @@ public sealed class EmployerInterface006ExportService(
             : EmployerInterfaceDocumentType.CurrentReport;
 
         var employer = new Alpha.Domain.Employers.Employer(report.OrganizationId,
-            report.EmployerLegalNameSnapshot, report.EmployerRegistrationNumberSnapshot,
-            report.EmployerWithholdingFileNumberSnapshot, report.EmployerContactFirstNameSnapshot,
-            report.EmployerContactLastNameSnapshot, report.EmployerContactPhoneSnapshot,
-            report.EmployerContactEmailSnapshot, report.EmployerContactMobileSnapshot);
+            report.EmployerLegalNameSnapshot, protector.Unprotect(report.EmployerRegistrationNumberSnapshot, $"report-employer-registration:{report.Id}"),
+            protector.Unprotect(report.EmployerWithholdingFileNumberSnapshot, $"report-employer-withholding:{report.Id}"), report.EmployerContactFirstNameSnapshot,
+            report.EmployerContactLastNameSnapshot, protector.Unprotect(report.EmployerContactPhoneSnapshot, $"report-employer-phone:{report.Id}"),
+            protector.Unprotect(report.EmployerContactEmailSnapshot, $"report-employer-email:{report.Id}"), protector.Unprotect(report.EmployerContactMobileSnapshot, $"report-employer-mobile:{report.Id}"));
         var employees = await db.ManualReportEmployees.AsNoTracking()
             .Where(x => x.ReportId == report.Id).OrderBy(x => x.EmployeeNumber).ToListAsync(ct);
         foreach (var employee in employees)
@@ -41,6 +41,10 @@ public sealed class EmployerInterface006ExportService(
                 protector.Unprotect(employee.NationalId, $"report-employee-national-id:{employee.Id}");
             db.Entry(employee).Property(x => x.InterfaceIdentifier).CurrentValue =
                 protector.Unprotect(employee.InterfaceIdentifier, $"report-employee-interface-id:{employee.Id}");
+            db.Entry(employee).Property(x => x.EmailSnapshot).CurrentValue =
+                protector.Unprotect(employee.EmailSnapshot, $"report-employee-email:{employee.Id}");
+            db.Entry(employee).Property(x => x.MobileSnapshot).CurrentValue =
+                protector.Unprotect(employee.MobileSnapshot, $"report-employee-mobile:{employee.Id}");
         }
         var people = new Dictionary<Guid, Alpha.Domain.Employees.Person>();
         var employments = new Dictionary<Guid, Alpha.Domain.Employees.Employment>();
