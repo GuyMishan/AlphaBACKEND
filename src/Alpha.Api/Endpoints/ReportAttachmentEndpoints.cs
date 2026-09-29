@@ -24,7 +24,7 @@ public static class ReportAttachmentEndpoints
     }
 
     private static async Task<IResult> ListAsync(Guid organizationId, Guid employerId, Guid reportId,
-        IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
+        IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.AsNoTracking()
@@ -178,7 +178,7 @@ public static class ReportAttachmentEndpoints
     }
 
     private static async Task<IResult> DownloadAsync(Guid organizationId, Guid employerId, Guid reportId, Guid attachmentId,
-        IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var exists = await db.ManualReports.AsNoTracking()
