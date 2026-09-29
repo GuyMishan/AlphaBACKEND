@@ -5,6 +5,7 @@ using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Alpha.Application.Abstractions;
+using Alpha.Application.Entitlements;
 using Alpha.Application.Reporting;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Reporting;
@@ -12,7 +13,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Services;
 
-public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfaceSchemaRegistry schemas, ReportPaymentAccountService paymentAccounts, IDataProtectionService protector)
+public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfaceSchemaRegistry schemas, ReportPaymentAccountService paymentAccounts, IDataProtectionService protector, EntitlementService entitlements)
 {
     public const string CurrentVersion = EmployerInterfaceSchemaRegistry.Version;
     private static readonly UTF8Encoding Utf8NoBom = new(false);
@@ -395,6 +396,11 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                     .Select(x => Number(Value(x, "SACHAR-MEDUVACH"))).DefaultIfEmpty(0m).Max();
                 if (employment is null)
                 {
+                    var entitlement = await entitlements.CanCreateEmployee(organizationId, ct);
+                    if (!entitlement.Allowed)
+                        return InvalidIngest(validation,
+                            $"employee_limit_reached:{entitlement.Current}/{entitlement.Maximum}", unmatched);
+
                     employment = new Employment(organizationId, employerId, person.Id, startDate, employeeNumber, xmlSalary);
                     db.Employments.Add(employment);
                 }
