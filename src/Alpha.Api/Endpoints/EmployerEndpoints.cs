@@ -11,6 +11,7 @@ using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Organizations;
 using Microsoft.EntityFrameworkCore;
+using Alpha.Infrastructure.Persistence;
 
 namespace Alpha.Api.Endpoints;
 
