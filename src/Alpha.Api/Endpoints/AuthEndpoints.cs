@@ -65,7 +65,7 @@ public static class AuthEndpoints
             var nationalIdHash = protector.LookupHash(nationalId, "auth-national-id-lookup");
             var phoneHash = protector.LookupHash(phone, "auth-phone-lookup");
             var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.IsActive && x.NationalIdLookupHash == nationalIdHash && x.PhoneLookupHash == phoneHash, ct);
-            if (user is null) return Results.Ok(new { challengeId = (Guid?)null, channel, expiresInSeconds = 300, resendAfterSeconds = 60 });
+            if (user is null) return Results.Ok(new { challengeId = Guid.NewGuid(), channel, expiresInSeconds = 300, resendAfterSeconds = 60 });
             var userId = user.Id;
             var destination = channel == "sms" ? protector.Unprotect(user.PhoneEncrypted ?? throw new InvalidOperationException("Encrypted phone missing."), "auth-phone") : user.Email;
             if (string.IsNullOrWhiteSpace(destination)) return Results.BadRequest(new { error = "channel_unavailable" });
