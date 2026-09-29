@@ -265,7 +265,8 @@ public static class ManualReportEndpoints
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
-            query = query.Where(x => x.FirstName.ToLower().Contains(term) || x.LastName.ToLower().Contains(term) || x.NationalId.Contains(term) || x.EmployeeNumber.Contains(term));
+            var idHash = protector.LookupHash(search.Trim(), "report-employee-national-id-lookup");
+            query = query.Where(x => x.FirstName.ToLower().Contains(term) || x.LastName.ToLower().Contains(term) || x.NationalIdLookupHash == idHash || x.EmployeeNumber.Contains(term));
         }
         var page = await query.OrderBy(x => x.LastName).ThenBy(x => x.FirstName).Skip(skip).Take(take + 1).ToListAsync(ct);
         var hasMore = page.Count > take;
@@ -275,7 +276,7 @@ public static class ManualReportEndpoints
             .GroupBy(x => x.ReportEmployeeId).Select(g => new { Id = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Id, x => x.Count, ct);
         var items = page.Select(x => new
         {
-            x.Id, x.EmploymentId, x.PersonId, x.NationalId, x.FirstName, x.LastName, x.EmployeeNumber, x.MonthlySalary,
+            x.Id, x.EmploymentId, x.PersonId, NationalId = protector.Unprotect(x.NationalId, $"report-employee-national-id:{x.Id}"), x.FirstName, x.LastName, x.EmployeeNumber, x.MonthlySalary,
             productCount = productCounts.GetValueOrDefault(x.Id),
             validationStatus = productCounts.GetValueOrDefault(x.Id) > 0 && x.MonthlySalary > 0 ? "ready" : "missing-products"
         });
@@ -301,7 +302,7 @@ public static class ManualReportEndpoints
             var term = search.Trim().ToLower();
             query = query.Where(x => x.Employee.FirstName.ToLower().Contains(term)
                 || x.Employee.LastName.ToLower().Contains(term)
-                || x.Employee.NationalId.Contains(term)
+                || x.Employee.NationalIdLookupHash == protector.LookupHash(search.Trim(), "report-employee-national-id-lookup")
                 || x.Product.PolicyNumber.ToLower().Contains(term)
                 || x.Product.FundName.ToLower().Contains(term));
         }
@@ -341,7 +342,7 @@ public static class ManualReportEndpoints
                 reportEmployeeId = x.Employee.Id,
                 x.Employee.EmploymentId,
                 employeeName = x.Employee.FirstName + " " + x.Employee.LastName,
-                x.Employee.NationalId,
+                NationalId = protector.Unprotect(x.Employee.NationalId, $"report-employee-national-id:{x.Employee.Id}"),
                 x.Employee.MonthlySalary,
                 x.Product.ProductType,
                 x.Product.PolicyNumber,
@@ -420,7 +421,7 @@ public static class ManualReportEndpoints
     }
 
     private static async Task<IResult> GetEmployeeAsync(Guid organizationId, Guid employerId, Guid reportId,
-        Guid reportEmployeeId, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        Guid reportEmployeeId, IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var employee = await db.ManualReportEmployees.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reportEmployeeId && x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
@@ -431,7 +432,7 @@ public static class ManualReportEndpoints
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         return Results.Ok(new
         {
-            employee.Id, employee.EmploymentId, employee.PersonId, employee.NationalId, employee.FirstName, employee.LastName, employee.EmployeeNumber, employee.MonthlySalary,
+            employee.Id, employee.EmploymentId, employee.PersonId, NationalId = protector.Unprotect(employee.NationalId, $"report-employee-national-id:{employee.Id}"), employee.FirstName, employee.LastName, employee.EmployeeNumber, employee.MonthlySalary,
             products = products.Select(p => new
             {
                 p.Id, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName, p.FundClassification,
