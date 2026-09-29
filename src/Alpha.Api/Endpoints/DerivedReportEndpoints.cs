@@ -184,12 +184,22 @@ public static class DerivedReportEndpoints
         var employeeMap = new Dictionary<Guid, ManualReportEmployee>(sourceEmployees.Count);
         foreach (var oldEmployee in sourceEmployees)
         {
+            var nationalId = protector.Unprotect(oldEmployee.NationalId, $"report-employee-national-id:{oldEmployee.Id}");
+            var interfaceIdentifier = protector.Unprotect(oldEmployee.InterfaceIdentifier, $"report-employee-interface-id:{oldEmployee.Id}");
+            var email = protector.Unprotect(oldEmployee.EmailSnapshot, $"report-employee-email:{oldEmployee.Id}");
+            var mobile = protector.Unprotect(oldEmployee.MobileSnapshot, $"report-employee-mobile:{oldEmployee.Id}");
             var clone = new ManualReportEmployee(report.Id, organizationId, employerId, oldEmployee.EmploymentId,
-                oldEmployee.PersonId, oldEmployee.NationalId, oldEmployee.FirstName, oldEmployee.LastName,
+                oldEmployee.PersonId, nationalId, oldEmployee.FirstName, oldEmployee.LastName,
                 oldEmployee.EmployeeNumber, oldEmployee.MonthlySalary);
-            clone.SetInterfaceSnapshot(oldEmployee.InterfaceIdentifierType, oldEmployee.InterfaceIdentifier,
-                oldEmployee.BirthDateSnapshot, oldEmployee.GenderSnapshot, oldEmployee.EmailSnapshot,
-                oldEmployee.MobileSnapshot, oldEmployee.CitySnapshot, oldEmployee.StreetSnapshot,
+            clone.SetProtectedIdentifiers(
+                protector.Protect(nationalId, $"report-employee-national-id:{clone.Id}"),
+                protector.LookupHash(nationalId, "report-employee-national-id-lookup"),
+                protector.Protect(interfaceIdentifier, $"report-employee-interface-id:{clone.Id}"));
+            clone.SetInterfaceSnapshot(oldEmployee.InterfaceIdentifierType,
+                protector.Protect(interfaceIdentifier, $"report-employee-interface-id:{clone.Id}"),
+                oldEmployee.BirthDateSnapshot, oldEmployee.GenderSnapshot,
+                protector.Protect(email, $"report-employee-email:{clone.Id}"),
+                protector.Protect(mobile, $"report-employee-mobile:{clone.Id}"), oldEmployee.CitySnapshot, oldEmployee.StreetSnapshot,
                 oldEmployee.HouseNumberSnapshot, oldEmployee.ApartmentSnapshot, oldEmployee.PostalCodeSnapshot,
                 oldEmployee.PostOfficeBoxSnapshot, oldEmployee.EmploymentStartDateSnapshot);
             db.ManualReportEmployees.Add(clone);
