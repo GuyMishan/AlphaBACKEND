@@ -32,7 +32,7 @@ public static class ManualReportEndpoints
     }
 
     private static async Task<IResult> GetOpenReportsAsync(Guid organizationId, Guid employerId,
-        string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         skip = Math.Max(0, skip);
@@ -363,7 +363,7 @@ public static class ManualReportEndpoints
                 employerBankName = payment?.EmployerBankName ?? string.Empty,
                 employerBankCode = payment?.EmployerBankCode ?? string.Empty,
                 employerBranch = payment?.EmployerBranch ?? string.Empty,
-                employerAccount = payment?.EmployerAccount ?? string.Empty,
+                employerAccount = payment is null ? string.Empty : protector.Unprotect(payment.EmployerAccount, $"report-payment-account:{payment.ReportProductId}"),
                 confirmationFileName = payment?.ConfirmationFileName ?? string.Empty,
                 operationCode = productMetadata?.OperationCode ?? (report.ReportKind == ManualReportKind.Current ? 1 : null),
                 depositStatus = productMetadata?.DepositStatus ?? (report.ReportKind == ManualReportKind.Current ? 1 : null),
