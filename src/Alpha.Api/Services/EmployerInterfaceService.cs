@@ -427,6 +427,10 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 reportEmployee.SetInterfaceSnapshot(identifierType, rawIdentifier, birthDate,
                     gender.HasValue ? (int)gender.Value : null, email, mobile, city, street, houseNumber, apartment,
                     postalCode, postOfficeBox, startDate);
+                reportEmployee.SetProtectedIdentifiers(
+                    protector.Protect(reportEmployee.NationalId, $"report-employee-national-id:{reportEmployee.Id}"),
+                    protector.LookupHash(reportEmployee.NationalId, "report-employee-national-id-lookup"),
+                    protector.Protect(reportEmployee.InterfaceIdentifier, $"report-employee-interface-id:{reportEmployee.Id}"));
                 db.ManualReportEmployees.Add(reportEmployee);
                 employeeMap[employeeMapKey] = reportEmployee;
                 imported++;
