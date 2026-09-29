@@ -1,3 +1,4 @@
+using Alpha.Api.Services;
 using Alpha.Api.Endpoints;
 using Alpha.Api.Validation;
 using Xunit;
@@ -44,5 +45,24 @@ public sealed class EmployerInterface006PreflightValidationTests
         var errors = ApiInputValidation.Payment(request);
 
         Assert.Contains(errors, x => x.Contains("חשבון יצרן לזיכוי", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(1, 1, true)]
+    [InlineData(1, 3, true)]
+    [InlineData(1, 4, false)]
+    [InlineData(2, 1, true)]
+    [InlineData(2, 3, false)]
+    [InlineData(3, 7, true)]
+    [InlineData(5, 1, true)]
+    [InlineData(5, 3, true)]
+    [InlineData(5, 4, false)]
+    [InlineData(6, null, true)]
+    [InlineData(6, 1, false)]
+    [InlineData(7, 1, true)]
+    [InlineData(7, 9, false)]
+    public void Operation_payment_matrix_matches_official_v6_rules(int operationCode, int? paymentMethodCode, bool expected)
+    {
+        Assert.Equal(expected, EmployerInterface006WorkbookRules.IsPaymentMethodAllowed(operationCode, paymentMethodCode));
     }
 }

@@ -49,15 +49,6 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
         var issues = new List<string>();
         var negative = type == EmployerInterfaceDocumentType.NegativeReport;
-        var allowedByOperation = new Dictionary<int, HashSet<int>>
-        {
-            [1] = [1, 3, 5, 6, 7, 9],
-            [2] = [1],
-            [3] = [1, 3, 5, 6, 7, 9],
-            [5] = [1, 3, 6, 7, 9],
-            [7] = [1]
-        };
-
         foreach (var transfer in Desc(document, "PirteiHaavaratKsafim"))
         {
             var mobile = Digits(Value(transfer, "MISPAR-CELLULARI-ISH-KESHER-MAASIK"));
@@ -75,15 +66,10 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 if (!negative && operation is not (1 or 2 or 3 or 7))
                     issues.Add($"Current report contains invalid SUG-PEULA={operation}.");
 
-                if (operation == 6)
-                {
-                    if (paymentMethod.HasValue)
-                        issues.Add("SUG-PEULA=6 must not contain a KOD-EMTZAI-TASHLUM value.");
-                }
-                else if (!paymentMethod.HasValue || !allowedByOperation.TryGetValue(operation.Value, out var allowed) || !allowed.Contains(paymentMethod.Value))
-                {
-                    issues.Add($"KOD-EMTZAI-TASHLUM is missing or incompatible with SUG-PEULA={operation}.");
-                }
+                if (!EmployerInterface006WorkbookRules.IsPaymentMethodAllowed(operation.Value, paymentMethod))
+                    issues.Add(operation == 6
+                        ? "SUG-PEULA=6 must not contain a KOD-EMTZAI-TASHLUM value."
+                        : $"KOD-EMTZAI-TASHLUM is missing or incompatible with SUG-PEULA={operation}.");
             }
 
             if (operation is 2 or 7 && deposit != 0m)
