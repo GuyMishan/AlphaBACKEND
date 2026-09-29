@@ -40,6 +40,7 @@ builder.Services.AddHostedService<BillingCycleHostedService>();
 builder.Services.AddHttpClient("cardcom", c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient("payplus", c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddScoped<EntitlementService>();
+builder.Services.AddScoped<OrganizationEntitlementLock>();
 builder.Services.AddScoped<InvitationService>();
 builder.Services.AddScoped<ReportPaymentAccountService>();
 builder.Services.Configure<EmployerInterface006Options>(builder.Configuration.GetSection(EmployerInterface006Options.SectionName));
