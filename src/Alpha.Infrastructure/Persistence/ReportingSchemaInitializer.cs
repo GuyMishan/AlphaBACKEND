@@ -142,6 +142,13 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_employees (
     "UpdatedAt" timestamptz NOT NULL,
     CONSTRAINT "UX_manual_report_employee" UNIQUE ("ReportId", "EmploymentId")
 );
+ALTER TABLE reporting.manual_reports ALTER COLUMN "EmployerRegistrationNumberSnapshot" TYPE text;
+ALTER TABLE reporting.manual_reports ALTER COLUMN "EmployerWithholdingFileNumberSnapshot" TYPE text;
+ALTER TABLE reporting.manual_reports ALTER COLUMN "EmployerContactPhoneSnapshot" TYPE text;
+ALTER TABLE reporting.manual_reports ALTER COLUMN "EmployerContactEmailSnapshot" TYPE text;
+ALTER TABLE reporting.manual_reports ALTER COLUMN "EmployerContactMobileSnapshot" TYPE text;
+ALTER TABLE reporting.manual_report_employees ALTER COLUMN "EmailSnapshot" TYPE text;
+ALTER TABLE reporting.manual_report_employees ALTER COLUMN "MobileSnapshot" TYPE text;
 ALTER TABLE reporting.manual_report_employees ALTER COLUMN "NationalId" TYPE text;
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "NationalIdLookupHash" varchar(64) NOT NULL DEFAULT '';
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "MonthlySalary" numeric(18,2) NOT NULL DEFAULT 0;
