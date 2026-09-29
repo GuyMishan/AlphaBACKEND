@@ -12,6 +12,9 @@ public static class EmployerInterface006CodebookInitializer
                 ('gender', 'all', 1, 'זכר', 1, true, 'EmployerInterface006-Workbook-V6', now()),
                 ('gender', 'all', 2, 'נקבה', 2, true, 'EmployerInterface006-Workbook-V6', now()),
 
+                ('employee-identifier-type', 'all', 1, 'תעודת זהות', 1, true, 'EmployerInterface006-XSD-V6', now()),
+                ('employee-identifier-type', 'all', 2, 'דרכון', 2, true, 'EmployerInterface006-XSD-V6', now()),
+
                 ('receipt-type', 'all', 1, 'שוטף', 1, true, 'EmployerInterface006-Workbook-V6', now()),
                 ('receipt-type', 'all', 2, 'חד פעמי', 2, true, 'EmployerInterface006-Workbook-V6', now()),
                 ('receipt-type', 'all', 4, 'הפרשים', 4, true, 'EmployerInterface006-Workbook-V6', now()),
