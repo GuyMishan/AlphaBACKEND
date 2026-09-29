@@ -28,7 +28,7 @@
 
 ## Employer Interface 006 / reporting
 - Endpoints: `EmployerInterfaceEndpoints.cs`, `ManualReportEndpoints.cs`, `ReportValidationEndpoints.cs`, `ReportTransmissionEndpoints.cs`, `ReportFeedbackEndpoints.cs`, `DerivedReportEndpoints.cs`.
-- Transmission endpoints suppress provider/internal exception details from client-visible responses. The current access model still maps report creation/transmission to the existing employee-create permission; introducing dedicated report permissions requires a coordinated membership/API/frontend permission-schema migration.
+- Transmission endpoints suppress provider/internal exception details from client-visible responses. Employer Interface 006 transmission evidence is encrypted at rest with per-record purpose binding; the startup sensitive-data backfill encrypts legacy plaintext transmission payloads idempotently. The current access model still maps report creation/transmission to the existing employee-create permission; introducing dedicated report permissions requires a coordinated membership/API/frontend permission-schema migration.
 - Core services: `EmployerInterfaceService.cs`, `EmployerInterface006ExportService.cs`, `EmployerInterface006XmlBuilder.cs`, `EmployerInterface006WorkbookRules.cs`, `EmployerInterfaceSchemaRegistry.cs`, file naming/sequence services.
 - Reporting application/domain: `Alpha.Application/Reporting/*`, `Alpha.Domain/Reporting/*`.
 - Persistence: `EmployerInterface006*Initializer.cs`, reporting/report lifecycle/transmission/feedback configurations and initializers.
@@ -41,7 +41,7 @@
 These sources outrank assumptions, old examples and UI behavior.
 
 ## Security
-- `src/Alpha.Api/Security/*` — encryption/data protection, headers, audit, malware scanning, retention and session activity. `SessionActivityMiddleware` rejects revoked/expired/idle sessions and sessions whose user has been deactivated. `/api/auth/logout` revokes the current server-side session, so the associated JWT cannot continue through the middleware. Login OTP requests use a neutral unknown-account response, and OTP HMAC material is domain-separated from JWT signing.
+- `src/Alpha.Api/Security/*` — versioned AES-GCM string/binary encryption and legacy-compatible sensitive-data backfill, headers, audit, malware scanning, retention and session activity. `SessionActivityMiddleware` rejects revoked/expired/idle sessions and sessions whose user has been deactivated. `/api/auth/logout` revokes the current server-side session, so the associated JWT cannot continue through the middleware. Login OTP requests use a neutral unknown-account response, and OTP HMAC material is domain-separated from JWT signing.
 - `src/Alpha.Domain/Auditing/AuditEvent.cs`.
 
 ## Database
