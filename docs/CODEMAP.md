@@ -40,7 +40,7 @@
 These sources outrank assumptions, old examples and UI behavior.
 
 ## Security
-- `src/Alpha.Api/Security/*` — encryption/data protection, headers, audit, malware scanning, retention and session activity. `SessionActivityMiddleware` rejects revoked/expired/idle sessions and sessions whose user has been deactivated. `/api/auth/logout` revokes the current server-side session, so the associated JWT cannot continue through the middleware.
+- `src/Alpha.Api/Security/*` — encryption/data protection, headers, audit, malware scanning, retention and session activity. `SessionActivityMiddleware` rejects revoked/expired/idle sessions and sessions whose user has been deactivated. `/api/auth/logout` revokes the current server-side session, so the associated JWT cannot continue through the middleware. Login OTP requests use a neutral unknown-account response, and OTP HMAC material is domain-separated from JWT signing.
 - `src/Alpha.Domain/Auditing/AuditEvent.cs`.
 
 ## Database
