@@ -175,7 +175,29 @@ public static class DerivedReportEndpoints
 
         var report = new ManualReport(organizationId, employerId, request.ReportingMonth, request.SalaryPaymentDate,
             request.ReportKind, source.Id);
-        report.CopyEmployerInterfaceSnapshotFrom(source);
+        // Employer snapshot secrets are purpose-bound to the source report ID. Rebind them
+        // to the derived report instead of copying ciphertext that cannot be decrypted under
+        // the new report's protection purposes.
+        var employerRegistrationNumber = protector.Unprotect(source.EmployerRegistrationNumberSnapshot,
+            $"report-employer-registration:{source.Id}");
+        var employerWithholdingFileNumber = protector.Unprotect(source.EmployerWithholdingFileNumberSnapshot,
+            $"report-employer-withholding:{source.Id}");
+        var employerContactPhone = protector.Unprotect(source.EmployerContactPhoneSnapshot,
+            $"report-employer-phone:{source.Id}");
+        var employerContactEmail = protector.Unprotect(source.EmployerContactEmailSnapshot,
+            $"report-employer-email:{source.Id}");
+        var employerContactMobile = protector.Unprotect(source.EmployerContactMobileSnapshot,
+            $"report-employer-mobile:{source.Id}");
+        report.SetEmployerInterfaceSnapshot(source.EmployerLegalNameSnapshot, employerRegistrationNumber,
+            employerWithholdingFileNumber, source.EmployerContactFirstNameSnapshot, source.EmployerContactLastNameSnapshot,
+            employerContactPhone, employerContactEmail, employerContactMobile,
+            source.DepositorTypeCodeSnapshot, source.EmployerIdentifierTypeCodeSnapshot);
+        report.SetProtectedEmployerSnapshot(
+            protector.Protect(employerRegistrationNumber, $"report-employer-registration:{report.Id}"),
+            protector.Protect(employerWithholdingFileNumber, $"report-employer-withholding:{report.Id}"),
+            protector.Protect(employerContactPhone, $"report-employer-phone:{report.Id}"),
+            protector.Protect(employerContactEmail, $"report-employer-email:{report.Id}"),
+            protector.Protect(employerContactMobile, $"report-employer-mobile:{report.Id}"));
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
         if (paymentAccount is null) return Results.Conflict(new { error = "payment_account_required" });
         await paymentAccounts.ApplySnapshotAsync(report, paymentAccount, protector.Unprotect(paymentAccount.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number"), ct);
