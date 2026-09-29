@@ -137,6 +137,13 @@ public static class AccessEndpoints
             var membership = await db.OrganizationMemberships.SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.UserId == userId && x.IsActive, ct);
             if (membership is null) return Results.NotFound();
+            if (membership.Role == OrganizationRole.Admin && request.Role != OrganizationRole.Admin)
+            {
+                var otherAdmins = await db.OrganizationMemberships.AsNoTracking().AnyAsync(x =>
+                    x.OrganizationId == organizationId && x.UserId != userId && x.IsActive &&
+                    (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow) && x.Role == OrganizationRole.Admin, ct);
+                if (!otherAdmins) return Results.Conflict(new { error = "last_organization_admin" });
+            }
 
             membership.ChangeAccess(request.Role, request.EmployerAccessMode);
             membership.ChangePermissions(request.CanCreateEmployer, request.CanEditEmployer, request.CanCreateEmployee, request.CanEditEmployee,
