@@ -16,7 +16,7 @@ public sealed class OrganizationEntitlementLockConcurrencyTests
         await using var second = CreateDb(cs);
         var organizationId = Guid.NewGuid();
 
-        await using var firstLease = await new OrganizationEntitlementLock(first).AcquireAsync(organizationId);
+        await using var firstLease = await new OrganizationEntitlementLock(first).AcquireAsync(organizationId, TestContext.Current.CancellationToken);
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(350));
         var secondAcquire = new OrganizationEntitlementLock(second).AcquireAsync(organizationId, timeout.Token);
@@ -37,7 +37,7 @@ public sealed class OrganizationEntitlementLockConcurrencyTests
 
         await using var first = CreateDb(cs);
         await using var second = CreateDb(cs);
-        await using var firstLease = await new OrganizationEntitlementLock(first).AcquireAsync(Guid.NewGuid());
+        await using var firstLease = await new OrganizationEntitlementLock(first).AcquireAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await using var secondLease = await new OrganizationEntitlementLock(second).AcquireAsync(Guid.NewGuid(), timeout.Token);
     }
