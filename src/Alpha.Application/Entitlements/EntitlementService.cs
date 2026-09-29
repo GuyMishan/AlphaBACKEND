@@ -8,6 +8,9 @@ namespace Alpha.Application.Entitlements;
 
 public sealed class EntitlementService(IAlphaDbContext db)
 {
+    public Task AcquireOrganizationLimitLock(Guid organizationId, CancellationToken ct = default) =>
+        db.Database.ExecuteSqlInterpolatedAsync($@"SELECT pg_advisory_xact_lock(hashtextextended({organizationId.ToString()}, 0))", ct);
+
     public const string ReportTransmissionFeature = "report_transmission";
 
     public async Task<int?> GetEmployerLimit(Guid organizationId, CancellationToken ct = default)
