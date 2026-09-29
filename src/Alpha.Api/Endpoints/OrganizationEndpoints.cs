@@ -67,13 +67,16 @@ public static class OrganizationEndpoints
         });
 
         group.MapPost("/{organizationId:guid}/memberships", async (Guid organizationId, AddMembershipRequest request,
-            IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access, HttpContext http, CancellationToken ct) =>
+            IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access, EntitlementService entitlements, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
             if (!await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsActive, ct))
                 return Results.BadRequest(new { error = "User does not exist or is inactive." });
             if (await db.OrganizationMemberships.AnyAsync(x => x.UserId == request.UserId && x.OrganizationId == organizationId, ct))
                 return Results.Conflict(new { error = "Membership already exists." });
+            var entitlement = await entitlements.CanInviteUser(organizationId, request.UserId, ct);
+            if (!entitlement.Allowed)
+                return Results.Json(new { error = entitlement.Error, limit = entitlement.Limit, current = entitlement.Current, maximum = entitlement.Maximum }, statusCode: StatusCodes.Status409Conflict);
             var item = new OrganizationMembership(request.UserId, organizationId, request.Role,
                 request.EmployerAccessMode, user.UserId);
             db.OrganizationMemberships.Add(item);
