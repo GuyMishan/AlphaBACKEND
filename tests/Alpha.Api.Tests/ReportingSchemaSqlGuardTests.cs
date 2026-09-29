@@ -30,6 +30,19 @@ public sealed class ReportingSchemaSqlGuardTests
         Assert.True(index > column, "The lookup-hash index must be created only after the column exists.");
     }
 
+    [Fact]
+    public void Reporting_database_functions_pin_their_search_path()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Infrastructure", "Persistence", "PensionFundSnapshotSchemaInitializer.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Equal(3, Count(source, "SET search_path = reporting, pg_temp"));
+        Assert.Contains("reporting.recalculate_report_product_salaries", source, StringComparison.Ordinal);
+        Assert.Contains("reporting.recalculate_report_product_salaries_trigger", source, StringComparison.Ordinal);
+        Assert.Contains("reporting.sync_manual_contribution_amount", source, StringComparison.Ordinal);
+    }
+
     private static int Count(string value, string token)
     {
         var count = 0;
