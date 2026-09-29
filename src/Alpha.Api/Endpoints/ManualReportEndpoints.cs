@@ -275,7 +275,7 @@ public static class ManualReportEndpoints
     }
 
     private static async Task<IResult> GetDepositsAsync(Guid organizationId, Guid employerId, Guid reportId,
-        string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
