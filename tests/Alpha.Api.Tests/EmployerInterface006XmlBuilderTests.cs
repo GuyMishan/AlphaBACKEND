@@ -821,6 +821,23 @@ public sealed class EmployerInterface006XmlBuilderTests
         Assert.Contains(workbookIssues, x => x.Contains("must reference the original report", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("1", ContributionParty.Employer, ContributionComponent.Severance)]
+    [InlineData("2", ContributionParty.Employee, ContributionComponent.Benefits)]
+    [InlineData("3", ContributionParty.Employer, ContributionComponent.Benefits)]
+    [InlineData("4", ContributionParty.Employee, ContributionComponent.Severance)]
+    [InlineData("5", ContributionParty.Employee, ContributionComponent.Disability)]
+    [InlineData("6", ContributionParty.Employer, ContributionComponent.Disability)]
+    [InlineData("7", ContributionParty.Employee, ContributionComponent.Other)]
+    [InlineData("8", ContributionParty.Employer, ContributionComponent.Other)]
+    public void Imported_official_contribution_codes_map_to_the_same_canonical_components_used_by_export(
+        string code, ContributionParty expectedParty, ContributionComponent expectedComponent)
+    {
+        var mapped = EmployerInterfaceService.MapContribution(code);
+        Assert.Equal(expectedParty, mapped.Item1);
+        Assert.Equal(expectedComponent, mapped.Item2);
+    }
+
     private static (EmployerInterface006XmlBuilder.BuildContext Context, ManualReportProduct Product) CreateFixture(
         bool negative, int? operationCode = null, int? previousExceptionCode = 1, int? section14Code = null,
         string employerMobile = "0501234567", int? paymentMethodCode = 1, string policyNumber = "123",
