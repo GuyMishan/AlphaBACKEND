@@ -350,7 +350,7 @@ public static class PaymentProviderEndpoints
             .AnyAsync(x => x.Provider == provider.Name && x.EventKey == eventKey, ct))
             return Results.Ok(new { ok = true, duplicate = true });
 
-        var webhook = new ProviderWebhookEvent(provider.Name, eventKey, payloadHash, rawBody);
+        var webhook = new ProviderWebhookEvent(provider.Name, eventKey, payloadHash, string.Empty);
         db.ProviderWebhookEvents.Add(webhook);
         try
         {
