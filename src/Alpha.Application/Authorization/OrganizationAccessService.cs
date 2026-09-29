@@ -68,9 +68,9 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
 
         if (membership is not null)
         {
-            if (!membership.CanEditEmployer) return false;
+            if (membership.Role != OrganizationRole.Admin || !membership.CanEditEmployer) return false;
             if (membership.EmployerAccessMode == EmployerAccessMode.AllEmployers) return true;
-            return directRole is EmployerRole.Owner or EmployerRole.Admin or EmployerRole.User;
+            return directRole is EmployerRole.Owner or EmployerRole.Admin;
         }
 
         return directRole is EmployerRole.Owner or EmployerRole.Admin;
