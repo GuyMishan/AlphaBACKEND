@@ -157,7 +157,8 @@ public static class ReportAttachmentEndpoints
             return Results.BadRequest(new { error = "The uploaded file failed the security scan." });
 
         var attachment = new ManualReportAttachment(reportId, reportProductId, documentTypeCode,
-            Path.GetFileName(file.FileName), "application/pdf", protector.ProtectBytes(bytes, $"report-attachment:{reportId}:{reportProductId}:{documentTypeCode}"));
+            Path.GetFileName(file.FileName), "application/pdf", protector.ProtectBytes(bytes, $"report-attachment:{reportId}:{reportProductId}:{documentTypeCode}"),
+            bytes.LongLength, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant());
         db.ManualReportAttachments.Add(attachment);
         report.MarkDirty();
         await db.SaveChangesAsync(ct);
