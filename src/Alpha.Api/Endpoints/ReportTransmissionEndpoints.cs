@@ -81,7 +81,7 @@ public static class ReportTransmissionEndpoints
         {
             reservation = await fileSequences.ReserveAsync(employerId, ct);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
             report.MarkTransmissionError("Transmission file sequence could not be reserved.");
             await db.SaveChangesAsync(ct);
@@ -131,7 +131,7 @@ public static class ReportTransmissionEndpoints
             return Results.Ok(ToResponse(report, transmission, generated.Validation));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex)
+        catch (Exception)
         {
             transmission.Complete(ReportTransmissionStatus.Error, null, null, "Transmission provider failed.");
             report.MarkTransmissionError("Transmission provider failed.");
