@@ -10,10 +10,11 @@ using Alpha.Application.Reporting;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
+using Alpha.Infrastructure.Persistence;
 
 namespace Alpha.Api.Services;
 
-public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfaceSchemaRegistry schemas, ReportPaymentAccountService paymentAccounts, IDataProtectionService protector, EntitlementService entitlements)
+public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfaceSchemaRegistry schemas, ReportPaymentAccountService paymentAccounts, IDataProtectionService protector, EntitlementService entitlements, OrganizationEntitlementLock entitlementLock)
 {
     public const string CurrentVersion = EmployerInterfaceSchemaRegistry.Version;
     private static readonly UTF8Encoding Utf8NoBom = new(false);
@@ -266,6 +267,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
     private async Task<IngestResult> ImportReportAsync(Guid organizationId, Guid employerId, byte[] bytes,
         FileValidation validation, Guid? paymentAccountId, DateOnly? salaryPaymentDate, CancellationToken ct)
     {
+        await using var entitlementLease = await entitlementLock.AcquireAsync(organizationId, ct);
         var doc = EmployerInterfaceSchemaRegistry.LoadXml(bytes);
         var nodes = Desc(doc, "PirteiOved").ToList();
         if (nodes.Count == 0) return InvalidIngest(validation, "No PirteiOved records were found.");
