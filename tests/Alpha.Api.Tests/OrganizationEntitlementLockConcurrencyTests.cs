@@ -42,6 +42,92 @@ public sealed class OrganizationEntitlementLockConcurrencyTests
         await using var secondLease = await new OrganizationEntitlementLock(second).AcquireAsync(Guid.NewGuid(), timeout.Token);
     }
 
+    [Fact]
+    public async Task Concurrent_limit_one_check_and_write_allows_exactly_one_winner()
+    {
+        var cs = Environment.GetEnvironmentVariable("ALPHA_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(cs)) return;
+        var ct = TestContext.Current.CancellationToken;
+        var organizationId = Guid.NewGuid();
+
+        await using (var setup = CreateDb(cs))
+        {
+            await setup.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS public.entitlement_race_probe (
+                    id uuid PRIMARY KEY,
+                    organization_id uuid NOT NULL
+                )
+                """, ct);
+        }
+
+        var attempts = Enumerable.Range(0, 12).Select(async _ =>
+        {
+            await using var db = CreateDb(cs);
+            await using var lease = await new OrganizationEntitlementLock(db).AcquireAsync(organizationId, ct);
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.Transaction = db.Database.CurrentTransaction!.GetDbTransaction();
+            command.CommandText = "SELECT COUNT(*) FROM public.entitlement_race_probe WHERE organization_id = @organizationId";
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "organizationId";
+            parameter.Value = organizationId;
+            command.Parameters.Add(parameter);
+            var current = Convert.ToInt32(await command.ExecuteScalarAsync(ct));
+            if (current >= 1) return false;
+
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"INSERT INTO public.entitlement_race_probe (id, organization_id) VALUES ({Guid.NewGuid()}, {organizationId})", ct);
+            await lease.CommitAsync(ct);
+            return true;
+        });
+
+        var results = await Task.WhenAll(attempts);
+        Assert.Equal(1, results.Count(x => x));
+
+        await using var verify = CreateDb(cs);
+        await using var verifyCommand = verify.Database.GetDbConnection().CreateCommand();
+        await verify.Database.OpenConnectionAsync(ct);
+        verifyCommand.CommandText = "SELECT COUNT(*) FROM public.entitlement_race_probe WHERE organization_id = @organizationId";
+        var verifyParameter = verifyCommand.CreateParameter();
+        verifyParameter.ParameterName = "organizationId";
+        verifyParameter.Value = organizationId;
+        verifyCommand.Parameters.Add(verifyParameter);
+        Assert.Equal(1, Convert.ToInt32(await verifyCommand.ExecuteScalarAsync(ct)));
+    }
+
+    [Fact]
+    public async Task Disposing_without_commit_rolls_back_guarded_write()
+    {
+        var cs = Environment.GetEnvironmentVariable("ALPHA_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(cs)) return;
+        var ct = TestContext.Current.CancellationToken;
+        var organizationId = Guid.NewGuid();
+
+        await using (var setup = CreateDb(cs))
+            await setup.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS public.entitlement_race_probe (
+                    id uuid PRIMARY KEY,
+                    organization_id uuid NOT NULL
+                )
+                """, ct);
+
+        await using (var db = CreateDb(cs))
+        {
+            await using var lease = await new OrganizationEntitlementLock(db).AcquireAsync(organizationId, ct);
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"INSERT INTO public.entitlement_race_probe (id, organization_id) VALUES ({Guid.NewGuid()}, {organizationId})", ct);
+        }
+
+        await using var verify = CreateDb(cs);
+        await verify.Database.OpenConnectionAsync(ct);
+        await using var command = verify.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM public.entitlement_race_probe WHERE organization_id = @organizationId";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "organizationId";
+        parameter.Value = organizationId;
+        command.Parameters.Add(parameter);
+        Assert.Equal(0, Convert.ToInt32(await command.ExecuteScalarAsync(ct)));
+    }
+
     private static AlphaDbContext CreateDb(string connectionString)
     {
         var options = new DbContextOptionsBuilder<AlphaDbContext>()
