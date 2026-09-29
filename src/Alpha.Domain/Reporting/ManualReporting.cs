@@ -192,8 +192,9 @@ public sealed class ManualReportEmployee : Entity
         string? email, string? mobile, string? city, string? street, string? houseNumber, string? apartment,
         string? postalCode, string? postOfficeBox, DateOnly? employmentStartDate)
     {
-        if (identifierType <= 0) throw new ArgumentOutOfRangeException(nameof(identifierType));
-        if (string.IsNullOrWhiteSpace(identifier)) throw new ArgumentException("Employee interface identifier is required.", nameof(identifier));
+        if (identifierType is not (1 or 2)) throw new ArgumentOutOfRangeException(nameof(identifierType), "Employer Interface 006 employee identifier type must be 1 (Israeli ID) or 2 (passport).");
+        if (string.IsNullOrWhiteSpace(identifier) || identifier.Trim().Length > 16)
+            throw new ArgumentException("Employer Interface 006 employee identifier is required and limited to 16 characters.", nameof(identifier));
         InterfaceIdentifierType = identifierType;
         InterfaceIdentifier = identifier.Trim();
         BirthDateSnapshot = birthDate;

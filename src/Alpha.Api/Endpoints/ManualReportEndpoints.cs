@@ -492,10 +492,11 @@ public static class ManualReportEndpoints
                 request.Snapshot.BirthDate, request.Snapshot.Gender, request.Snapshot.Email, request.Snapshot.Mobile,
                 request.Snapshot.City, request.Snapshot.Street, request.Snapshot.HouseNumber, request.Snapshot.Apartment,
                 request.Snapshot.PostalCode, request.Snapshot.PostOfficeBox, request.Snapshot.EmploymentStartDate);
-            var nationalId = protector.Unprotect(employee.NationalId, $"report-employee-national-id:{employee.Id}");
-            employee.SetProtectedIdentifiers(employee.NationalId,
-                protector.LookupHash(nationalId, "report-employee-national-id-lookup"),
-                protector.Protect(request.Snapshot.Identifier, $"report-employee-interface-id:{employee.Id}"));
+            var snapshotIdentifier = request.Snapshot.Identifier.Trim();
+            employee.SetProtectedIdentifiers(
+                protector.Protect(snapshotIdentifier, $"report-employee-national-id:{employee.Id}"),
+                protector.LookupHash(snapshotIdentifier, "report-employee-national-id-lookup"),
+                protector.Protect(snapshotIdentifier, $"report-employee-interface-id:{employee.Id}"));
             employee.SetProtectedContactSnapshot(
                 protector.Protect(request.Snapshot.Email ?? string.Empty, $"report-employee-email:{employee.Id}"),
                 protector.Protect(request.Snapshot.Mobile ?? string.Empty, $"report-employee-mobile:{employee.Id}"));
