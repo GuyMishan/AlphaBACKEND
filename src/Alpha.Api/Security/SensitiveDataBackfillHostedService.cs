@@ -64,6 +64,27 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
             }
         }
 
+        var reportEmployees = await db.ManualReportEmployees.ToListAsync(stoppingToken);
+        var protectedReportEmployeeIds = 0;
+        foreach (var employee in reportEmployees)
+        {
+            var nationalId = protector.Unprotect(employee.NationalId, $"report-employee-national-id:{employee.Id}").Trim();
+            var interfaceIdentifier = protector.Unprotect(employee.InterfaceIdentifier, $"report-employee-interface-id:{employee.Id}").Trim();
+            if (string.IsNullOrWhiteSpace(nationalId) || string.IsNullOrWhiteSpace(interfaceIdentifier))
+                throw new InvalidOperationException($"Report employee {employee.Id} has no recoverable identifier.");
+            var expectedHash = protector.LookupHash(nationalId, "report-employee-national-id-lookup");
+            var nationalProtected = employee.NationalId.StartsWith("alpha:v1:", StringComparison.Ordinal);
+            var interfaceProtected = employee.InterfaceIdentifier.StartsWith("alpha:v1:", StringComparison.Ordinal);
+            if (!nationalProtected || !interfaceProtected || !string.Equals(employee.NationalIdLookupHash, expectedHash, StringComparison.Ordinal))
+            {
+                employee.SetProtectedIdentifiers(
+                    nationalProtected ? employee.NationalId : protector.Protect(nationalId, $"report-employee-national-id:{employee.Id}"),
+                    expectedHash,
+                    interfaceProtected ? employee.InterfaceIdentifier : protector.Protect(interfaceIdentifier, $"report-employee-interface-id:{employee.Id}"));
+                protectedReportEmployeeIds++;
+            }
+        }
+
         var reportPayments = await db.ManualReportPayments.ToListAsync(stoppingToken);
         var protectedReportAccounts = 0;
         foreach (var payment in reportPayments)
@@ -110,6 +131,6 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
         }
 
         await db.SaveChangesAsync(stoppingToken);
-        logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {ProtectedAccounts} payment accounts encrypted, {RefreshedAccountHashes} account hashes refreshed, {ProtectedReportAccounts} report payment account snapshots encrypted, {ProtectedTransmissions} report transmission payloads encrypted, {ProtectedFeedback} clearinghouse feedback payloads encrypted, {ProtectedAttachments} report attachments encrypted.", protectedPeople, refreshedHashes, protectedAccounts, refreshedAccountHashes, protectedReportAccounts, protectedTransmissions, protectedFeedback, protectedAttachments);
+        logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {ProtectedAccounts} payment accounts encrypted, {RefreshedAccountHashes} account hashes refreshed, {ProtectedReportEmployeeIds} report employee identifiers protected, {ProtectedReportAccounts} report payment account snapshots encrypted, {ProtectedTransmissions} report transmission payloads encrypted, {ProtectedFeedback} clearinghouse feedback payloads encrypted, {ProtectedAttachments} report attachments encrypted.", protectedPeople, refreshedHashes, protectedAccounts, refreshedAccountHashes, protectedReportEmployeeIds, protectedReportAccounts, protectedTransmissions, protectedFeedback, protectedAttachments);
     }
 }
