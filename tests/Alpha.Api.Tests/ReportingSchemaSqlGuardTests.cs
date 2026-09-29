@@ -17,6 +17,19 @@ public sealed class ReportingSchemaSqlGuardTests
             Count(source, "END $$;"));
     }
 
+    [Fact]
+    public void Reporting_schema_adds_national_id_lookup_hash_before_creating_its_index()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Infrastructure", "Persistence", "ReportingSchemaInitializer.cs");
+        var source = File.ReadAllText(path);
+
+        var column = source.IndexOf("ADD COLUMN IF NOT EXISTS \"NationalIdLookupHash\"", StringComparison.Ordinal);
+        var index = source.IndexOf("IX_manual_report_employees_report_national_id_hash", StringComparison.Ordinal);
+        Assert.True(column >= 0, "NationalIdLookupHash migration is missing.");
+        Assert.True(index > column, "The lookup-hash index must be created only after the column exists.");
+    }
+
     private static int Count(string value, string token)
     {
         var count = 0;
