@@ -24,6 +24,7 @@
 - Provider boundary: `Alpha.Application/Billing/IPaymentProvider.cs`.
 - Adapters: `Alpha.Api/Services/CardComPaymentProvider.cs`, `PayPlusPaymentProvider.cs`, `PaymentProviderResolver.cs`.
 - Persistence: `Billing*SchemaInitializer.cs`, `BillingConfigurations.cs`.
+- Free-plan quota mutations are serialized per organization by `Alpha.Infrastructure/Persistence/OrganizationEntitlementLock.cs`; guarded writes require an explicit transaction commit and otherwise roll back. PostgreSQL concurrency/rollback coverage lives in `OrganizationEntitlementLockConcurrencyTests.cs`.
 
 ## Employer Interface 006 / reporting
 - Endpoints: `EmployerInterfaceEndpoints.cs`, `ManualReportEndpoints.cs`, `ReportValidationEndpoints.cs`, `ReportTransmissionEndpoints.cs`, `ReportFeedbackEndpoints.cs`, `DerivedReportEndpoints.cs`.
@@ -39,7 +40,7 @@
 These sources outrank assumptions, old examples and UI behavior.
 
 ## Security
-- `src/Alpha.Api/Security/*` — encryption/data protection, headers, audit, malware scanning, retention and session activity.
+- `src/Alpha.Api/Security/*` — encryption/data protection, headers, audit, malware scanning, retention and session activity. `SessionActivityMiddleware` rejects revoked/expired/idle sessions and sessions whose user has been deactivated.
 - `src/Alpha.Domain/Auditing/AuditEvent.cs`.
 
 ## Database
