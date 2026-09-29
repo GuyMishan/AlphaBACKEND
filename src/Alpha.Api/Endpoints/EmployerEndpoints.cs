@@ -50,10 +50,11 @@ public static class EmployerEndpoints
         });
 
         group.MapPost("/", async (Guid organizationId, CreateEmployerRequest request, IAlphaDbContext db,
-            ICurrentUser user, OrganizationAccessService access, EntitlementService entitlements,
+            ICurrentUser user, OrganizationAccessService access, EntitlementService entitlements, OrganizationEntitlementLock entitlementLock,
             BillingInheritanceService billingInheritance, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanCreateEmployerAsync(organizationId, ct)) return Results.Forbid();
+            await using var entitlementLease = await entitlementLock.AcquireAsync(organizationId, ct);
             var entitlement = await entitlements.CanCreateEmployer(organizationId, ct);
             if (!entitlement.Allowed) return EntitlementError(entitlement);
             var validationError = ApiInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber, request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
@@ -143,9 +144,10 @@ public static class EmployerEndpoints
 
         group.MapPost("/{employerId:guid}/employees", async (Guid organizationId, Guid employerId,
             CreateEmployeeRequest request, IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access,
-            EntitlementService entitlements, IDataProtectionService protector, HttpContext http, CancellationToken ct) =>
+            EntitlementService entitlements, OrganizationEntitlementLock entitlementLock, IDataProtectionService protector, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanCreateEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+            await using var entitlementLease = await entitlementLock.AcquireAsync(organizationId, ct);
             var entitlement = await entitlements.CanCreateEmployee(organizationId, ct);
             if (!entitlement.Allowed) return EntitlementError(entitlement);
             var validationError = ApiInputValidation.Employee(request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate)
