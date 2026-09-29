@@ -69,14 +69,12 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
         foreach (var transmission in transmissions)
         {
             if (transmission.Payload.Length == 0) continue;
-            var protectedPayload = protector.ProtectBytes(
-                protector.UnprotectBytes(transmission.Payload, $"report-transmission:{transmission.Id}"),
-                $"report-transmission:{transmission.Id}");
-            if (!transmission.Payload.AsSpan().SequenceEqual(protectedPayload))
-            {
-                db.Entry(transmission).Property(x => x.Payload).CurrentValue = protectedPayload;
-                protectedTransmissions++;
-            }
+            var payload = transmission.Payload;
+            var alreadyProtected = payload.Length >= 4 && payload[0] == (byte)'A' && payload[1] == (byte)'L' && payload[2] == (byte)'P' && payload[3] == 1;
+            if (alreadyProtected) continue;
+            db.Entry(transmission).Property(x => x.Payload).CurrentValue =
+                protector.ProtectBytes(payload, $"report-transmission:{transmission.Id}");
+            protectedTransmissions++;
         }
 
         await db.SaveChangesAsync(stoppingToken);
