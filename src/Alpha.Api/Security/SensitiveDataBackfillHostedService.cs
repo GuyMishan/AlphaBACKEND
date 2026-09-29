@@ -64,7 +64,22 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
             }
         }
 
+        var transmissions = await db.ReportTransmissions.ToListAsync(stoppingToken);
+        var protectedTransmissions = 0;
+        foreach (var transmission in transmissions)
+        {
+            if (transmission.Payload.Length == 0) continue;
+            var protectedPayload = protector.ProtectBytes(
+                protector.UnprotectBytes(transmission.Payload, $"report-transmission:{transmission.Id}"),
+                $"report-transmission:{transmission.Id}");
+            if (!transmission.Payload.AsSpan().SequenceEqual(protectedPayload))
+            {
+                db.Entry(transmission).Property(x => x.Payload).CurrentValue = protectedPayload;
+                protectedTransmissions++;
+            }
+        }
+
         await db.SaveChangesAsync(stoppingToken);
-        logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {ProtectedAccounts} payment accounts encrypted, {RefreshedAccountHashes} account hashes refreshed.", protectedPeople, refreshedHashes, protectedAccounts, refreshedAccountHashes);
+        logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {ProtectedAccounts} payment accounts encrypted, {RefreshedAccountHashes} account hashes refreshed, {ProtectedTransmissions} report transmission payloads encrypted.", protectedPeople, refreshedHashes, protectedAccounts, refreshedAccountHashes, protectedTransmissions);
     }
 }
