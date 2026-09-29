@@ -384,16 +384,26 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             {
                 // Importing a report must not mutate existing employee master data. The incoming
                 // values are preserved on ManualReportEmployee as an immutable report snapshot.
-                var nationalIdHash = identifierType == 1 ? protector.LookupHash(normalizedIdentifier, "person-national-id-lookup") : null;
-                var person = nationalIdHash is null ? null : await db.People.FirstOrDefaultAsync(x =>
+                // Alpha's employee master currently uses an Israeli national-ID lookup hash as its
+                // canonical identity key. Passport identifiers (SUG-MEZAHE-OVED=2) are valid on the
+                // 006 wire, but must not be silently created as a Person national ID because that would
+                // corrupt the master-data identity model. Preserve them only when a future passport-aware
+                // employee identity model can resolve them explicitly.
+                if (identifierType != 1)
+                {
+                    unmatched++;
+                    continue;
+                }
+
+                var nationalIdHash = protector.LookupHash(normalizedIdentifier, "person-national-id-lookup");
+                var person = await db.People.FirstOrDefaultAsync(x =>
                     x.OrganizationId == organizationId && x.NationalIdLookupHash == nationalIdHash, ct);
                 if (person is null)
                 {
                     if (firstName.Length == 0 || lastName.Length == 0) { unmatched++; continue; }
                     person = new Person(organizationId, normalizedIdentifier, firstName, lastName, birthDate, gender, email, mobile,
                         city, street, houseNumber, apartment, postalCode, postOfficeBox);
-                    if (identifierType == 1)
-                        person.SetProtectedNationalId(protector.Protect(normalizedIdentifier, "person-national-id"), nationalIdHash!);
+                    person.SetProtectedNationalId(protector.Protect(normalizedIdentifier, "person-national-id"), nationalIdHash);
                     db.People.Add(person);
                 }
 
