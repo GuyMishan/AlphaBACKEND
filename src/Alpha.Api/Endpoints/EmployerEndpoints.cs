@@ -66,6 +66,7 @@ public static class EmployerEndpoints
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.created", nameof(Employer), item.Id,
                 organizationId, item.Id, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
+            await entitlementLease.CommitAsync(ct);
             return Results.Created($"/api/organizations/{organizationId}/employers/{item.Id}", item);
         });
 
@@ -182,6 +183,7 @@ public static class EmployerEndpoints
             db.Employments.Add(employment);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.created", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(new { employment.EmployeeNumber, person.FirstName, person.LastName }), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
+            await entitlementLease.CommitAsync(ct);
             return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/employees/{employment.Id}", new { employment.Id, PersonId = person.Id, employment.MonthlySalary });
         });
 
