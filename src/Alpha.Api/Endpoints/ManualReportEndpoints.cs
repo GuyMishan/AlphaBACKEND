@@ -381,7 +381,7 @@ public static class ManualReportEndpoints
 
     private static async Task<IResult> SaveDepositPaymentAsync(Guid organizationId, Guid employerId, Guid reportId,
         Guid reportProductId, SaveManualReportPaymentRequest request, IAlphaDbContext db,
-        OrganizationAccessService access, CancellationToken ct)
+        OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId
@@ -404,7 +404,7 @@ public static class ManualReportEndpoints
         }
         payment.Update(request.ProviderName, request.ProviderAccount, request.PaymentMethod, request.ValueDate,
             request.TrustAccountValueDate, request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode,
-            request.EmployerBranch, request.EmployerAccount, request.ConfirmationFileName,
+            request.EmployerBranch, protector.Protect(request.EmployerAccount ?? string.Empty, $"report-payment-account:{reportProductId}"), request.ConfirmationFileName,
             request.ActualDepositAmount, request.MasavSenderCode);
         report.MarkDirty();
         await db.SaveChangesAsync(ct);
