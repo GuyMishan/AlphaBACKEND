@@ -123,9 +123,6 @@ CREATE INDEX IF NOT EXISTS "IX_manual_reports_scope_month"
     ON reporting.manual_reports ("OrganizationId", "EmployerId", "ReportingMonth");
 CREATE INDEX IF NOT EXISTS "IX_manual_reports_source"
     ON reporting.manual_reports ("SourceReportId");
-CREATE INDEX IF NOT EXISTS "IX_manual_report_employees_report_national_id_hash"
-    ON reporting.manual_report_employees ("ReportId", "NationalIdLookupHash");
-
 CREATE TABLE IF NOT EXISTS reporting.manual_report_employees (
     "Id" uuid PRIMARY KEY,
     "ReportId" uuid NOT NULL REFERENCES reporting.manual_reports("Id") ON DELETE CASCADE,
@@ -151,6 +148,9 @@ ALTER TABLE reporting.manual_report_employees ALTER COLUMN "EmailSnapshot" TYPE 
 ALTER TABLE reporting.manual_report_employees ALTER COLUMN "MobileSnapshot" TYPE text;
 ALTER TABLE reporting.manual_report_employees ALTER COLUMN "NationalId" TYPE text;
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "NationalIdLookupHash" varchar(64) NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS "IX_manual_report_employees_report_national_id_hash"
+    ON reporting.manual_report_employees ("ReportId", "NationalIdLookupHash");
+
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "MonthlySalary" numeric(18,2) NOT NULL DEFAULT 0;
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "InterfaceIdentifierType" integer NOT NULL DEFAULT 1;
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "InterfaceIdentifier" text NOT NULL DEFAULT '';
