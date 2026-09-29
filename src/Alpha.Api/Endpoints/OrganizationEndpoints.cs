@@ -38,6 +38,7 @@ public static class OrganizationEndpoints
             db.AuditEvents.Add(new AuditEvent(user.UserId, "organization.created", nameof(Organization), organization.Id,
                 organization.Id, null, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
+            await entitlementLease.CommitAsync(ct);
             return Results.Created($"/api/organizations/{organization.Id}", organization);
         });
 
@@ -85,6 +86,7 @@ public static class OrganizationEndpoints
             db.AuditEvents.Add(new AuditEvent(user.UserId, "membership.created", nameof(OrganizationMembership), item.Id,
                 organizationId, null, JsonSerializer.Serialize(request), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
+            await entitlementLease.CommitAsync(ct);
             return Results.Created($"/api/organizations/{organizationId}/memberships/{item.Id}", item);
         });
 
@@ -108,6 +110,7 @@ public static class OrganizationEndpoints
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "employer.access.granted", nameof(EmployerUserAccess),
                 grant.Id, organizationId, employerId, JsonSerializer.Serialize(new { userId, employerId }), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
+            await entitlementLease.CommitAsync(ct);
             return Results.Created($"/api/organizations/{organizationId}/memberships/{userId}/employers/{employerId}", grant);
         });
         return endpoints;
