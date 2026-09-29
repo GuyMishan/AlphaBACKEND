@@ -125,7 +125,7 @@ public static class ReportFeedbackEndpoints
         var officialFeedback = await db.EmployerInterfaceFeedback.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.ReportId == reportId)
             .OrderByDescending(x => x.ReceivedAt)
-            .Select(x => new { x.Id, x.DocumentType, x.SourceFileName, x.FileNumber, x.PayloadHash, x.TransmissionId, x.ReceivedAt })
+            .Select(x => new { x.Id, x.DocumentType, x.SourceFileName, x.InterfaceFileNumber, x.PayloadHash, x.TransmissionId, x.ReceivedAt })
             .ToListAsync(ct);
 
         var employees = await db.ManualReportEmployees.AsNoTracking()
