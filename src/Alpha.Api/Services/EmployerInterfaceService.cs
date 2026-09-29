@@ -340,6 +340,12 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             Value(transferSnapshot, "MISPAR-CELLULARI-ISH-KESHER-MAASIK") ?? liveEmployer.ContactMobile,
             IntValue(transferSnapshot, "SUG-MAFKID") ?? 1,
             IntValue(transferSnapshot, "SUG-MEZAHE-MAASIK") ?? 1);
+        report.SetProtectedEmployerSnapshot(
+            protector.Protect(report.EmployerRegistrationNumberSnapshot, $"report-employer-registration:{report.Id}"),
+            protector.Protect(report.EmployerWithholdingFileNumberSnapshot, $"report-employer-withholding:{report.Id}"),
+            protector.Protect(report.EmployerContactPhoneSnapshot, $"report-employer-phone:{report.Id}"),
+            protector.Protect(report.EmployerContactEmailSnapshot, $"report-employer-email:{report.Id}"),
+            protector.Protect(report.EmployerContactMobileSnapshot, $"report-employer-mobile:{report.Id}"));
 
         var paymentAccount = await paymentAccounts.ResolveForReportAsync(employerId, paymentAccountId, ct);
         if (paymentAccount is null)
@@ -431,6 +437,9 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                     protector.Protect(reportEmployee.NationalId, $"report-employee-national-id:{reportEmployee.Id}"),
                     protector.LookupHash(reportEmployee.NationalId, "report-employee-national-id-lookup"),
                     protector.Protect(reportEmployee.InterfaceIdentifier, $"report-employee-interface-id:{reportEmployee.Id}"));
+                reportEmployee.SetProtectedContactSnapshot(
+                    protector.Protect(reportEmployee.EmailSnapshot, $"report-employee-email:{reportEmployee.Id}"),
+                    protector.Protect(reportEmployee.MobileSnapshot, $"report-employee-mobile:{reportEmployee.Id}"));
                 db.ManualReportEmployees.Add(reportEmployee);
                 employeeMap[employeeMapKey] = reportEmployee;
                 imported++;
