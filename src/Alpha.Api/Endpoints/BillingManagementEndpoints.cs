@@ -161,7 +161,7 @@ public static class BillingManagementEndpoints
                 paymentMethodType = account?.PaymentMethodType ?? BillingPaymentMethodType.CreditCard,
                 cardBrand = account?.CardBrand ?? string.Empty,
                 cardLast4 = account?.CardLast4 ?? string.Empty,
-                configured = account is not null,
+                configured = account?.PaymentMethodStatus == BillingPaymentMethodStatus.Active,
                 pensionPaymentConfigured = pensionPaymentAccounts.Any(x =>
                     x.OrganizationId == organization.Id && x.EmployerId == null),
                 pensionPaymentSource = "Organization",
@@ -208,7 +208,7 @@ public static class BillingManagementEndpoints
                 paymentMethodType = effectiveAccount?.PaymentMethodType ?? BillingPaymentMethodType.CreditCard,
                 cardBrand = effectiveAccount?.CardBrand ?? string.Empty,
                 cardLast4 = effectiveAccount?.CardLast4 ?? string.Empty,
-                configured = effectiveAccount is not null,
+                configured = effectiveAccount?.PaymentMethodStatus == BillingPaymentMethodStatus.Active,
                 pensionPaymentConfigured = effectivePensionPaymentAccount is not null,
                 pensionPaymentSource = pensionPaymentInherited ? "Organization" : "Employer",
                 pensionPaymentThroughName = pensionPaymentInherited ? organizationName : employer.LegalName,
