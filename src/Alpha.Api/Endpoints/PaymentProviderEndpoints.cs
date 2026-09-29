@@ -135,7 +135,7 @@ public static class PaymentProviderEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Json(new { error = "payment_provider_unavailable", detail = ex.Message },
+            return Results.Json(new { error = "payment_provider_unavailable" },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -206,7 +206,7 @@ public static class PaymentProviderEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Json(new { error = "payment_provider_unavailable", detail = ex.Message },
+            return Results.Json(new { error = "payment_provider_unavailable" },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -260,7 +260,7 @@ public static class PaymentProviderEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Json(new { error = "payment_provider_unavailable", detail = ex.Message },
+            return Results.Json(new { error = "payment_provider_unavailable" },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -303,7 +303,7 @@ public static class PaymentProviderEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Json(new { error = "payment_provider_unavailable", detail = ex.Message },
+            return Results.Json(new { error = "payment_provider_unavailable" },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -369,7 +369,7 @@ public static class PaymentProviderEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            webhook.Complete(ProviderWebhookStatus.Failed, ex.Message);
+            webhook.Complete(ProviderWebhookStatus.Failed, "provider_callback_validation_failed");
             await db.SaveChangesAsync(ct);
             return Results.Unauthorized();
         }
