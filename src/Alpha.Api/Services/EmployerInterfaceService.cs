@@ -438,6 +438,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
         if (imported == 0) return InvalidIngest(validation, "No employee records could be mapped into Alpha.", unmatched);
         await db.SaveChangesAsync(ct);
+        await entitlementLease.CommitAsync(ct);
         return new(report.Id, null, validation, imported, unmatched);
     }
 
