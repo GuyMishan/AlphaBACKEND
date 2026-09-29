@@ -510,7 +510,7 @@ public sealed class EmployerInterface006XmlBuilderTests
     public void Current_study_fund_rejects_other_contribution_codes()
     {
         var fixture = CreateFixture(false, productType: PensionProductType.StudyFund);
-        var contribution = new ManualContribution(fixture.Product.Id, ContributionParty.Employee, ContributionComponent.Benefits, 100m, 2.5m, 0m);
+        var contribution = new ManualContribution(fixture.Product.Id, ContributionParty.Employee, ContributionComponent.Severance, 100m, 2.5m, 0m);
         var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context with { Contributions = [contribution] });
 
         Assert.Null(result.Document);
