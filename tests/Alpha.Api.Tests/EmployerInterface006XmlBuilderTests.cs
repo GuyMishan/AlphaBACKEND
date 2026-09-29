@@ -495,7 +495,7 @@ public sealed class EmployerInterface006XmlBuilderTests
     public void Current_study_fund_accepts_only_employee_code_2_and_employer_code_3()
     {
         var fixture = CreateFixture(false, productType: PensionProductType.StudyFund);
-        var employee = new ManualContribution(fixture.Product.Id, ContributionParty.Employee, ContributionComponent.Severance, 100m, 2.5m, 0m);
+        var employee = new ManualContribution(fixture.Product.Id, ContributionParty.Employee, ContributionComponent.Benefits, 100m, 2.5m, 0m);
         var employer = new ManualContribution(fixture.Product.Id, ContributionParty.Employer, ContributionComponent.Benefits, 300m, 7.5m, 0m);
         var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context with { Contributions = [employee, employer] });
 
