@@ -84,9 +84,11 @@ public static class AccessEndpoints
 
             var existingIds = db.OrganizationMemberships.Where(x => x.OrganizationId == organizationId && x.IsActive)
                 .Select(x => x.UserId);
+            var relatedIds = db.OrganizationMemberships.Where(x => x.OrganizationId == organizationId).Select(x => x.UserId)
+                .Union(db.EmployerUserAccesses.Where(x => x.OrganizationId == organizationId).Select(x => x.UserId));
             var normalized = term.ToLower();
             var items = await db.Users.AsNoTracking()
-                .Where(x => x.IsActive && !existingIds.Contains(x.Id) &&
+                .Where(x => x.IsActive && relatedIds.Contains(x.Id) && !existingIds.Contains(x.Id) &&
                     (x.Email.StartsWith(normalized) || x.DisplayName.StartsWith(term)))
                 .OrderBy(x => x.DisplayName).ThenBy(x => x.Id)
                 .Select(x => new { x.Id, x.DisplayName, x.Email })
@@ -160,6 +162,13 @@ public static class AccessEndpoints
             var membership = await db.OrganizationMemberships.SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.UserId == userId && x.IsActive, ct);
             if (membership is null) return Results.NotFound();
+            if (membership.Role == OrganizationRole.Admin)
+            {
+                var otherAdmins = await db.OrganizationMemberships.AsNoTracking().AnyAsync(x =>
+                    x.OrganizationId == organizationId && x.UserId != userId && x.IsActive &&
+                    (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow) && x.Role == OrganizationRole.Admin, ct);
+                if (!otherAdmins) return Results.Conflict(new { error = "last_organization_admin" });
+            }
             membership.Deactivate();
             await db.EmployerUserAccesses.Where(x => x.OrganizationId == organizationId && x.UserId == userId)
                 .ExecuteDeleteAsync(ct);
