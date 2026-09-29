@@ -640,7 +640,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
     }
     private static PensionProductType MapProductType(string? code) => code switch { "1" => PensionProductType.ManagersInsurance, "2" => PensionProductType.PensionFund, "3" => PensionProductType.ProvidentFund, "4" => PensionProductType.StudyFund, _ => PensionProductType.Other };
     private static string MapProductCode(PensionProductType type) => type switch { PensionProductType.ManagersInsurance => "1", PensionProductType.PensionFund => "2", PensionProductType.ProvidentFund => "3", PensionProductType.StudyFund => "4", _ => "99" };
-    internal static (ContributionParty, ContributionComponent) MapContribution(string? code) => code switch
+    public static (ContributionParty, ContributionComponent) MapContribution(string? code) => code switch
     {
         "1" => (ContributionParty.Employer, ContributionComponent.Severance),
         // Employer Interface 006 SUG-HAFRASHA=2 is the regular employee contribution
