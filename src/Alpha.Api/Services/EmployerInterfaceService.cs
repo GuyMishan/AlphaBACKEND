@@ -401,6 +401,19 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                         return InvalidIngest(validation,
                             $"employee_limit_reached:{entitlement.Current}/{entitlement.Maximum}", unmatched);
 
+                    // CanCreateEmployee counts persisted rows only. Include employments staged earlier
+                    // in this import so a single oversized file cannot exceed the plan limit.
+                    var employeeLimit = await entitlements.GetEmployeeLimit(organizationId, ct);
+                    if (employeeLimit.HasValue)
+                    {
+                        var persistedActive = await db.Employments.AsNoTracking()
+                            .CountAsync(x => x.OrganizationId == organizationId && x.Status == EmploymentStatus.Active, ct);
+                        var staged = db.Employments.Local.Count(x => x.OrganizationId == organizationId && x.Status == EmploymentStatus.Active);
+                        if (persistedActive + staged >= employeeLimit.Value)
+                            return InvalidIngest(validation,
+                                $"employee_limit_reached:{persistedActive + staged}/{employeeLimit.Value}", unmatched);
+                    }
+
                     employment = new Employment(organizationId, employerId, person.Id, startDate, employeeNumber, xmlSalary);
                     db.Employments.Add(employment);
                 }
