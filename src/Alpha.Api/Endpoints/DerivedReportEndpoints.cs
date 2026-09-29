@@ -272,10 +272,12 @@ public static class DerivedReportEndpoints
 
         foreach (var oldPayment in sourcePayments)
         {
-            var clone = new ManualReportPayment(productMap[oldPayment.ReportProductId].Id);
+            var clonedProductId = productMap[oldPayment.ReportProductId].Id;
+            var employerAccount = protector.Unprotect(oldPayment.EmployerAccount, $"report-payment-account:{oldPayment.ReportProductId}");
+            var clone = new ManualReportPayment(clonedProductId);
             clone.Update(oldPayment.ProviderName, oldPayment.ProviderAccount, oldPayment.PaymentMethod, oldPayment.ValueDate,
                 oldPayment.TrustAccountValueDate, oldPayment.ReferenceNumber, oldPayment.EmployerBankName, oldPayment.EmployerBankCode,
-                oldPayment.EmployerBranch, oldPayment.EmployerAccount, oldPayment.ConfirmationFileName,
+                oldPayment.EmployerBranch, protector.Protect(employerAccount, $"report-payment-account:{clonedProductId}"), oldPayment.ConfirmationFileName,
                 oldPayment.ActualDepositAmount, oldPayment.MasavSenderCode);
             db.ManualReportPayments.Add(clone);
         }
