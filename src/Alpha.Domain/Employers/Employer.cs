@@ -23,7 +23,7 @@ public sealed class Employer : Entity
     public string LegalName { get; private set; } = string.Empty;
     public string RegistrationNumber { get; private set; } = string.Empty;
     public string WithholdingFileNumber { get; private set; } = string.Empty;
-    public EmployerStatus Status { get; private set; } = EmployerStatus.Onboarding;
+    public EmployerStatus Status { get; private set; } = EmployerStatus.Active;
     public string ContactFirstName { get; private set; } = string.Empty;
     public string ContactLastName { get; private set; } = string.Empty;
     public string ContactPhone { get; private set; } = string.Empty;

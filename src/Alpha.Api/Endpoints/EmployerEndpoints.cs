@@ -117,8 +117,8 @@ public static class EmployerEndpoints
             HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-            if (request.Status is not (EmployerStatus.Onboarding or EmployerStatus.Active or EmployerStatus.Closed))
-                return Results.BadRequest(new { error = "Employer status must be Onboarding, Active or Closed." });
+            if (request.Status is not (EmployerStatus.Active or EmployerStatus.Closed))
+                return Results.BadRequest(new { error = "Employer status must be Active or Closed." });
 
             var item = await db.Employers.SingleOrDefaultAsync(x =>
                 x.Id == employerId && x.OrganizationId == organizationId, ct);

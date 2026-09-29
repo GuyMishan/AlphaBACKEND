@@ -8,6 +8,10 @@ public static class EmployerProfileSchemaInitializer
     public static async Task EnsureCreatedAsync(AlphaDbContext db, CancellationToken ct = default)
     {
         const string sql = """
+            UPDATE employers.employers
+            SET "Status" = 'Active', "UpdatedAt" = now()
+            WHERE "Status" IN ('Onboarding', 'Suspended');
+
             CREATE TABLE IF NOT EXISTS employers.employer_profile_settings (
                 "Id" uuid NOT NULL PRIMARY KEY,
                 "EmployerId" uuid NULL,
