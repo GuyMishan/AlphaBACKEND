@@ -195,8 +195,10 @@ public static class AccessEndpoints
             membership?.Deactivate();
             await db.EmployerUserAccesses.Where(x => x.OrganizationId == organizationId && x.UserId == userId)
                 .ExecuteDeleteAsync(ct);
-            db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "membership.removed", nameof(OrganizationMembership),
-                membership.Id, organizationId, null, JsonSerializer.Serialize(new { userId }), http.TraceIdentifier));
+            db.AuditEvents.Add(new AuditEvent(currentUser.UserId,
+                membership is null ? "employer.access.removed-all" : "membership.removed",
+                membership is null ? nameof(EmployerUserAccess) : nameof(OrganizationMembership),
+                membership?.Id ?? userId, organizationId, null, JsonSerializer.Serialize(new { userId }), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
