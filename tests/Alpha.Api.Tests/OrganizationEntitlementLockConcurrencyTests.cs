@@ -1,6 +1,5 @@
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Xunit;
 
 namespace Alpha.Api.Tests;
