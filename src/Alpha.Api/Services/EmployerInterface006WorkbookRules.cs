@@ -26,6 +26,14 @@ public static class EmployerInterface006WorkbookRules
             : Array.Empty<int>();
     }
 
+    public static bool IsPaymentMethodAllowed(int operationCode, int? paymentMethodCode)
+    {
+        if (operationCode == 6) return paymentMethodCode is null;
+        return paymentMethodCode is int code
+            && AllowedPaymentMethodsByOperation.TryGetValue(operationCode, out var allowed)
+            && allowed.Contains(code);
+    }
+
     public static IReadOnlyList<string> ValidateAndApply(XDocument document,
         EmployerInterface006XmlBuilder.BuildContext context, bool negative)
     {
