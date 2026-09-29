@@ -44,7 +44,8 @@ DROP TRIGGER IF EXISTS "TR_manual_report_employee_seed_mix" ON reporting.manual_
 CREATE OR REPLACE FUNCTION reporting.recalculate_report_product_salaries(p_report_employee_id uuid)
 RETURNS void
 LANGUAGE plpgsql
-AS $$
+SET search_path = reporting, pg_temp
+AS $
 DECLARE
     report_product record;
     employee_monthly_salary numeric(18,2);
@@ -90,7 +91,8 @@ $$;
 CREATE OR REPLACE FUNCTION reporting.recalculate_report_product_salaries_trigger()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+SET search_path = reporting, pg_temp
+AS $
 BEGIN
     PERFORM reporting.recalculate_report_product_salaries(NEW."ReportEmployeeId");
     RETURN NEW;
