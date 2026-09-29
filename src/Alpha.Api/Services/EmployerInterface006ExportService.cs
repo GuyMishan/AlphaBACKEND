@@ -44,6 +44,11 @@ public sealed class EmployerInterface006ExportService(
         var productIds = products.Select(x => x.Id).ToArray();
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var payments = await db.ManualReportPayments.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        foreach (var payment in payments)
+        {
+            var plainAccount = protector.Unprotect(payment.EmployerAccount, $"report-payment-account:{payment.ReportProductId}");
+            db.Entry(payment).Property(x => x.EmployerAccount).CurrentValue = plainAccount;
+        }
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var interfaceFundCodes = await ResolveInterfaceFundCodesAsync(db, products, ct);
 
