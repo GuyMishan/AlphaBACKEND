@@ -126,7 +126,9 @@ public static class ReportTransmissionEndpoints
         {
             var result = await provider.SendAsync(new ReportTransmissionEnvelope(reportId, organizationId, employerId,
                 payloadBytes, hash, attachmentFiles, payloadFileName), ct);
-            transmission.Complete(result.Success ? ReportTransmissionStatus.Accepted : ReportTransmissionStatus.Rejected, result.ExternalId, result.ResponsePayload, result.ErrorMessage);
+            transmission.Complete(result.Success ? ReportTransmissionStatus.Accepted : ReportTransmissionStatus.Rejected, result.ExternalId,
+                string.IsNullOrWhiteSpace(result.ResponsePayload) ? string.Empty : protector.Protect(result.ResponsePayload, $"report-transmission-response:{transmission.Id}"),
+                result.ErrorMessage);
             if (result.Success) report.MarkSent(); else report.MarkTransmissionError(result.ErrorMessage ?? "The report was rejected by the transmission provider.");
             await db.SaveChangesAsync(ct);
             return Results.Ok(ToResponse(report, transmission, generated.Validation));
