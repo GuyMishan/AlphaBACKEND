@@ -108,7 +108,8 @@ FOR EACH ROW EXECUTE FUNCTION reporting.recalculate_report_product_salaries_trig
 CREATE OR REPLACE FUNCTION reporting.sync_manual_contribution_amount()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+SET search_path = reporting, pg_temp
+AS $
 DECLARE
     insured_salary numeric(18,2);
 BEGIN
