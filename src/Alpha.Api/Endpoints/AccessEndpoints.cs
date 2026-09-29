@@ -101,6 +101,8 @@ public static class AccessEndpoints
             EntitlementService entitlements, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            if (!Enum.IsDefined(request.Role) || !Enum.IsDefined(request.EmployerAccessMode))
+                return Results.BadRequest(new { error = "invalid_access_role" });
             var entitlement = await entitlements.CanInviteUser(organizationId, request.UserId, ct);
             if (!entitlement.Allowed) return EntitlementError(entitlement);
             if (!await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsActive, ct))
@@ -134,6 +136,8 @@ public static class AccessEndpoints
             HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            if (!Enum.IsDefined(request.Role) || !Enum.IsDefined(request.EmployerAccessMode))
+                return Results.BadRequest(new { error = "invalid_access_role" });
             var membership = await db.OrganizationMemberships.SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.UserId == userId && x.IsActive, ct);
             if (membership is null) return Results.NotFound();
