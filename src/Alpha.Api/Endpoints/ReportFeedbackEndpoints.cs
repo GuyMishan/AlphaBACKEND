@@ -122,6 +122,11 @@ public static class ReportFeedbackEndpoints
             .OrderByDescending(x => x.AttemptNumber)
             .ToListAsync(ct);
         var latest = transmissions.FirstOrDefault();
+        var officialFeedback = await db.EmployerInterfaceFeedback.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.ReportId == reportId)
+            .OrderByDescending(x => x.ReceivedAt)
+            .Select(x => new { x.Id, x.DocumentType, x.SourceFileName, x.FileNumber, x.PayloadHash, x.TransmissionId, x.ReceivedAt })
+            .ToListAsync(ct);
 
         var employees = await db.ManualReportEmployees.AsNoTracking()
             .Where(x => x.ReportId == reportId)
@@ -153,6 +158,7 @@ public static class ReportFeedbackEndpoints
             feedbackStatus = FeedbackState(report, latest),
             issueCount = issues.Count,
             issues,
+            officialFeedback,
             transmissions = transmissions.Select(x => new { x.Id, x.AttemptNumber, x.Status, x.Provider, x.ExternalId, x.ErrorMessage, x.StartedAt, x.SentAt, x.CompletedAt, x.CreatedAt })
         });
     }
