@@ -16,7 +16,9 @@ public sealed record UpdateAccessUserRequest(
     bool CanCreateEmployer,
     bool CanEditEmployer,
     bool CanCreateEmployee,
-    bool CanEditEmployee);
+    bool CanEditEmployee,
+    bool? CanCreateReport = null,
+    bool? CanTransmitReport = null);
 public sealed record UpdateEmployerAccessRoleRequest(EmployerRole Role);
 
 public static class AccessEndpoints
@@ -50,7 +52,9 @@ public static class AccessEndpoints
                             membership.CanCreateEmployer,
                             membership.CanEditEmployer,
                             membership.CanCreateEmployee,
-                            membership.CanEditEmployee
+                            membership.CanEditEmployee,
+                            membership.CanCreateReport,
+                            membership.CanTransmitReport
                         };
 
             if (employerId.HasValue)
@@ -133,7 +137,8 @@ public static class AccessEndpoints
             if (membership is null) return Results.NotFound();
 
             membership.ChangeAccess(request.Role, request.EmployerAccessMode);
-            membership.ChangePermissions(request.CanCreateEmployer, request.CanEditEmployer, request.CanCreateEmployee, request.CanEditEmployee);
+            membership.ChangePermissions(request.CanCreateEmployer, request.CanEditEmployer, request.CanCreateEmployee, request.CanEditEmployee,
+                request.CanCreateReport, request.CanTransmitReport);
             if (request.EmployerAccessMode == EmployerAccessMode.AllEmployers)
                 await db.EmployerUserAccesses.Where(x => x.OrganizationId == organizationId && x.UserId == userId)
                     .ExecuteDeleteAsync(ct);
