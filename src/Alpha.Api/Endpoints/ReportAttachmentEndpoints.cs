@@ -24,7 +24,7 @@ public static class ReportAttachmentEndpoints
     }
 
     private static async Task<IResult> ListAsync(Guid organizationId, Guid employerId, Guid reportId,
-        IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.AsNoTracking()
@@ -70,7 +70,7 @@ public static class ReportAttachmentEndpoints
     }
 
     private static async Task<IResult> UploadAsync(Guid organizationId, Guid employerId, Guid reportId,
-        HttpRequest request, IAlphaDbContext db, OrganizationAccessService access, IMalwareScanner malwareScanner, CancellationToken ct)
+        HttpRequest request, IAlphaDbContext db, OrganizationAccessService access, IMalwareScanner malwareScanner, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports
@@ -157,7 +157,7 @@ public static class ReportAttachmentEndpoints
             return Results.BadRequest(new { error = "The uploaded file failed the security scan." });
 
         var attachment = new ManualReportAttachment(reportId, reportProductId, documentTypeCode,
-            Path.GetFileName(file.FileName), "application/pdf", bytes);
+            Path.GetFileName(file.FileName), "application/pdf", protector.ProtectBytes(bytes, $"report-attachment:{reportId}:{reportProductId}:{documentTypeCode}"));
         db.ManualReportAttachments.Add(attachment);
         report.MarkDirty();
         await db.SaveChangesAsync(ct);
@@ -187,7 +187,8 @@ public static class ReportAttachmentEndpoints
         var attachment = await db.ManualReportAttachments.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == attachmentId && x.ReportId == reportId, ct);
         if (attachment is null) return Results.NotFound();
-        return Results.File(attachment.Content, attachment.ContentType, attachment.OriginalFileName);
+        var content = protector.UnprotectBytes(attachment.Content, $"report-attachment:{reportId}:{attachment.ReportProductId}:{attachment.DocumentTypeCode}");
+        return Results.File(content, attachment.ContentType, attachment.OriginalFileName);
     }
 
     private static async Task<IResult> DeleteAsync(Guid organizationId, Guid employerId, Guid reportId, Guid attachmentId,
