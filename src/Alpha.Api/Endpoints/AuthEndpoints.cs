@@ -65,7 +65,7 @@ public static class AuthEndpoints
             var nationalIdHash = protector.LookupHash(nationalId, "auth-national-id-lookup");
             var phoneHash = protector.LookupHash(phone, "auth-phone-lookup");
             var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.IsActive && x.NationalIdLookupHash == nationalIdHash && x.PhoneLookupHash == phoneHash, ct);
-            if (user is null) return Results.Unauthorized();
+            if (user is null) return Results.Ok(new { challengeId = (Guid?)null, channel, expiresInSeconds = 300, resendAfterSeconds = 60 });
             var userId = user.Id;
             var destination = channel == "sms" ? protector.Unprotect(user.PhoneEncrypted ?? throw new InvalidOperationException("Encrypted phone missing."), "auth-phone") : user.Email;
             if (string.IsNullOrWhiteSpace(destination)) return Results.BadRequest(new { error = "channel_unavailable" });
@@ -302,8 +302,12 @@ public static class AuthEndpoints
         return endpoints;
     }
 
-    private static string HashCode(IConfiguration config, string code) =>
-        Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(config["PrototypeAuth:SigningKey"]!), Encoding.UTF8.GetBytes(code)));
+    private static string HashCode(IConfiguration config, string code)
+    {
+        var signingKey = config["PrototypeAuth:SigningKey"]!;
+        var otpKey = HMACSHA256.HashData(Encoding.UTF8.GetBytes(signingKey), Encoding.UTF8.GetBytes("alpha:otp:v1"));
+        return Convert.ToHexString(HMACSHA256.HashData(otpKey, Encoding.UTF8.GetBytes(code)));
+    }
 
     private static async Task<IResult> CreateTokenResultAsync(IConfiguration configuration, AlphaDbContext db, Guid userId, string displayName, bool platformAdmin, CancellationToken ct)
     {
