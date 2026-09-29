@@ -100,10 +100,10 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
         await CanOperateEmployerAsync(organizationId, employerId, cancellationToken, m => m.CanEditEmployee);
 
     public async Task<bool> CanCreateReportAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
-        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken, m => m.CanCreateEmployee);
+        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken, m => m.CanCreateReport);
 
     public async Task<bool> CanTransmitReportAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken) =>
-        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken, m => m.CanCreateEmployee);
+        await CanOperateEmployerAsync(organizationId, employerId, cancellationToken, m => m.CanTransmitReport);
 
     private async Task<bool> CanOperateEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken,
         Func<OrganizationMembership, bool> permission)
