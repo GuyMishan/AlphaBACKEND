@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Alpha.Api.Services;
+using Alpha.Api.Security;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Application.Billing;
@@ -31,7 +32,7 @@ public static class ReportTransmissionEndpoints
         IAlphaDbContext db, OrganizationAccessService access, EntitlementService entitlements,
         ReportPaymentAccountService paymentAccounts, BillingGateService billingGate,
         IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter,
-        EmployerInterfaceFileSequenceService fileSequences, CancellationToken ct)
+        EmployerInterfaceFileSequenceService fileSequences, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
@@ -117,7 +118,7 @@ public static class ReportTransmissionEndpoints
             sizeBytes = x.Content.LongLength,
             x.Sha256
         }));
-        transmission.Start(hash, payloadFileName, payloadBytes, attachmentManifestJson);
+        transmission.Start(hash, payloadFileName, protector.ProtectBytes(payloadBytes, $"report-transmission:{transmission.Id}"), attachmentManifestJson);
         db.ReportTransmissions.Add(transmission);
         await db.SaveChangesAsync(ct);
 
