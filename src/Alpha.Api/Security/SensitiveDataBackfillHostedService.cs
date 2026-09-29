@@ -77,7 +77,17 @@ public sealed class SensitiveDataBackfillHostedService(IServiceScopeFactory scop
             protectedTransmissions++;
         }
 
+        var feedbackItems = await db.EmployerInterfaceFeedback.ToListAsync(stoppingToken);
+        var protectedFeedback = 0;
+        foreach (var feedback in feedbackItems)
+        {
+            if (string.IsNullOrWhiteSpace(feedback.RawXml) || feedback.RawXml.StartsWith("alpha:v1:", StringComparison.Ordinal)) continue;
+            db.Entry(feedback).Property(x => x.RawXml).CurrentValue =
+                protector.Protect(feedback.RawXml, $"employer-interface-feedback:{feedback.PayloadHash}");
+            protectedFeedback++;
+        }
+
         await db.SaveChangesAsync(stoppingToken);
-        logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {ProtectedAccounts} payment accounts encrypted, {RefreshedAccountHashes} account hashes refreshed, {ProtectedTransmissions} report transmission payloads encrypted.", protectedPeople, refreshedHashes, protectedAccounts, refreshedAccountHashes, protectedTransmissions);
+        logger.LogInformation("Sensitive-data encryption backfill completed: {ProtectedPeople} people encrypted, {RefreshedHashes} identity hashes refreshed, {ProtectedAccounts} payment accounts encrypted, {RefreshedAccountHashes} account hashes refreshed, {ProtectedTransmissions} report transmission payloads encrypted, {ProtectedFeedback} clearinghouse feedback payloads encrypted.", protectedPeople, refreshedHashes, protectedAccounts, refreshedAccountHashes, protectedTransmissions, protectedFeedback);
     }
 }
