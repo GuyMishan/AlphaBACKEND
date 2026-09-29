@@ -1,3 +1,4 @@
+using Xunit;
 using Alpha.Api.Security;
 using Microsoft.Extensions.Configuration;
 
