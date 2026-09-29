@@ -19,7 +19,9 @@ public sealed class SessionActivityMiddleware(RequestDelegate next)
 
         var session = await db.UserSessions.SingleOrDefaultAsync(x => x.Id == sid && x.UserId == uid, context.RequestAborted);
         var now = DateTime.UtcNow;
-        if (session is null || session.RevokedAt != null || session.ExpiresAt <= now || session.LastActivityAt <= now.Subtract(IdleTimeout))
+        var userActive = session is not null && await db.Users.AsNoTracking()
+            .AnyAsync(x => x.Id == uid && x.IsActive, context.RequestAborted);
+        if (session is null || !userActive || session.RevokedAt != null || session.ExpiresAt <= now || session.LastActivityAt <= now.Subtract(IdleTimeout))
         {
             if (session is not null && session.RevokedAt is null) { session.Revoke(now); await db.SaveChangesAsync(context.RequestAborted); }
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
