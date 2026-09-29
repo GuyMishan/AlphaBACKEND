@@ -246,7 +246,7 @@ public static class ManualReportEndpoints
     }
 
     private static async Task<IResult> GetEmployeesAsync(Guid organizationId, Guid employerId, Guid reportId,
-        string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (!await db.ManualReports.AsNoTracking().AnyAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct))
