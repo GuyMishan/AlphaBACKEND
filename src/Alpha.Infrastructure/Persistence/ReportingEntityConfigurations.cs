@@ -80,12 +80,14 @@ public sealed class ManualReportEmployeeConfiguration : IEntityTypeConfiguration
     {
         b.ToTable("manual_report_employees", "reporting");
         b.HasKey(x => x.Id);
-        b.Property(x => x.NationalId).HasMaxLength(30).IsRequired();
+        b.Property(x => x.NationalId).HasColumnType("text").IsRequired();
+        b.Property(x => x.NationalIdLookupHash).HasMaxLength(64).IsRequired();
         b.Property(x => x.FirstName).HasMaxLength(100).IsRequired();
         b.Property(x => x.LastName).HasMaxLength(100).IsRequired();
         b.Property(x => x.EmployeeNumber).HasMaxLength(50).IsRequired();
         b.Property(x => x.MonthlySalary).HasPrecision(18, 2);
-        b.Property(x => x.InterfaceIdentifier).HasMaxLength(60).IsRequired();
+        b.Property(x => x.InterfaceIdentifier).HasColumnType("text").IsRequired();
+        b.HasIndex(x => new { x.ReportId, x.NationalIdLookupHash });
         b.Property(x => x.EmailSnapshot).HasMaxLength(100);
         b.Property(x => x.MobileSnapshot).HasMaxLength(30);
         b.Property(x => x.CitySnapshot).HasMaxLength(120);
