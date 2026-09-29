@@ -8,7 +8,7 @@ public sealed class ManualReportAttachment : Entity
     private ManualReportAttachment() { }
 
     public ManualReportAttachment(Guid reportId, Guid? reportProductId, int documentTypeCode,
-        string originalFileName, string contentType, byte[] content)
+        string originalFileName, string contentType, byte[] content, long? originalSizeBytes = null, string? originalSha256 = null)
     {
         if (reportId == Guid.Empty) throw new ArgumentException("Report is required.", nameof(reportId));
         if (documentTypeCode is not (3 or 4 or 5 or 6))
@@ -25,8 +25,10 @@ public sealed class ManualReportAttachment : Entity
         TransmissionFileName = $"ALPHA_EMP_{Id:N}.pdf";
         ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/pdf" : contentType.Trim();
         Content = content;
-        SizeBytes = content.LongLength;
-        Sha256 = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
+        SizeBytes = originalSizeBytes ?? content.LongLength;
+        Sha256 = string.IsNullOrWhiteSpace(originalSha256)
+            ? Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant()
+            : originalSha256.Trim().ToLowerInvariant();
     }
 
     public Guid ReportId { get; private set; }
