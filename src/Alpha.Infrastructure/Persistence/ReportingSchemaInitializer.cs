@@ -123,6 +123,8 @@ CREATE INDEX IF NOT EXISTS "IX_manual_reports_scope_month"
     ON reporting.manual_reports ("OrganizationId", "EmployerId", "ReportingMonth");
 CREATE INDEX IF NOT EXISTS "IX_manual_reports_source"
     ON reporting.manual_reports ("SourceReportId");
+CREATE INDEX IF NOT EXISTS "IX_manual_report_employees_report_national_id_hash"
+    ON reporting.manual_report_employees ("ReportId", "NationalIdLookupHash");
 
 CREATE TABLE IF NOT EXISTS reporting.manual_report_employees (
     "Id" uuid PRIMARY KEY,
@@ -131,7 +133,7 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_employees (
     "EmployerId" uuid NOT NULL,
     "EmploymentId" uuid NOT NULL REFERENCES employees.employments("Id") ON DELETE RESTRICT,
     "PersonId" uuid NOT NULL,
-    "NationalId" varchar(30) NOT NULL,
+    "NationalId" text NOT NULL,
     "FirstName" varchar(100) NOT NULL,
     "LastName" varchar(100) NOT NULL,
     "EmployeeNumber" varchar(50) NOT NULL,
@@ -140,9 +142,12 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_employees (
     "UpdatedAt" timestamptz NOT NULL,
     CONSTRAINT "UX_manual_report_employee" UNIQUE ("ReportId", "EmploymentId")
 );
+ALTER TABLE reporting.manual_report_employees ALTER COLUMN "NationalId" TYPE text;
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "NationalIdLookupHash" varchar(64) NOT NULL DEFAULT '';
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "MonthlySalary" numeric(18,2) NOT NULL DEFAULT 0;
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "InterfaceIdentifierType" integer NOT NULL DEFAULT 1;
-ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "InterfaceIdentifier" varchar(60) NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "InterfaceIdentifier" text NOT NULL DEFAULT '';
+ALTER TABLE reporting.manual_report_employees ALTER COLUMN "InterfaceIdentifier" TYPE text;
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "BirthDateSnapshot" date NULL;
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "GenderSnapshot" integer NULL;
 ALTER TABLE reporting.manual_report_employees ADD COLUMN IF NOT EXISTS "EmailSnapshot" varchar(100) NOT NULL DEFAULT '';
