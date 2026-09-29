@@ -83,7 +83,7 @@ public static class InvitationEndpoints
 
     private static async Task<IResult> CreateAsync(Guid organizationId, CreateInvitationRequest request,
         AlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
-        EntitlementService entitlements, OtpDelivery delivery, IConfiguration configuration, IDataProtectionService protector,
+        EntitlementService entitlements, OrganizationEntitlementLock entitlementLock, OtpDelivery delivery, IConfiguration configuration, IDataProtectionService protector,
         HttpContext http, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
@@ -125,6 +125,7 @@ public static class InvitationEndpoints
         if (existing is not null)
             return Results.Conflict(new { error = "invitation_already_pending", invitationId = existing.Id });
 
+        await using var entitlementLease = await entitlementLock.AcquireAsync(organizationId, ct);
         var entitlement = await entitlements.CanInviteNewUser(organizationId, ct);
         if (!entitlement.Allowed) return EntitlementError(entitlement);
 
