@@ -455,7 +455,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         return new(report.Id, null, validation, imported, unmatched);
     }
 
-    private static void AddProduct(XElement employeeNode, XElement salaryNode, ManualReportEmployee reportEmployee,
+    private void AddProduct(XElement employeeNode, XElement salaryNode, ManualReportEmployee reportEmployee,
         DateOnly reportingMonth, IDictionary<Guid, int> orderMap, IAlphaDbContext context)
     {
         var fundNode = employeeNode.Ancestors().FirstOrDefault(x => NameIs(x, "PirteiKupa"));
@@ -520,7 +520,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             ParseDate(Value(paymentNode, "TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT")),
             Value(paymentNode, "MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM"), null,
             Value(paymentNode, "MISPAR-BANK-MAASIK"), Value(paymentNode, "MISPAR-SNIF-MAASIK"),
-            Value(paymentNode, "MISPAR-CHESHBON-MAASIK"), null,
+            protector.Protect(Value(paymentNode, "MISPAR-CHESHBON-MAASIK") ?? string.Empty, $"report-payment-account:{product.Id}"), null,
             metadata.OperationCode == 3 ? reportedDeposit : null, Value(paymentNode, "KOD-MASAV"));
         context.ManualReportPayments.Add(payment);
     }
