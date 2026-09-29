@@ -446,7 +446,7 @@ public static class ManualReportEndpoints
 
     private static async Task<IResult> SaveEmployeeAsync(Guid organizationId, Guid employerId, Guid reportId,
         Guid reportEmployeeId, SaveManualReportEmployeeRequest request, IAlphaDbContext db,
-        OrganizationAccessService access, CancellationToken ct)
+        OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.Products.Count > MaxProductsPerEmployee)
@@ -480,6 +480,10 @@ public static class ManualReportEndpoints
                 request.Snapshot.BirthDate, request.Snapshot.Gender, request.Snapshot.Email, request.Snapshot.Mobile,
                 request.Snapshot.City, request.Snapshot.Street, request.Snapshot.HouseNumber, request.Snapshot.Apartment,
                 request.Snapshot.PostalCode, request.Snapshot.PostOfficeBox, request.Snapshot.EmploymentStartDate);
+            var nationalId = protector.Unprotect(employee.NationalId, $"report-employee-national-id:{employee.Id}");
+            employee.SetProtectedIdentifiers(employee.NationalId,
+                protector.LookupHash(nationalId, "report-employee-national-id-lookup"),
+                protector.Protect(request.Snapshot.Identifier, $"report-employee-interface-id:{employee.Id}"));
         }
         var existingProductIds = await db.ManualReportProducts.Where(x => x.ReportEmployeeId == reportEmployeeId).Select(x => x.Id).ToArrayAsync(ct);
         if (existingProductIds.Length > 0)
