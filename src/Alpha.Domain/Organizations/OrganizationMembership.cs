@@ -29,6 +29,8 @@ public sealed class OrganizationMembership : Entity
     public bool CanEditEmployer { get; private set; }
     public bool CanCreateEmployee { get; private set; }
     public bool CanEditEmployee { get; private set; }
+    public bool CanCreateReport { get; private set; }
+    public bool CanTransmitReport { get; private set; }
     public Guid CreatedBy { get; private set; }
     public DateTimeOffset? ExpiresAt { get; private set; }
 
@@ -42,12 +44,15 @@ public sealed class OrganizationMembership : Entity
         Touch();
     }
 
-    public void ChangePermissions(bool canCreateEmployer, bool canEditEmployer, bool canCreateEmployee, bool canEditEmployee)
+    public void ChangePermissions(bool canCreateEmployer, bool canEditEmployer, bool canCreateEmployee, bool canEditEmployee,
+        bool? canCreateReport = null, bool? canTransmitReport = null)
     {
         CanCreateEmployer = canCreateEmployer;
         CanEditEmployer = canEditEmployer;
         CanCreateEmployee = canCreateEmployee;
         CanEditEmployee = canEditEmployee;
+        CanCreateReport = canCreateReport ?? canCreateEmployee;
+        CanTransmitReport = canTransmitReport ?? canCreateEmployee;
         Touch();
     }
 
@@ -57,6 +62,8 @@ public sealed class OrganizationMembership : Entity
         CanEditEmployer = role != OrganizationRole.Viewer;
         CanCreateEmployee = role != OrganizationRole.Viewer;
         CanEditEmployee = role != OrganizationRole.Viewer;
+        CanCreateReport = role != OrganizationRole.Viewer;
+        CanTransmitReport = role != OrganizationRole.Viewer;
     }
 
     public void Deactivate()
