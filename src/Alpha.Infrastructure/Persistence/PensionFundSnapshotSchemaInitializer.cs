@@ -45,7 +45,7 @@ CREATE OR REPLACE FUNCTION reporting.recalculate_report_product_salaries(p_repor
 RETURNS void
 LANGUAGE plpgsql
 SET search_path = reporting, pg_temp
-AS $
+AS $function$
 DECLARE
     report_product record;
     employee_monthly_salary numeric(18,2);
@@ -86,18 +86,18 @@ BEGIN
         WHERE "ReportProductId" = report_product."Id";
     END LOOP;
 END;
-$$;
+$function$;
 
 CREATE OR REPLACE FUNCTION reporting.recalculate_report_product_salaries_trigger()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = reporting, pg_temp
-AS $
+AS $function$
 BEGIN
     PERFORM reporting.recalculate_report_product_salaries(NEW."ReportEmployeeId");
     RETURN NEW;
 END;
-$$;
+$function$;
 
 DROP TRIGGER IF EXISTS "TR_manual_report_product_recalculate_salary" ON reporting.manual_report_products;
 CREATE TRIGGER "TR_manual_report_product_recalculate_salary"
@@ -109,7 +109,7 @@ CREATE OR REPLACE FUNCTION reporting.sync_manual_contribution_amount()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = reporting, pg_temp
-AS $
+AS $function$
 DECLARE
     insured_salary numeric(18,2);
 BEGIN
@@ -121,7 +121,7 @@ BEGIN
     NEW."Amount" := round((COALESCE(insured_salary, 0) * COALESCE(NEW."Percentage", 0) / 100.0)::numeric, 2);
     RETURN NEW;
 END;
-$$;
+$function$;
 
 DROP TRIGGER IF EXISTS "TR_manual_contribution_sync_amount" ON reporting.manual_contributions;
 CREATE TRIGGER "TR_manual_contribution_sync_amount"
