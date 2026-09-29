@@ -145,6 +145,8 @@ public static class InvitationEndpoints
             invitation.Id, organizationId, request.EmployerId,
             JsonSerializer.Serialize(new { request.EmployerId, request.OrganizationRole, request.EmployerRole, invitation.ExpiresAt }), http.TraceIdentifier));
         await db.SaveChangesAsync(ct);
+        await entitlementLease.CommitAsync(ct);
+        await entitlementLease.DisposeAsync();
 
         var frontendBaseUrl = configuration["Frontend:BaseUrl"]?.TrimEnd('/');
         if (string.IsNullOrWhiteSpace(frontendBaseUrl))
