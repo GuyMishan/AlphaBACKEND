@@ -157,7 +157,7 @@ public static class AuthEndpoints
         }).AllowAnonymous().WithTags("Authentication");
 
         endpoints.MapPost("/api/auth/register/verify", async (VerifyRegistrationOtp request, IConfiguration config,
-            AlphaDbContext db, EntitlementService entitlements, InvitationService invitations, IDataProtectionService protector, CancellationToken ct) =>
+            AlphaDbContext db, EntitlementService entitlements, InvitationService invitations, OrganizationEntitlementLock entitlementLock, IDataProtectionService protector, CancellationToken ct) =>
         {
             if (request.ChallengeId == Guid.Empty || request.Code is null || request.Code.Length != 6 || !request.Code.All(char.IsAsciiDigit))
                 return Results.BadRequest(new { error = "invalid_code" });
@@ -212,6 +212,7 @@ public static class AuthEndpoints
                     return Results.BadRequest(new { error = "invitation_email_mismatch" });
                 }
 
+                await entitlementLock.AcquireInCurrentTransactionAsync(invitation.OrganizationId, ct);
                 var entitlement = await entitlements.CanAcceptInvitation(invitation.OrganizationId, ct);
                 if (!entitlement.Allowed)
                 {
