@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_payments (
     "EmployerBankName" varchar(120) NOT NULL DEFAULT '',
     "EmployerBankCode" varchar(30) NOT NULL DEFAULT '',
     "EmployerBranch" varchar(30) NOT NULL DEFAULT '',
-    "EmployerAccount" varchar(80) NOT NULL DEFAULT '',
+    "EmployerAccount" text NOT NULL DEFAULT '',
     "ConfirmationFileName" varchar(260) NOT NULL DEFAULT '',
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL,
@@ -337,7 +337,7 @@ ALTER TABLE reporting.manual_report_attachments
     ADD CONSTRAINT "CK_manual_report_attachments_document_type"
     CHECK ("DocumentTypeCode" IN (3,4,5,6));
 
-ALTER TABLE reporting.manual_report_payments
+ALTER TABLE reporting.manual_report_payments ALTER COLUMN "EmployerAccount" TYPE text;\n\nALTER TABLE reporting.manual_report_payments
     ADD COLUMN IF NOT EXISTS "TrustAccountValueDate" date NULL;
 ALTER TABLE reporting.manual_report_payments
     ADD COLUMN IF NOT EXISTS "ActualDepositAmount" numeric(15,2) NULL;
