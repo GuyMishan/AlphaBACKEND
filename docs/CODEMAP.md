@@ -28,7 +28,7 @@
 
 ## Employer Interface 006 / reporting
 - Endpoints: `EmployerInterfaceEndpoints.cs`, `ManualReportEndpoints.cs`, `ReportValidationEndpoints.cs`, `ReportTransmissionEndpoints.cs`, `ReportFeedbackEndpoints.cs`, `DerivedReportEndpoints.cs`.
-- Transmission endpoints suppress provider/internal exception details from client-visible responses. Employer Interface 006 transmission evidence, clearinghouse feedback XML, report PDF attachments, employer bank-account report snapshots and report employee identifiers are encrypted at rest with purpose binding; employee identifier searches use a purpose-bound lookup hash; attachments and report identifiers are decrypted only at authorized API/export boundaries while their evidence hash/size remain bound to the original plaintext. The startup sensitive-data backfill encrypts legacy plaintext evidence idempotently. The current access model still maps report creation/transmission to the existing employee-create permission; introducing dedicated report permissions requires a coordinated membership/API/frontend permission-schema migration.
+- Transmission endpoints suppress provider/internal exception details from client-visible responses. Employer Interface 006 transmission evidence, clearinghouse feedback XML, report PDF attachments, employer bank-account snapshots, report employee identifiers/contact details, employer registration/contact snapshots and provider response payloads are encrypted at rest with purpose binding; employee identifier searches use a purpose-bound lookup hash; attachments and report identifiers are decrypted only at authorized API/export boundaries while their evidence hash/size remain bound to the original plaintext. The startup sensitive-data backfill encrypts legacy plaintext evidence idempotently. The current access model still maps report creation/transmission to the existing employee-create permission; introducing dedicated report permissions requires a coordinated membership/API/frontend permission-schema migration.
 - Core services: `EmployerInterfaceService.cs`, `EmployerInterface006ExportService.cs`, `EmployerInterface006XmlBuilder.cs`, `EmployerInterface006WorkbookRules.cs`, `EmployerInterfaceSchemaRegistry.cs`, file naming/sequence services.
 - Reporting application/domain: `Alpha.Application/Reporting/*`, `Alpha.Domain/Reporting/*`.
 - Persistence: `EmployerInterface006*Initializer.cs`, reporting/report lifecycle/transmission/feedback configurations and initializers.
@@ -51,3 +51,6 @@ These sources outrank assumptions, old examples and UI behavior.
 
 ## CI
 - `.github/workflows/ci.yml` restores, Release-builds and tests the full solution.
+
+- Access management candidate discovery is organization-scoped and removal of the last active organization admin is blocked.
+- Login OTP requests return an opaque synthetic challenge identifier for unknown identities so response shape does not disclose account existence.
