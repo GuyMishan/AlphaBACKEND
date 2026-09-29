@@ -181,7 +181,7 @@ public sealed class ManualReportPaymentConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.EmployerBankName).HasMaxLength(120);
         b.Property(x => x.EmployerBankCode).HasMaxLength(30);
         b.Property(x => x.EmployerBranch).HasMaxLength(30);
-        b.Property(x => x.EmployerAccount).HasMaxLength(80);
+        b.Property(x => x.EmployerAccount).HasColumnType("text");
         b.Property(x => x.ConfirmationFileName).HasMaxLength(260);
         b.HasIndex(x => x.ReportProductId).IsUnique();
         b.HasOne<ManualReportProduct>().WithOne().HasForeignKey<ManualReportPayment>(x => x.ReportProductId).OnDelete(DeleteBehavior.Cascade);
