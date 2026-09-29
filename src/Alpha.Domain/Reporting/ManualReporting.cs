@@ -152,6 +152,7 @@ public sealed class ManualReportEmployee : Entity
     public Guid PersonId { get; private set; }
 
     public string NationalId { get; private set; } = string.Empty;
+    public string NationalIdLookupHash { get; private set; } = string.Empty;
     public string FirstName { get; private set; } = string.Empty;
     public string LastName { get; private set; } = string.Empty;
     public string EmployeeNumber { get; private set; } = string.Empty;
@@ -195,6 +196,17 @@ public sealed class ManualReportEmployee : Entity
         PostalCodeSnapshot = postalCode?.Trim() ?? string.Empty;
         PostOfficeBoxSnapshot = postOfficeBox?.Trim() ?? string.Empty;
         EmploymentStartDateSnapshot = employmentStartDate;
+        Touch();
+    }
+
+    public void SetProtectedIdentifiers(string nationalIdEncrypted, string nationalIdLookupHash, string interfaceIdentifierEncrypted)
+    {
+        if (string.IsNullOrWhiteSpace(nationalIdEncrypted)) throw new ArgumentException("Protected national ID is required.", nameof(nationalIdEncrypted));
+        if (string.IsNullOrWhiteSpace(nationalIdLookupHash)) throw new ArgumentException("National ID lookup hash is required.", nameof(nationalIdLookupHash));
+        if (string.IsNullOrWhiteSpace(interfaceIdentifierEncrypted)) throw new ArgumentException("Protected interface identifier is required.", nameof(interfaceIdentifierEncrypted));
+        NationalId = nationalIdEncrypted;
+        NationalIdLookupHash = nationalIdLookupHash;
+        InterfaceIdentifier = interfaceIdentifierEncrypted;
         Touch();
     }
 
