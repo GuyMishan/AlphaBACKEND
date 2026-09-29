@@ -39,6 +39,36 @@ public sealed class AesDataProtectionService(IConfiguration configuration) : IDa
         return Encoding.UTF8.GetString(plain);
     }
 
+    public byte[] ProtectBytes(byte[] plaintext, string purpose)
+    {
+        if (plaintext is null || plaintext.Length == 0) return plaintext ?? [];
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var cipher = new byte[plaintext.Length];
+        var tag = new byte[16];
+        using var aes = new AesGcm(_key, 16);
+        aes.Encrypt(nonce, plaintext, cipher, tag, Encoding.UTF8.GetBytes(purpose));
+        var result = new byte[4 + nonce.Length + tag.Length + cipher.Length];
+        result[0] = (byte)'A'; result[1] = (byte)'L'; result[2] = (byte)'P'; result[3] = 1;
+        Buffer.BlockCopy(nonce, 0, result, 4, nonce.Length);
+        Buffer.BlockCopy(tag, 0, result, 16, tag.Length);
+        Buffer.BlockCopy(cipher, 0, result, 32, cipher.Length);
+        return result;
+    }
+
+    public byte[] UnprotectBytes(byte[] protectedValue, string purpose)
+    {
+        if (protectedValue is null || protectedValue.Length == 0) return protectedValue ?? [];
+        if (protectedValue.Length < 32 || protectedValue[0] != (byte)'A' || protectedValue[1] != (byte)'L' || protectedValue[2] != (byte)'P' || protectedValue[3] != 1)
+            return protectedValue;
+        var nonce = protectedValue.AsSpan(4, 12).ToArray();
+        var tag = protectedValue.AsSpan(16, 16).ToArray();
+        var cipher = protectedValue.AsSpan(32).ToArray();
+        var plain = new byte[cipher.Length];
+        using var aes = new AesGcm(_key, 16);
+        aes.Decrypt(nonce, cipher, tag, plain, Encoding.UTF8.GetBytes(purpose));
+        return plain;
+    }
+
     private static byte[] LoadKey(IConfiguration configuration)
     {
         var raw = configuration["Security:DataProtectionKey"];
