@@ -98,6 +98,17 @@ public sealed class ManualReport : Entity
             source.EmployerContactEmailSnapshot, source.EmployerContactMobileSnapshot,
             source.DepositorTypeCodeSnapshot, source.EmployerIdentifierTypeCodeSnapshot);
 
+    public void SetProtectedEmployerSnapshot(string registrationNumberEncrypted, string withholdingFileNumberEncrypted,
+        string contactPhoneEncrypted, string contactEmailEncrypted, string contactMobileEncrypted)
+    {
+        EmployerRegistrationNumberSnapshot = registrationNumberEncrypted;
+        EmployerWithholdingFileNumberSnapshot = withholdingFileNumberEncrypted;
+        EmployerContactPhoneSnapshot = contactPhoneEncrypted;
+        EmployerContactEmailSnapshot = contactEmailEncrypted;
+        EmployerContactMobileSnapshot = contactMobileEncrypted;
+        Touch();
+    }
+
     public void SetPaymentAccountSnapshot(Guid paymentAccountId, int bankId, int branchId,
         string accountNumberMasked, string? mandateReference)
     {
@@ -196,6 +207,13 @@ public sealed class ManualReportEmployee : Entity
         PostalCodeSnapshot = postalCode?.Trim() ?? string.Empty;
         PostOfficeBoxSnapshot = postOfficeBox?.Trim() ?? string.Empty;
         EmploymentStartDateSnapshot = employmentStartDate;
+        Touch();
+    }
+
+    public void SetProtectedContactSnapshot(string emailEncrypted, string mobileEncrypted)
+    {
+        EmailSnapshot = emailEncrypted;
+        MobileSnapshot = mobileEncrypted;
         Touch();
     }
 
