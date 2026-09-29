@@ -133,7 +133,8 @@ public static class AuthEndpoints
             }
 
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
-            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({nationalId + ":" + phone}))", ct);
+            var registrationLockKey = protector.LookupHash($"{registrationNationalIdHash}:{protector.LookupHash(phone, "auth-phone-lookup")}", "auth-registration-lock");
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({registrationLockKey}))", ct);
             var now = DateTime.UtcNow;
             var last = await db.RegistrationOtpChallenges
                 .Where(x => x.Email == email && x.ExpiresAt > now)
