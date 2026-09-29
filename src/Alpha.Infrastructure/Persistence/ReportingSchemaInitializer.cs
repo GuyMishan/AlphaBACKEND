@@ -337,7 +337,9 @@ ALTER TABLE reporting.manual_report_attachments
     ADD CONSTRAINT "CK_manual_report_attachments_document_type"
     CHECK ("DocumentTypeCode" IN (3,4,5,6));
 
-ALTER TABLE reporting.manual_report_payments ALTER COLUMN "EmployerAccount" TYPE text;\n\nALTER TABLE reporting.manual_report_payments
+ALTER TABLE reporting.manual_report_payments ALTER COLUMN "EmployerAccount" TYPE text;
+
+ALTER TABLE reporting.manual_report_payments
     ADD COLUMN IF NOT EXISTS "TrustAccountValueDate" date NULL;
 ALTER TABLE reporting.manual_report_payments
     ADD COLUMN IF NOT EXISTS "ActualDepositAmount" numeric(15,2) NULL;
