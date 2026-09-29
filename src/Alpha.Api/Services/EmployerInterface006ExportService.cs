@@ -35,6 +35,13 @@ public sealed class EmployerInterface006ExportService(
             report.EmployerContactEmailSnapshot, report.EmployerContactMobileSnapshot);
         var employees = await db.ManualReportEmployees.AsNoTracking()
             .Where(x => x.ReportId == report.Id).OrderBy(x => x.EmployeeNumber).ToListAsync(ct);
+        foreach (var employee in employees)
+        {
+            db.Entry(employee).Property(x => x.NationalId).CurrentValue =
+                protector.Unprotect(employee.NationalId, $"report-employee-national-id:{employee.Id}");
+            db.Entry(employee).Property(x => x.InterfaceIdentifier).CurrentValue =
+                protector.Unprotect(employee.InterfaceIdentifier, $"report-employee-interface-id:{employee.Id}");
+        }
         var people = new Dictionary<Guid, Alpha.Domain.Employees.Person>();
         var employments = new Dictionary<Guid, Alpha.Domain.Employees.Employment>();
         var employeeIds = employees.Select(x => x.Id).ToArray();
