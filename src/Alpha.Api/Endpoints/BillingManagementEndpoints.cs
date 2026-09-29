@@ -108,6 +108,13 @@ public static class BillingManagementEndpoints
             .ToListAsync(ct);
 
         var accounts = await db.BillingAccounts.AsNoTracking().ToListAsync(ct);
+        var pensionPaymentAccounts = await db.EmployerPaymentAccounts.AsNoTracking()
+            .Where(x => x.IsActive)
+            .Select(x => new { x.Id, x.OrganizationId, x.EmployerId })
+            .ToListAsync(ct);
+        var employerPaymentModes = await db.EmployerProfileSettings.AsNoTracking()
+            .Select(x => new { x.EmployerId, x.PensionPaymentMode })
+            .ToDictionaryAsync(x => x.EmployerId, x => x.PensionPaymentMode, ct);
         var accountIds = accounts.Select(x => x.Id).ToArray();
         var pricing = await db.BillingAccountPricingComponents.AsNoTracking()
             .Where(x => accountIds.Contains(x.BillingAccountId) && x.EffectiveTo == null && x.IsEnabled)
@@ -155,6 +162,10 @@ public static class BillingManagementEndpoints
                 cardBrand = account?.CardBrand ?? string.Empty,
                 cardLast4 = account?.CardLast4 ?? string.Empty,
                 configured = account is not null,
+                pensionPaymentConfigured = pensionPaymentAccounts.Any(x =>
+                    x.OrganizationId == organization.Id && x.EmployerId == null),
+                pensionPaymentSource = "Organization",
+                pensionPaymentThroughName = organization.Name,
                 billingType = p.BillingType,
                 unitPrice = p.UnitPrice
             });
@@ -167,6 +178,18 @@ public static class BillingManagementEndpoints
             var p = Pricing(effectiveAccount?.Id, pricing);
             var organizationName = organizations.FirstOrDefault(x => x.Id == employer.OrganizationId)?.Name ?? string.Empty;
             var inherited = string.Equals(resolution?.Source, "Organization", StringComparison.Ordinal);
+            var directPensionPaymentAccount = pensionPaymentAccounts.FirstOrDefault(x =>
+                x.OrganizationId == employer.OrganizationId && x.EmployerId == employer.Id);
+            var organizationPensionPaymentAccount = pensionPaymentAccounts.FirstOrDefault(x =>
+                x.OrganizationId == employer.OrganizationId && x.EmployerId == null);
+            var pensionPaymentMode = employerPaymentModes.GetValueOrDefault(employer.Id,
+                directPensionPaymentAccount is not null
+                    ? EmployerPensionPaymentMode.EmployerDirect
+                    : EmployerPensionPaymentMode.InheritOrganization);
+            var pensionPaymentInherited = pensionPaymentMode == EmployerPensionPaymentMode.InheritOrganization;
+            var effectivePensionPaymentAccount = pensionPaymentInherited
+                ? organizationPensionPaymentAccount
+                : directPensionPaymentAccount;
             result.Add(new
             {
                 payerType = "Employer",
@@ -186,6 +209,9 @@ public static class BillingManagementEndpoints
                 cardBrand = effectiveAccount?.CardBrand ?? string.Empty,
                 cardLast4 = effectiveAccount?.CardLast4 ?? string.Empty,
                 configured = effectiveAccount is not null,
+                pensionPaymentConfigured = effectivePensionPaymentAccount is not null,
+                pensionPaymentSource = pensionPaymentInherited ? "Organization" : "Employer",
+                pensionPaymentThroughName = pensionPaymentInherited ? organizationName : employer.LegalName,
                 billingType = p.BillingType,
                 unitPrice = p.UnitPrice
             });
