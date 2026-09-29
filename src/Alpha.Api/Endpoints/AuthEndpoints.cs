@@ -108,9 +108,13 @@ public static class AuthEndpoints
                 return Results.Problem("Authentication is not configured.", statusCode: 503);
 
             var registrationNationalIdHash = protector.LookupHash(nationalId, "auth-national-id-lookup");
-            if (await db.Users.AsNoTracking().AnyAsync(x =>
-                    x.NationalIdLookupHash == registrationNationalIdHash, ct))
-                return Results.Conflict(new { error = "user_exists" });
+            var existingUser = await db.Users.AsNoTracking().AnyAsync(x =>
+                x.NationalIdLookupHash == registrationNationalIdHash, ct);
+            if (existingUser)
+            {
+                // Keep public registration neutral: account existence is resolved only after possession proof.
+                return Results.Ok(new { challengeId = Guid.NewGuid(), expiresInSeconds = 300, resendAfterSeconds = 60 });
+            }
 
             string? invitationTokenHash = null;
             if (!string.IsNullOrWhiteSpace(request.InvitationToken))
