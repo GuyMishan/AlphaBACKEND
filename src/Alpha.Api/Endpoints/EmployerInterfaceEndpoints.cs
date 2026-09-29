@@ -12,8 +12,8 @@ public static class EmployerInterfaceEndpoints
     {
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/employer-interface")
             .RequireAuthorization().WithTags("Employer interface");
-        group.MapPost("/validate", ValidateAsync).DisableAntiforgery();
-        group.MapPost("/import", ImportAsync).DisableAntiforgery();
+        group.MapPost("/validate", ValidateAsync).DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Http.Features.RequestSizeLimitAttribute(21 * 1024 * 1024));
+        group.MapPost("/import", ImportAsync).DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Http.Features.RequestSizeLimitAttribute(21 * 1024 * 1024));
         group.MapGet("/schemas/status", SchemaStatusAsync);
         group.MapGet("/reports/{reportId:guid}/preflight", PreflightAsync);
         group.MapGet("/reports/{reportId:guid}/xml", ExportAsync);
