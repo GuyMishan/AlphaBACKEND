@@ -133,7 +133,7 @@ public static class PaymentProviderEndpoints
                 redirectUrl = setup.RedirectUrl
             });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
             return Results.Json(new { error = "payment_provider_unavailable" },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
@@ -204,7 +204,7 @@ public static class PaymentProviderEndpoints
                 account.CardExpiryYear
             });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
             return Results.Json(new { error = "payment_provider_unavailable" },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
@@ -258,7 +258,7 @@ public static class PaymentProviderEndpoints
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
             return Results.Json(new { error = "payment_provider_unavailable" },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
@@ -301,7 +301,7 @@ public static class PaymentProviderEndpoints
                 ? Results.Ok(charge)
                 : Results.Json(charge, statusCode: StatusCodes.Status402PaymentRequired);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
             return Results.Json(new { error = "payment_provider_unavailable" },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
