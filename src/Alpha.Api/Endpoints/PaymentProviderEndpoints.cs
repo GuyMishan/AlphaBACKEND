@@ -389,9 +389,23 @@ public static class PaymentProviderEndpoints
             return Results.NotFound();
         }
 
+        if (!string.IsNullOrWhiteSpace(account.ProviderCustomerId) && !string.IsNullOrWhiteSpace(result.CustomerId)
+            && !string.Equals(account.ProviderCustomerId, result.CustomerId, StringComparison.Ordinal))
+        {
+            webhook.Complete(ProviderWebhookStatus.Failed, "provider_customer_mismatch");
+            await db.SaveChangesAsync(ct);
+            return Results.Unauthorized();
+        }
+
         var customerId = !string.IsNullOrWhiteSpace(result.CustomerId)
             ? result.CustomerId
             : account.ProviderCustomerId;
+        if (string.IsNullOrWhiteSpace(customerId) || string.IsNullOrWhiteSpace(result.PaymentMethodId))
+        {
+            webhook.Complete(ProviderWebhookStatus.Failed, "provider_payment_method_incomplete");
+            await db.SaveChangesAsync(ct);
+            return Results.BadRequest(new { error = "provider_payment_method_incomplete" });
+        }
 
         account.UpdateProviderMetadata(
             BillingPaymentMethodStatus.Active,
