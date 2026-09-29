@@ -1,5 +1,6 @@
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Xunit;
 
 namespace Alpha.Api.Tests;
