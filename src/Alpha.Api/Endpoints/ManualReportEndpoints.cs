@@ -28,7 +28,6 @@ public static class ManualReportEndpoints
         group.MapGet("/{reportId:guid}/employees", GetEmployeesAsync);
         group.MapGet("/{reportId:guid}/employees/{reportEmployeeId:guid}", GetEmployeeAsync);
         group.MapPut("/{reportId:guid}/employees/{reportEmployeeId:guid}", SaveEmployeeAsync);
-        group.MapPatch("/{reportId:guid}/employees/{reportEmployeeId:guid}/postal-address", UpdateEmployeePostalAddressAsync);
         group.MapGet("/{reportId:guid}/deposits", GetDepositsAsync);
         group.MapPut("/{reportId:guid}/deposits/{reportProductId:guid}", SaveDepositPaymentAsync);
         return endpoints;
@@ -501,36 +500,6 @@ public static class ManualReportEndpoints
         });
     }
 
-    private static async Task<IResult> UpdateEmployeePostalAddressAsync(
-        Guid organizationId, Guid employerId, Guid reportId, Guid reportEmployeeId,
-        UpdateManualReportPostalAddressRequest request, IAlphaDbContext db,
-        OrganizationAccessService access, CancellationToken ct)
-    {
-        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
-        var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId
-            && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
-        if (report is null) return Results.NotFound();
-        if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
-        var employee = await db.ManualReportEmployees.SingleOrDefaultAsync(x => x.Id == reportEmployeeId
-            && x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
-        if (employee is null) return Results.NotFound();
-        var zip = request.PostalCode?.Trim() ?? "";
-        var box = request.PostOfficeBox?.Trim() ?? "";
-        if (zip.Length > 0 && (zip.Length > 7 || zip.Any(x => x is < '0' or > '9')))
-            return Results.BadRequest(new { error = "מיקוד חייב להכיל עד 7 ספרות." });
-        if (box.Length > 0 && (!int.TryParse(box, out var number) || number > 99999
-            || box.Any(x => x is < '0' or > '9')))
-            return Results.BadRequest(new { error = "תא דואר חייב להיות מספר בין 0 ל־99999." });
-        if (box.Length == 0 && (zip.Length == 0 || string.IsNullOrWhiteSpace(employee.CitySnapshot)
-            || string.IsNullOrWhiteSpace(employee.StreetSnapshot)
-            || string.IsNullOrWhiteSpace(employee.HouseNumberSnapshot)))
-            return Results.BadRequest(new { error = "בהיעדר תא דואר יש להשלים כתובת רחוב ומיקוד." });
-        employee.UpdatePostalAddressSnapshot(zip, box);
-        report.MarkDirty();
-        await db.SaveChangesAsync(ct);
-        return Results.NoContent();
-    }
-
     private static async Task<IResult> SaveEmployeeAsync(Guid organizationId, Guid employerId, Guid reportId,
         Guid reportEmployeeId, SaveManualReportEmployeeRequest request, IAlphaDbContext db,
         OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
@@ -715,4 +684,3 @@ public sealed record SaveManualReportPaymentRequest(string ProviderName, string 
     string EmployerBranch, string EmployerAccount, string ConfirmationFileName, DateOnly? TrustAccountValueDate = null,
     decimal? ActualDepositAmount = null, string? MasavSenderCode = null);
 
-public sealed record UpdateManualReportPostalAddressRequest(string? PostalCode, string? PostOfficeBox);
