@@ -124,7 +124,7 @@ public static class OrganizationEndpoints
                 organizationId, employerId, request.TargetOrganizationId,
                 user.UserId, http.TraceIdentifier, ct);
             if (!result.Success)
-                return Results.Conflict(new { error = result.Error, message = result.Message });
+                return Results.Conflict(new { error = result.Error, detail = result.Message });
             return Results.Ok(new { employerId, organizationId = request.TargetOrganizationId });
         });
         return endpoints;
