@@ -84,11 +84,13 @@ public static class OrganizationProfileEndpoints
         BillingInheritanceService billingInheritance, HttpContext http, CancellationToken ct)
     {
         if (!await access.CanEditOrganizationGeneralAsync(organizationId, ct)) return Results.Forbid();
-        if (!Enum.IsDefined(request.Type) || request.Type == OrganizationType.SelfService)
+        if (!Enum.IsDefined(request.Type))
             return Results.BadRequest(new { error = "Invalid organization type." });
 
         var organization = await db.Organizations.SingleOrDefaultAsync(x => x.Id == organizationId, ct);
         if (organization is null) return Results.NotFound();
+        if (request.Type == OrganizationType.SelfService && organization.Type != OrganizationType.SelfService)
+            return Results.BadRequest(new { error = "Cannot convert to a self-service organization." });
         var settings = await GetOrCreateSettingsAsync(organizationId, db, ct);
 
         organization.Update(request.Name, request.Type);
