@@ -1,5 +1,7 @@
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Api.Security;
+using Alpha.Api.Services;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
 
@@ -110,6 +112,7 @@ public static class ReportFeedbackEndpoints
         Guid reportId,
         IAlphaDbContext db,
         OrganizationAccessService access,
+        IDataProtectionService protector,
         CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
@@ -137,6 +140,42 @@ public static class ReportFeedbackEndpoints
             .ToListAsync(ct);
         var employeesById = employees.ToDictionary(x => x.Id);
 
+        // Match official clearinghouse record-level replies to the actual contribution
+        // identifiers exported for this tenant-scoped report. An unmatched response
+        // remains report-level evidence: never guess its employee/product.
+        var productIds = products.Select(x => x.Id).ToArray();
+        var contributions = await db.ManualContributions.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var productsByRecordId = contributions.ToDictionary(
+            x => (string.IsNullOrWhiteSpace(x.InterfaceRecordIdentifier) ? x.Id.ToString("D") : x.InterfaceRecordIdentifier)
+                .ToUpperInvariant(), x => x.ReportProductId, StringComparer.Ordinal);
+        var recordFeedback = new Dictionary<Guid, List<EmployerInterfaceLineFeedbackParser.RecordStatus>>();
+        foreach (var file in await db.EmployerInterfaceFeedback.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.ReportId == reportId)
+            .OrderByDescending(x => x.ReceivedAt).ToListAsync(ct))
+        {
+            var xml = protector.Unprotect(file.RawXml, $"employer-interface-feedback:{file.PayloadHash}");
+            foreach (var item in EmployerInterfaceLineFeedbackParser.Parse(xml))
+            {
+                if (!productsByRecordId.TryGetValue(item.RecordIdentifier, out var productId)) continue;
+                if (!recordFeedback.TryGetValue(productId, out var matches))
+                    recordFeedback[productId] = matches = [];
+                // Newest feedback wins for a given exported contribution record.
+                if (matches.Any(x => x.RecordIdentifier == item.RecordIdentifier)) continue;
+                matches.Add(item with { SourceFileName = file.SourceFileName, ReceivedAt = file.ReceivedAt });
+            }
+        }
+        var depositFeedback = products.Select(product =>
+        {
+            recordFeedback.TryGetValue(product.Id, out var statuses);
+            return new
+            {
+                reportProductId = product.Id,
+                hasRecordFeedback = statuses is { Count: > 0 },
+                records = statuses ?? [],
+            };
+        }).ToArray();
+
         var issues = new List<object>();
         if (!string.IsNullOrWhiteSpace(report.ValidationError))
             issues.Add(new { source = "report", code = "REPORT_VALIDATION", description = report.ValidationError, employeeId = (Guid?)null, employeeName = (string?)null, productId = (Guid?)null, productName = (string?)null, actionType = "EditReport" });
@@ -159,6 +198,7 @@ public static class ReportFeedbackEndpoints
             issueCount = issues.Count,
             issues,
             officialFeedback,
+            depositFeedback,
             transmissions = transmissions.Select(x => new { x.Id, x.AttemptNumber, x.Status, x.Provider, x.ExternalId, x.ErrorMessage, x.StartedAt, x.SentAt, x.CompletedAt, x.CreatedAt })
         });
     }

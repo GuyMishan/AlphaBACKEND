@@ -74,3 +74,5 @@ These sources outrank assumptions, old examples and UI behavior.
 
 
 - Editing a person's postal code/post-office box in their employee card updates matching address snapshots in still-editable reports for the same authorized employment, in the same transaction. Imported/overridden snapshots and immutable submitted/sent reports remain untouched; refreshed drafts are marked dirty and revalidated. Address fields have no duplicate editor inside the report wizard.
+
+- `EmployerInterfaceLineFeedbackParser` extracts per-record statuses from encrypted, XSD-validated official summary feedback. The scoped feedback-details endpoint associates them only via saved exported contribution record identifiers, preserving official file provenance and never guessing associations for unmatched feedback.
