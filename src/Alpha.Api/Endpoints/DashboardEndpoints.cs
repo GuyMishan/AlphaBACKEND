@@ -70,6 +70,19 @@ public static class DashboardEndpoints
             organizationCount = 1;
             employers = employers.Where(x => x.OrganizationId == organizationId.Value);
             employments = employments.Where(x => x.OrganizationId == organizationId.Value);
+            if (!await access.HasFullOrganizationEmployerScopeAsync(organizationId.Value, ct))
+            {
+                var directIds = db.EmployerUserAccesses.AsNoTracking()
+                    .Where(x => x.OrganizationId == organizationId.Value &&
+                        x.UserId == currentUser.UserId).Select(x => x.EmployerId);
+                var referentIds = db.ReferentEmployerAssignments.AsNoTracking()
+                    .Where(x => x.UserId == currentUser.UserId &&
+                        db.Users.Any(u => u.Id == currentUser.UserId && u.IsReferent && u.IsActive))
+                    .Select(x => x.EmployerId);
+                employers = employers.Where(x => directIds.Contains(x.Id) || referentIds.Contains(x.Id));
+                employments = employments.Where(x => directIds.Contains(x.EmployerId) ||
+                    referentIds.Contains(x.EmployerId));
+            }
         }
         else
         {

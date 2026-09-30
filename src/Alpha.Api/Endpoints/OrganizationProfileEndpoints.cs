@@ -53,6 +53,7 @@ public static class OrganizationProfileEndpoints
             organization.Type,
             organization.Status,
             canManageOrganization = await access.CanManageOrganizationAsync(organizationId, ct),
+            canEditOrganizationGeneral = await access.CanEditOrganizationGeneralAsync(organizationId, ct),
             general = new
             {
                 registrationNumber = settings?.RegistrationNumber ?? string.Empty,
@@ -82,7 +83,7 @@ public static class OrganizationProfileEndpoints
         IAlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
         BillingInheritanceService billingInheritance, HttpContext http, CancellationToken ct)
     {
-        if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        if (!await access.CanEditOrganizationGeneralAsync(organizationId, ct)) return Results.Forbid();
         if (!Enum.IsDefined(request.Type) || request.Type == OrganizationType.SelfService)
             return Results.BadRequest(new { error = "Invalid organization type." });
 

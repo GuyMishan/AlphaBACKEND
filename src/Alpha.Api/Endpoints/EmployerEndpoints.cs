@@ -26,7 +26,7 @@ public static class EmployerEndpoints
             OrganizationAccessService access, CancellationToken ct) =>
         {
             if (!await access.CanAccessOrganizationScopeAsync(organizationId, ct)) return Results.Forbid();
-            var query = ApplyEmployerAccess(db.Employers.AsNoTracking().Where(x => x.OrganizationId == organizationId), organizationId, db, user, await access.GetMembershipAsync(organizationId, ct));
+            var query = ApplyEmployerAccess(db.Employers.AsNoTracking().Where(x => x.OrganizationId == organizationId), organizationId, db, user, await access.GetMembershipAsync(organizationId, ct), await access.HasReferentOrganizationAssignmentAsync(organizationId, ct));
             return Results.Ok(await query.OrderBy(x => x.LegalName).Take(500).ToListAsync(ct));
         });
 
@@ -36,7 +36,7 @@ public static class EmployerEndpoints
             if (!await access.CanAccessOrganizationScopeAsync(organizationId, ct)) return Results.Forbid();
             skip = Math.Max(0, skip);
             take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
-            var query = ApplyEmployerAccess(db.Employers.AsNoTracking().Where(x => x.OrganizationId == organizationId), organizationId, db, user, await access.GetMembershipAsync(organizationId, ct));
+            var query = ApplyEmployerAccess(db.Employers.AsNoTracking().Where(x => x.OrganizationId == organizationId), organizationId, db, user, await access.GetMembershipAsync(organizationId, ct), await access.HasReferentOrganizationAssignmentAsync(organizationId, ct));
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var term = search.Trim().ToLower();
@@ -287,15 +287,18 @@ public static class EmployerEndpoints
         return null;
     }
 
-    private static IQueryable<Employer> ApplyEmployerAccess(IQueryable<Employer> query, Guid organizationId, IAlphaDbContext db, ICurrentUser user, OrganizationMembership? membership)
+    private static IQueryable<Employer> ApplyEmployerAccess(IQueryable<Employer> query, Guid organizationId, IAlphaDbContext db, ICurrentUser user, OrganizationMembership? membership, bool hasReferentOrganizationScope)
     {
-        if (user.IsPlatformAdmin) return query;
+        if (user.IsPlatformAdmin || hasReferentOrganizationScope) return query;
         if (membership?.EmployerAccessMode == EmployerAccessMode.AllEmployers) return query;
 
         var ids = db.EmployerUserAccesses
             .Where(x => x.UserId == user.UserId && x.OrganizationId == organizationId)
             .Select(x => x.EmployerId);
-        return query.Where(x => ids.Contains(x.Id));
+        var referentIds = db.ReferentEmployerAssignments
+            .Where(x => x.UserId == user.UserId && db.Users.Any(u =>
+                u.Id == user.UserId && u.IsActive && u.IsReferent)).Select(x => x.EmployerId);
+        return query.Where(x => ids.Contains(x.Id) || referentIds.Contains(x.Id));
     }
 
     private static IQueryable<EmployeeListRow> EmployeeQuery(IAlphaDbContext db, Guid organizationId, Guid employerId) =>

@@ -19,7 +19,8 @@ public static class OnboardingEndpoints
         group.MapGet("/status", async (IAlphaDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
         {
             if (!currentUser.IsAuthenticated) return Results.Unauthorized();
-            if (currentUser.IsPlatformAdmin)
+            if (currentUser.IsPlatformAdmin || await db.Users.AsNoTracking().AnyAsync(x =>
+                    x.Id == currentUser.UserId && x.IsActive && x.IsReferent, ct))
                 return Results.Ok(new { needsOnboarding = false, hasAccess = true });
 
             var hasOrganizationAccess = await db.OrganizationMemberships.AsNoTracking().AnyAsync(x =>
@@ -35,7 +36,9 @@ public static class OnboardingEndpoints
         group.MapPost("/self-service", async (CreateEmployerRequest request, AlphaDbContext db,
             ICurrentUser currentUser, HttpContext http, CancellationToken ct) =>
         {
-            if (!currentUser.IsAuthenticated || currentUser.IsPlatformAdmin) return Results.Forbid();
+            if (!currentUser.IsAuthenticated || currentUser.IsPlatformAdmin ||
+                await db.Users.AsNoTracking().AnyAsync(x => x.Id == currentUser.UserId && x.IsReferent, ct))
+                return Results.Forbid();
 
             var validationError = ApiInputValidation.Employer(
                 request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber,

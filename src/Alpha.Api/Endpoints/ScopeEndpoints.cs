@@ -23,6 +23,14 @@ public static class ScopeEndpoints
     {
         if (!currentUser.IsAuthenticated) return Results.Unauthorized();
 
+        var isReferent = await db.Users.AsNoTracking().AnyAsync(x =>
+            x.Id == currentUser.UserId && x.IsActive && x.IsReferent, ct);
+        var referentOrgIds = db.ReferentOrganizationAssignments.AsNoTracking()
+            .Where(x => x.UserId == currentUser.UserId).Select(x => x.OrganizationId);
+        var referentEmployerIds = db.ReferentEmployerAssignments.AsNoTracking()
+            .Where(x => x.UserId == currentUser.UserId).Select(x => x.EmployerId);
+        var referentEmployerOrgIds = db.Employers.AsNoTracking()
+            .Where(x => referentEmployerIds.Contains(x.Id)).Select(x => x.OrganizationId);
         var organizationsQuery = db.Organizations.AsNoTracking();
 
         if (!currentUser.IsPlatformAdmin)
@@ -37,7 +45,8 @@ public static class ScopeEndpoints
                 .Select(x => x.OrganizationId);
 
             organizationsQuery = organizationsQuery.Where(x =>
-                membershipOrgIds.Contains(x.Id) || employerOrgIds.Contains(x.Id));
+                membershipOrgIds.Contains(x.Id) || employerOrgIds.Contains(x.Id) ||
+                (isReferent && (referentOrgIds.Contains(x.Id) || referentEmployerOrgIds.Contains(x.Id))));
         }
 
         var organizations = await organizationsQuery
@@ -46,6 +55,7 @@ public static class ScopeEndpoints
             .ToListAsync(ct);
 
         var result = new List<object>(organizations.Count);
+        var employerCount = 0;
 
         foreach (var organization in organizations)
         {
@@ -60,7 +70,11 @@ public static class ScopeEndpoints
                         (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow), ct);
             }
 
-            var hasOrganizationScope = currentUser.IsPlatformAdmin || membership is not null;
+            var hasReferentOrganizationScope = isReferent && await db.ReferentOrganizationAssignments
+                .AsNoTracking().AnyAsync(x => x.UserId == currentUser.UserId &&
+                    x.OrganizationId == organization.Id, ct);
+            var hasOrganizationScope = currentUser.IsPlatformAdmin || membership is not null ||
+                hasReferentOrganizationScope;
             var canManageOrganization = currentUser.IsPlatformAdmin ||
                                         await access.CanManageOrganizationAsync(organization.Id, ct);
 
@@ -68,13 +82,14 @@ public static class ScopeEndpoints
                 .Where(x => x.OrganizationId == organization.Id);
 
             if (!currentUser.IsPlatformAdmin &&
-                membership?.EmployerAccessMode != EmployerAccessMode.AllEmployers)
+                membership?.EmployerAccessMode != EmployerAccessMode.AllEmployers && !hasReferentOrganizationScope)
             {
                 var grantedEmployerIds = db.EmployerUserAccesses.AsNoTracking()
                     .Where(x => x.UserId == currentUser.UserId &&
                                 x.OrganizationId == organization.Id)
                     .Select(x => x.EmployerId);
-                employersQuery = employersQuery.Where(x => grantedEmployerIds.Contains(x.Id));
+                employersQuery = employersQuery.Where(x => grantedEmployerIds.Contains(x.Id) ||
+                    (isReferent && referentEmployerIds.Contains(x.Id)));
             }
 
             var employers = await employersQuery
@@ -90,6 +105,7 @@ public static class ScopeEndpoints
                 })
                 .ToListAsync(ct);
 
+            employerCount += employers.Count;
             result.Add(new
             {
                 organization.Id,
@@ -100,28 +116,6 @@ public static class ScopeEndpoints
                 canManageOrganization,
                 employers
             });
-        }
-
-        var employerCount = 0;
-        foreach (var organization in organizations)
-        {
-            if (currentUser.IsPlatformAdmin)
-            {
-                employerCount += await db.Employers.AsNoTracking().CountAsync(x => x.OrganizationId == organization.Id, ct);
-                continue;
-            }
-
-            var membership = await db.OrganizationMemberships.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.UserId == currentUser.UserId &&
-                    x.OrganizationId == organization.Id && x.IsActive &&
-                    (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow), ct);
-
-            if (membership?.EmployerAccessMode == EmployerAccessMode.AllEmployers)
-                employerCount += await db.Employers.AsNoTracking().CountAsync(x => x.OrganizationId == organization.Id, ct);
-            else
-                employerCount += await db.EmployerUserAccesses.AsNoTracking()
-                    .Where(x => x.UserId == currentUser.UserId && x.OrganizationId == organization.Id)
-                    .Select(x => x.EmployerId).Distinct().CountAsync(ct);
         }
 
         return Results.Ok(new { organizations = result, organizationCount = organizations.Count, employerCount });

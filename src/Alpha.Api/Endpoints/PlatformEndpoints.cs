@@ -83,6 +83,8 @@ public static class PlatformEndpoints
 
             user.UpdateProfile(displayName, email);
             user.SetActive(request.IsActive);
+            if (request.IsPlatformAdmin && user.IsReferent)
+                return Results.Conflict(new { error = "referent_cannot_be_platform_admin" });
             user.SetPlatformAdmin(request.IsPlatformAdmin);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();

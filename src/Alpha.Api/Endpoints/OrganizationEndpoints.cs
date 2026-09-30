@@ -25,7 +25,16 @@ public static class OrganizationEndpoints
                 var membershipIds = db.OrganizationMemberships.Where(x => x.UserId == user.UserId && x.IsActive &&
                     (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow)).Select(x => x.OrganizationId);
                 var employerAccessIds = db.EmployerUserAccesses.Where(x => x.UserId == user.UserId).Select(x => x.OrganizationId);
-                query = query.Where(x => membershipIds.Contains(x.Id) || employerAccessIds.Contains(x.Id));
+                var isReferent = await db.Users.AsNoTracking()
+                    .AnyAsync(x => x.Id == user.UserId && x.IsReferent && x.IsActive, ct);
+                var referentOrgIds = db.ReferentOrganizationAssignments
+                    .Where(x => x.UserId == user.UserId).Select(x => x.OrganizationId);
+                var referentEmployerIds = db.ReferentEmployerAssignments
+                    .Where(x => x.UserId == user.UserId).Select(x => x.EmployerId);
+                var referentEmployerOrgIds = db.Employers
+                    .Where(x => referentEmployerIds.Contains(x.Id)).Select(x => x.OrganizationId);
+                query = query.Where(x => membershipIds.Contains(x.Id) || employerAccessIds.Contains(x.Id) ||
+                    (isReferent && (referentOrgIds.Contains(x.Id) || referentEmployerOrgIds.Contains(x.Id))));
             }
             return Results.Ok(await query.OrderBy(x => x.Name).ToListAsync(ct));
         });
