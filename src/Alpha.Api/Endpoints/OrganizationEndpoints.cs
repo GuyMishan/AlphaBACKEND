@@ -33,7 +33,10 @@ public static class OrganizationEndpoints
             HttpContext http, CancellationToken ct) =>
         {
             if (!user.IsPlatformAdmin) return Results.Forbid();
+            if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 200 || !Enum.IsDefined(request.Type))
+                return Results.BadRequest(new { error = "Organization name or type is invalid." });
             var organization = new Organization(request.Name, request.Type);
+            organization.Activate();
             db.Organizations.Add(organization);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "organization.created", nameof(Organization), organization.Id,
                 organization.Id, null, JsonSerializer.Serialize(request), http.TraceIdentifier));
