@@ -26,6 +26,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<OrganizationAccessService>();
 builder.Services.AddScoped<BillingInheritanceService>();
+builder.Services.AddScoped<EmployerTransferService>();
 builder.Services.AddScoped<BillingGateService>();
 builder.Services.AddScoped<FakePaymentProvider>();
 builder.Services.AddScoped<CardComPaymentProvider>();
