@@ -87,10 +87,37 @@ public static class EmployerInterfaceProfileEndpoints
             request.Mobile, request.City, request.Street, request.HouseNumber, request.PostalCode, request.PostOfficeBox);
         if (validationError is not null) return Results.BadRequest(new { error = validationError });
         var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
+        var previousPostalCode = person.PostalCode;
+        var previousPostOfficeBox = person.PostOfficeBox;
         person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile,
             request.City, request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
-        // Existing reports keep their immutable Employer Interface snapshot. Updating the
-        // employee master profile affects only reports created after this change.
+
+        // Employee card is the sole address editor. Keep draft snapshots synchronized
+        // only when their prior address matched the master profile; imported/custom
+        // report addresses and every finalized/submitted report remain unchanged.
+        if (previousPostalCode != person.PostalCode || previousPostOfficeBox != person.PostOfficeBox)
+        {
+            var editableReports = await db.ManualReports
+                .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
+                    && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
+                        || x.Status == ManualReportStatus.Error))
+                .ToListAsync(ct);
+            var reportIds = editableReports.Select(x => x.Id).ToArray();
+            if (reportIds.Length > 0)
+            {
+                var matchingSnapshots = await db.ManualReportEmployees
+                    .Where(x => reportIds.Contains(x.ReportId) && x.EmploymentId == employmentId
+                        && x.OrganizationId == organizationId && x.EmployerId == employerId
+                        && x.PostalCodeSnapshot == previousPostalCode
+                        && x.PostOfficeBoxSnapshot == previousPostOfficeBox)
+                    .ToListAsync(ct);
+                foreach (var snapshot in matchingSnapshots)
+                    snapshot.UpdatePostalAddressSnapshot(person.PostalCode, person.PostOfficeBox);
+                var touchedReportIds = matchingSnapshots.Select(x => x.ReportId).ToHashSet();
+                foreach (var report in editableReports.Where(x => touchedReportIds.Contains(x.Id)))
+                    report.MarkDirty();
+            }
+        }
         await db.SaveChangesAsync(ct);
         return Results.Ok(new
         {
