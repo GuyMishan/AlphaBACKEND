@@ -17,6 +17,10 @@ Platform
 Platform roles do not imply organization membership. Organization membership grants access to
 either every employer in that organization or an explicit set of employers.
 
+## Full employer ownership transfer
+
+Each employer has precisely one organization. Platform administrators can atomically transfer an employer to a different organization. The transfer acquires source and target quota advisory locks, refuses duplicate employer identities and duplicate employee identifiers (Israeli IDs or passports), enforces target plan limits and rejects pending transmissions. Employee identities shared with other source employers are cloned so those employers retain their own records. All employer-specific references (employment, report, transmission, feedback and employer payment accounts) are re-scoped; historical encrypted evidence stays bound to its existing record identity and is not decrypted or rewritten. Direct employer-only grants follow the employer, former organization membership-based grants are revoked, and pending employer invitations from the former organization are cancelled. Historic billing ledger and append-only audit records remain untouched. Billing for periods spanning an employer move is deferred and must not be automatically retroactively invoiced without a separate effective-date attribution feature.
+
 ## Module roadmap
 
 Implemented foundation:
