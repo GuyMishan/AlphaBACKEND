@@ -66,6 +66,18 @@ public static class ReferentEndpoints
                 return Results.Conflict(new { error = "invalid_referent_user", detail = "יש לבחור משתמש פעיל שאינו אדמין מערכת." });
             if (request.Enabled)
             {
+                // Internal referents must not inherit any customer seats or
+                // privileges from an earlier role in another organization.
+                if (await db.OrganizationMemberships.AnyAsync(x => x.UserId == userId && x.IsActive, ct) ||
+                    await db.EmployerUserAccesses.AnyAsync(x => x.UserId == userId, ct) ||
+                    await db.UserInvitations.AnyAsync(x => x.EmployerId != null &&
+                        x.Status == Alpha.Domain.Identity.UserInvitationStatus.Pending &&
+                        x.Email == user.Email, ct))
+                    return Results.Conflict(new
+                    {
+                        error = "existing_customer_access",
+                        detail = "המשתמש כבר משויך כלקוח. יש ליצור עבורו חשבון רפרנט נפרד."
+                    });
                 var orgCount = await db.Organizations.AsNoTracking()
                     .CountAsync(x => organizationIds.Contains(x.Id), ct);
                 var employerCount = await db.Employers.AsNoTracking()

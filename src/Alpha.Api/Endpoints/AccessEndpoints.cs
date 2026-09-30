@@ -115,6 +115,8 @@ public static class AccessEndpoints
                 return Results.BadRequest(new { error = "invalid_access_role" });
             var entitlement = await entitlements.CanInviteUser(organizationId, request.UserId, ct);
             if (!entitlement.Allowed) return EntitlementError(entitlement);
+            if (await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsReferent, ct))
+                return Results.Conflict(new { error = "referent_cannot_receive_customer_access" });
             if (!await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsActive, ct))
                 return Results.BadRequest(new { error = "User does not exist or is inactive." });
 
@@ -260,6 +262,8 @@ public static class AccessEndpoints
             if (await db.EmployerUserAccesses.AnyAsync(x => x.OrganizationId == organizationId &&
                 x.UserId == userId && x.EmployerId == employerId, ct)) return Results.NoContent();
 
+            if (await db.Users.AnyAsync(x => x.Id == userId && x.IsReferent, ct))
+                return Results.Conflict(new { error = "referent_cannot_receive_customer_access" });
             var grant = new EmployerUserAccess(userId, organizationId, employerId, EmployerRole.User);
             db.EmployerUserAccesses.Add(grant);
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "employer.access.granted", nameof(EmployerUserAccess),

@@ -84,6 +84,8 @@ public static class OrganizationEndpoints
             IAlphaDbContext db, ICurrentUser user, OrganizationAccessService access, EntitlementService entitlements, OrganizationEntitlementLock entitlementLock, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            if (await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsReferent, ct))
+                return Results.Conflict(new { error = "referent_cannot_receive_customer_access" });
             if (!await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsActive, ct))
                 return Results.BadRequest(new { error = "User does not exist or is inactive." });
             if (await db.OrganizationMemberships.AnyAsync(x => x.UserId == request.UserId && x.OrganizationId == organizationId, ct))
@@ -117,6 +119,8 @@ public static class OrganizationEndpoints
             if (await db.EmployerUserAccesses.AnyAsync(x => x.UserId == userId && x.EmployerId == employerId, ct))
                 return Results.NoContent();
 
+            if (await db.Users.AnyAsync(x => x.Id == userId && x.IsReferent, ct))
+                return Results.Conflict(new { error = "referent_cannot_receive_customer_access" });
             var grant = new EmployerUserAccess(userId, organizationId, employerId, EmployerRole.User);
             db.EmployerUserAccesses.Add(grant);
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "employer.access.granted", nameof(EmployerUserAccess),
