@@ -67,3 +67,5 @@ These sources outrank assumptions, old examples and UI behavior.
 - The existing `GET /manual-reports` endpoint returns paged, scope-authorized **editable** drafts only (Draft, ReadyForValidation, Error), including report kind, source and payment-account identity. `GET /manual-reports/{id}` includes the same resume metadata. The frontend restores persisted drafts without creating a duplicate.
 
 - The startup reference-data initializer now persists the official Hebrew labels for all V006 `receipt-type` codes (1/2/4/6/8) rather than opaque `קוד N` placeholders; frontend table and selectors resolve descriptions via the existing `/api/reference-data/employer-interface-006/options` endpoint.
+
+- Payment confirmations also expose an employer-scope-authorized report-level GET listing for the deposit table, avoiding one evidence request per product; actual downloads remain per-product and SHA256 checked.

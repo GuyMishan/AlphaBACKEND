@@ -16,6 +16,7 @@ public static class PaymentConfirmationEndpoints
     {
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/manual-reports/{reportId:guid}/payment-confirmations")
             .RequireAuthorization().WithTags("Manual reporting");
+        group.MapGet("/", ListForReportAsync);
         group.MapGet("/{reportProductId:guid}", ListAsync);
         group.MapPost("/{reportProductId:guid}", UploadAsync).DisableAntiforgery()
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(11 * 1024 * 1024));
@@ -27,6 +28,21 @@ public static class PaymentConfirmationEndpoints
                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
                where product.Id == productId && employee.ReportId == reportId
                select product.Id).AnyAsync(ct);
+
+    // One authorized, scoped query for the deposit table instead of a request per visible row.
+    private static async Task<IResult> ListForReportAsync(Guid organizationId, Guid employerId, Guid reportId,
+        IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await db.ManualReports.AsNoTracking().AnyAsync(x => x.Id == reportId &&
+            x.OrganizationId == organizationId && x.EmployerId == employerId, ct)) return Results.NotFound();
+        var items = await db.PaymentConfirmations.AsNoTracking()
+            .Where(x => x.ReportId == reportId)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new { x.ReportProductId, x.Id, x.OriginalFileName, x.ContentType,
+                x.SizeBytes, x.Sha256, x.CreatedAt }).ToListAsync(ct);
+        return Results.Ok(new { items });
+    }
 
     private static async Task<IResult> ListAsync(Guid organizationId, Guid employerId, Guid reportId, Guid reportProductId,
         IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
