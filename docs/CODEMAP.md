@@ -65,3 +65,5 @@ These sources outrank assumptions, old examples and UI behavior.
 - Login OTP requests return an opaque synthetic challenge identifier for unknown identities so response shape does not disclose account existence. Registration requests are likewise neutral for existing identities, and registration advisory locks use purpose-bound lookup material rather than plaintext identity values.
 
 - The existing `GET /manual-reports` endpoint returns paged, scope-authorized **editable** drafts only (Draft, ReadyForValidation, Error), including report kind, source and payment-account identity. `GET /manual-reports/{id}` includes the same resume metadata. The frontend restores persisted drafts without creating a duplicate.
+
+- The startup reference-data initializer now persists the official Hebrew labels for all V006 `receipt-type` codes (1/2/4/6/8) rather than opaque `קוד N` placeholders; frontend table and selectors resolve descriptions via the existing `/api/reference-data/employer-interface-006/options` endpoint.
