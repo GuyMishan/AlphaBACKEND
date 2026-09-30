@@ -57,7 +57,7 @@ public static class OnboardingEndpoints
                 return Results.Conflict(new { error = "onboarding_already_completed" });
             }
 
-            var organization = new Organization(request.LegalName.Trim(), OrganizationType.SelfService);
+            var organization = new Organization($"ארגון - {request.LegalName.Trim()}", OrganizationType.SelfService);
             organization.Activate();
             db.Organizations.Add(organization);
 
