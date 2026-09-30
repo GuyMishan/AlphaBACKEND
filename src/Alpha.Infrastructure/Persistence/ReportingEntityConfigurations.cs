@@ -189,3 +189,18 @@ public sealed class ManualReportPaymentConfiguration : IEntityTypeConfiguration<
         b.HasOne<ManualReportProduct>().WithOne().HasForeignKey<ManualReportPayment>(x => x.ReportProductId).OnDelete(DeleteBehavior.Cascade);
     }
 }
+public sealed class PaymentConfirmationConfiguration : IEntityTypeConfiguration<PaymentConfirmation>
+{
+    public void Configure(EntityTypeBuilder<PaymentConfirmation> b)
+    {
+        b.ToTable("payment_confirmations", "reporting");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.StoragePath).HasMaxLength(400).IsRequired();
+        b.Property(x => x.OriginalFileName).HasMaxLength(260).IsRequired();
+        b.Property(x => x.ContentType).HasMaxLength(80).IsRequired();
+        b.Property(x => x.Sha256).HasMaxLength(64).IsRequired();
+        b.HasIndex(x => new { x.ReportId, x.ReportProductId, x.CreatedAt });
+        b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ManualReportProduct>().WithMany().HasForeignKey(x => x.ReportProductId).OnDelete(DeleteBehavior.Restrict);
+    }
+}

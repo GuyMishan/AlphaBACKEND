@@ -44,6 +44,8 @@
 - Clearing-house rules PDF and error-code workbook under `docs/specifications/mislaka`.
 These sources outrank assumptions, old examples and UI behavior.
 
+- Payment evidence: `PaymentConfirmationEndpoints.cs` validates tenant/report-product access and uses `PaymentEvidenceStorage` (private Supabase Storage bucket) for screened PDF/JPEG/PNG confirmations. PostgreSQL `reporting.payment_confirmations` holds immutable versioned metadata; it is not an official Employer Interface attachment.
+
 ## Security
 - `src/Alpha.Api/Security/*` — versioned AES-GCM string/binary encryption and legacy-compatible sensitive-data backfill, headers, audit, malware scanning, retention and session activity. `SessionActivityMiddleware` rejects revoked/expired/idle sessions and sessions whose user has been deactivated. `/api/auth/logout` revokes the current server-side session, so the associated JWT cannot continue through the middleware. Login OTP requests use a neutral unknown-account response, and OTP HMAC material is domain-separated from JWT signing.
 - `src/Alpha.Domain/Auditing/AuditEvent.cs`.
