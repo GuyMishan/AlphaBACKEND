@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Alpha.Api.Contracts;
+using Alpha.Api.Services;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Application.Entitlements;
@@ -114,6 +115,20 @@ public static class OrganizationEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/organizations/{organizationId}/memberships/{userId}/employers/{employerId}", grant);
         });
+        group.MapPost("/{organizationId:guid}/employers/{employerId:guid}/transfer", async (
+            Guid organizationId, Guid employerId, TransferEmployerRequest request,
+            EmployerTransferService transfer, ICurrentUser user, HttpContext http, CancellationToken ct) =>
+        {
+            if (!user.IsPlatformAdmin) return Results.Forbid();
+            var result = await transfer.TransferAsync(
+                organizationId, employerId, request.TargetOrganizationId,
+                user.UserId, http.TraceIdentifier, ct);
+            if (!result.Success)
+                return Results.Conflict(new { error = result.Error, message = result.Message });
+            return Results.Ok(new { employerId, organizationId = request.TargetOrganizationId });
+        });
         return endpoints;
     }
+
+    public sealed record TransferEmployerRequest(Guid TargetOrganizationId);
 }
