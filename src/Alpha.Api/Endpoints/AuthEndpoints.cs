@@ -30,7 +30,7 @@ public static class AuthEndpoints
                 .SingleOrDefaultAsync(x => x.Id == currentUser.UserId && x.IsActive, ct);
             return user is null
                 ? Results.Unauthorized()
-                : Results.Ok(new { userId = user.Id, platformAdmin = user.IsPlatformAdmin, displayName = user.DisplayName });
+                : Results.Ok(new { userId = user.Id, platformAdmin = user.IsPlatformAdmin, isReferent = user.IsReferent, displayName = user.DisplayName });
         }).RequireAuthorization().WithTags("Authentication");
 
         endpoints.MapPost("/api/auth/logout", async (AlphaDbContext db, ClaimsPrincipal principal, CancellationToken ct) =>
@@ -328,7 +328,8 @@ public static class AuthEndpoints
         var token = new JwtSecurityToken(issuer: "alpha-prototype", audience: "alpha-frontend",
             claims: claims, notBefore: now,
             expires: now.AddHours(12), signingCredentials: credentials);
-        return Results.Ok(new { accessToken = new JwtSecurityTokenHandler().WriteToken(token), userId, platformAdmin, displayName });
+        var isReferent = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId && x.IsReferent && x.IsActive, ct);
+        return Results.Ok(new { accessToken = new JwtSecurityTokenHandler().WriteToken(token), userId, platformAdmin, isReferent, displayName });
     }
 
     private static bool IsValidEmail(string value)
