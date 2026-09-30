@@ -86,6 +86,10 @@ Delivery failures return 503 and invalidate the challenge. Keep the signing key 
 If you edit the Apps Script code, deploy a **new version** of the web app. On a personal Gmail account, this uses your own mailbox and its daily send quota. The backend stores hashed, expiring codes; the script only delivers them.
 
 
+## External providers
+
+See [ALPHA external service provider register](docs/SERVICE_PROVIDERS.md) for active infrastructure, payment adapters, clearinghouse status, and Cloudmersive (selected for file malware scanning, with integration pending).
+
 ## Secure pension-payment confirmations
 
 Payment confirmations (PDF/JPEG/PNG, up to 10 MB) are operational evidence, separate from official Employer Interface 006 documents. The authenticated Backend scans uploads, writes immutable versioned files to the private `alpha-payment-evidence` bucket in Supabase Storage and keeps only metadata/SHA-256 and the opaque object path in `reporting.payment_confirmations`. Download authorization is always rechecked against the report's organization and employer. Do not expose the service-role key or create public Storage policies.
