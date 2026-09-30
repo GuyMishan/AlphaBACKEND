@@ -1,4 +1,5 @@
 using Alpha.Api.Services;
+using System.Xml;
 using Xunit;
 
 namespace Alpha.Api.Tests;

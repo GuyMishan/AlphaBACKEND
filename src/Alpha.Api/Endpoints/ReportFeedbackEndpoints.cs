@@ -146,9 +146,12 @@ public static class ReportFeedbackEndpoints
         var productIds = products.Select(x => x.Id).ToArray();
         var contributions = await db.ManualContributions.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
-        var productsByRecordId = contributions.ToDictionary(
-            x => (string.IsNullOrWhiteSpace(x.InterfaceRecordIdentifier) ? x.Id.ToString("D") : x.InterfaceRecordIdentifier)
-                .ToUpperInvariant(), x => x.ReportProductId, StringComparer.Ordinal);
+        var productsByRecordId = contributions
+            .GroupBy(x => (string.IsNullOrWhiteSpace(x.InterfaceRecordIdentifier) ? x.Id.ToString("D") : x.InterfaceRecordIdentifier)
+                .ToUpperInvariant(), StringComparer.Ordinal)
+            // Ambiguous identifiers must not be attributed to the wrong product.
+            .Where(group => group.Select(x => x.ReportProductId).Distinct().Count() == 1)
+            .ToDictionary(group => group.Key, group => group.First().ReportProductId, StringComparer.Ordinal);
         var recordFeedback = new Dictionary<Guid, List<EmployerInterfaceLineFeedbackParser.RecordStatus>>();
         foreach (var file in await db.EmployerInterfaceFeedback.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.ReportId == reportId)
