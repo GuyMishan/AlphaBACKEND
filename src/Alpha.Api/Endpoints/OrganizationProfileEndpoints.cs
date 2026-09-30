@@ -91,6 +91,10 @@ public static class OrganizationProfileEndpoints
         if (organization is null) return Results.NotFound();
         if (request.Type == OrganizationType.SelfService && organization.Type != OrganizationType.SelfService)
             return Results.BadRequest(new { error = "Cannot convert to a self-service organization." });
+        // Referents may manage general organization details, but changing an
+        // organization type affects payment/billing inheritance and stays admin-only.
+        if (!await access.CanManageOrganizationAsync(organizationId, ct) && request.Type != organization.Type)
+            return Results.Forbid();
         var settings = await GetOrCreateSettingsAsync(organizationId, db, ct);
 
         organization.Update(request.Name, request.Type);

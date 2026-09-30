@@ -54,6 +54,8 @@ public static class ReferentEndpoints
             var employerIds = request.EmployerIds.Distinct().ToArray();
             if (organizationIds.Length > 1000 || employerIds.Length > 5000)
                 return Results.BadRequest(new { error = "too_many_assignments" });
+            if (request.Enabled && organizationIds.Length == 0 && employerIds.Length == 0)
+                return Results.BadRequest(new { error = "assignment_required", detail = "יש לשייך לרפרנט לפחות ארגון או מעסיק אחד." });
             if (!request.Enabled && (organizationIds.Length != 0 || employerIds.Length != 0))
                 return Results.BadRequest(new { error = "disabled_referent_cannot_have_assignments" });
 
