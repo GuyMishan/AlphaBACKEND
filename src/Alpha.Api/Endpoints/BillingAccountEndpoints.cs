@@ -145,7 +145,7 @@ public static class BillingAccountEndpoints
         BillingAccountDetailsRequest request, IAlphaDbContext db, ICurrentUser currentUser,
         OrganizationAccessService access, HttpContext http, CancellationToken ct)
     {
-        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
         var validationError = ValidateBillingDetails(request);
         if (validationError is not null) return Results.BadRequest(new { error = validationError });
         if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))

@@ -27,6 +27,14 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
         (await GetMembershipAsync(organizationId, ct))?.EmployerAccessMode == EmployerAccessMode.AllEmployers ||
         await HasReferentOrganizationAssignmentAsync(organizationId, ct);
 
+    public async Task<bool> CanManageEmployerBillingAsync(Guid organizationId, Guid employerId, CancellationToken ct)
+    {
+        // Internal staff may operate pension reporting but must never gain
+        // access to customer subscription/payment-provider administration.
+        if (await IsReferentAsync(ct)) return false;
+        return await CanManageEmployerAsync(organizationId, employerId, ct);
+    }
+
     public async Task<bool> CanEditOrganizationGeneralAsync(Guid organizationId, CancellationToken ct) =>
         await CanManageOrganizationAsync(organizationId, ct) ||
         await HasReferentOrganizationAssignmentAsync(organizationId, ct);

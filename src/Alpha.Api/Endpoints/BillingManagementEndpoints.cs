@@ -710,7 +710,7 @@ public static class BillingManagementEndpoints
         Guid organizationId, Guid employerId, SelfServiceBillingPlanRequest request, IAlphaDbContext db,
         OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
         var employer = await db.Employers.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
         if (employer is null) return Results.NotFound();
@@ -826,7 +826,7 @@ public static class BillingManagementEndpoints
 
         var canManage = resolution.Source == "Organization"
             ? await access.CanManageOrganizationAsync(organizationId, ct)
-            : await access.CanManageEmployerAsync(organizationId, employerId, ct);
+            : await access.CanManageEmployerBillingAsync(organizationId, employerId, ct);
 
         return Results.Ok(new
         {

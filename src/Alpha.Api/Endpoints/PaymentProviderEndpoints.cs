@@ -55,7 +55,7 @@ public static class PaymentProviderEndpoints
         IAlphaDbContext db, ICurrentUser currentUser, OrganizationAccessService access,
         IPaymentProviderResolver resolver, IConfiguration config, HttpContext http, CancellationToken ct)
     {
-        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.EmployerId == employerId && x.OrganizationId == null, ct);
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
@@ -152,7 +152,7 @@ public static class PaymentProviderEndpoints
     private static async Task<IResult> SyncEmployerAsync(Guid organizationId, Guid employerId, IAlphaDbContext db,
         OrganizationAccessService access, IPaymentProviderResolver resolver, CancellationToken ct)
     {
-        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.EmployerId == employerId && x.OrganizationId == null, ct);
         return await SyncAsync(account, db, resolver, ct);
@@ -223,7 +223,7 @@ public static class PaymentProviderEndpoints
     private static async Task<IResult> CancelEmployerAsync(Guid organizationId, Guid employerId, IAlphaDbContext db,
         OrganizationAccessService access, IPaymentProviderResolver resolver, CancellationToken ct)
     {
-        if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.EmployerId == employerId && x.OrganizationId == null, ct);
         return await CancelAsync(account, db, resolver, ct);

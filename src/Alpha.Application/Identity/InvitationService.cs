@@ -22,6 +22,8 @@ public sealed class InvitationService(IAlphaDbContext db)
 
     public async Task ApplyAccessAsync(UserInvitation invitation, Guid userId, CancellationToken ct = default)
     {
+        if (await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId && x.IsReferent, ct))
+            throw new InvalidOperationException("Referents cannot accept customer membership invitations.");
         if (invitation.OrganizationRole.HasValue)
         {
             var accessMode = invitation.EmployerId.HasValue
