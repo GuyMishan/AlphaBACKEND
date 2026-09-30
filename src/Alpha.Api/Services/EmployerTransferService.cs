@@ -5,6 +5,7 @@ using Alpha.Domain.Auditing;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Identity;
+using Alpha.Domain.Organizations;
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -39,8 +40,13 @@ public sealed class EmployerTransferService(
             .SingleOrDefaultAsync(x => x.Id == employerId && x.OrganizationId == sourceOrganizationId, ct);
         if (employer is null)
             return new(false, "employer_not_found", "המעסיק אינו משויך עוד לארגון המקור.");
-        if (!await db.Organizations.AnyAsync(x => x.Id == targetOrganizationId, ct))
+        var targetOrganizationType = await db.Organizations.AsNoTracking()
+            .Where(x => x.Id == targetOrganizationId).Select(x => (OrganizationType?)x.Type).SingleOrDefaultAsync(ct);
+        if (targetOrganizationType is null)
             return new(false, "target_not_found", "ארגון היעד לא נמצא.");
+        if (targetOrganizationType == OrganizationType.SmallOrganization &&
+            await db.Employers.AnyAsync(x => x.OrganizationId == targetOrganizationId, ct))
+            return new(false, "small_organization_employer_limit", "ארגון קטן יכול להכיל מעסיק אחד בלבד.");
 
         if (await db.Employers.AnyAsync(x => x.OrganizationId == targetOrganizationId &&
             (x.RegistrationNumber == employer.RegistrationNumber ||

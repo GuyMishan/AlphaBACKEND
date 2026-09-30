@@ -56,6 +56,12 @@ public static class EmployerEndpoints
         {
             if (!await access.CanCreateEmployerAsync(organizationId, ct)) return Results.Forbid();
             await using var entitlementLease = await entitlementLock.AcquireAsync(organizationId, ct);
+            // A small organization can contain exactly one employer, irrespective of subscription quota.
+            var organizationType = await db.Organizations.AsNoTracking()
+                .Where(x => x.Id == organizationId).Select(x => x.Type).SingleOrDefaultAsync(ct);
+            if (organizationType == OrganizationType.SmallOrganization &&
+                await db.Employers.AnyAsync(x => x.OrganizationId == organizationId, ct))
+                return Results.Conflict(new { error = "small_organization_employer_limit", detail = "ארגון קטן יכול להכיל מעסיק אחד בלבד." });
             var entitlement = await entitlements.CanCreateEmployer(organizationId, ct);
             if (!entitlement.Allowed) return EntitlementError(entitlement);
             var validationError = ApiInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber, request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);

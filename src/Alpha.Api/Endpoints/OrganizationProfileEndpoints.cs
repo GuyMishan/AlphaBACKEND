@@ -89,6 +89,10 @@ public static class OrganizationProfileEndpoints
 
         var organization = await db.Organizations.SingleOrDefaultAsync(x => x.Id == organizationId, ct);
         if (organization is null) return Results.NotFound();
+        if (request.Type == OrganizationType.SmallOrganization &&
+            organization.Type != OrganizationType.SmallOrganization &&
+            await db.Employers.CountAsync(x => x.OrganizationId == organizationId, ct) > 1)
+            return Results.Conflict(new { error = "small_organization_employer_limit", detail = "יש להעביר מעסיקים נוספים לפני שינוי לארגון קטן." });
         if (request.Type == OrganizationType.SelfService && organization.Type != OrganizationType.SelfService)
             return Results.BadRequest(new { error = "Cannot convert to a self-service organization." });
         // Referents may manage general organization details, but changing an
