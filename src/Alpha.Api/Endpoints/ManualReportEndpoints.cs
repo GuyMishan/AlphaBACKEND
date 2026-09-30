@@ -4,6 +4,8 @@ using Alpha.Application.Authorization;
 using Alpha.Application.Reporting;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
+using Alpha.Infrastructure.Persistence;
+using System.Data;
 
 namespace Alpha.Api.Endpoints;
 
@@ -296,7 +298,7 @@ public static class ManualReportEndpoints
     }
 
     private static async Task<IResult> GetDepositsAsync(Guid organizationId, Guid employerId, Guid reportId,
-        string? search, int skip, int take, IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
+        string? search, int skip, int take, AlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
@@ -332,6 +334,42 @@ public static class ManualReportEndpoints
         var payments = await db.ManualReportPayments.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
+        // A payment row may not exist before the editor is first opened. Use the canonical
+        // fund reference data for the table and modal alike, without forcing a save per row.
+        var referenceAccounts = new Dictionary<string, string>(StringComparer.Ordinal);
+        var fundKeys = page.Select(x => x.Product.FundExternalKey)
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
+        if (fundKeys.Length > 0)
+        {
+            var connection = db.Database.GetDbConnection();
+            var openedHere = connection.State != ConnectionState.Open;
+            if (openedHere) await connection.OpenAsync(ct);
+            try
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT external_key, bank_code::text, branch_code::text, account_number
+                    FROM reference_data.pension_products WHERE external_key = ANY(@keys)
+                    """;
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "keys";
+                parameter.Value = fundKeys;
+                command.Parameters.Add(parameter);
+                await using var reader = await command.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    var key = reader.GetString(0);
+                    if (referenceAccounts.ContainsKey(key) || reader.IsDBNull(3)) continue;
+                    var parts = new[] {
+                        reader.IsDBNull(1) ? "" : reader.GetString(1),
+                        reader.IsDBNull(2) ? "" : reader.GetString(2),
+                        reader.GetString(3)
+                    }.Where(x => !string.IsNullOrWhiteSpace(x));
+                    referenceAccounts[key] = string.Join(" - ", parts);
+                }
+            }
+            finally { if (openedHere) await connection.CloseAsync(); }
+        }
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
@@ -374,7 +412,7 @@ public static class ManualReportEndpoints
                 x.Product.Section14StartDate,
                 totalDeposit = totals.GetValueOrDefault(x.Product.Id),
                 providerName = payment?.ProviderName ?? string.Empty,
-                providerAccount = payment?.ProviderAccount ?? string.Empty,
+                providerAccount = !string.IsNullOrWhiteSpace(payment?.ProviderAccount) ? payment.ProviderAccount : referenceAccounts.GetValueOrDefault(x.Product.FundExternalKey) ?? string.Empty,
                 paymentMethod = payment?.PaymentMethod ?? "העברה בנקאית",
                 valueDate = payment?.ValueDate,
                 trustAccountValueDate = payment?.TrustAccountValueDate,
