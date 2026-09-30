@@ -481,6 +481,43 @@ public sealed class EmployerInterface006XmlBuilderTests
     [Theory]
     [InlineData(PensionProductType.PensionFund)]
     [InlineData(PensionProductType.ProvidentFund)]
+    [InlineData(PensionProductType.StudyFund)]
+    public void Current_report_ignores_empty_editor_component_placeholders(PensionProductType productType)
+    {
+        var fixture = CreateFixture(false, productType: productType);
+        var valid = new ManualContribution(fixture.Product.Id, ContributionParty.Employee,
+            ContributionComponent.Benefits, 200m, 2m, 0m);
+        var unusedDisability = new ManualContribution(fixture.Product.Id, ContributionParty.Employee,
+            ContributionComponent.Disability, 0m, 0m, 0m);
+        var unusedOther = new ManualContribution(fixture.Product.Id, ContributionParty.Employer,
+            ContributionComponent.Other, 0m, 0m, 0m);
+        var context = fixture.Context with { Contributions = [valid, unusedDisability, unusedOther] };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal(["2"], result.Document!.Descendants("SUG-HAFRASHA").Select(x => x.Value).ToArray());
+        Assert.Equal(["2"], result.Document.Descendants("SHIUR-HAFRASHA").Select(x => x.Value).ToArray());
+        Assert.Empty(EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, false));
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Current_report_still_rejects_real_contribution_without_required_percentage()
+    {
+        var fixture = CreateFixture(false);
+        var invalid = new ManualContribution(fixture.Product.Id, ContributionParty.Employee,
+            ContributionComponent.Benefits, 200m, 0m, 0m);
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context with { Contributions = [invalid] });
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("require SHIUR-HAFRASHA", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(PensionProductType.PensionFund)]
+    [InlineData(PensionProductType.ProvidentFund)]
     public void Current_pension_and_provident_reject_disability_and_other_contribution_codes(PensionProductType productType)
     {
         var fixture = CreateFixture(false, productType: productType);

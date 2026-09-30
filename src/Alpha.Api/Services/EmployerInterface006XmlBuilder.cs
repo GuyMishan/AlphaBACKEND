@@ -681,7 +681,12 @@ public static class EmployerInterface006XmlBuilder
         var items = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
         if (negative) return items;
         var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
-        return metadata?.EmployeeStatus is int status && NoContributionEmployeeStatuses.Contains(status) ? [] : items;
+        if (metadata?.EmployeeStatus is int status && NoContributionEmployeeStatuses.Contains(status))
+            return [];
+        // The editor and legacy reports can contain unselected component placeholders.
+        // A completely empty component is not an actual V006 contribution row. Retain
+        // positive-amount rows with missing percentages so genuine validation still fails.
+        return items.Where(x => x.Amount != 0m || x.Percentage != 0m || x.ExemptPayments != 0m).ToList();
     }
 
     private static bool HasMoneyTransfer(BuildContext c, ManualReportProduct product)

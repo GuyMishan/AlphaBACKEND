@@ -648,6 +648,9 @@ public static class ManualReportEndpoints
             throw new ArgumentException("Each contribution component may appear only once per party.");
         foreach (var item in items)
         {
+            // Do not persist the editor's unused 0/0/0 component placeholders.
+            if (item.Amount == 0m && item.Percentage == 0m && item.ExemptPayments == 0m)
+                continue;
             var amount = item.Amount > 0
                 ? item.Amount
                 : Math.Round(insuredSalary * item.Percentage / 100m, 2, MidpointRounding.AwayFromZero);
