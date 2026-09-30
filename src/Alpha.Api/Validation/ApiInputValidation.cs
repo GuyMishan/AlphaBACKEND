@@ -49,6 +49,12 @@ public static class ApiInputValidation
         if (normalizedMobile.Length is < 7 or > 15)
             return "יש להזין מספר נייד אמיתי לעובד, 7-15 ספרות.";
 
+        var postal = (postalCode ?? "").Trim();
+        if (postal.Length > 0 && (!Digits.IsMatch(postal) || postal.Length > 7))
+            return "מיקוד חייב להכיל עד 7 ספרות.";
+        var box = (postOfficeBox ?? "").Trim();
+        if (box.Length > 0 && (!Digits.IsMatch(box) || !int.TryParse(box, out var boxNumber) || boxNumber > 99999))
+            return "תא דואר חייב להיות מספר בין 0 ל־99999. אין להזין מיקוד בשדה תא הדואר.";
         var hasPostOfficeBox = !string.IsNullOrWhiteSpace(postOfficeBox)
             && new string(postOfficeBox.Where(char.IsDigit).ToArray()).Length > 0;
         var normalizedPostalCode = new string((postalCode ?? string.Empty).Where(char.IsDigit).ToArray());

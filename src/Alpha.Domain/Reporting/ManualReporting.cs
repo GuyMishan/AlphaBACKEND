@@ -211,6 +211,17 @@ public sealed class ManualReportEmployee : Entity
         Touch();
     }
 
+    // An editable draft may correct address fields without changing the employee master
+    // or re-encrypting unrelated identity and contact snapshots.
+    public void UpdatePostalAddressSnapshot(string? postalCode, string? postOfficeBox)
+    {
+        PostalCodeSnapshot = postalCode?.Trim() ?? string.Empty;
+        PostOfficeBoxSnapshot = postOfficeBox?.Trim() ?? string.Empty;
+        ValidationStatus = ManualReportItemStatus.Draft;
+        ValidationError = string.Empty;
+        Touch();
+    }
+
     public void SetProtectedContactSnapshot(string emailEncrypted, string mobileEncrypted)
     {
         EmailSnapshot = emailEncrypted;

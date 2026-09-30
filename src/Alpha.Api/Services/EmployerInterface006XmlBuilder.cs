@@ -557,6 +557,13 @@ public static class EmployerInterface006XmlBuilder
                     issues.Add($"Employee {employee.Id}: Email snapshot is required by the current Version 006 employee block.");
                 else if (employee.EmailSnapshot.Length > 50 || !employee.EmailSnapshot.Contains('@') || employee.EmailSnapshot.StartsWith('@') || employee.EmailSnapshot.EndsWith('@'))
                     issues.Add($"Employee {employee.Id}: Email snapshot must be a real valid address containing up to 50 characters.");
+                var postalCode = Digits(employee.PostalCodeSnapshot);
+                if (postalCode.Length > 0 && (!long.TryParse(postalCode, out var zip) || zip < 0 || zip > 9999999))
+                    issues.Add($"Employee {employee.Id}: המיקוד בדיווח חייב להיות מספר של עד 7 ספרות (MIKUD).");
+                var box = Digits(employee.PostOfficeBoxSnapshot);
+                if (!string.IsNullOrWhiteSpace(employee.PostOfficeBoxSnapshot)
+                    && (!int.TryParse(box, out var boxNumber) || boxNumber < 0 || boxNumber > 99999))
+                    issues.Add($"Employee {employee.Id}: תא הדואר בדיווח חייב להיות מספר בין 0 ל־99999 (TA-DOAR). אין להעתיק אליו מיקוד בן 7 ספרות.");
                 var employeeMobile = Digits(employee.MobileSnapshot);
                 if (employeeMobile.Length is < 7 or > 15)
                     issues.Add($"Employee {employee.Id}: Mobile snapshot is required and must contain 7-15 digits.");

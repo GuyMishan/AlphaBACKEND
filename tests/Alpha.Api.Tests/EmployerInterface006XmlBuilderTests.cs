@@ -37,6 +37,31 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_rejects_post_office_box_over_official_max_before_xsd_validation()
+    {
+        var fixture = CreateFixture(false);
+        var employee = fixture.Context.Employees[0];
+        employee.UpdatePostalAddressSnapshot("1234567", "1234567");
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("TA-DOAR", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_report_accepts_street_address_without_optional_post_office_box()
+    {
+        var fixture = CreateFixture(false);
+        var employee = fixture.Context.Employees[0];
+        employee.UpdatePostalAddressSnapshot("1234567", "");
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal("true", Assert.Single(result.Document!.Descendants("TA-DOAR"))
+            .Attribute(XName.Get("nil", "http://www.w3.org/2001/XMLSchema-instance"))?.Value);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Current_report_emits_small_employer_depositor_type_3()
     {
         var fixture = CreateFixture(false);

@@ -71,3 +71,5 @@ These sources outrank assumptions, old examples and UI behavior.
 - Payment confirmations also expose an employer-scope-authorized report-level GET listing for the deposit table, avoiding one evidence request per product; actual downloads remain per-product and SHA256 checked.
 
 - Empty manual/editor contribution placeholders (amount, rate, exemptions all zero) are skipped when saved; legacy empty placeholders are also omitted from current-report V006 serialization and business checks. Real contributions with a missing mandatory rate or forbidden component remain invalid; negative report semantics remain unchanged. Regression coverage: `EmployerInterface006XmlBuilderTests`.
+
+- Draft employee postal corrections use tenant-scoped PATCH `/manual-reports/{id}/employees/{employeeId}/postal-address`; the employee master and unrelated encrypted snapshot stay unchanged. Preflight checks official XSD address bounds (MIKUD <=7 digits; TA-DOAR 0..99999) before XML schema validation and names the affected report employee.
