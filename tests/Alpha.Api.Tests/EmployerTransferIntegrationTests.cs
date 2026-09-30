@@ -1,8 +1,11 @@
 using Alpha.Api.Services;
 using Alpha.Application.Billing;
+using Alpha.Application.Authorization;
+using Alpha.Application.Abstractions;
 using Alpha.Application.Entitlements;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
+using Alpha.Domain.Identity;
 using Alpha.Domain.Organizations;
 using Alpha.Domain.Reporting;
 using Alpha.Infrastructure.Persistence;
@@ -87,6 +90,47 @@ public sealed class EmployerTransferIntegrationTests
             Assert.Equal(source.Id, (await db.Employers.SingleAsync(x => x.Id == employer.Id, ct)).OrganizationId);
             Assert.Equal(source.Id, (await db.Employments.SingleAsync(x => x.Id == employment.Id, ct)).OrganizationId);
         });
+    }
+
+    [Fact]
+    public async Task Removes_old_organization_grants_but_retains_standalone_employer_owner()
+    {
+        await InIsolatedDatabase(async (db, ct) =>
+        {
+            var source = new Organization("Source", OrganizationType.PayrollOffice);
+            var target = new Organization("Target", OrganizationType.PayrollOffice);
+            var employer = new Employer(source.Id, "Moved", "reg-unique", "file-unique");
+            var orgAdmin = new User("subject-org", "org@example.test", "Org Admin");
+            var owner = new User("subject-owner", "owner@example.test", "Owner");
+            var membership = new OrganizationMembership(orgAdmin.Id, source.Id,
+                OrganizationRole.Admin, EmployerAccessMode.AllEmployers, orgAdmin.Id);
+            var sourceGrant = new EmployerUserAccess(orgAdmin.Id, source.Id, employer.Id, EmployerRole.Admin);
+            var ownerGrant = new EmployerUserAccess(owner.Id, source.Id, employer.Id, EmployerRole.Owner);
+            db.AddRange(source, target, employer, orgAdmin, owner, membership,
+                sourceGrant, ownerGrant, new EmployerProfileSettings(employer.Id));
+            await db.SaveChangesAsync(ct);
+
+            var result = await NewService(db).TransferAsync(
+                source.Id, employer.Id, target.Id, Guid.NewGuid(), "integration-test", ct);
+
+            Assert.True(result.Success, result.Message);
+            db.ChangeTracker.Clear();
+            Assert.False(await db.EmployerUserAccesses.AnyAsync(x =>
+                x.Id == sourceGrant.Id, ct));
+            Assert.Equal(target.Id, (await db.EmployerUserAccesses.SingleAsync(x =>
+                x.Id == ownerGrant.Id, ct)).OrganizationId);
+            Assert.False(await new OrganizationAccessService(db,
+                new FakeCurrentUser(orgAdmin.Id)).CanAccessEmployerAsync(source.Id, employer.Id, ct));
+            Assert.True(await new OrganizationAccessService(db,
+                new FakeCurrentUser(owner.Id)).CanAccessEmployerAsync(target.Id, employer.Id, ct));
+        });
+    }
+
+    private sealed class FakeCurrentUser(Guid userId) : ICurrentUser
+    {
+        public Guid UserId => userId;
+        public bool IsAuthenticated => true;
+        public bool IsPlatformAdmin => false;
     }
 
     private static EmployerTransferService NewService(AlphaDbContext db) =>
