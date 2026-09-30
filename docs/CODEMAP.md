@@ -44,6 +44,7 @@
 - Clearing-house rules PDF and error-code workbook under `docs/specifications/mislaka`.
 These sources outrank assumptions, old examples and UI behavior.
 
+- V006 export groups products by fund and their actual payment/transfer signature, so per-row employer-bank overrides are not silently collapsed when the fund matches. Coverage in `EmployerInterface006XmlBuilderTests.cs` validates the official XSD.
 - Deposit list account resolution: `ManualReportEndpoints.GetDepositsAsync` resolves the current reference fund bank details when a draft has no persisted payment entry, so the list and payment editor agree.
 - Payment evidence: `PaymentConfirmationEndpoints.cs` validates tenant/report-product access and uses `PaymentEvidenceStorage` (private Supabase Storage bucket) for screened PDF/JPEG/PNG confirmations. PostgreSQL `reporting.payment_confirmations` holds immutable versioned metadata; it is not an official Employer Interface attachment.
 

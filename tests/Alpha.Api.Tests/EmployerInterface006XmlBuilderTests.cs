@@ -838,6 +838,36 @@ public sealed class EmployerInterface006XmlBuilderTests
         Assert.Equal(expectedComponent, mapped.Item2);
     }
 
+    [Fact]
+    public void Current_report_keeps_distinct_bank_transfers_to_same_fund_separate()
+    {
+        var fixture = CreateFixture(false, paymentMethodCode: 1);
+        var original = fixture.Context;
+        var second = new ManualReportProduct(original.Employees[0].Id, PensionProductType.PensionFund, "SECOND",
+            new DateOnly(2026, 9, 1), 1000m, "1", "1", false, null,
+            fundCode: new string('1', 30), fundName: "Test Fund");
+        var contribution = new ManualContribution(second.Id, ContributionParty.Employee, ContributionComponent.Benefits, 100m, 10m, 0m);
+        var payment = new ManualReportPayment(second.Id);
+        payment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 17), null,
+            "REF-SECOND", "Test Bank", "10", "124", "654321", "", null, null);
+        var metadata = new EmployerInterfaceReportProductData(second.Id);
+        metadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2,
+            null, 1, 1, 1);
+        var context = original with {
+            Products = [fixture.Product, second],
+            Contributions = [.. original.Contributions, contribution],
+            Payments = [.. original.Payments, payment],
+            ProductMetadata = [.. original.ProductMetadata, metadata]
+        };
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+        Assert.Empty(result.Issues);
+        var transfers = result.Document!.Descendants("PirteiHaavaratKsafim").ToList();
+        Assert.Equal(2, transfers.Count);
+        Assert.Contains(transfers, transfer => transfer.Element("MISPAR-CHESHBON-MAASIK")?.Value.EndsWith("123456") == true);
+        Assert.Contains(transfers, transfer => transfer.Element("MISPAR-CHESHBON-MAASIK")?.Value.EndsWith("654321") == true);
+        AssertValid(result.Document!, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
     private static (EmployerInterface006XmlBuilder.BuildContext Context, ManualReportProduct Product) CreateFixture(
         bool negative, int? operationCode = null, int? previousExceptionCode = 1, int? section14Code = null,
         string employerMobile = "0501234567", int? paymentMethodCode = 1, string policyNumber = "123",

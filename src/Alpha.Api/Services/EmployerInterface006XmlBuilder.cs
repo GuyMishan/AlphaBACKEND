@@ -25,7 +25,9 @@ public static class EmployerInterface006XmlBuilder
         var now = c.PreparedAt ?? DateTimeOffset.UtcNow;
         var sender = ResolveSender(c);
         var senderId = sender.Identifier;
-        var groups = c.Products.GroupBy(x => FundIdentifier(c, x), StringComparer.Ordinal).ToList();
+        // Separate transfers when the same fund receives money from different employer accounts,
+        // payment methods, references or value dates; never borrow the first product payment.
+        var groups = c.Products.GroupBy(x => TransferGroupKey(c, x), StringComparer.Ordinal).ToList();
         var root = new XElement("MimshakMaasikim", new XAttribute(XNamespace.Xmlns + "xsi", Xsi));
         root.Add(BuildHeader(c, negative, now, senderId));
 
@@ -789,6 +791,22 @@ public static class EmployerInterface006XmlBuilder
 
     private static bool IsDigits(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().All(char.IsDigit);
+    private static string TransferGroupKey(BuildContext c, ManualReportProduct product)
+    {
+        var payment = c.Payments.FirstOrDefault(x => x.ReportProductId == product.Id);
+        var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
+        return string.Join("|", new[] {
+            FundIdentifier(c, product),
+            metadata?.OperationCode.ToString() ?? "", metadata?.PaymentMethodCode.ToString() ?? "",
+            metadata?.EmployerAccountType.ToString() ?? "", metadata?.ReceiverAccountType.ToString() ?? "",
+            payment?.ProviderAccount ?? "", payment?.EmployerBankCode ?? "", payment?.EmployerBranch ?? "",
+            payment?.EmployerAccount ?? "", payment?.MasavSenderCode ?? "", payment?.ReferenceNumber ?? "",
+            payment?.ValueDate?.ToString("yyyy-MM-dd") ?? "",
+            payment?.TrustAccountValueDate?.ToString("yyyy-MM-dd") ?? "",
+            payment?.ActualDepositAmount?.ToString(CultureInfo.InvariantCulture) ?? ""
+        });
+    }
+
     private static string FundIdentifier(BuildContext c, ManualReportProduct product) =>
         c.InterfaceFundCodes.TryGetValue(product.Id, out var code) ? code : Digits(product.FundCode);
 
