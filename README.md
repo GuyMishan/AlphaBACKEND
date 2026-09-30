@@ -86,6 +86,19 @@ Delivery failures return 503 and invalidate the challenge. Keep the signing key 
 If you edit the Apps Script code, deploy a **new version** of the web app. On a personal Gmail account, this uses your own mailbox and its daily send quota. The backend stores hashed, expiring codes; the script only delivers them.
 
 
+## Secure pension-payment confirmations
+
+Payment confirmations (PDF/JPEG/PNG, up to 10 MB) are operational evidence, separate from official Employer Interface 006 documents. The authenticated Backend scans uploads, writes immutable versioned files to the private `alpha-payment-evidence` bucket in Supabase Storage and keeps only metadata/SHA-256 and the opaque object path in `reporting.payment_confirmations`. Download authorization is always rechecked against the report's organization and employer. Do not expose the service-role key or create public Storage policies.
+
+In **Render → AlphaBACKEND → Environment**, configure these server-only settings (never commit credentials):
+
+- `Storage__SupabaseUrl`: the project API URL, e.g. `https://<project-ref>.supabase.co`.
+- `Storage__ServiceRoleKey`: the private server service-role key (or compatible key permitting private Storage operations); never use an anon/publishable key.
+- `Storage__PaymentEvidenceBucket`: `alpha-payment-evidence` (default).
+- `Security__MalwareScanner__Endpoint` and, if required, `Security__MalwareScanner__ApiKey`: approved malware scanning provider. Uploads fail closed with HTTP 503 if scanner or storage credentials are missing/unavailable.
+
+The private bucket must have `public=false`, allowed MIME types PDF/JPEG/PNG and a 10 MB size limit. Existing evidence remains versioned when replaced; do not delete files behind submitted financial records. After configuring Render, verify an actual authorized upload/download and an unauthorized cross-employer read (403/404) before declaring production ready.
+
 ## Automatic ALPHA billing
 
 ALPHA billing is provider-agnostic. Plans, usage, billing periods, payments, retries and suspension are handled by the ALPHA billing domain; the selected payment provider only executes payment operations.
