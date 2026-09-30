@@ -66,7 +66,8 @@ public sealed class EmployerTransferService(
         // The identity check includes passports as well as national IDs. Never leak
         // the identifier itself in an error, log or audit event.
         if (people.Count != personIds.Length || people.Any(x => x.OrganizationId != sourceOrganizationId ||
-            string.IsNullOrWhiteSpace(x.NationalIdLookupHash)))
+            string.IsNullOrWhiteSpace(x.NationalIdLookupHash) ||
+            string.IsNullOrWhiteSpace(x.NationalIdEncrypted)))
             return new(false, "identity_incomplete", "לא ניתן להעביר עובדים בעלי רשומת זהות חסרה או לא תקינה.");
         var hashes = people.Select(x => x.NationalIdLookupHash!).ToArray();
         if (await db.People.AnyAsync(x => x.OrganizationId == targetOrganizationId &&
