@@ -8,6 +8,7 @@ Backend foundation for a multi-tenant pension operations platform.
 - ASP.NET Core REST API with OpenAPI
 - PostgreSQL through Entity Framework Core
 - Platform -> Organization -> Employer authorization hierarchy
+- Internal referents assigned to full organizations and/or selected employers across different organizations, without platform-admin or billing privileges
 - Immutable audit events for material changes
 - Background worker boundary for imports, reports, payments, and feedback
 
@@ -45,6 +46,10 @@ OIDC/JWT authority through `Authentication:Authority` and `Authentication:Audien
 ## Verify
 
 Run `dotnet build AlphaBackend.slnx` and `dotnet test AlphaBackend.slnx`.
+
+## Internal referents
+
+Platform administrators create a regular identity with national ID, phone and email, then designate it a referent through `/api/platform/referents/{userId}`. Assignments are separate from customer memberships and do not consume customer seats. Full-organization assignments permit general profile editing and operational employer management; employer-only assignments permit managing only the selected employers across any organization. Subscription billing and permission administration are excluded. Deactivation revokes all referent assignments. New referents require at least one assignment.
 
 ## Important domain rules
 
