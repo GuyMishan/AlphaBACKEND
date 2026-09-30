@@ -63,3 +63,5 @@ These sources outrank assumptions, old examples and UI behavior.
 
 - Access management candidate discovery is organization-scoped; removal or demotion of the last active organization admin is blocked, and access role/mode enum inputs are validated before persistence.
 - Login OTP requests return an opaque synthetic challenge identifier for unknown identities so response shape does not disclose account existence. Registration requests are likewise neutral for existing identities, and registration advisory locks use purpose-bound lookup material rather than plaintext identity values.
+
+- The existing `GET /manual-reports` endpoint returns paged, scope-authorized **editable** drafts only (Draft, ReadyForValidation, Error), including report kind, source and payment-account identity. `GET /manual-reports/{id}` includes the same resume metadata. The frontend restores persisted drafts without creating a duplicate.

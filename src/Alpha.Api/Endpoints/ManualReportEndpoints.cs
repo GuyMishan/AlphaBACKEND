@@ -42,7 +42,8 @@ public static class ManualReportEndpoints
 
         var query = db.ManualReports.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
-                && x.Status != ManualReportStatus.Submitted && x.Status != ManualReportStatus.Cancelled);
+                && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
+                    || x.Status == ManualReportStatus.Error));
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -89,6 +90,9 @@ public static class ManualReportEndpoints
                 x.ReportingMonth,
                 x.SalaryPaymentDate,
                 x.Status,
+                x.ReportKind,
+                x.SourceReportId,
+                x.PaymentAccountId,
                 x.CreatedAt,
                 x.UpdatedAt,
                 employeeCount = employeeCounts.GetValueOrDefault(x.Id),
@@ -176,6 +180,7 @@ public static class ManualReportEndpoints
         return Results.Ok(new
         {
             report.Id, report.ReportingMonth, report.SalaryPaymentDate, report.Status,
+            report.ReportKind, report.SourceReportId,
             report.PaymentAccountId, report.PaymentBankId, report.PaymentBranchId,
             report.PaymentAccountNumberMasked, report.PaymentMandateReference,
             employeeCount
