@@ -9,6 +9,7 @@
 - `tests/*` — API/domain tests.
 
 ## Authentication, users and access
+- Internal referents: `Identity/ReferentAssignments.cs`, `ReferentEndpoints.cs`, `ReferentSchemaInitializer.cs`, and `OrganizationAccessService.cs`. Separate cross-organization assignments never count toward tenant billing seats.
 - API: `Authentication/*`, `Endpoints/AuthEndpoints.cs`, `AccessEndpoints.cs`, `InvitationEndpoints.cs`, `ScopeEndpoints.cs`.
 - Application: `Authorization/OrganizationAccessService.cs`, `Identity/InvitationService.cs`.
 - Domain: `Identity/*`, `Organizations/OrganizationMembership.cs`, `Employers/EmployerUserAccess.cs`.

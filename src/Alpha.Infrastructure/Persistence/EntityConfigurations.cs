@@ -20,6 +20,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         b.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
         b.Property(x => x.Appearance).HasMaxLength(16).IsRequired().HasDefaultValue("system");
         b.Property(x => x.IsPlatformAdmin).IsRequired().HasDefaultValue(false);
+        b.Property(x => x.IsReferent).IsRequired().HasDefaultValue(false);
         b.HasIndex(x => x.ExternalSubject).IsUnique();
         b.HasIndex(x => x.Email);
     }
@@ -264,6 +265,30 @@ public sealed class BillingAccountConfiguration : IEntityTypeConfiguration<Billi
         b.HasIndex(x => x.OrganizationId).IsUnique().HasFilter("\"OrganizationId\" IS NOT NULL");
         b.HasIndex(x => x.EmployerId).IsUnique().HasFilter("\"EmployerId\" IS NOT NULL");
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class ReferentOrganizationAssignmentConfiguration : IEntityTypeConfiguration<ReferentOrganizationAssignment>
+{
+    public void Configure(EntityTypeBuilder<ReferentOrganizationAssignment> b)
+    {
+        b.ToTable("referent_organization_assignments", "identity");
+        b.HasKey(x => x.Id);
+        b.HasIndex(x => new { x.UserId, x.OrganizationId }).IsUnique();
+        b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class ReferentEmployerAssignmentConfiguration : IEntityTypeConfiguration<ReferentEmployerAssignment>
+{
+    public void Configure(EntityTypeBuilder<ReferentEmployerAssignment> b)
+    {
+        b.ToTable("referent_employer_assignments", "identity");
+        b.HasKey(x => x.Id);
+        b.HasIndex(x => new { x.UserId, x.EmployerId }).IsUnique();
+        b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Cascade);
     }
 }

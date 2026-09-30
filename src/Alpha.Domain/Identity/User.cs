@@ -29,6 +29,7 @@ public sealed class User : Entity
     public string? PhoneLookupHash { get; private set; }
     public string Appearance { get; private set; } = "system";
     public bool IsPlatformAdmin { get; private set; }
+    public bool IsReferent { get; private set; }
     public bool IsActive { get; private set; } = true;
 
     public void SetAppearance(string appearance)
@@ -60,6 +61,13 @@ public sealed class User : Entity
     public void SetPlatformAdmin(bool isPlatformAdmin)
     {
         IsPlatformAdmin = isPlatformAdmin;
+        Touch();
+    }
+
+    public void SetReferent(bool isReferent)
+    {
+        if (isReferent && IsPlatformAdmin) throw new InvalidOperationException("Platform admins cannot also be referents.");
+        IsReferent = isReferent;
         Touch();
     }
 

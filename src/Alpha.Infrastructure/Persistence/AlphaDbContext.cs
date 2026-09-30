@@ -28,6 +28,8 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<RegistrationOtpChallenge> RegistrationOtpChallenges => Set<RegistrationOtpChallenge>();
     public DbSet<UserInvitation> UserInvitations => Set<UserInvitation>();
     public DbSet<Organization> Organizations => Set<Organization>();
+    public DbSet<ReferentOrganizationAssignment> ReferentOrganizationAssignments => Set<ReferentOrganizationAssignment>();
+    public DbSet<ReferentEmployerAssignment> ReferentEmployerAssignments => Set<ReferentEmployerAssignment>();
     public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
     public DbSet<OrganizationProfileSettings> OrganizationProfileSettings => Set<OrganizationProfileSettings>();
     public DbSet<Employer> Employers => Set<Employer>();
