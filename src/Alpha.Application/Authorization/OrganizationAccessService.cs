@@ -42,6 +42,7 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
 
     public async Task<bool> CanAccessEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken)
     {
+        if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, cancellationToken)) return false;
         if (currentUser.IsPlatformAdmin) return true;
 
         var directAccess = await GetEmployerAccessAsync(organizationId, employerId, cancellationToken);
@@ -61,6 +62,7 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
 
     public async Task<bool> CanManageEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken)
     {
+        if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, cancellationToken)) return false;
         if (currentUser.IsPlatformAdmin) return true;
 
         var membership = await GetMembershipAsync(organizationId, cancellationToken);
@@ -78,6 +80,7 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
 
     public async Task<bool> CanEditEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken)
     {
+        if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, cancellationToken)) return false;
         if (currentUser.IsPlatformAdmin) return true;
 
         var membership = await GetMembershipAsync(organizationId, cancellationToken);
@@ -108,6 +111,7 @@ public sealed class OrganizationAccessService(IAlphaDbContext db, ICurrentUser c
     private async Task<bool> CanOperateEmployerAsync(Guid organizationId, Guid employerId, CancellationToken cancellationToken,
         Func<OrganizationMembership, bool> permission)
     {
+        if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, cancellationToken)) return false;
         if (currentUser.IsPlatformAdmin) return true;
 
         var membership = await GetMembershipAsync(organizationId, cancellationToken);
