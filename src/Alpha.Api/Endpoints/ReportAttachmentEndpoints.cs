@@ -70,7 +70,7 @@ public static class ReportAttachmentEndpoints
     }
 
     private static async Task<IResult> UploadAsync(Guid organizationId, Guid employerId, Guid reportId,
-        HttpRequest request, IAlphaDbContext db, OrganizationAccessService access, IMalwareScanner malwareScanner, IDataProtectionService protector, CancellationToken ct)
+        HttpRequest request, IAlphaDbContext db, OrganizationAccessService access, IMalwareScanner malwareScanner, IDataProtectionService protector, IConfiguration configuration, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports
@@ -138,7 +138,10 @@ public static class ReportAttachmentEndpoints
 
         var file = form.Files.GetFile("file");
         if (file is null || file.Length == 0) return Results.BadRequest(new { error = "No attachment file was selected." });
-        if (file.Length > MaxAttachmentBytes) return Results.BadRequest(new { error = "The maximum attachment size is 10MB." });
+        var maxBytes = string.Equals(configuration["Security:MalwareScanner:Provider"], "Cloudmersive", StringComparison.OrdinalIgnoreCase)
+            ? Math.Min(MaxAttachmentBytes, configuration.GetValue<long?>("Security:MalwareScanner:MaxFileBytes") ?? ConfiguredMalwareScanner.FreeTierSafeMaxBytes)
+            : MaxAttachmentBytes;
+        if (file.Length > maxBytes) return Results.BadRequest(new { error = $"The maximum attachment size is {maxBytes} bytes." });
         if (!file.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
             return Results.BadRequest(new { error = "Employer Interface attachments must be PDF files." });
 

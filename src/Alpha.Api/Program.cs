@@ -58,7 +58,8 @@ builder.Services.AddProblemDetails(); builder.Services.AddOpenApi(); builder.Ser
 builder.Services.AddHostedService<SecurityRetentionHostedService>();
 builder.Services.AddHostedService<SensitiveDataBackfillHostedService>();
 builder.Services.AddSingleton<IDataProtectionService, AesDataProtectionService>();
-builder.Services.AddHttpClient("malware-scanner", client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient("malware-scanner", client => client.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient("payment-evidence-storage", client => client.Timeout = TimeSpan.FromSeconds(60));
 builder.Services.AddScoped<PaymentEvidenceStorage>();
 builder.Services.AddScoped<IMalwareScanner, ConfiguredMalwareScanner>();

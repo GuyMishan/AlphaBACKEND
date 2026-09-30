@@ -46,6 +46,7 @@ These sources outrank assumptions, old examples and UI behavior.
 
 - V006 export groups by fund; official workbook validation rejects inconsistent per-product transfer/payment details within a fund rather than silently selecting a conflicting payment.
 - Deposit list account resolution: `ManualReportEndpoints.GetDepositsAsync` resolves the current reference fund bank details when a draft has no persisted payment entry, so the list and payment editor agree.
+- Malware scanning: `ConfiguredMalwareScanner` implements Cloudmersive's documented multipart/JSON protocol (and retains the generic adapter); fail-closed scanning applies to both report PDFs and payment evidence. Free evaluation uploads are capped to 3 MB by the shared scanner configuration and endpoints.
 - Payment evidence: `PaymentConfirmationEndpoints.cs` validates tenant/report-product access and uses `PaymentEvidenceStorage` (private Supabase Storage bucket) for screened PDF/JPEG/PNG confirmations. PostgreSQL `reporting.payment_confirmations` holds immutable versioned metadata; it is not an official Employer Interface attachment.
 
 ## Security

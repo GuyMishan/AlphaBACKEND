@@ -44,7 +44,7 @@ public static class PaymentConfirmationEndpoints
 
     private static async Task<IResult> UploadAsync(Guid organizationId, Guid employerId, Guid reportId, Guid reportProductId,
         HttpRequest request, IAlphaDbContext db, OrganizationAccessService access, ICurrentUser user,
-        PaymentEvidenceStorage storage, IMalwareScanner scanner, CancellationToken ct)
+        PaymentEvidenceStorage storage, IMalwareScanner scanner, IConfiguration configuration, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
@@ -53,8 +53,11 @@ public static class PaymentConfirmationEndpoints
         if (!storage.IsConfigured) return Results.Json(new { error = "storage_not_configured" }, statusCode: 503);
         if (!request.HasFormContentType) return Results.BadRequest(new { error = "multipart/form-data required" });
         var file = (await request.ReadFormAsync(ct)).Files.GetFile("file");
-        if (file is null || file.Length == 0 || file.Length > MaxBytes)
-            return Results.BadRequest(new { error = "File must be 1 byte to 10 MB." });
+        var maxBytes = string.Equals(configuration["Security:MalwareScanner:Provider"], "Cloudmersive", StringComparison.OrdinalIgnoreCase)
+            ? Math.Min(MaxBytes, configuration.GetValue<long?>("Security:MalwareScanner:MaxFileBytes") ?? ConfiguredMalwareScanner.FreeTierSafeMaxBytes)
+            : MaxBytes;
+        if (file is null || file.Length == 0 || file.Length > maxBytes)
+            return Results.BadRequest(new { error = $"File must be 1 byte to {maxBytes} bytes." });
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         if (ext is not (".pdf" or ".jpg" or ".jpeg" or ".png"))
             return Results.BadRequest(new { error = "PDF, JPEG or PNG only." });
@@ -67,8 +70,11 @@ public static class PaymentConfirmationEndpoints
         var isPng = ext == ".png" && bytes.AsSpan().StartsWith(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
         if (!isPdf && !isJpeg && !isPng) return Results.BadRequest(new { error = "File signature does not match extension." });
         await using var scanStream = new MemoryStream(bytes, writable: false);
-        if ((await scanner.ScanAsync(scanStream, file.FileName, ct)).Verdict != MalwareScanVerdict.Clean)
+        var scan = await scanner.ScanAsync(scanStream, file.FileName, ct);
+        if (scan.Verdict == MalwareScanVerdict.Unavailable)
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        if (scan.Verdict == MalwareScanVerdict.Infected)
+            return Results.BadRequest(new { error = "The uploaded file failed the security scan." });
         var contentType = isPdf ? "application/pdf" : isPng ? "image/png" : "image/jpeg";
         var id = Guid.NewGuid();
         var path = $"{organizationId:N}/{employerId:N}/{reportId:N}/{reportProductId:N}/{id:N}{ext}";

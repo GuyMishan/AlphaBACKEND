@@ -99,7 +99,7 @@ In **Render → AlphaBACKEND → Environment**, configure these server-only sett
 - `Storage__SupabaseUrl`: the project API URL, e.g. `https://<project-ref>.supabase.co`.
 - `Storage__ServiceRoleKey`: the private server service-role key (or compatible key permitting private Storage operations); never use an anon/publishable key.
 - `Storage__PaymentEvidenceBucket`: `alpha-payment-evidence` (default).
-- `Security__MalwareScanner__Endpoint` and, if required, `Security__MalwareScanner__ApiKey`: approved malware scanning provider. Uploads fail closed with HTTP 503 if scanner or storage credentials are missing/unavailable.
+- Cloudmersive is the selected scanner: `Security__MalwareScanner__Provider=Cloudmersive`, `Security__MalwareScanner__Endpoint=https://api.cloudmersive.com/virus/scan/file` (official host only), `Security__MalwareScanner__ApiKey` (private API key), `Security__MalwareScanner__MaxFileBytes=3000000` (free-tier-safe ceiling). The adapter uses documented multipart form `inputFile` and `Apikey` header and requires an unambiguous `CleanResult=true`. Non-2xx, timeouts, ambiguous payloads and missing keys fail closed. Never log the API key or uploaded document. Cloudmersive's free plan is evaluation-only, has a 3.5 MB maximum and US-region processing; validate commercial usage eligibility and cross-border financial-data processing before using real customer documents.
 
 The private bucket must have `public=false`, allowed MIME types PDF/JPEG/PNG and a 10 MB size limit. Existing evidence remains versioned when replaced; do not delete files behind submitted financial records. After configuring Render, verify an actual authorized upload/download and an unauthorized cross-employer read (403/404) before declaring production ready.
 

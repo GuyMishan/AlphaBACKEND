@@ -11,7 +11,7 @@ This is the operational provider register. **Configured/integrated** describes c
 | CardCom | ALPHA billing/payment processing | Adapter exists; default provider in committed configuration | Validate actual merchant account, terms and production billing before live charges. |
 | PayPlus | Alternative ALPHA billing/payment processing | Adapter exists; commercial onboarding/production selection not established by code alone | Confirm recurring card and bank debit terms and live credentials if selected. |
 | Pension clearinghouse (המסלקה הפנסיונית) | Employer Interface 006 submissions and feedback | Official formats/validation implemented; transport remains mocked in the backend | Agree production connection and verify transmission with actual permitted reports. |
-| **Cloudmersive** | **Scan uploaded payment evidence for malware before private Storage upload** | **Selected provider; integration pending.** Current scanner accepts raw binary and a literal `clean` response; Cloudmersive's actual API requires a dedicated adapter and error mapping. | Open provider account, confirm commercial/free-plan eligibility, privacy/data processing and file limits; obtain server API key; implement adapter and fail-closed tests before enabling uploads. |
+| **Cloudmersive** | **Scan uploaded payment evidence for malware before private Storage upload** | **Adapter implemented; activation pending private API key and commercial/privacy approval.** Uses Cloudmersive's documented multipart and JSON protocol; 3 MB safety cap for free evaluation. | Open provider account, confirm commercial/free-plan eligibility, privacy/data processing and file limits; obtain server API key; add server API key in Render, confirm contract and privacy, then test authorized upload/download and fail-closed responses. |
 
 ## Sensitive-data supplier checklist
 
@@ -19,4 +19,4 @@ For providers handling financial or identity-related content, verify data locati
 
 ## Payment evidence specifics
 
-The existing `ConfiguredMalwareScanner` refuses uploads when it is not configured. Setting `Security__MalwareScanner__Endpoint` to a Cloudmersive URL **alone does not complete integration** because the current wire contract expects a plain `clean` result. The secure `Storage__ServiceRoleKey` and Cloudmersive credentials must be kept exclusively in Render. See `README.md` for storage and scanner configuration prerequisites.
+`ConfiguredMalwareScanner` now implements Cloudmersive's `Apikey`, multipart `inputFile`, and strict JSON `CleanResult` contract. It refuses uploads until the server-only API key is configured; scans are capped to 3 MB for free-tier testing. This does not authorize production processing under an evaluation plan. The secure `Storage__ServiceRoleKey` and Cloudmersive credentials must be kept exclusively in Render. See `README.md` for storage and scanner configuration prerequisites.
