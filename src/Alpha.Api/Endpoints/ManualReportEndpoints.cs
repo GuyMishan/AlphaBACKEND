@@ -291,17 +291,14 @@ public static class ManualReportEndpoints
         if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
 
         var requested = request.EmploymentIds.Distinct().ToHashSet();
-        if (report.IsCorrectionWorkspace && report.SourceReportId.HasValue)
-        {
-            var sourceEmploymentIds = await db.ManualReportEmployees.AsNoTracking()
-                .Where(x => x.ReportId == report.SourceReportId.Value)
-                .Select(x => x.EmploymentId)
-                .ToHashSetAsync(ct);
-            if (requested.Any(x => !sourceEmploymentIds.Contains(x)))
-                return Results.BadRequest(new { error = "correction_additions_not_supported",
-                    detail = "טיוטת תיקון לדיווח שנשלח יכולה לשנות או להסיר עובדים ומוצרים מהדיווח המקורי, אך אינה מוסיפה עובדים או מוצרים חדשים." });
-        }
         var existing = await db.ManualReportEmployees.Where(x => x.ReportId == reportId).ToListAsync(ct);
+        if (report.IsCorrectionWorkspace)
+        {
+            var currentEmploymentIds = existing.Select(x => x.EmploymentId).ToHashSet();
+            if (!requested.SetEquals(currentEmploymentIds))
+                return Results.BadRequest(new { error = "correction_structure_changes_not_supported",
+                    detail = "בטיוטת תיקון ניתן לערוך את נתוני העובדים והמוצרים שכבר היו בדיווח המקורי, אך לא להוסיף או להסיר עובדים או מוצרים." });
+        }
         var toRemove = existing.Where(x => !requested.Contains(x.EmploymentId)).ToList();
         if (toRemove.Count > 0) db.ManualReportEmployees.RemoveRange(toRemove);
         var existingIds = existing.Select(x => x.EmploymentId).ToHashSet();
@@ -643,8 +640,8 @@ public static class ManualReportEndpoints
         if (request.Products.Any(x => x.ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(x.FundExternalKey)))
             return Results.BadRequest(new { error = "A fund must be selected for every pension product." });
         if (report.IsCorrectionWorkspace && request.Products.Any(x => !x.SourceReportProductId.HasValue))
-            return Results.BadRequest(new { error = "correction_additions_not_supported",
-                detail = "טיוטת תיקון לדיווח שנשלח יכולה לשנות או להסיר מוצרים מהדיווח המקורי, אך אינה מוסיפה מוצר חדש." });
+            return Results.BadRequest(new { error = "correction_structure_changes_not_supported",
+                detail = "בטיוטת תיקון ניתן לערוך את המוצרים שכבר היו בדיווח המקורי, אך לא להוסיף או להסיר מוצר." });
 
         var monthlySalary = request.MonthlySalary > 0
             ? request.MonthlySalary
@@ -677,6 +674,21 @@ public static class ManualReportEndpoints
             .Where(x => x.ReportEmployeeId == reportEmployeeId)
             .OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt)
             .ToListAsync(ct);
+
+        if (report.IsCorrectionWorkspace)
+        {
+            var sourceProductIds = existingProducts
+                .Where(x => x.SourceReportProductId.HasValue)
+                .Select(x => x.SourceReportProductId!.Value)
+                .ToHashSet();
+            var requestedSourceProductIds = request.Products
+                .Where(x => x.SourceReportProductId.HasValue)
+                .Select(x => x.SourceReportProductId!.Value)
+                .ToHashSet();
+            if (!requestedSourceProductIds.SetEquals(sourceProductIds))
+                return Results.BadRequest(new { error = "correction_structure_changes_not_supported",
+                    detail = "בטיוטת תיקון ניתן לערוך את המוצרים שכבר היו בדיווח המקורי, אך לא להוסיף או להסיר מוצר." });
+        }
 
         if (!report.IsCorrectionWorkspace)
         {

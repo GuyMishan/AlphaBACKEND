@@ -120,3 +120,6 @@ These sources outrank assumptions, old examples and UI behavior.
 
 - Correction-workspace additions are fail-closed until an official op1-within-correction flow is implemented end-to-end. The backend rejects newly added employees/products in a correction workspace and materialization rejects legacy source-less additions; modifying or removing source-backed rows remains supported.
 - Pending-change comparison decrypts purpose-bound employee interface identifier, email and mobile snapshots before comparing workspace vs source, so a correction that changes only those V006 fields is detected and a true revert is not.
+
+
+- Correction workspace structure is locked to the source report: employee selection and the source-product set cannot be added to or removed from. This avoids partially supported op1/new-row cases and keeps correction materialization confined to versioned edits of the immutable source graph.

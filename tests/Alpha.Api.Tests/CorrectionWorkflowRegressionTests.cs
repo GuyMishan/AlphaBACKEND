@@ -69,7 +69,9 @@ public sealed class CorrectionWorkflowRegressionTests
         Assert.Contains("existingBySource", source, StringComparison.Ordinal);
         Assert.Contains("correction_product_lineage_missing", source, StringComparison.Ordinal);
         Assert.Contains("product.SetCorrectionState(changed", source, StringComparison.Ordinal);
-        Assert.Contains("correction_additions_not_supported", source, StringComparison.Ordinal);
+        Assert.Contains("correction_structure_changes_not_supported", source, StringComparison.Ordinal);
+        Assert.Contains("requestedSourceProductIds.SetEquals(sourceProductIds)", source, StringComparison.Ordinal);
+        Assert.Contains("requested.SetEquals(currentEmploymentIds)", source, StringComparison.Ordinal);
     }
 
     private static ManualReportProduct CreateProduct() =>
