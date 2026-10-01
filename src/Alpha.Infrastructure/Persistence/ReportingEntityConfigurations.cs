@@ -126,7 +126,9 @@ public sealed class ManualReportProductConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.ValidationStatus).HasConversion<string>().HasMaxLength(40);
         b.Property(x => x.ValidationError).HasMaxLength(2000);
         b.HasIndex(x => x.ReportEmployeeId);
+        b.HasIndex(x => x.SourceReportProductId);
         b.HasOne<ManualReportEmployee>().WithMany().HasForeignKey(x => x.ReportEmployeeId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ManualReportProduct>().WithMany().HasForeignKey(x => x.SourceReportProductId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 

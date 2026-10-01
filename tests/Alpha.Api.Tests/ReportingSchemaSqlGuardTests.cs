@@ -117,6 +117,22 @@ public sealed class ReportingSchemaSqlGuardTests
         Assert.Contains("ALTER COLUMN \"PreviousClearingIdentifier\" SET NOT NULL", source, StringComparison.Ordinal);
     }
 
+
+    [Fact]
+    public void Reporting_schema_adds_correction_workspace_and_product_version_guards()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Infrastructure", "Persistence", "ReportingSchemaInitializer.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("ADD COLUMN IF NOT EXISTS \"IsCorrectionWorkspace\"", source, StringComparison.Ordinal);
+        Assert.Contains("ADD COLUMN IF NOT EXISTS \"HasCorrectionChanges\"", source, StringComparison.Ordinal);
+        Assert.Contains("ADD COLUMN IF NOT EXISTS \"SourceReportProductId\"", source, StringComparison.Ordinal);
+        Assert.Contains("ADD COLUMN IF NOT EXISTS \"IsCorrectionChanged\"", source, StringComparison.Ordinal);
+        Assert.Contains("UX_manual_reports_open_correction_workspace", source, StringComparison.Ordinal);
+        Assert.Contains("FK_manual_report_products_source_product", source, StringComparison.Ordinal);
+    }
+
     private static AlphaDbContext CreateDb(string connectionString)
     {
         var options = new DbContextOptionsBuilder<AlphaDbContext>().UseNpgsql(connectionString).Options;

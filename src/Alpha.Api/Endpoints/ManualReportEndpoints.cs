@@ -1,4 +1,6 @@
 using Alpha.Api.Security;
+using Alpha.Api.Services;
+using Alpha.Domain.Auditing;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Application.Reporting;
@@ -22,6 +24,7 @@ public static class ManualReportEndpoints
         group.MapPost("/", CreateDraftAsync);
         group.MapGet("/", GetOpenReportsAsync);
         group.MapGet("/{reportId:guid}", GetReportAsync);
+        group.MapDelete("/{reportId:guid}", DeleteDraftAsync);
         group.MapPut("/{reportId:guid}/details", UpdateDetailsAsync);
         group.MapPut("/{reportId:guid}/payment-account", UpdatePaymentAccountAsync);
         group.MapPut("/{reportId:guid}/selection", SyncSelectionAsync);
@@ -42,6 +45,7 @@ public static class ManualReportEndpoints
 
         var query = db.ManualReports.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
+                && !x.IsCorrectionWorkspace
                 && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
                     || x.Status == ManualReportStatus.Error));
 
@@ -92,6 +96,8 @@ public static class ManualReportEndpoints
                 x.Status,
                 x.ReportKind,
                 x.SourceReportId,
+                x.IsCorrectionWorkspace,
+                x.HasCorrectionChanges,
                 x.PaymentAccountId,
                 x.CreatedAt,
                 x.UpdatedAt,
@@ -170,6 +176,55 @@ public static class ManualReportEndpoints
             });
     }
 
+    private static async Task<IResult> DeleteDraftAsync(Guid organizationId, Guid employerId, Guid reportId,
+        IAlphaDbContext db, OrganizationAccessService access, ICurrentUser currentUser,
+        PaymentEvidenceStorage evidenceStorage, HttpContext http, CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+
+        var report = await db.ManualReports.SingleOrDefaultAsync(x =>
+            x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (!report.IsEditable)
+            return Results.Conflict(new { error = "report_delete_requires_unsent_draft" });
+
+        var hasExternalHistory =
+            await db.ReportTransmissions.AsNoTracking().AnyAsync(x => x.ReportId == reportId, ct)
+            || await db.EmployerInterfaceFeedback.AsNoTracking().AnyAsync(x => x.ReportId == reportId, ct);
+        if (hasExternalHistory)
+            return Results.Conflict(new { error = "report_has_external_history" });
+
+        if (await db.ManualReports.AsNoTracking().AnyAsync(x => x.SourceReportId == reportId, ct))
+            return Results.Conflict(new { error = "report_has_derived_versions" });
+
+        var confirmations = await db.PaymentConfirmations
+            .Where(x => x.ReportId == reportId).ToListAsync(ct);
+        foreach (var confirmation in confirmations)
+            await evidenceStorage.DeleteOrphanAsync(confirmation.StoragePath, ct);
+        if (confirmations.Count > 0)
+            db.PaymentConfirmations.RemoveRange(confirmations);
+
+        db.AuditEvents.Add(new AuditEvent(
+            currentUser.UserId,
+            "manual-report.deleted",
+            nameof(ManualReport),
+            report.Id,
+            organizationId,
+            employerId,
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                report.ReportingMonth,
+                report.ReportKind,
+                report.SourceReportId,
+                report.IsCorrectionWorkspace
+            }),
+            http.TraceIdentifier));
+
+        db.ManualReports.Remove(report);
+        await db.SaveChangesAsync(ct);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> GetReportAsync(Guid organizationId, Guid employerId, Guid reportId,
         IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
@@ -180,7 +235,7 @@ public static class ManualReportEndpoints
         return Results.Ok(new
         {
             report.Id, report.ReportingMonth, report.SalaryPaymentDate, report.Status,
-            report.ReportKind, report.SourceReportId,
+            report.ReportKind, report.SourceReportId, report.IsCorrectionWorkspace, report.HasCorrectionChanges,
             report.PaymentAccountId, report.PaymentBankId, report.PaymentBranchId,
             report.PaymentAccountNumberMasked, report.PaymentMandateReference,
             employeeCount
@@ -194,6 +249,7 @@ public static class ManualReportEndpoints
         var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
         report.UpdateDetails(request.ReportingMonth, request.SalaryPaymentDate);
+        if (report.IsCorrectionWorkspace) report.MarkCorrectionChanged();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -211,6 +267,7 @@ public static class ManualReportEndpoints
         var account = await paymentAccounts.ResolveForReportAsync(employerId, request.PaymentAccountId, ct);
         if (account is null) return Results.Conflict(new { error = "payment_account_required" });
         await paymentAccounts.ApplySnapshotAsync(report, account, protector.Unprotect(account.AccountNumberEncrypted ?? throw new InvalidOperationException("Encrypted account number missing."), "bank-account-number"), ct);
+        if (report.IsCorrectionWorkspace) report.MarkCorrectionChanged();
         await db.SaveChangesAsync(ct);
 
         return Results.Ok(new
@@ -267,7 +324,8 @@ public static class ManualReportEndpoints
                 await SeedProductsFromMixAsync(db, reportEmployee, report.ReportingMonth, ct);
             }
         }
-        report.MarkDirty();
+        if (report.IsCorrectionWorkspace) report.MarkCorrectionChanged();
+        else report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -456,12 +514,12 @@ public static class ManualReportEndpoints
         if (report is null) return Results.NotFound();
         if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
 
-        var exists = await (from product in db.ManualReportProducts.AsNoTracking()
-                            join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                            where product.Id == reportProductId && employee.ReportId == reportId
-                                && employee.OrganizationId == organizationId && employee.EmployerId == employerId
-                            select product.Id).AnyAsync(ct);
-        if (!exists) return Results.NotFound();
+        var product = await (from product in db.ManualReportProducts
+                             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                             where product.Id == reportProductId && employee.ReportId == reportId
+                                 && employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                             select product).SingleOrDefaultAsync(ct);
+        if (product is null) return Results.NotFound();
 
         var payment = await db.ManualReportPayments.SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
         if (payment is null)
@@ -473,7 +531,12 @@ public static class ManualReportEndpoints
             request.TrustAccountValueDate, request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode,
             request.EmployerBranch, protector.Protect(request.EmployerAccount ?? string.Empty, $"report-payment-account:{reportProductId}"), request.ConfirmationFileName,
             request.ActualDepositAmount, request.MasavSenderCode);
-        report.MarkDirty();
+        if (report.IsCorrectionWorkspace)
+        {
+            product.MarkCorrectionChanged();
+            report.MarkCorrectionChanged();
+        }
+        else report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -494,7 +557,7 @@ public static class ManualReportEndpoints
             employee.PostalCodeSnapshot, employee.PostOfficeBoxSnapshot,
             products = products.Select(p => new
             {
-                p.Id, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName, p.FundClassification,
+                p.Id, p.SourceReportProductId, p.IsCorrectionChanged, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName, p.FundClassification,
                 p.SalaryMonth, p.Salary, p.SalaryAllocationType, p.SalaryAllocationValue, p.AllocationOrder,
                 p.ReportingType, p.SalaryLayer, p.Section14, p.Section14Code, p.Section14StartDate,
                 employerContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employer).OrderBy(c => c.Component),
@@ -562,11 +625,14 @@ public static class ManualReportEndpoints
                 input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
                 input.Section14StartDate, input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
                 item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
+            product.SetSourceVersion(input.SourceReportProductId);
+            if (report.IsCorrectionWorkspace) product.MarkCorrectionChanged();
             db.ManualReportProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
         }
-        report.MarkDirty();
+        if (report.IsCorrectionWorkspace) report.MarkCorrectionChanged();
+        else report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -680,7 +746,8 @@ public sealed record ManualProductInput(PensionProductType ProductType, string P
     decimal Salary, string ReportingType, string SalaryLayer, bool Section14, DateOnly? Section14StartDate, int? Section14Code,
     string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName, string? FundClassification,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
-    IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions);
+    IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions,
+    Guid? SourceReportProductId = null);
 public sealed record ManualContributionInput(ContributionComponent Component, decimal Amount, decimal Percentage, decimal ExemptPayments);
 public sealed record SaveManualReportPaymentRequest(string ProviderName, string ProviderAccount, string PaymentMethod,
     DateOnly? ValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,

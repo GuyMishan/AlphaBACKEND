@@ -45,6 +45,8 @@ public sealed class ManualReport : Entity
     public ManualReportKind ReportKind { get; private set; } = ManualReportKind.Current;
     public Guid? SourceReportId { get; private set; }
     public bool ExternalSourceReference { get; private set; }
+    public bool IsCorrectionWorkspace { get; private set; }
+    public bool HasCorrectionChanges { get; private set; }
     public DateTimeOffset? SnapshotTakenAt { get; private set; }
     public DateTimeOffset? ValidatedAt { get; private set; }
     public string ValidationError { get; private set; } = string.Empty;
@@ -130,6 +132,9 @@ public sealed class ManualReport : Entity
     public void MarkSent() { if (Status != ManualReportStatus.Processing) throw new InvalidOperationException("Report is not being transmitted."); Status = ManualReportStatus.Sent; Touch(); }
     public void MarkTransmissionError(string? message) { Status = ManualReportStatus.Error; ValidationError = message?.Trim() ?? string.Empty; Touch(); }
     public void MarkCompleted() { if (Status is not ManualReportStatus.Sent and not ManualReportStatus.Processing) throw new InvalidOperationException("Only a sent report can be completed."); Status = ManualReportStatus.Completed; Touch(); }
+    public void MarkCorrectionWorkspace() { EnsureEditable(); IsCorrectionWorkspace = true; Touch(); }
+    public void MarkCorrectionChanged() { EnsureEditable(); HasCorrectionChanges = true; MarkDirty(); }
+    public void MarkCancelled() { EnsureEditable(); Status = ManualReportStatus.Cancelled; Touch(); }
     public void MarkDirty() { if (Status is ManualReportStatus.Sent or ManualReportStatus.Processing or ManualReportStatus.Completed or ManualReportStatus.Submitted or ManualReportStatus.Cancelled) throw new InvalidOperationException("A sent or completed report cannot be edited."); Status = ManualReportStatus.Draft; SnapshotTakenAt = null; ValidatedAt = null; ValidationError = string.Empty; Touch(); }
     public bool IsEditable => Status is ManualReportStatus.Draft or ManualReportStatus.ReadyForValidation or ManualReportStatus.Error;
     private void EnsureEditable() { if (!IsEditable) throw new InvalidOperationException("This report can no longer be edited."); }
@@ -275,6 +280,8 @@ public sealed class ManualReportProduct : Entity
     }
 
     public Guid ReportEmployeeId { get; private set; }
+    public Guid? SourceReportProductId { get; private set; }
+    public bool IsCorrectionChanged { get; private set; }
     public PensionProductType ProductType { get; private set; }
     public string PolicyNumber { get; private set; } = string.Empty;
     public DateOnly SalaryMonth { get; private set; }
@@ -294,6 +301,19 @@ public sealed class ManualReportProduct : Entity
     public int AllocationOrder { get; private set; }
     public ManualReportItemStatus ValidationStatus { get; private set; } = ManualReportItemStatus.Draft;
     public string ValidationError { get; private set; } = string.Empty;
+
+    public void SetSourceVersion(Guid? sourceReportProductId)
+    {
+        if (sourceReportProductId == Guid.Empty) throw new ArgumentException("Source report product cannot be empty.", nameof(sourceReportProductId));
+        SourceReportProductId = sourceReportProductId;
+        Touch();
+    }
+
+    public void MarkCorrectionChanged()
+    {
+        IsCorrectionChanged = true;
+        Touch();
+    }
 
     public void Update(PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary,
         string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate,

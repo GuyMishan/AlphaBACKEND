@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS reporting.manual_reports (
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "ReportKind" varchar(30) NOT NULL DEFAULT 'Current';
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "SourceReportId" uuid NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "ExternalSourceReference" boolean NOT NULL DEFAULT false;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "IsCorrectionWorkspace" boolean NOT NULL DEFAULT false;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "HasCorrectionChanges" boolean NOT NULL DEFAULT false;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentAccountId" uuid NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentBankId" integer NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentBranchId" integer NULL;
@@ -206,11 +208,34 @@ CREATE TABLE IF NOT EXISTS reporting.manual_report_products (
 ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "SalaryAllocationType" varchar(30) NOT NULL DEFAULT 'Fixed';
 ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "SalaryAllocationValue" numeric(18,4) NULL;
 ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "AllocationOrder" integer NOT NULL DEFAULT 0;
+ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "SourceReportProductId" uuid NULL;
+ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "IsCorrectionChanged" boolean NOT NULL DEFAULT false;
+DO $
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_manual_report_products_source_product'
+          AND connamespace = 'reporting'::regnamespace
+    ) THEN
+        ALTER TABLE reporting.manual_report_products
+            ADD CONSTRAINT "FK_manual_report_products_source_product"
+            FOREIGN KEY ("SourceReportProductId")
+            REFERENCES reporting.manual_report_products("Id")
+            ON DELETE RESTRICT;
+    END IF;
+END $;
 UPDATE reporting.manual_report_products
 SET "SalaryAllocationValue" = "Salary"
 WHERE "SalaryAllocationType" = 'Fixed' AND "SalaryAllocationValue" IS NULL AND "Salary" > 0;
 CREATE INDEX IF NOT EXISTS "IX_manual_report_products_employee"
     ON reporting.manual_report_products ("ReportEmployeeId");
+CREATE INDEX IF NOT EXISTS "IX_manual_report_products_source"
+    ON reporting.manual_report_products ("SourceReportProductId");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_manual_reports_open_correction_workspace"
+    ON reporting.manual_reports ("SourceReportId")
+    WHERE "IsCorrectionWorkspace" = true
+      AND "SourceReportId" IS NOT NULL
+      AND "Status" IN ('Draft', 'ReadyForValidation', 'Error');
 
 CREATE TABLE IF NOT EXISTS reporting.manual_contributions (
     "Id" uuid PRIMARY KEY,

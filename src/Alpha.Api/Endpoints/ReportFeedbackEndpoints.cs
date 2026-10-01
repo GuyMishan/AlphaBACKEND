@@ -81,7 +81,8 @@ public static class ReportFeedbackEndpoints
             .SingleOrDefaultAsync(ct) ?? string.Empty;
         var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         skip = Math.Max(skip, 0); take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
-        var query = db.ManualReports.AsNoTracking().Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId);
+        var query = db.ManualReports.AsNoTracking().Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
+            && !x.IsCorrectionWorkspace);
 
         if (!string.IsNullOrWhiteSpace(month))
         {
@@ -214,6 +215,27 @@ public static class ReportFeedbackEndpoints
         var hasMore = page.Count > take; if (hasMore) page.RemoveAt(page.Count - 1);
         var pageIds = page.Select(x => x.Id).ToArray();
 
+        var correctionWorkspaces = await db.ManualReports.AsNoTracking()
+            .Where(x => x.IsCorrectionWorkspace && x.SourceReportId.HasValue
+                && pageIds.Contains(x.SourceReportId.Value)
+                && (x.Status == ManualReportStatus.Draft
+                    || x.Status == ManualReportStatus.ReadyForValidation
+                    || x.Status == ManualReportStatus.Error))
+            .Select(x => new { x.Id, SourceReportId = x.SourceReportId!.Value, x.HasCorrectionChanges })
+            .ToListAsync(ct);
+        var workspaceBySource = correctionWorkspaces.ToDictionary(x => x.SourceReportId);
+        var workspaceIds = correctionWorkspaces.Select(x => x.Id).ToArray();
+        var workspaceChangedCounts = workspaceIds.Length == 0
+            ? new Dictionary<Guid, int>()
+            : await (
+                from product in db.ManualReportProducts.AsNoTracking()
+                join employee in db.ManualReportEmployees.AsNoTracking()
+                    on product.ReportEmployeeId equals employee.Id
+                where workspaceIds.Contains(employee.ReportId) && product.IsCorrectionChanged
+                group product by employee.ReportId into g
+                select new { ReportId = g.Key, Count = g.Count() })
+              .ToDictionaryAsync(x => x.ReportId, x => x.Count, ct);
+
         var employeeCounts = await db.ManualReportEmployees.AsNoTracking().Where(x => pageIds.Contains(x.ReportId))
             .GroupBy(x => x.ReportId).Select(g => new { Id = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
@@ -275,6 +297,17 @@ public static class ReportFeedbackEndpoints
                 employeeCount = employeeCounts.GetValueOrDefault(report.Id), totalAmount = total, payoffRate,
                 allocatedAmount = cash?.Allocated, actualReceivedAmount = cash?.Received, inTransitAmount = cash?.InTransit,
                 canEdit = canCreateReport && report.IsEditable,
+                canDelete = canCreateReport && report.IsEditable
+                    && tx is null && officialCounts.GetValueOrDefault(report.Id) == 0,
+                canStartCorrectionWorkspace = canCreateReport
+                    && report.ReportKind == ManualReportKind.Current
+                    && report.Status is ManualReportStatus.Sent or ManualReportStatus.Completed,
+                correctionWorkspaceId = workspaceBySource.TryGetValue(report.Id, out var workspace)
+                    ? workspace.Id : (Guid?)null,
+                pendingCorrectionCount = workspaceBySource.TryGetValue(report.Id, out var pendingWorkspace)
+                    ? Math.Max(workspaceChangedCounts.GetValueOrDefault(pendingWorkspace.Id),
+                        pendingWorkspace.HasCorrectionChanges ? 1 : 0)
+                    : 0,
                 canCreateCorrection = ReportFeedbackStatusResolver.CanCreateCorrection(
                     canCreateReport, report.IsEditable, report.Status, report.ReportKind,
                     productCounts.GetValueOrDefault(report.Id) > 0
@@ -318,6 +351,37 @@ public static class ReportFeedbackEndpoints
             .ThenBy(x => x.Product.AllocationOrder).ThenBy(x => x.Product.CreatedAt).Skip(skip).Take(take + 1).ToListAsync(ct);
         var hasMore = page.Count > take; if (hasMore) page.RemoveAt(page.Count - 1);
         var productIds = page.Select(x => x.Product.Id).ToArray();
+        var correctionWorkspace = await db.ManualReports.AsNoTracking()
+            .Where(x => x.IsCorrectionWorkspace && x.SourceReportId == reportId
+                && (x.Status == ManualReportStatus.Draft
+                    || x.Status == ManualReportStatus.ReadyForValidation
+                    || x.Status == ManualReportStatus.Error))
+            .Select(x => new { x.Id, x.HasCorrectionChanges })
+            .SingleOrDefaultAsync(ct);
+
+        var pendingBySourceProduct = new Dictionary<Guid, (Guid ProductId, bool Changed)>();
+        if (correctionWorkspace is not null)
+        {
+            var workspaceEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
+                .Where(x => x.ReportId == correctionWorkspace.Id)
+                .Select(x => x.Id)
+                .ToArrayAsync(ct);
+            var workspaceProducts = await db.ManualReportProducts.AsNoTracking()
+                .Where(x => workspaceEmployeeIds.Contains(x.ReportEmployeeId)
+                    && x.SourceReportProductId.HasValue
+                    && productIds.Contains(x.SourceReportProductId.Value))
+                .Select(x => new
+                {
+                    SourceId = x.SourceReportProductId!.Value,
+                    ProductId = x.Id,
+                    x.IsCorrectionChanged
+                })
+                .ToListAsync(ct);
+            pendingBySourceProduct = workspaceProducts.ToDictionary(
+                x => x.SourceId,
+                x => (x.ProductId, x.IsCorrectionChanged));
+        }
+
         var activeFeedbackIdsForReport = await ActiveFeedbackIdsAsync(reportId, db, ct);
 
         var totals = await db.ManualContributions.AsNoTracking()
@@ -370,7 +434,13 @@ public static class ReportFeedbackEndpoints
                 treatmentStatus = treatment?.StatusCode ?? "",
                 treatmentStatusLabel = treatment is null ? "" : labels.GetValueOrDefault(treatment.StatusCode) ?? treatment.StatusCode,
                 updatedAt = timestamps.Count == 0 ? (DateTimeOffset?)null : timestamps.Max(),
-                requiresAttention = hasError
+                requiresAttention = hasError,
+                pendingCorrectionReportId = correctionWorkspace?.Id,
+                pendingCorrectionProductId = pendingBySourceProduct.TryGetValue(x.Product.Id, out var pending)
+                    ? pending.ProductId : (Guid?)null,
+                hasPendingCorrection = correctionWorkspace is not null
+                    && (!pendingBySourceProduct.TryGetValue(x.Product.Id, out var correctionProduct)
+                        || correctionProduct.Changed)
             };
         });
         return Results.Ok(new { items, hasMore });

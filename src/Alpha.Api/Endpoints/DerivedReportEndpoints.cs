@@ -1,4 +1,6 @@
 using Alpha.Api.Security;
+using Alpha.Api.Services;
+using Alpha.Domain.Auditing;
 using System.Globalization;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
@@ -19,8 +21,109 @@ public static class DerivedReportEndpoints
 
         group.MapGet("/source-reports", GetSourceReportsAsync);
         group.MapPost("/derived", CreateDerivedReportAsync);
+        group.MapPost("/{reportId:guid}/correction-workspace", EnsureCorrectionWorkspaceAsync);
+        group.MapPost("/{reportId:guid}/materialize-correction", MaterializeCorrectionAsync);
         group.MapGet("/{reportId:guid}/metadata", GetMetadataAsync);
         return endpoints;
+    }
+
+    private static async Task<IResult> EnsureCorrectionWorkspaceAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        EnsureCorrectionWorkspaceRequest request, IAlphaDbContext db,
+        OrganizationAccessService access, IDataProtectionService protector,
+        ICurrentUser currentUser, HttpContext http, CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+
+        CorrectionWorkflowService.WorkspaceResult? result;
+        try
+        {
+            result = await CorrectionWorkflowService.EnsureWorkspaceAsync(
+                organizationId, employerId, reportId, request.SourceReportProductId,
+                db, protector, ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Results.Conflict(new { error = "correction_workspace_conflict" });
+        }
+
+        if (result is null)
+            return Results.Conflict(new { error = "correction_workspace_source_invalid" });
+
+        db.AuditEvents.Add(new AuditEvent(
+            currentUser.UserId,
+            result.Created ? "report-correction.workspace-created" : "report-correction.workspace-opened",
+            nameof(ManualReport),
+            result.ReportId,
+            organizationId,
+            employerId,
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                sourceReportId = reportId,
+                request.SourceReportProductId,
+                result.PendingChanges
+            }),
+            http.TraceIdentifier));
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new
+        {
+            reportId = result.ReportId,
+            reportProductId = result.ReportProductId,
+            result.Created,
+            result.PendingChanges
+        });
+    }
+
+    private static async Task<IResult> MaterializeCorrectionAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        MaterializeCorrectionRequest request, IAlphaDbContext db,
+        OrganizationAccessService access, IDataProtectionService protector,
+        ICurrentUser currentUser, HttpContext http, CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+        if (request.CorrectionOperationCode is not (2 or 3))
+            return Results.BadRequest(new { error = "correction_operation_invalid" });
+
+        var result = await CorrectionWorkflowService.MaterializeAsync(
+            organizationId, employerId, reportId, request.CorrectionOperationCode,
+            db, protector, ct);
+        if (result is null)
+            return Results.Conflict(new
+            {
+                error = "correction_workspace_not_ready",
+                detail = "יש לוודא שקיימים שינויים ממתינים ושמזהי הדיווח והמסלקה של הדיווח המקורי כבר התקבלו."
+            });
+
+        db.AuditEvents.Add(new AuditEvent(
+            currentUser.UserId,
+            "report-correction.materialized",
+            nameof(ManualReport),
+            result.CurrentReportId,
+            organizationId,
+            employerId,
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                result.WorkspaceId,
+                result.SourceReportId,
+                result.NegativeReportId,
+                result.CurrentReportId,
+                result.PendingChanges,
+                request.CorrectionOperationCode
+            }),
+            http.TraceIdentifier));
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new
+        {
+            result.WorkspaceId,
+            result.SourceReportId,
+            result.NegativeReportId,
+            result.CurrentReportId,
+            result.PendingChanges
+        });
     }
 
     private static async Task<IResult> GetSourceReportsAsync(Guid organizationId, Guid employerId,
@@ -32,6 +135,7 @@ public static class DerivedReportEndpoints
 
         var query = db.ManualReports.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
+                && !x.IsCorrectionWorkspace
                 && x.Status != ManualReportStatus.Cancelled);
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -119,7 +223,9 @@ public static class DerivedReportEndpoints
             report.SalaryPaymentDate,
             report.Status,
             report.ReportKind,
-            report.SourceReportId
+            report.SourceReportId,
+            report.IsCorrectionWorkspace,
+            report.HasCorrectionChanges
         });
     }
 
@@ -348,3 +454,7 @@ public static class DerivedReportEndpoints
 public sealed record CreateDerivedManualReportRequest(Guid SourceReportId, ManualReportKind ReportKind,
     DateOnly ReportingMonth, DateOnly? SalaryPaymentDate, Guid? PaymentAccountId = null,
     int? CorrectionOperationCode = null, IReadOnlyCollection<Guid>? ReportProductIds = null);
+
+
+public sealed record EnsureCorrectionWorkspaceRequest(Guid? SourceReportProductId = null);
+public sealed record MaterializeCorrectionRequest(int CorrectionOperationCode);

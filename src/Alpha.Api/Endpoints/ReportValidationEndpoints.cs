@@ -50,6 +50,8 @@ public static class ReportValidationEndpoints
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var normalizedStage = NormalizeStage(stage);
+        if (normalizedStage == ValidationStage.Final)
+            await CorrectionWorkflowService.SyncCurrentCorrectionReferencesAsync(reportId, db, ct);
         var result = await ValidateReportAsync(organizationId, employerId, reportId, normalizedStage, db, true, ct);
         if (result is null) return Results.NotFound();
         await AppendEmployerInterfacePreflightAsync(result, normalizedStage, employerInterfaceExporter, ct);
@@ -126,6 +128,42 @@ public static class ReportValidationEndpoints
             issues.Add(new("SALARY_PAYMENT_DATE_REQUIRED", "תאריך תשלום שכר הוא שדה חובה.", ValidationScope.Report));
         if (employees.Count == 0)
             issues.Add(new("EMPLOYEE_REQUIRED", "יש לבחור לפחות עובד אחד לדיווח.", ValidationScope.Report));
+
+        if (stage == ValidationStage.Final
+            && report.ReportKind == ManualReportKind.Current
+            && report.SourceReportId.HasValue)
+        {
+            var correctionSource = await db.ManualReports.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == report.SourceReportId.Value, ct);
+            if (correctionSource?.ReportKind == ManualReportKind.Negative)
+            {
+                if (correctionSource.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
+                {
+                    issues.Add(new("CORRECTION_NEGATIVE_NOT_SENT",
+                        "הדיווח השלילי המקדים עדיין לא נשלח. יש להשלים קודם את שלב הביטול (פעולה 6).",
+                        ValidationScope.Report));
+                }
+                else
+                {
+                    var correctionEmployeeIds = employees.Select(x => x.Id).ToArray();
+                    var correctionProductIds = await db.ManualReportProducts.AsNoTracking()
+                        .Where(x => correctionEmployeeIds.Contains(x.ReportEmployeeId))
+                        .Select(x => x.Id)
+                        .ToArrayAsync(ct);
+                    var waitingForClearing = await db.EmployerInterfaceReportProductData.AsNoTracking()
+                        .AnyAsync(x => correctionProductIds.Contains(x.ReportProductId)
+                            && (x.OperationCode == 2 || x.OperationCode == 3)
+                            && string.IsNullOrEmpty(x.PreviousClearingIdentifier)
+                            && !x.PreviousReferenceExceptionCode.HasValue, ct);
+                    if (waitingForClearing)
+                    {
+                        issues.Add(new("CORRECTION_NEGATIVE_FEEDBACK_PENDING",
+                            "הדיווח השוטף המתקן ממתין למזהה המסלקה מהמשוב על הדיווח השלילי. לאחר קבלת המשוב ניתן יהיה לאמת ולשלוח.",
+                            ValidationScope.Report));
+                    }
+                }
+            }
+        }
 
         var productsByEmployee = products.GroupBy(x => x.ReportEmployeeId).ToDictionary(g => g.Key, g => g.ToList());
 
