@@ -69,3 +69,8 @@ the exception.
 - Store secrets outside configuration files in production.
 - Do not log national IDs, bank data, report files, or tokens.
 - Do not delete submitted financial records; reverse or supersede them.
+
+
+## Reporting correction revision model
+
+Submitted employer reports are business revisions, while Employer Interface 006 negative/current files created to move between revisions are technical transmission documents. A correction workspace is a full desired next-state snapshot. The delta planner compares it to the latest effective revision and emits only the Added/Changed/Removed rows required by Version 006. Technical documents never become the source of a later user correction; after successful transmission, the workspace itself is promoted to the next immutable business revision. This keeps lineage linear (Revision 1 -> Revision 2 -> Revision 3) while preserving every technical transmission as immutable evidence.

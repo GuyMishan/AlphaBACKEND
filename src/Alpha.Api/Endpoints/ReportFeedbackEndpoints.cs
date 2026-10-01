@@ -82,7 +82,7 @@ public static class ReportFeedbackEndpoints
         var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         skip = Math.Max(skip, 0); take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
         var query = db.ManualReports.AsNoTracking().Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
-            && !x.IsCorrectionWorkspace);
+            && !x.IsCorrectionWorkspace && !x.IsTechnicalCorrectionDocument);
 
         if (!string.IsNullOrWhiteSpace(month))
         {
@@ -183,8 +183,14 @@ public static class ReportFeedbackEndpoints
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ReportProductId).Distinct().Count());
 
+        var completedRevisionIds = await db.ManualReports.AsNoTracking()
+            .Where(x => candidateIds.Contains(x.Id) && x.IsRevisionSnapshot
+                && x.Status == ManualReportStatus.Completed)
+            .Select(x => x.Id).ToHashSetAsync(ct);
+
         string State(Guid id)
         {
+            if (completedRevisionIds.Contains(id)) return "completed";
             latestTransmission.TryGetValue(id, out var tx);
             return ReportFeedbackStatusResolver.ResolveReportState(
                 tx?.Status,
@@ -224,17 +230,10 @@ public static class ReportFeedbackEndpoints
             .Select(x => new { x.Id, SourceReportId = x.SourceReportId!.Value, x.HasCorrectionChanges })
             .ToListAsync(ct);
         var workspaceBySource = correctionWorkspaces.ToDictionary(x => x.SourceReportId);
-        var workspaceIds = correctionWorkspaces.Select(x => x.Id).ToArray();
-        var workspaceChangedCounts = workspaceIds.Length == 0
-            ? new Dictionary<Guid, int>()
-            : await (
-                from reportProduct in db.ManualReportProducts.AsNoTracking()
-                join employee in db.ManualReportEmployees.AsNoTracking()
-                    on reportProduct.ReportEmployeeId equals employee.Id
-                where workspaceIds.Contains(employee.ReportId) && reportProduct.IsCorrectionChanged
-                group reportProduct by employee.ReportId into g
-                select new { ReportId = g.Key, Count = g.Count() })
-              .ToDictionaryAsync(x => x.ReportId, x => x.Count, ct);
+        var workspaceChangedCounts = new Dictionary<Guid, int>();
+        foreach (var correctionWorkspace in correctionWorkspaces)
+            workspaceChangedCounts[correctionWorkspace.Id] =
+                await CorrectionWorkflowService.PendingChangeCountAsync(correctionWorkspace.Id, db, protector, ct);
 
         var employeeCounts = await db.ManualReportEmployees.AsNoTracking().Where(x => pageIds.Contains(x.ReportId))
             .GroupBy(x => x.ReportId).Select(g => new { Id = g.Key, Count = g.Count() })
@@ -279,9 +278,22 @@ public static class ReportFeedbackEndpoints
                 InTransit = g.Sum(x => x.InTransitAmount)
             });
 
+        var revisionRoots = page.Select(x => x.RevisionRootReportId ?? x.Id).Distinct().ToArray();
+        var latestRevisionByRoot = await db.ManualReports.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
+                && x.IsRevisionSnapshot && x.RevisionRootReportId.HasValue
+                && revisionRoots.Contains(x.RevisionRootReportId.Value)
+                && x.Status == ManualReportStatus.Completed)
+            .GroupBy(x => x.RevisionRootReportId!.Value)
+            .Select(g => new { RootId = g.Key, RevisionNumber = g.Max(x => x.RevisionNumber) })
+            .ToDictionaryAsync(x => x.RootId, x => x.RevisionNumber, ct);
+
         var items = page.Select(report =>
         {
             latestTransmission.TryGetValue(report.Id, out var tx); money.TryGetValue(report.Id, out var cash);
+            var rootId = report.RevisionRootReportId ?? report.Id;
+            var hasNewerRevision = latestRevisionByRoot.TryGetValue(rootId, out var latestRevisionNumber)
+                && (!report.IsRevisionSnapshot || report.RevisionNumber < latestRevisionNumber);
             var total = totals.GetValueOrDefault(report.Id);
             var payoffRate = cash is null
                 ? null
@@ -292,6 +304,7 @@ public static class ReportFeedbackEndpoints
             return new
             {
                 report.Id, employerName, report.ReportingMonth, report.SalaryPaymentDate, report.ReportKind, report.Status,
+                revisionRootReportId = rootId, report.RevisionNumber, report.IsRevisionSnapshot,
                 feedbackStatus = State(report.Id), hasFeedback = officialCounts.GetValueOrDefault(report.Id) > 0,
                 issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id),
                 employeeCount = employeeCounts.GetValueOrDefault(report.Id), totalAmount = total, payoffRate,
@@ -301,12 +314,12 @@ public static class ReportFeedbackEndpoints
                     && tx is null && officialCounts.GetValueOrDefault(report.Id) == 0,
                 canStartCorrectionWorkspace = canCreateReport
                     && report.ReportKind == ManualReportKind.Current
-                    && report.Status is ManualReportStatus.Sent or ManualReportStatus.Completed,
+                    && report.Status is ManualReportStatus.Sent or ManualReportStatus.Completed
+                    && !hasNewerRevision,
                 correctionWorkspaceId = workspaceBySource.TryGetValue(report.Id, out var workspace)
                     ? workspace.Id : (Guid?)null,
                 pendingCorrectionCount = workspaceBySource.TryGetValue(report.Id, out var pendingWorkspace)
-                    ? Math.Max(workspaceChangedCounts.GetValueOrDefault(pendingWorkspace.Id),
-                        pendingWorkspace.HasCorrectionChanges ? 1 : 0)
+                    ? workspaceChangedCounts.GetValueOrDefault(pendingWorkspace.Id)
                     : 0,
                 canCreateCorrection = ReportFeedbackStatusResolver.CanCreateCorrection(
                     canCreateReport, report.IsEditable, report.Status, report.ReportKind,

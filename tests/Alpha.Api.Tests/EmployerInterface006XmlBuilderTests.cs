@@ -251,6 +251,40 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_splits_same_fund_when_new_and_corrected_operations_are_mixed()
+    {
+        var fixture = CreateFixture(false, operationCode: 1, paymentMethodCode: 1);
+        var correctedProduct = new ManualReportProduct(fixture.Context.Employees[0].Id, PensionProductType.PensionFund, "456",
+            new DateOnly(2026, 9, 1), 500m, "1", "1", false, null,
+            fundCode: fixture.Product.FundCode, fundName: "Test Fund");
+        var correctedContribution = new ManualContribution(correctedProduct.Id, ContributionParty.Employee,
+            ContributionComponent.Benefits, 50m, 10m, 0m);
+        var correctedPayment = new ManualReportPayment(correctedProduct.Id);
+        correctedPayment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), null,
+            "REF-1", "Test Bank", "10", "123", "123456", "");
+        var correctedMetadata = new EmployerInterfaceReportProductData(correctedProduct.Id);
+        correctedMetadata.Update(2, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1,
+            previousReferenceExceptionCode: 1);
+
+        var context = fixture.Context with
+        {
+            Products = [.. fixture.Context.Products, correctedProduct],
+            Contributions = [.. fixture.Context.Contributions, correctedContribution],
+            Payments = [.. fixture.Context.Payments, correctedPayment],
+            ProductMetadata = [.. fixture.Context.ProductMetadata, correctedMetadata]
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal(2, result.Document!.Descendants("PirteiHaavaratKsafim").Count());
+        Assert.Equal(["1", "2"], result.Document.Descendants("SUG-PEULA").Select(x => x.Value).Order().ToArray());
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, false);
+        Assert.Empty(workbookIssues);
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Current_report_rejects_mixed_product_types_inside_one_fund_transfer()
     {
         var fixture = CreateFixture(false);

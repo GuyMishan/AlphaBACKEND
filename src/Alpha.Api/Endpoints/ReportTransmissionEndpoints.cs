@@ -144,6 +144,8 @@ public static class ReportTransmissionEndpoints
                 result.ErrorMessage);
             if (result.Success) report.MarkSent(); else report.MarkTransmissionError(result.ErrorMessage ?? "The report was rejected by the transmission provider.");
             await db.SaveChangesAsync(CancellationToken.None);
+            if (result.Success)
+                await CorrectionWorkflowService.FinalizeRevisionIfCompleteAsync(report.Id, db, CancellationToken.None);
             return Results.Ok(ToResponse(report, transmission, generated.Validation));
         }
         catch (Exception)

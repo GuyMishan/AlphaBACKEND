@@ -47,6 +47,11 @@ public sealed class ManualReport : Entity
     public bool ExternalSourceReference { get; private set; }
     public bool IsCorrectionWorkspace { get; private set; }
     public bool HasCorrectionChanges { get; private set; }
+    public Guid? RevisionRootReportId { get; private set; }
+    public int RevisionNumber { get; private set; } = 1;
+    public bool IsRevisionSnapshot { get; private set; }
+    public bool IsTechnicalCorrectionDocument { get; private set; }
+    public Guid? CorrectionWorkspaceId { get; private set; }
     public DateTimeOffset? SnapshotTakenAt { get; private set; }
     public DateTimeOffset? ValidatedAt { get; private set; }
     public string ValidationError { get; private set; } = string.Empty;
@@ -132,8 +137,54 @@ public sealed class ManualReport : Entity
     public void MarkSent() { if (Status != ManualReportStatus.Processing) throw new InvalidOperationException("Report is not being transmitted."); Status = ManualReportStatus.Sent; Touch(); }
     public void MarkTransmissionError(string? message) { Status = ManualReportStatus.Error; ValidationError = message?.Trim() ?? string.Empty; Touch(); }
     public void MarkCompleted() { if (Status is not ManualReportStatus.Sent and not ManualReportStatus.Processing) throw new InvalidOperationException("Only a sent report can be completed."); Status = ManualReportStatus.Completed; Touch(); }
-    public void MarkCorrectionWorkspace() { EnsureEditable(); IsCorrectionWorkspace = true; Touch(); }
+    public void MarkCorrectionWorkspace(Guid rootReportId, int revisionNumber)
+    {
+        EnsureEditable();
+        if (rootReportId == Guid.Empty) throw new ArgumentException("Revision root is required.", nameof(rootReportId));
+        if (revisionNumber < 2) throw new ArgumentOutOfRangeException(nameof(revisionNumber));
+        IsCorrectionWorkspace = true;
+        RevisionRootReportId = rootReportId;
+        RevisionNumber = revisionNumber;
+        Touch();
+    }
+
+    public void MarkTechnicalCorrectionDocument(Guid workspaceId, Guid rootReportId, int revisionNumber)
+    {
+        EnsureEditable();
+        if (workspaceId == Guid.Empty) throw new ArgumentException("Correction workspace is required.", nameof(workspaceId));
+        if (rootReportId == Guid.Empty) throw new ArgumentException("Revision root is required.", nameof(rootReportId));
+        CorrectionWorkspaceId = workspaceId;
+        RevisionRootReportId = rootReportId;
+        RevisionNumber = revisionNumber;
+        IsTechnicalCorrectionDocument = true;
+        Touch();
+    }
+
+    public void SetCorrectionChanges(bool changed)
+    {
+        EnsureEditable();
+        HasCorrectionChanges = changed;
+        Touch();
+    }
+
     public void MarkCorrectionChanged() { EnsureEditable(); HasCorrectionChanges = true; MarkDirty(); }
+
+    public void PromoteCorrectionWorkspaceToRevision()
+    {
+        if (!IsCorrectionWorkspace) throw new InvalidOperationException("Only a correction workspace can become a revision snapshot.");
+        if (Status != ManualReportStatus.Processing)
+            throw new InvalidOperationException("Correction workspace must be processing before revision promotion.");
+        IsCorrectionWorkspace = false;
+        IsRevisionSnapshot = true;
+        ReportKind = ManualReportKind.Current;
+        HasCorrectionChanges = false;
+        Status = ManualReportStatus.Completed;
+        SnapshotTakenAt ??= DateTimeOffset.UtcNow;
+        ValidatedAt = DateTimeOffset.UtcNow;
+        ValidationError = string.Empty;
+        Touch();
+    }
+
     public void MarkCancelled() { EnsureEditable(); Status = ManualReportStatus.Cancelled; Touch(); }
     public void MarkDirty() { if (Status is ManualReportStatus.Sent or ManualReportStatus.Processing or ManualReportStatus.Completed or ManualReportStatus.Submitted or ManualReportStatus.Cancelled) throw new InvalidOperationException("A sent or completed report cannot be edited."); Status = ManualReportStatus.Draft; SnapshotTakenAt = null; ValidatedAt = null; ValidationError = string.Empty; Touch(); }
     public bool IsEditable => Status is ManualReportStatus.Draft or ManualReportStatus.ReadyForValidation or ManualReportStatus.Error;

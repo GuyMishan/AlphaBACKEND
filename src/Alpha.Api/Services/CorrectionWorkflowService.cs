@@ -8,8 +8,13 @@ namespace Alpha.Api.Services;
 public static class CorrectionWorkflowService
 {
     public sealed record WorkspaceResult(Guid ReportId, Guid? ReportProductId, bool Created, int PendingChanges);
-    public sealed record MaterializedResult(Guid WorkspaceId, Guid SourceReportId, Guid NegativeReportId,
-        Guid CurrentReportId, int PendingChanges);
+    public sealed record MaterializedResult(Guid WorkspaceId, Guid SourceReportId, Guid? NegativeReportId,
+        Guid? CurrentReportId, int PendingChanges, int RevisionNumber);
+
+    private sealed record DeltaPlan(
+        HashSet<Guid> NegativeSourceProductIds,
+        HashSet<Guid> CurrentWorkspaceProductIds,
+        int PendingChanges);
 
     private enum CloneMode { Workspace, NegativeCancellation, CurrentCorrection }
 
@@ -39,9 +44,18 @@ public static class CorrectionWorkflowService
     {
         var source = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x =>
             x.Id == sourceReportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
-        if (source is null || source.ReportKind != ManualReportKind.Current
+        if (source is null || source.IsTechnicalCorrectionDocument
+            || source.ReportKind != ManualReportKind.Current
             || source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
             return null;
+
+        var rootReportId = source.RevisionRootReportId ?? source.Id;
+        var sourceRevisionNumber = source.IsRevisionSnapshot ? source.RevisionNumber : 1;
+        var newerRevisionExists = await db.ManualReports.AsNoTracking().AnyAsync(x =>
+            x.OrganizationId == organizationId && x.EmployerId == employerId
+            && x.IsRevisionSnapshot && x.RevisionRootReportId == rootReportId
+            && x.RevisionNumber > sourceRevisionNumber && x.Status == ManualReportStatus.Completed, ct);
+        if (newerRevisionExists) return null;
 
         var processingExists = await db.ManualReports.AsNoTracking().AnyAsync(x =>
             x.OrganizationId == organizationId && x.EmployerId == employerId
@@ -84,7 +98,7 @@ public static class CorrectionWorkflowService
 
         var clone = CloneGraph(graph, ManualReportKind.Differences, sourceReportId,
             CloneMode.Workspace, null, protector, null, null);
-        clone.Report.MarkCorrectionWorkspace();
+        clone.Report.MarkCorrectionWorkspace(rootReportId, sourceRevisionNumber + 1);
         AddClone(db, clone);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateException)
@@ -129,29 +143,18 @@ public static class CorrectionWorkflowService
             && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation || x.Status == ManualReportStatus.Error), ct);
         if (workspace is null) return null;
 
-        var pendingChanges = await PendingChangeCountAsync(workspace.Id, db, protector, ct);
-        if (pendingChanges == 0) return null;
-
         var sourceGraph = await LoadGraphAsync(workspace.SourceReportId!.Value, db, ct);
         var workspaceGraph = await LoadGraphAsync(workspace.Id, db, ct);
         if (sourceGraph is null || workspaceGraph is null
+            || sourceGraph.Report.IsTechnicalCorrectionDocument
             || sourceGraph.Report.ReportKind != ManualReportKind.Current
-            || sourceGraph.Report.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed)
-            || sourceGraph.Metadata.Count != sourceGraph.Products.Count)
+            || sourceGraph.Report.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
             return null;
 
-        // The original transmitted XML always has MISPAR-ZIHUI: when a persisted transfer
-        // identifier is absent, the builder's canonical fallback is the first product GUID for the fund.
-        // Version 006 previous-reference rules do not require a clearing identifier as well.
-        if (sourceGraph.Products.Any(product => !sourceGraph.Metadata.ContainsKey(product.Id)))
-            return null;
+        var plan = BuildDeltaPlan(sourceGraph, workspaceGraph, protector);
+        if (plan.PendingChanges == 0) return null;
 
-        if (workspaceGraph.Products.Any(product => !product.SourceReportProductId.HasValue))
-            return null;
-
-        if (workspaceGraph.Products.Any(product =>
-            product.IsCorrectionChanged && product.SourceReportProductId.HasValue
-            && product.CorrectionOperationCode is not (2 or 3)))
+        if (plan.NegativeSourceProductIds.Any(id => !sourceGraph.Metadata.ContainsKey(id)))
             return null;
 
         if (db is not DbContext ef)
@@ -173,45 +176,58 @@ public static class CorrectionWorkflowService
                 return null;
             }
 
-            // Re-read after the claim so every edit committed before Processing is included.
-            // ManualReport.UpdatedAt is also a concurrency token, so an editor that loaded
-            // before this claim cannot silently write Draft back over the materialized workspace.
-            pendingChanges = await PendingChangeCountAsync(workspace.Id, db, protector, ct);
             sourceGraph = await LoadGraphAsync(workspace.SourceReportId!.Value, db, ct);
             workspaceGraph = await LoadGraphAsync(workspace.Id, db, ct);
-            if (pendingChanges == 0 || sourceGraph is null || workspaceGraph is null
-                || sourceGraph.Report.ReportKind != ManualReportKind.Current
-                || sourceGraph.Report.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed)
-                || sourceGraph.Metadata.Count != sourceGraph.Products.Count
-                || sourceGraph.Products.Any(product => !sourceGraph.Metadata.ContainsKey(product.Id))
-                || workspaceGraph.Products.Any(product => !product.SourceReportProductId.HasValue)
-                || workspaceGraph.Products.Any(product =>
-                    product.IsCorrectionChanged && product.CorrectionOperationCode is not (2 or 3)))
+            if (sourceGraph is null || workspaceGraph is null)
             {
                 await transaction.RollbackAsync(ct);
                 return null;
             }
 
-            var negative = CloneGraph(sourceGraph, ManualReportKind.Negative, sourceGraph.Report.Id,
-                CloneMode.NegativeCancellation, null, protector, null, null);
-            var current = CloneGraph(workspaceGraph, ManualReportKind.Current, negative.Report.Id,
-                CloneMode.CurrentCorrection, null, protector, negative.ProductsBySource, negative.ContributionsBySourceKey);
+            plan = BuildDeltaPlan(sourceGraph, workspaceGraph, protector);
+            if (plan.PendingChanges == 0)
+            {
+                await transaction.RollbackAsync(ct);
+                return null;
+            }
 
-            AddClone(db, negative);
-            AddClone(db, current);
+            CloneResult? negative = null;
+            CloneResult? current = null;
+            if (plan.NegativeSourceProductIds.Count > 0)
+            {
+                var negativeSource = FilterGraph(sourceGraph, plan.NegativeSourceProductIds);
+                negative = CloneGraph(negativeSource, ManualReportKind.Negative, sourceGraph.Report.Id,
+                    CloneMode.NegativeCancellation, null, protector, null, null);
+                negative.Report.MarkTechnicalCorrectionDocument(workspace.Id,
+                    workspace.RevisionRootReportId ?? sourceGraph.Report.RevisionRootReportId ?? sourceGraph.Report.Id,
+                    workspace.RevisionNumber);
+                AddClone(db, negative);
+            }
+
+            if (plan.CurrentWorkspaceProductIds.Count > 0)
+            {
+                var currentSource = FilterGraph(workspaceGraph, plan.CurrentWorkspaceProductIds);
+                current = CloneGraph(currentSource, ManualReportKind.Current,
+                    negative?.Report.Id ?? sourceGraph.Report.Id,
+                    CloneMode.CurrentCorrection, null, protector,
+                    negative?.ProductsBySource, negative?.ContributionsBySourceKey);
+                current.Report.MarkTechnicalCorrectionDocument(workspace.Id,
+                    workspace.RevisionRootReportId ?? sourceGraph.Report.RevisionRootReportId ?? sourceGraph.Report.Id,
+                    workspace.RevisionNumber);
+                AddClone(db, current);
+            }
+
+            if (negative is null && current is null)
+            {
+                await transaction.RollbackAsync(ct);
+                return null;
+            }
+
             await db.SaveChangesAsync(ct);
-
-            var cancelled = await db.ManualReports
-                .Where(x => x.Id == workspaceId && x.Status == ManualReportStatus.Processing)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(x => x.Status, ManualReportStatus.Cancelled)
-                    .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow), ct);
-            if (cancelled != 1)
-                throw new DbUpdateConcurrencyException("Correction workspace changed while materialization was completing.");
-
             await transaction.CommitAsync(ct);
+
             return new MaterializedResult(workspace.Id, sourceGraph.Report.Id,
-                negative.Report.Id, current.Report.Id, pendingChanges);
+                negative?.Report.Id, current?.Report.Id, plan.PendingChanges, workspace.RevisionNumber);
         }
         catch
         {
@@ -294,23 +310,303 @@ public static class CorrectionWorkflowService
         await db.SaveChangesAsync(ct);
     }
 
+    public static async Task<bool> FinalizeRevisionIfCompleteAsync(
+        Guid technicalReportId, IAlphaDbContext db, CancellationToken ct)
+    {
+        var technical = await db.ManualReports.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == technicalReportId && x.IsTechnicalCorrectionDocument
+                && x.CorrectionWorkspaceId.HasValue, ct);
+        if (technical is null) return false;
+
+        var workspaceId = technical.CorrectionWorkspaceId!.Value;
+        var documents = await db.ManualReports.AsNoTracking()
+            .Where(x => x.CorrectionWorkspaceId == workspaceId && x.IsTechnicalCorrectionDocument)
+            .ToListAsync(ct);
+        if (documents.Count == 0
+            || documents.Any(x => x.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed)))
+            return false;
+
+        var workspace = await db.ManualReports.SingleOrDefaultAsync(x =>
+            x.Id == workspaceId && x.IsCorrectionWorkspace && x.Status == ManualReportStatus.Processing, ct);
+        if (workspace is null) return false;
+
+        var currentDocument = documents
+            .Where(x => x.ReportKind == ManualReportKind.Current)
+            .OrderByDescending(x => x.UpdatedAt)
+            .FirstOrDefault();
+
+        if (currentDocument is not null)
+        {
+            var currentEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
+                .Where(x => x.ReportId == currentDocument.Id).Select(x => x.Id).ToArrayAsync(ct);
+            var currentProducts = await db.ManualReportProducts.AsNoTracking()
+                .Where(x => currentEmployeeIds.Contains(x.ReportEmployeeId)).ToListAsync(ct);
+            var workspaceProductIds = currentProducts
+                .Where(x => x.SourceReportProductId.HasValue)
+                .Select(x => x.SourceReportProductId!.Value).Distinct().ToArray();
+
+            var currentProductIds = currentProducts.Select(x => x.Id).ToArray();
+            var currentMetadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+                .Where(x => currentProductIds.Contains(x.ReportProductId))
+                .ToDictionaryAsync(x => x.ReportProductId, ct);
+            var workspaceMetadata = await db.EmployerInterfaceReportProductData
+                .Where(x => workspaceProductIds.Contains(x.ReportProductId))
+                .ToDictionaryAsync(x => x.ReportProductId, ct);
+
+            foreach (var currentProduct in currentProducts)
+            {
+                if (!currentProduct.SourceReportProductId.HasValue
+                    || !workspaceMetadata.TryGetValue(currentProduct.SourceReportProductId.Value, out var target)
+                    || !currentMetadata.TryGetValue(currentProduct.Id, out var sourceMetadata))
+                    continue;
+
+                target.SetInterfaceTransferIdentifier(
+                    string.IsNullOrWhiteSpace(sourceMetadata.InterfaceTransferIdentifier)
+                        ? currentProduct.Id.ToString("D").ToUpperInvariant()
+                        : sourceMetadata.InterfaceTransferIdentifier);
+                if (!string.IsNullOrWhiteSpace(sourceMetadata.ClearingIdentifier))
+                    target.SetClearingIdentifier(sourceMetadata.ClearingIdentifier);
+            }
+
+            var currentContributions = await db.ManualContributions.AsNoTracking()
+                .Where(x => currentProductIds.Contains(x.ReportProductId)).ToListAsync(ct);
+            var workspaceContributions = await db.ManualContributions
+                .Where(x => workspaceProductIds.Contains(x.ReportProductId)).ToListAsync(ct);
+            var currentProductMap = currentProducts
+                .Where(x => x.SourceReportProductId.HasValue)
+                .ToDictionary(x => x.Id, x => x.SourceReportProductId!.Value);
+            var workspaceContributionMap = workspaceContributions.ToDictionary(
+                x => (x.ReportProductId, x.Party, x.Component));
+
+            foreach (var currentContribution in currentContributions)
+            {
+                if (!currentProductMap.TryGetValue(currentContribution.ReportProductId, out var workspaceProductId)
+                    || !workspaceContributionMap.TryGetValue(
+                        (workspaceProductId, currentContribution.Party, currentContribution.Component), out var target))
+                    continue;
+
+                target.SetInterfaceRecordIdentifier(
+                    string.IsNullOrWhiteSpace(currentContribution.InterfaceRecordIdentifier)
+                        ? currentContribution.Id.ToString("D").ToUpperInvariant()
+                        : currentContribution.InterfaceRecordIdentifier);
+            }
+        }
+
+        workspace.PromoteCorrectionWorkspaceToRevision();
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public static async Task<int> PendingChangeCountAsync(
         Guid reportId, IAlphaDbContext db, IDataProtectionService protector, CancellationToken ct)
     {
-        var report = await db.ManualReports.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == reportId, ct);
-        if (report is null)
-            return 0;
-
-        var employeeIds = await db.ManualReportEmployees.AsNoTracking()
-            .Where(x => x.ReportId == reportId).Select(x => x.Id).ToArrayAsync(ct);
-        var productChanges = employeeIds.Length == 0
+        var workspace = await db.ManualReports.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == reportId && x.IsCorrectionWorkspace && x.SourceReportId.HasValue, ct);
+        if (workspace is null) return 0;
+        var sourceGraph = await LoadGraphAsync(workspace.SourceReportId!.Value, db, ct);
+        var workspaceGraph = await LoadGraphAsync(workspace.Id, db, ct);
+        return sourceGraph is null || workspaceGraph is null
             ? 0
-            : await db.ManualReportProducts.AsNoTracking()
-                .CountAsync(x => employeeIds.Contains(x.ReportEmployeeId) && x.IsCorrectionChanged, ct);
-        var reportLevelChanges = report.IsCorrectionWorkspace && report.SourceReportId.HasValue
-            && await HasReportLevelChangesAsync(report, db, protector, ct);
-        return productChanges + (reportLevelChanges ? 1 : 0);
+            : BuildDeltaPlan(sourceGraph, workspaceGraph, protector).PendingChanges;
+    }
+
+    private static DeltaPlan BuildDeltaPlan(
+        ReportGraph source, ReportGraph workspace, IDataProtectionService protector)
+    {
+        var sourceProducts = source.Products.ToDictionary(x => x.Id);
+        var workspaceBySource = workspace.Products
+            .Where(x => x.SourceReportProductId.HasValue)
+            .GroupBy(x => x.SourceReportProductId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.UpdatedAt).First());
+
+        var removed = sourceProducts.Keys.Where(id => !workspaceBySource.ContainsKey(id)).ToHashSet();
+        var added = workspace.Products.Where(x => !x.SourceReportProductId.HasValue).Select(x => x.Id).ToHashSet();
+        var changed = new HashSet<Guid>();
+
+        var sourceEmployees = source.Employees.ToDictionary(x => x.EmploymentId);
+        var workspaceEmployees = workspace.Employees.ToDictionary(x => x.EmploymentId);
+        var globalChange = !ReportHeaderEquivalent(source.Report, workspace.Report)
+            || !ReportLevelAttachmentsEquivalent(source, workspace);
+
+        foreach (var pair in sourceEmployees)
+        {
+            if (!workspaceEmployees.TryGetValue(pair.Key, out var currentEmployee)) continue;
+            if (globalChange || !EmployeeEquivalent(source.Report, pair.Value, workspace.Report, currentEmployee, protector))
+            {
+                foreach (var sourceProduct in source.Products.Where(x => x.ReportEmployeeId == pair.Value.Id))
+                    if (workspaceBySource.ContainsKey(sourceProduct.Id)) changed.Add(sourceProduct.Id);
+            }
+        }
+
+        foreach (var pair in workspaceBySource)
+        {
+            if (!sourceProducts.TryGetValue(pair.Key, out var original)) continue;
+            var current = pair.Value;
+            if (!ProductEquivalent(original, current)
+                || !ContributionSetEquivalent(source, original.Id, workspace, current.Id)
+                || !PaymentEquivalent(source, original.Id, workspace, current.Id, protector)
+                || !MetadataEquivalent(source.Metadata.GetValueOrDefault(original.Id), workspace.Metadata.GetValueOrDefault(current.Id))
+                || !ProductAttachmentsEquivalent(source, original.Id, workspace, current.Id))
+                changed.Add(original.Id);
+        }
+
+        if (globalChange)
+            foreach (var sourceProductId in workspaceBySource.Keys)
+                changed.Add(sourceProductId);
+
+        var negative = removed.Concat(changed).ToHashSet();
+        var current = added.ToHashSet();
+        foreach (var sourceProductId in changed)
+            if (workspaceBySource.TryGetValue(sourceProductId, out var workspaceProduct))
+                current.Add(workspaceProduct.Id);
+
+        return new DeltaPlan(negative, current, removed.Count + changed.Count + added.Count);
+    }
+
+    private static bool ReportHeaderEquivalent(ManualReport source, ManualReport workspace) =>
+        source.ReportingMonth == workspace.ReportingMonth
+        && source.SalaryPaymentDate == workspace.SalaryPaymentDate
+        && source.PaymentAccountId == workspace.PaymentAccountId
+        && source.PaymentBankId == workspace.PaymentBankId
+        && source.PaymentBranchId == workspace.PaymentBranchId
+        && string.Equals(source.PaymentAccountNumberMasked, workspace.PaymentAccountNumberMasked, StringComparison.Ordinal)
+        && string.Equals(source.PaymentMandateReference, workspace.PaymentMandateReference, StringComparison.Ordinal)
+        && string.Equals(source.EmployerLegalNameSnapshot, workspace.EmployerLegalNameSnapshot, StringComparison.Ordinal)
+        && source.DepositorTypeCodeSnapshot == workspace.DepositorTypeCodeSnapshot
+        && source.EmployerIdentifierTypeCodeSnapshot == workspace.EmployerIdentifierTypeCodeSnapshot;
+
+    private static bool EmployeeEquivalent(
+        ManualReport sourceReport, ManualReportEmployee source,
+        ManualReport workspaceReport, ManualReportEmployee workspace,
+        IDataProtectionService protector)
+    {
+        if (source.PersonId != workspace.PersonId
+            || source.MonthlySalary != workspace.MonthlySalary
+            || source.InterfaceIdentifierType != workspace.InterfaceIdentifierType
+            || source.BirthDateSnapshot != workspace.BirthDateSnapshot
+            || source.GenderSnapshot != workspace.GenderSnapshot
+            || !string.Equals(source.FirstName, workspace.FirstName, StringComparison.Ordinal)
+            || !string.Equals(source.LastName, workspace.LastName, StringComparison.Ordinal)
+            || !string.Equals(source.EmployeeNumber, workspace.EmployeeNumber, StringComparison.Ordinal)
+            || !string.Equals(source.CitySnapshot, workspace.CitySnapshot, StringComparison.Ordinal)
+            || !string.Equals(source.StreetSnapshot, workspace.StreetSnapshot, StringComparison.Ordinal)
+            || !string.Equals(source.HouseNumberSnapshot, workspace.HouseNumberSnapshot, StringComparison.Ordinal)
+            || !string.Equals(source.ApartmentSnapshot, workspace.ApartmentSnapshot, StringComparison.Ordinal)
+            || !string.Equals(source.PostalCodeSnapshot, workspace.PostalCodeSnapshot, StringComparison.Ordinal)
+            || !string.Equals(source.PostOfficeBoxSnapshot, workspace.PostOfficeBoxSnapshot, StringComparison.Ordinal)
+            || source.EmploymentStartDateSnapshot != workspace.EmploymentStartDateSnapshot)
+            return false;
+
+        var sourceIdentifier = protector.Unprotect(source.InterfaceIdentifier,
+            $"report-employee-interface-id:{source.Id}");
+        var workspaceIdentifier = protector.Unprotect(workspace.InterfaceIdentifier,
+            $"report-employee-interface-id:{workspace.Id}");
+        var sourceEmail = protector.Unprotect(source.EmailSnapshot, $"report-employee-email:{source.Id}");
+        var workspaceEmail = protector.Unprotect(workspace.EmailSnapshot, $"report-employee-email:{workspace.Id}");
+        var sourceMobile = protector.Unprotect(source.MobileSnapshot, $"report-employee-mobile:{source.Id}");
+        var workspaceMobile = protector.Unprotect(workspace.MobileSnapshot, $"report-employee-mobile:{workspace.Id}");
+        return string.Equals(sourceIdentifier, workspaceIdentifier, StringComparison.Ordinal)
+            && string.Equals(sourceEmail, workspaceEmail, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(sourceMobile, workspaceMobile, StringComparison.Ordinal);
+    }
+
+    private static bool ProductEquivalent(ManualReportProduct source, ManualReportProduct workspace) =>
+        source.ProductType == workspace.ProductType
+        && string.Equals(source.PolicyNumber, workspace.PolicyNumber, StringComparison.Ordinal)
+        && source.SalaryMonth == workspace.SalaryMonth
+        && source.Salary == workspace.Salary
+        && string.Equals(source.ReportingType, workspace.ReportingType, StringComparison.Ordinal)
+        && string.Equals(source.SalaryLayer, workspace.SalaryLayer, StringComparison.Ordinal)
+        && source.Section14Code == workspace.Section14Code
+        && source.Section14StartDate == workspace.Section14StartDate
+        && string.Equals(source.FundExternalKey, workspace.FundExternalKey, StringComparison.Ordinal)
+        && string.Equals(source.FundCode, workspace.FundCode, StringComparison.Ordinal)
+        && string.Equals(source.FundName, workspace.FundName, StringComparison.Ordinal)
+        && string.Equals(source.FundCompanyName, workspace.FundCompanyName, StringComparison.Ordinal)
+        && string.Equals(source.FundClassification, workspace.FundClassification, StringComparison.Ordinal)
+        && source.SalaryAllocationType == workspace.SalaryAllocationType
+        && source.SalaryAllocationValue == workspace.SalaryAllocationValue
+        && source.AllocationOrder == workspace.AllocationOrder;
+
+    private static bool ContributionSetEquivalent(
+        ReportGraph source, Guid sourceProductId, ReportGraph workspace, Guid workspaceProductId)
+    {
+        static string Key(ManualContribution x) => $"{(int)x.Party}:{(int)x.Component}";
+        var sourceMap = source.Contributions.Where(x => x.ReportProductId == sourceProductId)
+            .ToDictionary(Key, x => (x.Amount, x.Percentage, x.ExemptPayments));
+        var workspaceMap = workspace.Contributions.Where(x => x.ReportProductId == workspaceProductId)
+            .ToDictionary(Key, x => (x.Amount, x.Percentage, x.ExemptPayments));
+        return sourceMap.Count == workspaceMap.Count
+            && sourceMap.All(x => workspaceMap.TryGetValue(x.Key, out var value) && value == x.Value);
+    }
+
+    private static bool PaymentEquivalent(
+        ReportGraph source, Guid sourceProductId, ReportGraph workspace, Guid workspaceProductId,
+        IDataProtectionService protector)
+    {
+        var left = source.Payments.FirstOrDefault(x => x.ReportProductId == sourceProductId);
+        var right = workspace.Payments.FirstOrDefault(x => x.ReportProductId == workspaceProductId);
+        if (left is null || right is null) return left is null && right is null;
+        var leftAccount = protector.Unprotect(left.EmployerAccount, $"report-payment-account:{sourceProductId}");
+        var rightAccount = protector.Unprotect(right.EmployerAccount, $"report-payment-account:{workspaceProductId}");
+        return string.Equals(left.ProviderName, right.ProviderName, StringComparison.Ordinal)
+            && string.Equals(left.ProviderAccount, right.ProviderAccount, StringComparison.Ordinal)
+            && string.Equals(left.PaymentMethod, right.PaymentMethod, StringComparison.Ordinal)
+            && left.ValueDate == right.ValueDate
+            && left.TrustAccountValueDate == right.TrustAccountValueDate
+            && left.ActualDepositAmount == right.ActualDepositAmount
+            && string.Equals(left.MasavSenderCode, right.MasavSenderCode, StringComparison.Ordinal)
+            && string.Equals(left.ReferenceNumber, right.ReferenceNumber, StringComparison.Ordinal)
+            && string.Equals(left.EmployerBankName, right.EmployerBankName, StringComparison.Ordinal)
+            && string.Equals(left.EmployerBankCode, right.EmployerBankCode, StringComparison.Ordinal)
+            && string.Equals(left.EmployerBranch, right.EmployerBranch, StringComparison.Ordinal)
+            && string.Equals(leftAccount, rightAccount, StringComparison.Ordinal);
+    }
+
+    private static bool MetadataEquivalent(
+        EmployerInterfaceReportProductData? source, EmployerInterfaceReportProductData? workspace)
+    {
+        if (source is null || workspace is null) return source is null && workspace is null;
+        return source.DepositStatus == workspace.DepositStatus
+            && source.EmployeeStatus == workspace.EmployeeStatus
+            && source.StatusStartDate == workspace.StatusStartDate
+            && source.EmploymentPercentage == workspace.EmploymentPercentage
+            && source.WorkDaysInMonth == workspace.WorkDaysInMonth
+            && source.LastDeposit == workspace.LastDeposit
+            && source.RefundReason == workspace.RefundReason
+            && source.PaymentMethodCode == workspace.PaymentMethodCode
+            && source.EmployerAccountType == workspace.EmployerAccountType
+            && source.ReceiverAccountType == workspace.ReceiverAccountType
+            && source.OldPensionTypeCode == workspace.OldPensionTypeCode;
+    }
+
+    private static bool ReportLevelAttachmentsEquivalent(ReportGraph source, ReportGraph workspace)
+    {
+        static string Key(ManualReportAttachment x) => $"{x.DocumentTypeCode}:{x.Sha256}";
+        return source.Attachments.Where(x => !x.ReportProductId.HasValue).Select(Key).Order().SequenceEqual(
+            workspace.Attachments.Where(x => !x.ReportProductId.HasValue).Select(Key).Order());
+    }
+
+    private static bool ProductAttachmentsEquivalent(
+        ReportGraph source, Guid sourceProductId, ReportGraph workspace, Guid workspaceProductId)
+    {
+        static string Key(ManualReportAttachment x) => $"{x.DocumentTypeCode}:{x.Sha256}";
+        return source.Attachments.Where(x => x.ReportProductId == sourceProductId).Select(Key).Order().SequenceEqual(
+            workspace.Attachments.Where(x => x.ReportProductId == workspaceProductId).Select(Key).Order());
+    }
+
+    private static ReportGraph FilterGraph(ReportGraph source, HashSet<Guid> productIds)
+    {
+        var products = source.Products.Where(x => productIds.Contains(x.Id)).ToList();
+        var employeeIds = products.Select(x => x.ReportEmployeeId).ToHashSet();
+        var employees = source.Employees.Where(x => employeeIds.Contains(x.Id)).ToList();
+        var contributions = source.Contributions.Where(x => productIds.Contains(x.ReportProductId)).ToList();
+        var payments = source.Payments.Where(x => productIds.Contains(x.ReportProductId)).ToList();
+        var attachments = source.Attachments.Where(x => !x.ReportProductId.HasValue
+            || productIds.Contains(x.ReportProductId.Value)).ToList();
+        var metadata = source.Metadata.Where(x => productIds.Contains(x.Key))
+            .ToDictionary(x => x.Key, x => x.Value);
+        return new ReportGraph(source.Report, employees, products, contributions, payments, attachments, metadata);
     }
 
     private static async Task<bool> HasReportLevelChangesAsync(
@@ -463,7 +759,15 @@ public static class CorrectionWorkflowService
             products.Add(clone);
             productMap[oldProduct.Id] = clone;
 
-            if (!source.Metadata.TryGetValue(oldProduct.Id, out var oldMetadata))
+            source.Metadata.TryGetValue(oldProduct.Id, out var oldMetadata);
+            if (oldMetadata is null && mode == CloneMode.CurrentCorrection && !oldProduct.SourceReportProductId.HasValue)
+            {
+                var templateProduct = source.Products.FirstOrDefault(x => x.Id != oldProduct.Id
+                    && string.Equals(CorrectionFundKey(x), CorrectionFundKey(oldProduct), StringComparison.Ordinal)
+                    && source.Metadata.ContainsKey(x.Id));
+                if (templateProduct is not null) oldMetadata = source.Metadata[templateProduct.Id];
+            }
+            if (oldMetadata is null)
                 continue;
 
             var metadata = new EmployerInterfaceReportProductData(clone.Id);
@@ -560,6 +864,29 @@ public static class CorrectionWorkflowService
                 protector.Protect(employerAccount, $"report-payment-account:{clonedProductId}"),
                 oldPayment.ConfirmationFileName, oldPayment.ActualDepositAmount, oldPayment.MasavSenderCode);
             payments.Add(clone);
+        }
+
+        if (mode == CloneMode.CurrentCorrection)
+        {
+            foreach (var oldProduct in source.Products.Where(x => productMap.ContainsKey(x.Id)))
+            {
+                var clonedProductId = productMap[oldProduct.Id].Id;
+                if (payments.Any(x => x.ReportProductId == clonedProductId)) continue;
+                var templateProduct = source.Products.FirstOrDefault(x => x.Id != oldProduct.Id
+                    && string.Equals(CorrectionFundKey(x), CorrectionFundKey(oldProduct), StringComparison.Ordinal)
+                    && source.Payments.Any(p => p.ReportProductId == x.Id));
+                if (templateProduct is null) continue;
+                var templatePayment = source.Payments.First(x => x.ReportProductId == templateProduct.Id);
+                var account = protector.Unprotect(templatePayment.EmployerAccount,
+                    $"report-payment-account:{templatePayment.ReportProductId}");
+                var inherited = new ManualReportPayment(clonedProductId);
+                inherited.Update(templatePayment.ProviderName, templatePayment.ProviderAccount, templatePayment.PaymentMethod,
+                    templatePayment.ValueDate, templatePayment.TrustAccountValueDate, templatePayment.ReferenceNumber,
+                    templatePayment.EmployerBankName, templatePayment.EmployerBankCode, templatePayment.EmployerBranch,
+                    protector.Protect(account, $"report-payment-account:{clonedProductId}"),
+                    templatePayment.ConfirmationFileName, templatePayment.ActualDepositAmount, templatePayment.MasavSenderCode);
+                payments.Add(inherited);
+            }
         }
 
         var attachments = new List<ManualReportAttachment>();

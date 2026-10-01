@@ -138,3 +138,11 @@ These sources outrank assumptions, old examples and UI behavior.
 
 
 - Manual reports use `UpdatedAt` as an EF optimistic concurrency token. Correction materialization reloads the workspace graph only after the transactional Processing claim; stale editors cannot overwrite the cancelled/materialized workspace and receive HTTP 409 via the API concurrency exception handler.
+
+
+## Delta correction revisions
+- “דיווח חוזר” is report-level only. The editable correction workspace is a complete desired next-state snapshot, including structural employee/product additions and removals.
+- Materialization computes a real delta against the last effective business revision: Removed/Changed source products form the negative operation-6 document; Added/Changed workspace products form the current document. Unchanged products are not retransmitted.
+- Current V006 transfer grouping includes fund + operation/reference/payment semantics, so a newly added operation-1 product and an operation-2/3 correction for the same fund are emitted as separate transfer blocks instead of an invalid mixed transfer.
+- Technical negative/current documents are linked to the correction workspace and hidden from the primary Reports & Feedback list. Once every required technical document is successfully sent, the full workspace is promoted to the next immutable business revision (RevisionNumber), and future corrections must start from that latest effective revision.
+- Revision snapshots preserve the latest emitted transfer/record identifiers for changed/added rows; unchanged rows retain their prior effective identifiers. This keeps the next correction chain anchored to the last effective state rather than the original report.

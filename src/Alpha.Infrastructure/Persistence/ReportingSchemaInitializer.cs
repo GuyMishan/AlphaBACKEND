@@ -84,6 +84,31 @@ ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "SourceReportId" u
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "ExternalSourceReference" boolean NOT NULL DEFAULT false;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "IsCorrectionWorkspace" boolean NOT NULL DEFAULT false;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "HasCorrectionChanges" boolean NOT NULL DEFAULT false;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "RevisionRootReportId" uuid NULL;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "RevisionNumber" integer NOT NULL DEFAULT 1;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "IsRevisionSnapshot" boolean NOT NULL DEFAULT false;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "IsTechnicalCorrectionDocument" boolean NOT NULL DEFAULT false;
+ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "CorrectionWorkspaceId" uuid NULL;
+DO $
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_manual_reports_revision_root') THEN
+        ALTER TABLE reporting.manual_reports
+            ADD CONSTRAINT "FK_manual_reports_revision_root"
+            FOREIGN KEY ("RevisionRootReportId") REFERENCES reporting.manual_reports("Id") ON DELETE RESTRICT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_manual_reports_correction_workspace') THEN
+        ALTER TABLE reporting.manual_reports
+            ADD CONSTRAINT "FK_manual_reports_correction_workspace"
+            FOREIGN KEY ("CorrectionWorkspaceId") REFERENCES reporting.manual_reports("Id") ON DELETE RESTRICT;
+    END IF;
+END $;
+CREATE INDEX IF NOT EXISTS "IX_manual_reports_revision_root"
+    ON reporting.manual_reports ("RevisionRootReportId", "RevisionNumber");
+CREATE INDEX IF NOT EXISTS "IX_manual_reports_correction_workspace"
+    ON reporting.manual_reports ("CorrectionWorkspaceId");
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_manual_reports_business_revision"
+    ON reporting.manual_reports ("RevisionRootReportId", "RevisionNumber")
+    WHERE "IsRevisionSnapshot" = true AND "RevisionRootReportId" IS NOT NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentAccountId" uuid NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentBankId" integer NULL;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "PaymentBranchId" integer NULL;

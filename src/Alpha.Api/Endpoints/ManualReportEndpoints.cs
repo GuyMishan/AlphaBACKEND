@@ -292,13 +292,6 @@ public static class ManualReportEndpoints
 
         var requested = request.EmploymentIds.Distinct().ToHashSet();
         var existing = await db.ManualReportEmployees.Where(x => x.ReportId == reportId).ToListAsync(ct);
-        if (report.IsCorrectionWorkspace)
-        {
-            var currentEmploymentIds = existing.Select(x => x.EmploymentId).ToHashSet();
-            if (!requested.SetEquals(currentEmploymentIds))
-                return Results.BadRequest(new { error = "correction_structure_changes_not_supported",
-                    detail = "בטיוטת תיקון ניתן לערוך את נתוני העובדים והמוצרים שכבר היו בדיווח המקורי, אך לא להוסיף או להסיר עובדים או מוצרים." });
-        }
         var toRemove = existing.Where(x => !requested.Contains(x.EmploymentId)).ToList();
         if (toRemove.Count > 0) db.ManualReportEmployees.RemoveRange(toRemove);
         var existingIds = existing.Select(x => x.EmploymentId).ToHashSet();
@@ -490,6 +483,7 @@ public static class ManualReportEndpoints
                 trustAccountValueDate = payment?.TrustAccountValueDate,
                 actualDepositAmount = payment?.ActualDepositAmount,
                 isCorrectionWorkspace = report.IsCorrectionWorkspace,
+                sourceReportProductId = x.Product.SourceReportProductId,
                 correctionOperationCode = x.Product.CorrectionOperationCode,
                 masavSenderCode = payment?.MasavSenderCode ?? string.Empty,
                 referenceNumber = payment?.ReferenceNumber ?? string.Empty,
@@ -529,7 +523,7 @@ public static class ManualReportEndpoints
                              select reportProduct).SingleOrDefaultAsync(ct);
         if (product is null) return Results.NotFound();
 
-        if (report.IsCorrectionWorkspace)
+        if (report.IsCorrectionWorkspace && product.SourceReportProductId.HasValue)
         {
             if (request.CorrectionOperationCode is not (2 or 3))
                 return Results.BadRequest(new { error = "correction_operation_required" });
@@ -591,6 +585,10 @@ public static class ManualReportEndpoints
                 request.TrustAccountValueDate, request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode,
                 request.EmployerBranch, protector.Protect(request.EmployerAccount ?? string.Empty, $"report-payment-account:{reportProductId}"),
                 request.ConfirmationFileName, request.ActualDepositAmount, request.MasavSenderCode);
+            if (report.IsCorrectionWorkspace)
+            {
+                product.SetCorrectionState(true, null);
+            }
             report.MarkDirty();
         }
         await db.SaveChangesAsync(ct);
@@ -639,9 +637,6 @@ public static class ManualReportEndpoints
 
         if (request.Products.Any(x => x.ProductType != PensionProductType.Other && string.IsNullOrWhiteSpace(x.FundExternalKey)))
             return Results.BadRequest(new { error = "A fund must be selected for every pension product." });
-        if (report.IsCorrectionWorkspace && request.Products.Any(x => !x.SourceReportProductId.HasValue))
-            return Results.BadRequest(new { error = "correction_structure_changes_not_supported",
-                detail = "בטיוטת תיקון ניתן לערוך את המוצרים שכבר היו בדיווח המקורי, אך לא להוסיף או להסיר מוצר." });
 
         var monthlySalary = request.MonthlySalary > 0
             ? request.MonthlySalary
@@ -674,21 +669,6 @@ public static class ManualReportEndpoints
             .Where(x => x.ReportEmployeeId == reportEmployeeId)
             .OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt)
             .ToListAsync(ct);
-
-        if (report.IsCorrectionWorkspace)
-        {
-            var sourceProductIds = existingProducts
-                .Where(x => x.SourceReportProductId.HasValue)
-                .Select(x => x.SourceReportProductId!.Value)
-                .ToHashSet();
-            var requestedSourceProductIds = request.Products
-                .Where(x => x.SourceReportProductId.HasValue)
-                .Select(x => x.SourceReportProductId!.Value)
-                .ToHashSet();
-            if (!requestedSourceProductIds.SetEquals(sourceProductIds))
-                return Results.BadRequest(new { error = "correction_structure_changes_not_supported",
-                    detail = "בטיוטת תיקון ניתן לערוך את המוצרים שכבר היו בדיווח המקורי, אך לא להוסיף או להסיר מוצר." });
-        }
 
         if (!report.IsCorrectionWorkspace)
         {
@@ -783,21 +763,19 @@ public static class ManualReportEndpoints
                         db.ManualReportProducts.Add(product);
                     }
 
-                    product.SetCorrectionState(true, 2);
+                    product.SetCorrectionState(false, null);
                     AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
                     AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
                 }
             }
 
-            // Products from the immutable source that are no longer present remain in the workspace as
-            // explicit removals. Materialization omits them from the follow-up current report while the
-            // full negative report still reverses the source report.
-            foreach (var removed in existingProducts.Where(x => x.SourceReportProductId.HasValue
-                && !requestedSourceIds.Contains(x.SourceReportProductId.Value)))
-            {
-                removed.SetCorrectionState(true, 2);
-                removed.SetValidationResult(false, "המוצר הוסר מטיוטת התיקון.");
-            }
+            // The correction workspace is the complete desired next business revision.
+            // A source-backed product omitted by the editor is therefore removed from the workspace;
+            // delta materialization discovers it by comparing workspace lineage with the immutable source.
+            var removedProducts = existingProducts.Where(x => x.SourceReportProductId.HasValue
+                && !requestedSourceIds.Contains(x.SourceReportProductId.Value)).ToList();
+            if (removedProducts.Count > 0)
+                db.ManualReportProducts.RemoveRange(removedProducts);
         }
         report.MarkDirty();
         await db.SaveChangesAsync(ct);

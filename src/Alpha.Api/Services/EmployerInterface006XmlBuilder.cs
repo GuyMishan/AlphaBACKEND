@@ -25,7 +25,7 @@ public static class EmployerInterface006XmlBuilder
         var now = c.PreparedAt ?? DateTimeOffset.UtcNow;
         var sender = ResolveSender(c);
         var senderId = sender.Identifier;
-        var groups = c.Products.GroupBy(x => FundIdentifier(c, x), StringComparer.Ordinal).ToList();
+        var groups = c.Products.GroupBy(x => TransferGroupKey(c, x), StringComparer.Ordinal).ToList();
         var root = new XElement("MimshakMaasikim", new XAttribute(XNamespace.Xmlns + "xsi", Xsi));
         root.Add(BuildHeader(c, negative, now, senderId));
 
@@ -705,6 +705,20 @@ public static class EmployerInterface006XmlBuilder
         if (metadata.OperationCode == 3)
             return c.Payments.FirstOrDefault(x => x.ReportProductId == product.Id)?.ActualDepositAmount > 0;
         return EffectiveContributions(c, product, false).Sum(x => x.Amount) > 0;
+    }
+
+    internal static string TransferGroupKey(BuildContext c, ManualReportProduct product)
+    {
+        var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
+        return string.Join("|",
+            FundIdentifier(c, product),
+            metadata?.OperationCode?.ToString(CultureInfo.InvariantCulture) ?? "",
+            metadata?.PaymentMethodCode?.ToString(CultureInfo.InvariantCulture) ?? "",
+            metadata?.EmployerAccountType?.ToString(CultureInfo.InvariantCulture) ?? "",
+            metadata?.ReceiverAccountType?.ToString(CultureInfo.InvariantCulture) ?? "",
+            metadata?.PreviousIdentifier?.Trim().ToUpperInvariant() ?? "",
+            metadata?.PreviousClearingIdentifier?.Trim().ToUpperInvariant() ?? "",
+            metadata?.PreviousReferenceExceptionCode?.ToString(CultureInfo.InvariantCulture) ?? "");
     }
 
     private static string CurrentTransferIdentifier(EmployerInterfaceReportProductData metadata, Guid fallbackId) =>

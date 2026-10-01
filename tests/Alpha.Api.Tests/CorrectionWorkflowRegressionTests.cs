@@ -162,3 +162,31 @@ public sealed class ManualReportConcurrencyRegressionTests
         return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
     }
 }
+
+
+public sealed class CorrectionDeltaRevisionRegressionTests
+{
+    [Fact]
+    public void Correction_workflow_is_delta_based_and_promotes_business_revision()
+    {
+        var root = FindRepoRoot();
+        var service = File.ReadAllText(Path.Combine(root, "src", "Alpha.Api", "Services", "CorrectionWorkflowService.cs"));
+        var domain = File.ReadAllText(Path.Combine(root, "src", "Alpha.Domain", "Reporting", "ManualReporting.cs"));
+        var endpoints = File.ReadAllText(Path.Combine(root, "src", "Alpha.Api", "Endpoints", "ManualReportEndpoints.cs"));
+
+        Assert.Contains("BuildDeltaPlan", service, StringComparison.Ordinal);
+        Assert.Contains("NegativeSourceProductIds", service, StringComparison.Ordinal);
+        Assert.Contains("CurrentWorkspaceProductIds", service, StringComparison.Ordinal);
+        Assert.Contains("FilterGraph", service, StringComparison.Ordinal);
+        Assert.Contains("FinalizeRevisionIfCompleteAsync", service, StringComparison.Ordinal);
+        Assert.Contains("PromoteCorrectionWorkspaceToRevision", domain, StringComparison.Ordinal);
+        Assert.DoesNotContain("correction_structure_changes_not_supported", endpoints, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}

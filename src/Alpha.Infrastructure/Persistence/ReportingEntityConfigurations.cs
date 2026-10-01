@@ -59,6 +59,11 @@ public sealed class ManualReportConfiguration : IEntityTypeConfiguration<ManualR
         b.Property(x => x.UpdatedAt).IsConcurrencyToken();
         b.Property(x => x.PaymentAccountNumberMasked).HasMaxLength(40);
         b.Property(x => x.PaymentMandateReference).HasMaxLength(200);
+        b.Property(x => x.RevisionNumber);
+        b.HasIndex(x => x.RevisionRootReportId);
+        b.HasIndex(x => x.CorrectionWorkspaceId);
+        b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.RevisionRootReportId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.CorrectionWorkspaceId).OnDelete(DeleteBehavior.Restrict);
         b.Property(x => x.EmployerLegalNameSnapshot).HasMaxLength(200);
         b.Property(x => x.EmployerRegistrationNumberSnapshot).HasColumnType("text");
         b.Property(x => x.EmployerWithholdingFileNumberSnapshot).HasColumnType("text");

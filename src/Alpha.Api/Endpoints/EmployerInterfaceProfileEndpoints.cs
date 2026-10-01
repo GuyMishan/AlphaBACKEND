@@ -137,21 +137,27 @@ public static class EmployerInterfaceProfileEndpoints
                              join employment in db.Employments.AsNoTracking() on employee.EmploymentId equals employment.Id
                              where product.Id == reportProductId && employee.ReportId == reportId
                                  && employee.OrganizationId == organizationId && employee.EmployerId == employerId
-                             select new { report.ReportKind, report.ReportingMonth, employment.Status, employment.EndDate,
+                             select new { report.ReportKind, report.ReportingMonth, report.IsCorrectionWorkspace,
+                                 product.SourceReportProductId, employment.Status, employment.EndDate,
                                  employee.EmploymentStartDateSnapshot }).SingleOrDefaultAsync(ct);
         if (context is null) return Results.NotFound();
         var reportKind = context.ReportKind;
         var item = await db.EmployerInterfaceReportProductData.AsNoTracking()
             .SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
-        var current = reportKind != ManualReportKind.Negative && reportKind != ManualReportKind.Differences;
+        var current = reportKind != ManualReportKind.Negative
+            && (reportKind != ManualReportKind.Differences
+                || (context.IsCorrectionWorkspace && !context.SourceReportProductId.HasValue));
         var endedByMonth = context.Status == EmploymentStatus.Ended && context.EndDate.HasValue
             && context.EndDate.Value <= context.ReportingMonth.AddMonths(1).AddDays(-1);
         var startedInMonth = context.EmploymentStartDateSnapshot.HasValue
             && context.EmploymentStartDateSnapshot.Value.Year == context.ReportingMonth.Year
             && context.EmploymentStartDateSnapshot.Value.Month == context.ReportingMonth.Month;
+        var effectiveReportKind = current && reportKind == ManualReportKind.Differences
+            ? ManualReportKind.Current
+            : reportKind;
         return Results.Ok(new
         {
-            reportKind,
+            reportKind = effectiveReportKind,
             operationCode = item?.OperationCode ?? (current ? 1 : null),
             depositStatus = item?.DepositStatus ?? (current ? 1 : null),
             employeeStatus = item?.EmployeeStatus ?? (current ? (startedInMonth ? 14 : endedByMonth ? 2 : 1) : null),
@@ -179,16 +185,25 @@ public static class EmployerInterfaceProfileEndpoints
             && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
         if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
-        if (report.IsCorrectionWorkspace)
+
+        var productContext = await (from product in db.ManualReportProducts.AsNoTracking()
+                                    join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                                    where product.Id == reportProductId && employee.ReportId == reportId
+                                        && employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                                    select new { product.Id, product.SourceReportProductId }).SingleOrDefaultAsync(ct);
+        if (productContext is null) return Results.NotFound();
+        if (report.IsCorrectionWorkspace && productContext.SourceReportProductId.HasValue)
             return Results.Conflict(new { error = "correction_metadata_managed_by_workflow" });
 
-        var belongsToReport = await (from product in db.ManualReportProducts.AsNoTracking()
-                                     join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                                     where product.Id == reportProductId && employee.ReportId == reportId
-                                         && employee.OrganizationId == organizationId && employee.EmployerId == employerId
-                                     select product.Id).AnyAsync(ct);
-        if (!belongsToReport) return Results.NotFound();
-        var reportKind = report.ReportKind;
+        var reportKind = report.IsCorrectionWorkspace ? ManualReportKind.Current : report.ReportKind;
+        if (report.IsCorrectionWorkspace && request.OperationCode is not 1)
+            return Results.BadRequest(new { error = "correction_added_product_requires_operation_1" });
+        if (report.IsCorrectionWorkspace
+            && (!string.IsNullOrWhiteSpace(request.PreviousIdentifier)
+                || !string.IsNullOrWhiteSpace(request.PreviousClearingIdentifier)
+                || request.PreviousReferenceExceptionCode.HasValue))
+            return Results.BadRequest(new { error = "correction_added_product_has_no_previous_reference" });
+
         if (request.OperationCode.HasValue)
         {
             var allowed = reportKind == ManualReportKind.Negative

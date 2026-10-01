@@ -38,7 +38,9 @@ public static class EmployerInterface006WorkbookRules
         EmployerInterface006XmlBuilder.BuildContext context, bool negative)
     {
         var issues = new List<string>();
-        var groups = context.Products.GroupBy(x => x.FundCode, StringComparer.Ordinal).ToList();
+        var groups = context.Products
+            .GroupBy(x => EmployerInterface006XmlBuilder.TransferGroupKey(context, x), StringComparer.Ordinal)
+            .ToList();
         var transfers = document.Descendants("PirteiHaavaratKsafim").ToList();
         if (transfers.Count != groups.Count)
         {
