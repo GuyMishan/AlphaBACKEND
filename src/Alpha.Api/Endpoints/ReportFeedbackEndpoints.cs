@@ -270,6 +270,7 @@ public static class ReportFeedbackEndpoints
                 issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id),
                 employeeCount = employeeCounts.GetValueOrDefault(report.Id), totalAmount = total, payoffRate,
                 allocatedAmount = cash?.Allocated, actualReceivedAmount = cash?.Received, inTransitAmount = cash?.InTransit,
+                canEdit = canCreateReport && report.IsEditable,
                 canCreateCorrection = ReportFeedbackStatusResolver.CanCreateCorrection(
                     canCreateReport, report.IsEditable, report.Status, report.ReportKind,
                     productCounts.GetValueOrDefault(report.Id) > 0
