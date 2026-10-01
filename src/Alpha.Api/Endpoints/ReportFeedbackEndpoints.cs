@@ -193,14 +193,19 @@ public static class ReportFeedbackEndpoints
         var money = transferRows.GroupBy(x => new { x.ReportId, x.TransferIdentifier }).Select(g => g.First())
             .GroupBy(x => x.ReportId).ToDictionary(g => g.Key, g => new
             {
-                Allocated = g.Sum(x => x.AllocatedAmount), Received = g.Sum(x => x.ActualReceivedAmount), InTransit = g.Sum(x => x.InTransitAmount)
+                Reported = g.Sum(x => x.ReportedDepositAmount),
+                Allocated = g.Sum(x => x.AllocatedAmount),
+                Received = g.Sum(x => x.ActualReceivedAmount),
+                InTransit = g.Sum(x => x.InTransitAmount)
             });
 
         var items = page.Select(report =>
         {
             latestTransmission.TryGetValue(report.Id, out var tx); money.TryGetValue(report.Id, out var cash);
             var total = totals.GetValueOrDefault(report.Id);
-            decimal? payoffRate = cash is null || total <= 0 ? null : Math.Round(cash.Allocated / total * 100m, 2);
+            var payoffRate = cash is null
+                ? null
+                : ReportFeedbackStatusResolver.ResolvePayoffRate(cash.Reported, cash.Allocated);
             var issues = errorCounts.GetValueOrDefault(report.Id)
                 + (string.IsNullOrWhiteSpace(report.ValidationError) ? 0 : 1)
                 + (tx is null || string.IsNullOrWhiteSpace(tx.ErrorMessage) ? 0 : 1);
@@ -417,7 +422,9 @@ public static class ReportFeedbackEndpoints
                 x.StatusCode, statusLabel = labels.GetValueOrDefault(x.StatusCode) ?? x.StatusCode, x.Note, x.CreatedAt,
                 updatedBy = users.GetValueOrDefault(x.UpdatedByUserId) ?? "משתמש"
             }),
-            canCreateCorrection = !report.IsEditable && (report.Status is ManualReportStatus.Sent or ManualReportStatus.Completed)
+            canCreateCorrection = !report.IsEditable
+                && (report.Status is ManualReportStatus.Sent or ManualReportStatus.Completed)
+                && (report.ReportKind != ManualReportKind.Negative || metadata?.OperationCode == 6)
         });
     }
 
