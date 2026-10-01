@@ -72,8 +72,7 @@ public static class DerivedReportEndpoints
             reportId = result.ReportId,
             reportProductId = result.ReportProductId,
             result.Created,
-            result.PendingChanges,
-            result.RevisionNumber
+            result.PendingChanges
         });
     }
 
@@ -118,7 +117,8 @@ public static class DerivedReportEndpoints
             result.SourceReportId,
             result.NegativeReportId,
             result.CurrentReportId,
-            result.PendingChanges
+            result.PendingChanges,
+            result.RevisionNumber
         });
     }
 
