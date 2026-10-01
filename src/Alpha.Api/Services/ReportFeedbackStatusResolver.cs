@@ -38,6 +38,12 @@ public static class ReportFeedbackStatusResolver
         return "unresolved";
     }
 
+    public static decimal? ResolvePayoffRate(decimal reportedDepositAmount, decimal allocatedAmount)
+    {
+        if (reportedDepositAmount <= 0) return null;
+        return Math.Round(allocatedAmount / reportedDepositAmount * 100m, 2);
+    }
+
     public static bool IsEffectiveContribution(ManualContribution contribution) =>
         contribution.Amount != 0m || contribution.Percentage != 0m || contribution.ExemptPayments != 0m;
 }
