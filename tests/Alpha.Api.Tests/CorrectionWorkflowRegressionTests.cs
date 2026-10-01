@@ -55,6 +55,8 @@ public sealed class CorrectionWorkflowRegressionTests
         Assert.Contains("oldProduct.CorrectionOperationCode ?? 2", source, StringComparison.Ordinal);
         Assert.Contains("x.Status == ManualReportStatus.Processing", source, StringComparison.Ordinal);
         Assert.Contains("HasReportLevelChangesAsync", source, StringComparison.Ordinal);
+        Assert.Contains("!sourceGraph.Metadata.ContainsKey(product.Id)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("string.IsNullOrWhiteSpace(metadata.ClearingIdentifier)", source, StringComparison.Ordinal);
         Assert.Contains("report-employee-email:{employee.Id}", source, StringComparison.Ordinal);
         Assert.Contains("workspaceGraph.Products.Any(product => !product.SourceReportProductId.HasValue)", source, StringComparison.Ordinal);
         Assert.Contains("mappedPaymentProduct", source, StringComparison.Ordinal);

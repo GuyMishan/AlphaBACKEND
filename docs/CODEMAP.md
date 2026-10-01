@@ -132,3 +132,6 @@ These sources outrank assumptions, old examples and UI behavior.
 
 
 - Correction materialization is atomic: claiming the workspace, inserting the negative/current reports and cancelling the workspace run in one EF/PostgreSQL transaction. A failure rolls the materialization back before the workspace is marked Error, preventing orphan derived reports or a permanently Processing workspace.
+
+
+- Correction materialization follows the same official V006 previous-reference alternatives as final validation. It no longer requires a clearing identifier on the original current report when the transmitted transfer identifier (including the canonical emitted fallback) is sufficient.

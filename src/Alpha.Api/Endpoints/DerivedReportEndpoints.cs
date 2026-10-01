@@ -90,7 +90,7 @@ public static class DerivedReportEndpoints
             return Results.Conflict(new
             {
                 error = "correction_workspace_not_ready",
-                detail = "יש לוודא שקיימים שינויים ממתינים ושמזהי הדיווח והמסלקה של הדיווח המקורי כבר התקבלו."
+                detail = "יש לוודא שקיימים שינויים ממתינים ושהדיווח המקורי הוא דיווח שוטף שנשלח או הושלם וכולל את נתוני ממשק 006 הנדרשים."
             });
 
         db.AuditEvents.Add(new AuditEvent(

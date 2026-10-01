@@ -140,10 +140,10 @@ public static class CorrectionWorkflowService
             || sourceGraph.Metadata.Count != sourceGraph.Products.Count)
             return null;
 
-        if (sourceGraph.Products.Any(product =>
-            !sourceGraph.Metadata.TryGetValue(product.Id, out var metadata)
-            || string.IsNullOrWhiteSpace(metadata.InterfaceTransferIdentifier)
-            || string.IsNullOrWhiteSpace(metadata.ClearingIdentifier)))
+        // The original transmitted XML always has MISPAR-ZIHUI: when a persisted transfer
+        // identifier is absent, the builder's canonical fallback is the first product GUID for the fund.
+        // Version 006 previous-reference rules do not require a clearing identifier as well.
+        if (sourceGraph.Products.Any(product => !sourceGraph.Metadata.ContainsKey(product.Id)))
             return null;
 
         if (workspaceGraph.Products.Any(product => !product.SourceReportProductId.HasValue))
