@@ -66,6 +66,21 @@ public sealed class ReportFeedbackStatusResolverTests
             reported, received, allocated, inTransit));
     }
 
+    [Theory]
+    [InlineData(1000, 900, 90)]
+    [InlineData(1000, 1000, 100)]
+    [InlineData(1000, 1100, 110)]
+    public void Payoff_rate_uses_reported_transfer_amount(decimal reported, decimal allocated, decimal expected)
+    {
+        Assert.Equal(expected, ReportFeedbackStatusResolver.ResolvePayoffRate(reported, allocated));
+    }
+
+    [Fact]
+    public void Payoff_rate_is_unknown_without_reported_transfer_amount()
+    {
+        Assert.Null(ReportFeedbackStatusResolver.ResolvePayoffRate(0, 500));
+    }
+
     [Fact]
     public void Empty_placeholder_contribution_is_not_effective()
     {
