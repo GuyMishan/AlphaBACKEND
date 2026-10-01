@@ -22,6 +22,7 @@ public sealed class EmployerInterfaceFeedbackConfiguration : IEntityTypeConfigur
         b.HasIndex(x => new { x.OrganizationId, x.EmployerId, x.ReceivedAt });
         b.HasIndex(x => x.ReportId);
         b.HasIndex(x => x.TransmissionId);
+        b.HasIndex(x => new { x.ReportId, x.TransmissionId, x.ReceivedAt });
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Employer>().WithMany().HasForeignKey(x => x.EmployerId).OnDelete(DeleteBehavior.Restrict);
     }

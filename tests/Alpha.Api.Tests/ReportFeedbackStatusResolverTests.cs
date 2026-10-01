@@ -116,6 +116,19 @@ public sealed class ReportFeedbackStatusResolverTests
     }
 
     [Fact]
+    public void Treatment_version_requires_the_version_observed_by_the_client()
+    {
+        var current = new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero);
+
+        Assert.True(ReportFeedbackStatusResolver.TreatmentVersionMatches(null, null));
+        Assert.True(ReportFeedbackStatusResolver.TreatmentVersionMatches(current, current));
+        Assert.False(ReportFeedbackStatusResolver.TreatmentVersionMatches(current, null));
+        Assert.False(ReportFeedbackStatusResolver.TreatmentVersionMatches(
+            current, current.AddSeconds(-1)));
+        Assert.False(ReportFeedbackStatusResolver.TreatmentVersionMatches(null, current));
+    }
+
+    [Fact]
     public void Empty_placeholder_contribution_is_not_effective()
     {
         var contribution = new ManualContribution(

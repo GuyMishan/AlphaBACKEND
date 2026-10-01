@@ -121,6 +121,8 @@ BEGIN
 END $$;
 CREATE INDEX IF NOT EXISTS "IX_manual_reports_scope_month"
     ON reporting.manual_reports ("OrganizationId", "EmployerId", "ReportingMonth");
+CREATE INDEX IF NOT EXISTS "IX_manual_reports_scope_updated"
+    ON reporting.manual_reports ("OrganizationId", "EmployerId", "UpdatedAt" DESC, "CreatedAt" DESC);
 CREATE INDEX IF NOT EXISTS "IX_manual_reports_source"
     ON reporting.manual_reports ("SourceReportId");
 CREATE TABLE IF NOT EXISTS reporting.manual_report_employees (

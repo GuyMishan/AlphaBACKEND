@@ -509,6 +509,8 @@ public static class ReportFeedbackEndpoints
         if (!belongs) return Results.NotFound();
 
         var treatment = await db.ReportProductTreatments.SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
+        if (!ReportFeedbackStatusResolver.TreatmentVersionMatches(treatment?.UpdatedAt, request.ExpectedUpdatedAt))
+            return Results.Conflict(new { error = "treatment_conflict" });
         var creatingTreatment = treatment is null;
         var previous = treatment?.StatusCode ?? string.Empty;
         if (treatment is null)
@@ -783,5 +785,5 @@ public static class ReportFeedbackEndpoints
         });
     }
 
-    public sealed record UpdateTreatmentRequest(string StatusCode, string? Note);
+    public sealed record UpdateTreatmentRequest(string StatusCode, string? Note, DateTimeOffset? ExpectedUpdatedAt);
 }

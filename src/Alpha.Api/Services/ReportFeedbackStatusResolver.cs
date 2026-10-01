@@ -61,6 +61,12 @@ public static class ReportFeedbackStatusResolver
         return reportKind != ManualReportKind.Negative || allProductsOperation6;
     }
 
+    public static bool TreatmentVersionMatches(DateTimeOffset? currentUpdatedAt, DateTimeOffset? expectedUpdatedAt)
+    {
+        if (currentUpdatedAt is null) return expectedUpdatedAt is null;
+        return expectedUpdatedAt.HasValue && currentUpdatedAt.Value.Equals(expectedUpdatedAt.Value);
+    }
+
     public static bool IsEffectiveContribution(ManualContribution contribution) =>
         contribution.Amount != 0m || contribution.Percentage != 0m || contribution.ExemptPayments != 0m;
 }

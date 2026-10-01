@@ -37,6 +37,8 @@ public static class EmployerInterfaceFeedbackSchemaInitializer
                 ON reporting.employer_interface_feedback ("ReportId");
             CREATE INDEX IF NOT EXISTS "IX_employer_interface_feedback_TransmissionId"
                 ON reporting.employer_interface_feedback ("TransmissionId");
+            CREATE INDEX IF NOT EXISTS "IX_employer_interface_feedback_ReportId_TransmissionId_ReceivedAt"
+                ON reporting.employer_interface_feedback ("ReportId", "TransmissionId", "ReceivedAt");
             """);
     }
 }

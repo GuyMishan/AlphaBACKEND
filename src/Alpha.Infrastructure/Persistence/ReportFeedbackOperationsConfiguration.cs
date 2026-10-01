@@ -22,6 +22,7 @@ public sealed class EmployerInterfaceTransferFeedbackConfiguration : IEntityType
         b.Property(x => x.PaymentReference).HasMaxLength(100);
         b.Property(x => x.CorrectnessTimestamp).HasMaxLength(32);
         b.HasIndex(x => new { x.ReportId, x.TransferIdentifier, x.ReceivedAt });
+        b.HasIndex(x => new { x.ReportId, x.FeedbackId, x.TransferIdentifier, x.ReceivedAt });
         b.HasIndex(x => new { x.FeedbackId, x.TransferIdentifier }).IsUnique();
         b.HasIndex(x => x.FeedbackId);
         b.HasOne<EmployerInterfaceFeedback>().WithMany().HasForeignKey(x => x.FeedbackId).OnDelete(DeleteBehavior.Cascade);
@@ -45,6 +46,7 @@ public sealed class EmployerInterfaceContributionFeedbackConfiguration : IEntity
         b.Property(x => x.SourceFileName).HasMaxLength(260);
         b.HasIndex(x => new { x.ReportId, x.ReportProductId, x.ReceivedAt });
         b.HasIndex(x => new { x.ReportProductId, x.ReceivedAt });
+        b.HasIndex(x => new { x.ReportId, x.FeedbackId, x.ContributionId, x.ReceivedAt });
         b.HasIndex(x => new { x.FeedbackId, x.RecordIdentifier, x.Sequence }).IsUnique();
         b.HasIndex(x => x.ContributionId);
         b.HasOne<EmployerInterfaceFeedback>().WithMany().HasForeignKey(x => x.FeedbackId).OnDelete(DeleteBehavior.Cascade);
