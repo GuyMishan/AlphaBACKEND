@@ -91,3 +91,5 @@ These sources outrank assumptions, old examples and UI behavior.
 - The normalized contribution-feedback table has a dedicated `(ReportProductId, ReceivedAt)` index for the Reports & Feedback per-product modal; the broader report/product index remains for report-level reconciliation.
 
 - Treatment updates use optimistic concurrency on `UpdatedAt`; concurrent operators cannot silently overwrite each other's current treatment state. The losing update returns a conflict while the successful update, history row and audit event remain atomic in one SaveChanges transaction.
+
+- Clearing-house transmission fails closed when no real provider is configured. `MockReportTransmissionProvider` is opt-in (development or explicit `EmployerInterface006:AllowMockTransmission`) and is not the production default. Production V006 generation also rejects the built-in `000000000` recipient placeholder.
