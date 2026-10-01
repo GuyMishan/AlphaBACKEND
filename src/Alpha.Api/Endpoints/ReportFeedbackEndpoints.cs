@@ -359,7 +359,7 @@ public static class ReportFeedbackEndpoints
                 id = x.Product.Id, reportEmployeeId = x.Employee.Id, x.Employee.EmploymentId,
                 employeeName = x.Employee.FirstName + " " + x.Employee.LastName,
                 x.Product.FundName, x.Product.FundCompanyName, x.Product.PolicyNumber, x.Product.SalaryMonth,
-                totalAmount, feedbackStatus = feedbackState,
+                totalAmount, hasFeedback = received > 0 || transfer is not null, feedbackStatus = feedbackState,
                 feedbackLabel = feedbackState switch { "completed" => "נקלט", "attention" => "דורש טיפול", "partial" => "משוב חלקי", _ => "ממתין למשוב" },
                 moneyStatus = moneyState,
                 moneyStatusLabel = moneyState switch { "allocated" => "שויך במלואו", "in-transit" => "כספים במעבר", "received-partial" => "נקלט חלקית", "unresolved" => "טרם שויך", _ => "אין משוב כספי" },

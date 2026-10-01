@@ -303,7 +303,7 @@ public static class ManualReportEndpoints
     }
 
     private static async Task<IResult> GetDepositsAsync(Guid organizationId, Guid employerId, Guid reportId,
-        string? search, int skip, int take, AlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
+        string? search, Guid? reportProductId, int skip, int take, AlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
@@ -315,6 +315,9 @@ public static class ManualReportEndpoints
                     join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
                     where employee.ReportId == reportId
                     select new { Product = product, Employee = employee };
+
+        if (reportProductId.HasValue)
+            query = query.Where(x => x.Product.Id == reportProductId.Value);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
