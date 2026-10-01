@@ -73,7 +73,7 @@ public static class CorrectionWorkflowService
                 ).SingleOrDefaultAsync(ct);
             }
             return new WorkspaceResult(existing.Id, mappedProductId, false,
-                await PendingChangeCountAsync(existing.Id, db, ct));
+                await PendingChangeCountAsync(existing.Id, db, protector, ct));
         }
 
         var graph = await LoadGraphAsync(sourceReportId, db, ct);
@@ -108,7 +108,7 @@ public static class CorrectionWorkflowService
                     select (Guid?)product.Id).SingleOrDefaultAsync(CancellationToken.None);
 
             return new WorkspaceResult(concurrent.Id, concurrentProductId, false,
-                await PendingChangeCountAsync(concurrent.Id, db, CancellationToken.None));
+                await PendingChangeCountAsync(concurrent.Id, db, protector, CancellationToken.None));
         }
 
         Guid? requestedProductId = null;
@@ -129,7 +129,7 @@ public static class CorrectionWorkflowService
             && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation || x.Status == ManualReportStatus.Error), ct);
         if (workspace is null) return null;
 
-        var pendingChanges = await PendingChangeCountAsync(workspace.Id, db, ct);
+        var pendingChanges = await PendingChangeCountAsync(workspace.Id, db, protector, ct);
         if (pendingChanges == 0) return null;
 
         var sourceGraph = await LoadGraphAsync(workspace.SourceReportId!.Value, db, ct);
@@ -144,6 +144,9 @@ public static class CorrectionWorkflowService
             !sourceGraph.Metadata.TryGetValue(product.Id, out var metadata)
             || string.IsNullOrWhiteSpace(metadata.InterfaceTransferIdentifier)
             || string.IsNullOrWhiteSpace(metadata.ClearingIdentifier)))
+            return null;
+
+        if (workspaceGraph.Products.Any(product => !product.SourceReportProductId.HasValue))
             return null;
 
         if (workspaceGraph.Products.Any(product =>
@@ -256,7 +259,7 @@ public static class CorrectionWorkflowService
     }
 
     public static async Task<int> PendingChangeCountAsync(
-        Guid reportId, IAlphaDbContext db, CancellationToken ct)
+        Guid reportId, IAlphaDbContext db, IDataProtectionService protector, CancellationToken ct)
     {
         var report = await db.ManualReports.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == reportId, ct);
@@ -270,12 +273,12 @@ public static class CorrectionWorkflowService
             : await db.ManualReportProducts.AsNoTracking()
                 .CountAsync(x => employeeIds.Contains(x.ReportEmployeeId) && x.IsCorrectionChanged, ct);
         var reportLevelChanges = report.IsCorrectionWorkspace && report.SourceReportId.HasValue
-            && await HasReportLevelChangesAsync(report, db, ct);
+            && await HasReportLevelChangesAsync(report, db, protector, ct);
         return productChanges + (reportLevelChanges ? 1 : 0);
     }
 
     private static async Task<bool> HasReportLevelChangesAsync(
-        ManualReport workspace, IAlphaDbContext db, CancellationToken ct)
+        ManualReport workspace, IAlphaDbContext db, IDataProtectionService protector, CancellationToken ct)
     {
         if (!workspace.SourceReportId.HasValue) return false;
         var source = await db.ManualReports.AsNoTracking()
@@ -317,6 +320,23 @@ public static class CorrectionWorkflowService
                 || !string.Equals(employee.PostalCodeSnapshot, original.PostalCodeSnapshot, StringComparison.Ordinal)
                 || !string.Equals(employee.PostOfficeBoxSnapshot, original.PostOfficeBoxSnapshot, StringComparison.Ordinal)
                 || employee.EmploymentStartDateSnapshot != original.EmploymentStartDateSnapshot)
+                return true;
+
+            var workspaceInterfaceIdentifier = protector.Unprotect(employee.InterfaceIdentifier,
+                $"report-employee-interface-id:{employee.Id}");
+            var sourceInterfaceIdentifier = protector.Unprotect(original.InterfaceIdentifier,
+                $"report-employee-interface-id:{original.Id}");
+            var workspaceEmail = protector.Unprotect(employee.EmailSnapshot,
+                $"report-employee-email:{employee.Id}");
+            var sourceEmail = protector.Unprotect(original.EmailSnapshot,
+                $"report-employee-email:{original.Id}");
+            var workspaceMobile = protector.Unprotect(employee.MobileSnapshot,
+                $"report-employee-mobile:{employee.Id}");
+            var sourceMobile = protector.Unprotect(original.MobileSnapshot,
+                $"report-employee-mobile:{original.Id}");
+            if (!string.Equals(workspaceInterfaceIdentifier, sourceInterfaceIdentifier, StringComparison.Ordinal)
+                || !string.Equals(workspaceEmail, sourceEmail, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(workspaceMobile, sourceMobile, StringComparison.Ordinal))
                 return true;
         }
         return false;

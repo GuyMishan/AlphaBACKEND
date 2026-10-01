@@ -116,3 +116,7 @@ These sources outrank assumptions, old examples and UI behavior.
 - Correction workspace metadata/previous-reference mutation is workflow-owned. Reporting edits use `CanCreateReport`; employee-master edit permission is not required for report metadata APIs.
 - Pending correction state is recalculated against the immutable source for report/payment-account/employee snapshot changes instead of trusting the historical `HasCorrectionChanges` flag, so reverting changes back to the source no longer leaves a false pending correction.
 - The one-open-workspace database boundary includes `Processing`; a new workspace cannot be created while another operator is materializing the existing one.
+
+
+- Correction-workspace additions are fail-closed until an official op1-within-correction flow is implemented end-to-end. The backend rejects newly added employees/products in a correction workspace and materialization rejects legacy source-less additions; modifying or removing source-backed rows remains supported.
+- Pending-change comparison decrypts purpose-bound employee interface identifier, email and mobile snapshots before comparing workspace vs source, so a correction that changes only those V006 fields is detected and a true revert is not.
