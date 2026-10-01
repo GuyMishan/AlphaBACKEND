@@ -10,6 +10,7 @@ public sealed class UnavailableReportTransmissionProvider : IReportTransmissionP
     public Task<ReportTransmissionProviderResult> SendAsync(ReportTransmissionEnvelope envelope, CancellationToken ct) =>
         Task.FromResult(new ReportTransmissionProviderResult(
             false,
+            "Unavailable",
             null,
             null,
             "Clearing-house transmission provider is not configured."));
