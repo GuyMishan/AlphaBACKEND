@@ -154,17 +154,25 @@ public static class CorrectionWorkflowService
             && product.CorrectionOperationCode is not (2 or 3)))
             return null;
 
-        var claimed = await db.ManualReports
-            .Where(x => x.Id == workspaceId && x.OrganizationId == organizationId && x.EmployerId == employerId
-                && x.IsCorrectionWorkspace
-                && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation || x.Status == ManualReportStatus.Error))
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, ManualReportStatus.Processing)
-                .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow), ct);
-        if (claimed != 1) return null;
+        if (db is not DbContext ef)
+            throw new InvalidOperationException("Correction materialization requires the EF Core database context.");
 
+        await using var transaction = await ef.Database.BeginTransactionAsync(ct);
         try
         {
+            var claimed = await db.ManualReports
+                .Where(x => x.Id == workspaceId && x.OrganizationId == organizationId && x.EmployerId == employerId
+                    && x.IsCorrectionWorkspace
+                    && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation || x.Status == ManualReportStatus.Error))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Status, ManualReportStatus.Processing)
+                    .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow), ct);
+            if (claimed != 1)
+            {
+                await transaction.RollbackAsync(ct);
+                return null;
+            }
+
             var negative = CloneGraph(sourceGraph, ManualReportKind.Negative, sourceGraph.Report.Id,
                 CloneMode.NegativeCancellation, null, protector, null, null);
             var current = CloneGraph(workspaceGraph, ManualReportKind.Current, negative.Report.Id,
@@ -174,17 +182,26 @@ public static class CorrectionWorkflowService
             AddClone(db, current);
             await db.SaveChangesAsync(ct);
 
-            await db.ManualReports.Where(x => x.Id == workspaceId && x.Status == ManualReportStatus.Processing)
+            var cancelled = await db.ManualReports
+                .Where(x => x.Id == workspaceId && x.Status == ManualReportStatus.Processing)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(x => x.Status, ManualReportStatus.Cancelled)
                     .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow), ct);
+            if (cancelled != 1)
+                throw new DbUpdateConcurrencyException("Correction workspace changed while materialization was completing.");
 
+            await transaction.CommitAsync(ct);
             return new MaterializedResult(workspace.Id, sourceGraph.Report.Id,
                 negative.Report.Id, current.Report.Id, pendingChanges);
         }
         catch
         {
-            await db.ManualReports.Where(x => x.Id == workspaceId && x.Status == ManualReportStatus.Processing)
+            await transaction.RollbackAsync(CancellationToken.None);
+            await db.ManualReports.Where(x => x.Id == workspaceId
+                    && x.OrganizationId == organizationId && x.EmployerId == employerId
+                    && x.IsCorrectionWorkspace
+                    && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
+                        || x.Status == ManualReportStatus.Error || x.Status == ManualReportStatus.Processing))
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(x => x.Status, ManualReportStatus.Error)
                     .SetProperty(x => x.ValidationError, "Correction materialization failed.")

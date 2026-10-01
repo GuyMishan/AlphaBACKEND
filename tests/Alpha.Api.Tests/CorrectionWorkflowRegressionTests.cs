@@ -48,6 +48,9 @@ public sealed class CorrectionWorkflowRegressionTests
         var path = Path.Combine(root, "src", "Alpha.Api", "Services", "CorrectionWorkflowService.cs");
         var source = File.ReadAllText(path);
 
+        Assert.Contains("BeginTransactionAsync", source, StringComparison.Ordinal);
+        Assert.Contains("CommitAsync", source, StringComparison.Ordinal);
+        Assert.Contains("RollbackAsync", source, StringComparison.Ordinal);
         Assert.Contains(".SetProperty(x => x.Status, ManualReportStatus.Processing)", source, StringComparison.Ordinal);
         Assert.Contains("oldProduct.CorrectionOperationCode ?? 2", source, StringComparison.Ordinal);
         Assert.Contains("x.Status == ManualReportStatus.Processing", source, StringComparison.Ordinal);

@@ -129,3 +129,6 @@ These sources outrank assumptions, old examples and UI behavior.
 
 
 - Final validation for the current correction follows the official V006 previous-reference rule: either `PreviousIdentifier`, `PreviousClearingIdentifier`, or an official exception is sufficient. It no longer waits specifically for a clearing identifier when the preceding negative report already provides a valid transfer identifier.
+
+
+- Correction materialization is atomic: claiming the workspace, inserting the negative/current reports and cancelling the workspace run in one EF/PostgreSQL transaction. A failure rolls the materialization back before the workspace is marked Error, preventing orphan derived reports or a permanently Processing workspace.
