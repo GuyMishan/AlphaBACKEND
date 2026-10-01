@@ -184,31 +184,54 @@ public sealed class EmployerInterface006ExportService(
         AlphaDbContext db, IReadOnlyList<ManualReportProduct> products, CancellationToken ct)
     {
         var result = new Dictionary<Guid, string>();
+        var externalKeys = products
+            .Select(x => x.FundExternalKey?.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (externalKeys.Length == 0) return result;
+
         var connection = db.Database.GetDbConnection();
         if (connection.State != System.Data.ConnectionState.Open) await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        var parameterNames = new string[externalKeys.Length];
+        for (var i = 0; i < externalKeys.Length; i++)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = $"external_key_{i}";
+            parameter.Value = externalKeys[i];
+            command.Parameters.Add(parameter);
+            parameterNames[i] = "@" + parameter.ParameterName;
+        }
+
+        command.CommandText = $"""
+            SELECT external_key, company_legal_id, fund_code
+            FROM reference_data.pension_products
+            WHERE is_active = true
+              AND external_key IN ({string.Join(", ", parameterNames)})
+            """;
+
+        var resolvedByExternalKey = new Dictionary<string, string>(StringComparer.Ordinal);
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                var externalKey = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+                var companyId = reader.IsDBNull(1) ? string.Empty : new string(reader.GetString(1).Where(char.IsDigit).ToArray());
+                var fundCode = reader.IsDBNull(2) ? string.Empty : new string(reader.GetString(2).Where(char.IsDigit).ToArray());
+                if (externalKey.Length == 0 || companyId.Length != 9 || fundCode.Length is 0 or > 14) continue;
+                resolvedByExternalKey.TryAdd(externalKey, companyId + fundCode.PadLeft(14, '0') + "0000000");
+            }
+        }
 
         foreach (var product in products)
         {
-            if (string.IsNullOrWhiteSpace(product.FundExternalKey)) continue;
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT company_legal_id, fund_code
-                FROM reference_data.pension_products
-                WHERE external_key = @external_key AND is_active = true
-                LIMIT 1
-                """;
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "external_key";
-            parameter.Value = product.FundExternalKey;
-            command.Parameters.Add(parameter);
-            await using var reader = await command.ExecuteReaderAsync(ct);
-            if (!await reader.ReadAsync(ct)) continue;
-
-            var companyId = reader.IsDBNull(0) ? string.Empty : new string(reader.GetString(0).Where(char.IsDigit).ToArray());
-            var fundCode = reader.IsDBNull(1) ? string.Empty : new string(reader.GetString(1).Where(char.IsDigit).ToArray());
-            if (companyId.Length == 9 && fundCode.Length is > 0 and <= 14)
-                result[product.Id] = companyId + fundCode.PadLeft(14, '0') + "0000000";
+            if (!string.IsNullOrWhiteSpace(product.FundExternalKey)
+                && resolvedByExternalKey.TryGetValue(product.FundExternalKey.Trim(), out var interfaceFundCode))
+                result[product.Id] = interfaceFundCode;
         }
+
         return result;
     }
 
