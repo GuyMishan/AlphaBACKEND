@@ -76,3 +76,7 @@ These sources outrank assumptions, old examples and UI behavior.
 - Editing a person's postal code/post-office box in their employee card updates matching address snapshots in still-editable reports for the same authorized employment, in the same transaction. Imported/overridden snapshots and immutable submitted/sent reports remain untouched; refreshed drafts are marked dirty and revalidated. Address fields have no duplicate editor inside the report wizard.
 
 - `EmployerInterfaceLineFeedbackParser` extracts per-record statuses from encrypted, XSD-validated official summary feedback. The scoped feedback-details endpoint associates them only via saved exported contribution record identifiers, preserving official file provenance and never guessing associations for unmatched feedback.
+
+
+- Report-feedback normalization is idempotently backfilled at API startup for already-correlated encrypted summary feedback, so historical reports receive the same money/contribution projections as newly ingested feedback.
+- Derived/correction drafts accept an optional source-product selection; selected products and their owning employees are cloned with the same immutable snapshot/previous-record semantics, enabling a focused employee+product correction workflow without mutating the submitted source report.

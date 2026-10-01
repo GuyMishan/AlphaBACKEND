@@ -136,11 +136,6 @@ public static class DerivedReportEndpoints
             x.OrganizationId == organizationId && x.EmployerId == employerId && x.Status != ManualReportStatus.Cancelled, ct);
         if (source is null) return Results.BadRequest(new { error = "Source report was not found for this employer." });
 
-        var sourceEmployeeCount = await db.ManualReportEmployees.AsNoTracking()
-            .CountAsync(x => x.ReportId == source.Id, ct);
-        if (sourceEmployeeCount > MaxSourceEmployees)
-            return Results.BadRequest(new { error = $"Source reports are limited to {MaxSourceEmployees} employees for derived drafts." });
-
         var sourceEmployees = await db.ManualReportEmployees.AsNoTracking()
             .Where(x => x.ReportId == source.Id)
             .OrderBy(x => x.Id)
@@ -151,6 +146,23 @@ public static class DerivedReportEndpoints
             .Where(x => sourceEmployeeIds.Contains(x.ReportEmployeeId))
             .OrderBy(x => x.Id)
             .ToListAsync(ct);
+
+        var requestedProductIds = request.ReportProductIds?.Where(x => x != Guid.Empty).Distinct().ToHashSet();
+        if (requestedProductIds is { Count: > 0 })
+        {
+            var availableIds = sourceProducts.Select(x => x.Id).ToHashSet();
+            if (requestedProductIds.Any(x => !availableIds.Contains(x)))
+                return Results.BadRequest(new { error = "One or more selected products do not belong to the source report." });
+
+            sourceProducts = sourceProducts.Where(x => requestedProductIds.Contains(x.Id)).ToList();
+            var selectedEmployeeIds = sourceProducts.Select(x => x.ReportEmployeeId).Distinct().ToHashSet();
+            sourceEmployees = sourceEmployees.Where(x => selectedEmployeeIds.Contains(x.Id)).ToList();
+        }
+
+        if (sourceEmployees.Count == 0 || sourceProducts.Count == 0)
+            return Results.BadRequest(new { error = "The derived report must contain at least one employee and product." });
+        if (sourceEmployees.Count > MaxSourceEmployees)
+            return Results.BadRequest(new { error = $"Source reports are limited to {MaxSourceEmployees} employees for derived drafts." });
 
         var sourceProductIds = sourceProducts.Select(x => x.Id).ToArray();
         var sourceContributions = await db.ManualContributions.AsNoTracking()
@@ -325,4 +337,4 @@ public static class DerivedReportEndpoints
 
 public sealed record CreateDerivedManualReportRequest(Guid SourceReportId, ManualReportKind ReportKind,
     DateOnly ReportingMonth, DateOnly? SalaryPaymentDate, Guid? PaymentAccountId = null,
-    int? CorrectionOperationCode = null);
+    int? CorrectionOperationCode = null, IReadOnlyCollection<Guid>? ReportProductIds = null);

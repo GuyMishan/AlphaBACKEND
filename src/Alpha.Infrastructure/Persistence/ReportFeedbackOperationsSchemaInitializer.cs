@@ -37,6 +37,8 @@ public static class ReportFeedbackOperationsSchemaInitializer
                 ON reporting.employer_interface_transfer_feedback ("ReportId", "TransferIdentifier", "ReceivedAt");
             CREATE INDEX IF NOT EXISTS "IX_transfer_feedback_FeedbackId"
                 ON reporting.employer_interface_transfer_feedback ("FeedbackId");
+            CREATE UNIQUE INDEX IF NOT EXISTS "UX_transfer_feedback_FeedbackId_TransferIdentifier"
+                ON reporting.employer_interface_transfer_feedback ("FeedbackId", "TransferIdentifier");
 
             CREATE TABLE IF NOT EXISTS reporting.employer_interface_contribution_feedback (
                 "Id" uuid PRIMARY KEY,
@@ -72,7 +74,7 @@ public static class ReportFeedbackOperationsSchemaInitializer
             );
             CREATE INDEX IF NOT EXISTS "IX_contribution_feedback_ReportId_Product_ReceivedAt"
                 ON reporting.employer_interface_contribution_feedback ("ReportId", "ReportProductId", "ReceivedAt");
-            CREATE INDEX IF NOT EXISTS "IX_contribution_feedback_Feedback_Record_Sequence"
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_contribution_feedback_Feedback_Record_Sequence"
                 ON reporting.employer_interface_contribution_feedback ("FeedbackId", "RecordIdentifier", "Sequence");
             CREATE INDEX IF NOT EXISTS "IX_contribution_feedback_ContributionId"
                 ON reporting.employer_interface_contribution_feedback ("ContributionId");

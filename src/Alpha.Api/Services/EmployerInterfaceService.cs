@@ -172,6 +172,81 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             : await ImportReportAsync(organizationId, employerId, xmlBytes, validation, paymentAccountId, salaryPaymentDate, ct);
     }
 
+    public async Task NormalizeExistingFeedbackAsync(CancellationToken ct)
+    {
+        var feedbackFiles = await db.EmployerInterfaceFeedback
+            .AsNoTracking()
+            .Where(x => x.ReportId.HasValue)
+            .OrderBy(x => x.ReceivedAt)
+            .ToListAsync(ct);
+
+        foreach (var feedback in feedbackFiles)
+        {
+            var reportId = feedback.ReportId!.Value;
+            var existingTransferValues = await db.EmployerInterfaceTransferFeedback.AsNoTracking()
+                .Where(x => x.FeedbackId == feedback.Id)
+                .Select(x => x.TransferIdentifier)
+                .ToListAsync(ct);
+            var existingTransfers = existingTransferValues.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var existingContributionValues = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+                .Where(x => x.FeedbackId == feedback.Id)
+                .Select(x => x.RecordIdentifier + ":" + x.Sequence)
+                .ToListAsync(ct);
+            var existingContributionKeys = existingContributionValues.ToHashSet(StringComparer.Ordinal);
+
+            var decodedXml = protector.Unprotect(feedback.RawXml, $"employer-interface-feedback:{feedback.PayloadHash}");
+            var parsed = EmployerInterfaceLineFeedbackParser.ParseSummary(decodedXml);
+
+            foreach (var transfer in parsed.Transfers.Where(x => !string.IsNullOrWhiteSpace(x.TransferIdentifier)
+                && !existingTransfers.Contains(x.TransferIdentifier)))
+            {
+                db.EmployerInterfaceTransferFeedback.Add(new EmployerInterfaceTransferFeedback(
+                    feedback.Id, reportId, transfer.TransferIdentifier, transfer.ClearingIdentifier,
+                    transfer.ReportedDepositAmount, transfer.ActualReceivedAmount, transfer.AllocatedAmount,
+                    transfer.InTransitAmount, transfer.ProactiveRefundAmount, transfer.EmployerAccountRefundAmount,
+                    transfer.MoneyTreatmentStatus, transfer.StatusDetail, transfer.PaymentReference,
+                    transfer.ValueDate, transfer.TrustAccountValueDate, transfer.CorrectnessTimestamp, feedback.ReceivedAt));
+            }
+
+            var reportEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
+                .Where(x => x.ReportId == reportId).Select(x => x.Id).ToArrayAsync(ct);
+            var reportProductIds = await db.ManualReportProducts.AsNoTracking()
+                .Where(x => reportEmployeeIds.Contains(x.ReportEmployeeId)).Select(x => x.Id).ToArrayAsync(ct);
+            var reportContributions = await db.ManualContributions.AsNoTracking()
+                .Where(x => reportProductIds.Contains(x.ReportProductId)).ToListAsync(ct);
+            var contributionByRecord = reportContributions
+                .GroupBy(x => (string.IsNullOrWhiteSpace(x.InterfaceRecordIdentifier)
+                        ? x.Id.ToString("D") : x.InterfaceRecordIdentifier).ToUpperInvariant(), StringComparer.Ordinal)
+                .Where(group => group.Count() == 1)
+                .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
+
+            foreach (var record in parsed.Records)
+            {
+                if (!contributionByRecord.TryGetValue(record.RecordIdentifier, out var contribution)) continue;
+                var rights = record.Rights is { Count: > 0 }
+                    ? record.Rights.Cast<EmployerInterfaceLineFeedbackParser.RightsStatus?>().ToArray()
+                    : new EmployerInterfaceLineFeedbackParser.RightsStatus?[] { null };
+                var sequence = 0;
+                foreach (var right in rights)
+                {
+                    var key = record.RecordIdentifier + ":" + sequence;
+                    if (!existingContributionKeys.Contains(key))
+                    {
+                        db.EmployerInterfaceContributionFeedback.Add(new EmployerInterfaceContributionFeedback(
+                            feedback.Id, reportId, contribution.ReportProductId, contribution.Id, record.RecordIdentifier,
+                            sequence, record.IntakeStatus, record.ErrorCode, record.Description, record.ErrorAmount,
+                            record.ErrorDate, right?.ContributionTypeCode, right?.CalculatedSalary, right?.SalaryMonth,
+                            right?.PolicyNumber, right?.ContributionRate, right?.ContributionAmount,
+                            feedback.SourceFileName, feedback.ReceivedAt));
+                    }
+                    sequence++;
+                }
+            }
+
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
     public static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     private async Task<IngestResult> IngestFeedbackAsync(Guid organizationId, Guid employerId, string sourceFileName,
