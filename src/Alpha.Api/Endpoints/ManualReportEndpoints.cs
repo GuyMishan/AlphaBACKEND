@@ -533,7 +533,7 @@ public static class ManualReportEndpoints
             request.ActualDepositAmount, request.MasavSenderCode);
         if (report.IsCorrectionWorkspace)
         {
-            product.MarkCorrectionChanged();
+            product.MarkCorrectionChanged(request.ActualDepositAmount.GetValueOrDefault() > 0 ? 3 : 2);
             report.MarkCorrectionChanged();
         }
         else report.MarkDirty();
@@ -557,7 +557,7 @@ public static class ManualReportEndpoints
             employee.PostalCodeSnapshot, employee.PostOfficeBoxSnapshot,
             products = products.Select(p => new
             {
-                p.Id, p.SourceReportProductId, p.IsCorrectionChanged, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName, p.FundClassification,
+                p.Id, p.SourceReportProductId, p.IsCorrectionChanged, p.CorrectionOperationCode, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName, p.FundClassification,
                 p.SalaryMonth, p.Salary, p.SalaryAllocationType, p.SalaryAllocationValue, p.AllocationOrder,
                 p.ReportingType, p.SalaryLayer, p.Section14, p.Section14Code, p.Section14StartDate,
                 employerContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employer).OrderBy(c => c.Component),
@@ -611,30 +611,140 @@ public static class ManualReportEndpoints
                 protector.Protect(request.Snapshot.Email ?? string.Empty, $"report-employee-email:{employee.Id}"),
                 protector.Protect(request.Snapshot.Mobile ?? string.Empty, $"report-employee-mobile:{employee.Id}"));
         }
-        var existingProductIds = await db.ManualReportProducts.Where(x => x.ReportEmployeeId == reportEmployeeId).Select(x => x.Id).ToArrayAsync(ct);
-        if (existingProductIds.Length > 0)
-        {
-            await db.ManualContributions.Where(x => existingProductIds.Contains(x.ReportProductId)).ExecuteDeleteAsync(ct);
-            await db.ManualReportProducts.Where(x => x.ReportEmployeeId == reportEmployeeId).ExecuteDeleteAsync(ct);
-        }
+        var existingProducts = await db.ManualReportProducts
+            .Where(x => x.ReportEmployeeId == reportEmployeeId)
+            .OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt)
+            .ToListAsync(ct);
 
-        foreach (var item in resolvedProducts.Items)
+        if (!report.IsCorrectionWorkspace)
         {
-            var input = item.Input;
-            var product = new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
-                input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
-                input.Section14StartDate, input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
-                item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
-            product.SetSourceVersion(input.SourceReportProductId);
-            if (report.IsCorrectionWorkspace) product.MarkCorrectionChanged();
-            db.ManualReportProducts.Add(product);
-            AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
-            AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
+            var existingProductIds = existingProducts.Select(x => x.Id).ToArray();
+            if (existingProductIds.Length > 0)
+            {
+                await db.ManualContributions.Where(x => existingProductIds.Contains(x.ReportProductId)).ExecuteDeleteAsync(ct);
+                await db.ManualReportProducts.Where(x => x.ReportEmployeeId == reportEmployeeId).ExecuteDeleteAsync(ct);
+            }
+
+            foreach (var item in resolvedProducts.Items)
+            {
+                var input = item.Input;
+                var product = new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
+                    input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
+                    input.Section14StartDate, input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
+                    item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
+                db.ManualReportProducts.Add(product);
+                AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
+                AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
+            }
+        }
+        else
+        {
+            var existingBySource = existingProducts
+                .Where(x => x.SourceReportProductId.HasValue)
+                .ToDictionary(x => x.SourceReportProductId!.Value);
+            var requestedSourceIds = resolvedProducts.Items
+                .Select(x => x.Input.SourceReportProductId)
+                .Where(x => x.HasValue)
+                .Select(x => x!.Value)
+                .ToHashSet();
+
+            var sourceProducts = requestedSourceIds.Count == 0
+                ? new Dictionary<Guid, ManualReportProduct>()
+                : await db.ManualReportProducts.AsNoTracking()
+                    .Where(x => requestedSourceIds.Contains(x.Id))
+                    .ToDictionaryAsync(x => x.Id, ct);
+            var sourceIds = sourceProducts.Keys.ToArray();
+            var sourceContributions = sourceIds.Length == 0
+                ? new Dictionary<Guid, List<ManualContribution>>()
+                : (await db.ManualContributions.AsNoTracking()
+                        .Where(x => sourceIds.Contains(x.ReportProductId))
+                        .ToListAsync(ct))
+                    .GroupBy(x => x.ReportProductId)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var item in resolvedProducts.Items)
+            {
+                var input = item.Input;
+                if (input.SourceReportProductId.HasValue)
+                {
+                    if (!existingBySource.TryGetValue(input.SourceReportProductId.Value, out var product))
+                        return Results.Conflict(new { error = "correction_product_lineage_missing" });
+
+                    product.Update(input.ProductType, input.PolicyNumber, input.SalaryMonth, item.InsuredSalary,
+                        input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate,
+                        input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
+                        item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
+
+                    await db.ManualContributions.Where(x => x.ReportProductId == product.Id).ExecuteDeleteAsync(ct);
+                    AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
+                    AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
+
+                    var changed = !sourceProducts.TryGetValue(input.SourceReportProductId.Value, out var sourceProduct)
+                        || ProductChanged(sourceProduct, item, input)
+                        || ContributionsChanged(sourceContributions.GetValueOrDefault(input.SourceReportProductId.Value) ?? [], input);
+                    product.SetCorrectionState(changed, changed ? product.CorrectionOperationCode ?? 2 : null);
+                }
+                else
+                {
+                    var product = new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
+                        input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
+                        input.Section14StartDate, input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
+                        item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
+                    product.SetCorrectionState(true, 2);
+                    db.ManualReportProducts.Add(product);
+                    AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
+                    AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
+                }
+            }
+
+            // Products from the immutable source that are no longer present remain in the workspace as
+            // explicit removals. Materialization omits them from the follow-up current report while the
+            // full negative report still reverses the source report.
+            foreach (var removed in existingProducts.Where(x => x.SourceReportProductId.HasValue
+                && !requestedSourceIds.Contains(x.SourceReportProductId.Value)))
+            {
+                removed.SetCorrectionState(true, 2);
+                removed.SetValidationResult(false, "המוצר הוסר מטיוטת התיקון.");
+            }
         }
         if (report.IsCorrectionWorkspace) report.MarkCorrectionChanged();
         else report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
+    }
+
+    private static bool ProductChanged(ManualReportProduct source, ResolvedReportProduct resolved, ManualProductInput input) =>
+        source.ProductType != input.ProductType
+        || !string.Equals(source.PolicyNumber, input.PolicyNumber?.Trim() ?? string.Empty, StringComparison.Ordinal)
+        || source.SalaryMonth != new DateOnly(input.SalaryMonth.Year, input.SalaryMonth.Month, 1)
+        || source.Salary != resolved.InsuredSalary
+        || !string.Equals(source.ReportingType, input.ReportingType?.Trim() ?? string.Empty, StringComparison.Ordinal)
+        || !string.Equals(source.SalaryLayer, input.SalaryLayer?.Trim() ?? string.Empty, StringComparison.Ordinal)
+        || source.Section14Code != (input.Section14Code ?? source.Section14Code)
+        || source.Section14StartDate != input.Section14StartDate
+        || !string.Equals(source.FundExternalKey, input.FundExternalKey?.Trim() ?? string.Empty, StringComparison.Ordinal)
+        || !string.Equals(source.FundCode, input.FundCode?.Trim() ?? string.Empty, StringComparison.Ordinal)
+        || !string.Equals(source.FundName, input.FundName?.Trim() ?? string.Empty, StringComparison.Ordinal)
+        || !string.Equals(source.FundCompanyName, input.FundCompanyName?.Trim() ?? string.Empty, StringComparison.Ordinal)
+        || source.SalaryAllocationType != resolved.AllocationType
+        || source.SalaryAllocationValue != resolved.AllocationValue
+        || source.AllocationOrder != resolved.AllocationOrder
+        || !string.Equals(source.FundClassification, input.FundClassification?.Trim() ?? string.Empty, StringComparison.Ordinal);
+
+    private static bool ContributionsChanged(IReadOnlyCollection<ManualContribution> source, ManualProductInput input)
+    {
+        static string Key(ContributionParty party, ContributionComponent component) => $"{(int)party}:{(int)component}";
+        var sourceMap = source
+            .Where(x => x.Amount != 0 || x.Percentage != 0 || x.ExemptPayments != 0)
+            .ToDictionary(x => Key(x.Party, x.Component), x => (x.Amount, x.Percentage, x.ExemptPayments));
+        var requested = input.EmployerContributions
+            .Select(x => (Party: ContributionParty.Employer, Input: x))
+            .Concat(input.EmployeeContributions.Select(x => (Party: ContributionParty.Employee, Input: x)))
+            .Where(x => x.Input.Amount != 0 || x.Input.Percentage != 0 || x.Input.ExemptPayments != 0)
+            .ToDictionary(x => Key(x.Party, x.Input.Component),
+                x => (x.Input.Amount, x.Input.Percentage, x.Input.ExemptPayments));
+        if (sourceMap.Count != requested.Count) return true;
+        return sourceMap.Any(x => !requested.TryGetValue(x.Key, out var value) || value != x.Value);
     }
 
     private static (List<ResolvedReportProduct> Items, string? Error) ResolveSalaryAllocations(decimal monthlySalary,

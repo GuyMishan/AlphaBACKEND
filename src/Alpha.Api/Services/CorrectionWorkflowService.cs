@@ -19,6 +19,7 @@ public static class CorrectionWorkflowService
         List<ManualReportProduct> Products,
         List<ManualContribution> Contributions,
         List<ManualReportPayment> Payments,
+        List<ManualReportAttachment> Attachments,
         Dictionary<Guid, EmployerInterfaceReportProductData> Metadata);
 
     private sealed record CloneResult(
@@ -27,6 +28,7 @@ public static class CorrectionWorkflowService
         List<ManualReportProduct> Products,
         List<ManualContribution> Contributions,
         List<ManualReportPayment> Payments,
+        List<ManualReportAttachment> Attachments,
         List<EmployerInterfaceReportProductData> Metadata,
         Dictionary<Guid, ManualReportProduct> ProductsBySource,
         Dictionary<(Guid ProductId, ContributionParty Party, ContributionComponent Component), ManualContribution> ContributionsBySourceKey);
@@ -78,7 +80,28 @@ public static class CorrectionWorkflowService
             CloneMode.Workspace, null, protector, null, null);
         clone.Report.MarkCorrectionWorkspace();
         AddClone(db, clone);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException)
+        {
+            if (db is DbContext ef) ef.ChangeTracker.Clear();
+            var concurrent = await db.ManualReports.AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
+                    && x.SourceReportId == sourceReportId && x.IsCorrectionWorkspace
+                    && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation || x.Status == ManualReportStatus.Error))
+                .OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync(CancellationToken.None);
+            if (concurrent is null) throw;
+
+            Guid? concurrentProductId = null;
+            if (sourceReportProductId.HasValue)
+                concurrentProductId = await (
+                    from product in db.ManualReportProducts.AsNoTracking()
+                    join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                    where employee.ReportId == concurrent.Id && product.SourceReportProductId == sourceReportProductId.Value
+                    select (Guid?)product.Id).SingleOrDefaultAsync(CancellationToken.None);
+
+            return new WorkspaceResult(concurrent.Id, concurrentProductId, false,
+                await PendingChangeCountAsync(concurrent.Id, db, CancellationToken.None));
+        }
 
         Guid? requestedProductId = null;
         if (sourceReportProductId.HasValue
@@ -89,53 +112,74 @@ public static class CorrectionWorkflowService
     }
 
     public static async Task<MaterializedResult?> MaterializeAsync(
-        Guid organizationId, Guid employerId, Guid workspaceId, int correctionOperationCode,
+        Guid organizationId, Guid employerId, Guid workspaceId,
         IAlphaDbContext db, IDataProtectionService protector, CancellationToken ct)
     {
-        if (correctionOperationCode is not (2 or 3))
-            return null;
-
-        var workspace = await db.ManualReports.SingleOrDefaultAsync(x =>
-            x.Id == workspaceId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
-        if (workspace is null || !workspace.IsCorrectionWorkspace || !workspace.IsEditable
-            || !workspace.SourceReportId.HasValue)
-            return null;
+        var workspace = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.Id == workspaceId && x.OrganizationId == organizationId && x.EmployerId == employerId
+            && x.IsCorrectionWorkspace && x.SourceReportId.HasValue
+            && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation || x.Status == ManualReportStatus.Error), ct);
+        if (workspace is null) return null;
 
         var pendingChanges = await PendingChangeCountAsync(workspace.Id, db, ct);
-        if (pendingChanges == 0)
-            return null;
+        if (pendingChanges == 0) return null;
 
-        var sourceGraph = await LoadGraphAsync(workspace.SourceReportId.Value, db, ct);
+        var sourceGraph = await LoadGraphAsync(workspace.SourceReportId!.Value, db, ct);
         var workspaceGraph = await LoadGraphAsync(workspace.Id, db, ct);
         if (sourceGraph is null || workspaceGraph is null
             || sourceGraph.Report.ReportKind != ManualReportKind.Current
-            || sourceGraph.Report.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
+            || sourceGraph.Report.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed)
+            || sourceGraph.Metadata.Count != sourceGraph.Products.Count)
             return null;
 
-        if (sourceGraph.Metadata.Count != sourceGraph.Products.Count)
-            return null;
-
-        var missingOriginalReference = sourceGraph.Products.Any(product =>
+        if (sourceGraph.Products.Any(product =>
             !sourceGraph.Metadata.TryGetValue(product.Id, out var metadata)
             || string.IsNullOrWhiteSpace(metadata.InterfaceTransferIdentifier)
-            || string.IsNullOrWhiteSpace(metadata.ClearingIdentifier));
-        if (missingOriginalReference)
+            || string.IsNullOrWhiteSpace(metadata.ClearingIdentifier)))
             return null;
 
-        var negative = CloneGraph(sourceGraph, ManualReportKind.Negative, sourceGraph.Report.Id,
-            CloneMode.NegativeCancellation, null, protector, null, null);
+        if (workspaceGraph.Products.Any(product =>
+            product.IsCorrectionChanged && product.SourceReportProductId.HasValue
+            && product.CorrectionOperationCode is not (2 or 3)))
+            return null;
 
-        var current = CloneGraph(workspaceGraph, ManualReportKind.Current, negative.Report.Id,
-            CloneMode.CurrentCorrection, correctionOperationCode, protector,
-            negative.ProductsBySource, negative.ContributionsBySourceKey);
+        var claimed = await db.ManualReports
+            .Where(x => x.Id == workspaceId && x.OrganizationId == organizationId && x.EmployerId == employerId
+                && x.IsCorrectionWorkspace
+                && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation || x.Status == ManualReportStatus.Error))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, ManualReportStatus.Processing)
+                .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow), ct);
+        if (claimed != 1) return null;
 
-        AddClone(db, negative);
-        AddClone(db, current);
-        workspace.MarkCancelled();
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            var negative = CloneGraph(sourceGraph, ManualReportKind.Negative, sourceGraph.Report.Id,
+                CloneMode.NegativeCancellation, null, protector, null, null);
+            var current = CloneGraph(workspaceGraph, ManualReportKind.Current, negative.Report.Id,
+                CloneMode.CurrentCorrection, null, protector, negative.ProductsBySource, negative.ContributionsBySourceKey);
 
-        return new MaterializedResult(workspace.Id, sourceGraph.Report.Id,
-            negative.Report.Id, current.Report.Id, pendingChanges);
+            AddClone(db, negative);
+            AddClone(db, current);
+            await db.SaveChangesAsync(ct);
+
+            await db.ManualReports.Where(x => x.Id == workspaceId && x.Status == ManualReportStatus.Processing)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Status, ManualReportStatus.Cancelled)
+                    .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow), ct);
+
+            return new MaterializedResult(workspace.Id, sourceGraph.Report.Id,
+                negative.Report.Id, current.Report.Id, pendingChanges);
+        }
+        catch
+        {
+            await db.ManualReports.Where(x => x.Id == workspaceId && x.Status == ManualReportStatus.Processing)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Status, ManualReportStatus.Error)
+                    .SetProperty(x => x.ValidationError, "Correction materialization failed.")
+                    .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow), CancellationToken.None);
+            throw;
+        }
     }
 
     public static async Task SyncCurrentCorrectionReferencesAsync(
@@ -239,11 +283,13 @@ public static class CorrectionWorkflowService
             .Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var payments = await db.ManualReportPayments.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var attachments = await db.ManualReportAttachments.AsNoTracking()
+            .Where(x => x.ReportId == reportId).ToListAsync(ct);
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
 
-        return new ReportGraph(report, employees, products, contributions, payments, metadata);
+        return new ReportGraph(report, employees, products, contributions, payments, attachments, metadata);
     }
 
     private static CloneResult CloneGraph(
@@ -285,6 +331,11 @@ public static class CorrectionWorkflowService
 
         foreach (var oldProduct in source.Products)
         {
+            if (mode == CloneMode.CurrentCorrection
+                && oldProduct.ValidationStatus == ManualReportItemStatus.Error
+                && string.Equals(oldProduct.ValidationError, "המוצר הוסר מטיוטת התיקון.", StringComparison.Ordinal))
+                continue;
+
             var clone = new ManualReportProduct(employeeMap[oldProduct.ReportEmployeeId].Id,
                 oldProduct.ProductType, oldProduct.PolicyNumber, oldProduct.SalaryMonth, oldProduct.Salary,
                 oldProduct.ReportingType, oldProduct.SalaryLayer, oldProduct.Section14,
@@ -294,7 +345,7 @@ public static class CorrectionWorkflowService
                 oldProduct.FundClassification);
             clone.SetSourceVersion(oldProduct.Id);
             if (mode == CloneMode.CurrentCorrection && oldProduct.IsCorrectionChanged)
-                clone.MarkCorrectionChanged();
+                clone.MarkCorrectionChanged(oldProduct.CorrectionOperationCode);
             products.Add(clone);
             productMap[oldProduct.Id] = clone;
 
@@ -331,7 +382,7 @@ public static class CorrectionWorkflowService
                 if (originalProductId.HasValue && negativeByOriginalProduct is not null
                     && negativeByOriginalProduct.TryGetValue(originalProductId.Value, out var negativeProduct))
                 {
-                    var operation = oldProduct.IsCorrectionChanged ? correctionOperationCode!.Value : 2;
+                    var operation = oldProduct.IsCorrectionChanged ? oldProduct.CorrectionOperationCode ?? 2 : 2;
                     metadata.Update(operation, oldMetadata.DepositStatus, oldMetadata.EmployeeStatus,
                         oldMetadata.StatusStartDate, oldMetadata.EmploymentPercentage,
                         oldMetadata.WorkDaysInMonth, oldMetadata.LastDeposit, null,
@@ -357,6 +408,7 @@ public static class CorrectionWorkflowService
             new Dictionary<(Guid ProductId, ContributionParty Party, ContributionComponent Component), ManualContribution>();
         foreach (var oldContribution in source.Contributions)
         {
+            if (!productMap.ContainsKey(oldContribution.ReportProductId)) continue;
             string? previousRecordIdentifier = mode switch
             {
                 CloneMode.Workspace => oldContribution.PreviousRecordIdentifier,
@@ -383,7 +435,8 @@ public static class CorrectionWorkflowService
         var payments = new List<ManualReportPayment>(source.Payments.Count);
         foreach (var oldPayment in source.Payments)
         {
-            var clonedProductId = productMap[oldPayment.ReportProductId].Id;
+            if (!productMap.TryGetValue(oldPayment.ReportProductId, out var mappedPaymentProduct)) continue;
+            var clonedProductId = mappedPaymentProduct.Id;
             var employerAccount = protector.Unprotect(oldPayment.EmployerAccount,
                 $"report-payment-account:{oldPayment.ReportProductId}");
             var clone = new ManualReportPayment(clonedProductId);
@@ -395,8 +448,30 @@ public static class CorrectionWorkflowService
             payments.Add(clone);
         }
 
+        var attachments = new List<ManualReportAttachment>();
+        if (mode is CloneMode.Workspace or CloneMode.CurrentCorrection)
+        {
+            foreach (var oldAttachment in source.Attachments)
+            {
+                Guid? mappedProductId = null;
+                if (oldAttachment.ReportProductId.HasValue)
+                {
+                    if (!productMap.TryGetValue(oldAttachment.ReportProductId.Value, out var mappedProduct)) continue;
+                    mappedProductId = mappedProduct.Id;
+                }
+
+                var plain = protector.UnprotectBytes(oldAttachment.Content,
+                    $"report-attachment:{source.Report.Id}:{oldAttachment.ReportProductId}:{oldAttachment.DocumentTypeCode}");
+                var protectedContent = protector.ProtectBytes(plain,
+                    $"report-attachment:{report.Id}:{mappedProductId}:{oldAttachment.DocumentTypeCode}");
+                attachments.Add(new ManualReportAttachment(report.Id, mappedProductId, oldAttachment.DocumentTypeCode,
+                    oldAttachment.OriginalFileName, oldAttachment.ContentType, protectedContent,
+                    oldAttachment.SizeBytes, oldAttachment.Sha256));
+            }
+        }
+
         return new CloneResult(report, employees, products, contributions, payments,
-            metadataRows, productMap, contributionMap);
+            attachments, metadataRows, productMap, contributionMap);
     }
 
     private static void CopyReportSnapshot(
@@ -489,6 +564,7 @@ public static class CorrectionWorkflowService
         db.ManualReportProducts.AddRange(clone.Products);
         db.ManualContributions.AddRange(clone.Contributions);
         db.ManualReportPayments.AddRange(clone.Payments);
+        db.ManualReportAttachments.AddRange(clone.Attachments);
         db.EmployerInterfaceReportProductData.AddRange(clone.Metadata);
     }
 }

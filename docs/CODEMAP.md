@@ -102,3 +102,10 @@ These sources outrank assumptions, old examples and UI behavior.
 - User-facing “דיווח חוזר” materializes the workspace into the official Employer Interface 006 correction chain: first a full negative operation-6 cancellation of the previous current report, then a current correction. Existing unchanged rows become operation 2; edited existing rows become operation 2 or 3 according to the selected money behavior; newly added rows remain regular current rows.
 - Final validation of the current correction requires the preceding negative report to have been transmitted and refreshes the previous transfer/clearing references from its feedback. Until the negative clearing identifier is available, the current correction remains blocked with an explicit validation message.
 - Drafts may be hard-deleted only while editable and only if they have no transmission attempt, no feedback and no derived child report. Once any external history exists, the report remains immutable history and further changes are represented by new report/product versions.
+
+
+### Correction workflow hardening
+- Existing report products are edited in place inside a correction workspace so their Employer Interface metadata and payment rows are preserved instead of being cascade-deleted.
+- Each changed report product carries its own optional `CorrectionOperationCode` (2 = no additional money, 3 = additional money). Deposit payment saves select operation 3 only when a positive `ActualDepositAmount` is recorded; otherwise changed existing products default to operation 2.
+- Correction materialization atomically claims an eligible workspace immediately before creating the negative/current pair, preventing two operators from materializing parallel correction chains.
+- Official V006 attachments are purpose-bound re-encrypted when cloning into a correction workspace and into the follow-up current correction. Negative operation-6 materialization does not inherit current-report-only attachments.

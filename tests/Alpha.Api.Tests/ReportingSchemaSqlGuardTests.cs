@@ -129,6 +129,8 @@ public sealed class ReportingSchemaSqlGuardTests
         Assert.Contains("ADD COLUMN IF NOT EXISTS \"HasCorrectionChanges\"", source, StringComparison.Ordinal);
         Assert.Contains("ADD COLUMN IF NOT EXISTS \"SourceReportProductId\"", source, StringComparison.Ordinal);
         Assert.Contains("ADD COLUMN IF NOT EXISTS \"IsCorrectionChanged\"", source, StringComparison.Ordinal);
+        Assert.Contains("ADD COLUMN IF NOT EXISTS \"CorrectionOperationCode\"", source, StringComparison.Ordinal);
+        Assert.Contains("CK_manual_report_products_correction_operation", source, StringComparison.Ordinal);
         Assert.Contains("UX_manual_reports_open_correction_workspace", source, StringComparison.Ordinal);
         Assert.Contains("FK_manual_report_products_source_product", source, StringComparison.Ordinal);
     }

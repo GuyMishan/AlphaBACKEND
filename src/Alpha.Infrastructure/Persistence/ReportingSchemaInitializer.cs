@@ -210,6 +210,12 @@ ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "SalaryAll
 ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "AllocationOrder" integer NOT NULL DEFAULT 0;
 ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "SourceReportProductId" uuid NULL;
 ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "IsCorrectionChanged" boolean NOT NULL DEFAULT false;
+ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "CorrectionOperationCode" integer NULL;
+ALTER TABLE reporting.manual_report_products
+    DROP CONSTRAINT IF EXISTS "CK_manual_report_products_correction_operation";
+ALTER TABLE reporting.manual_report_products
+    ADD CONSTRAINT "CK_manual_report_products_correction_operation"
+    CHECK ("CorrectionOperationCode" IS NULL OR "CorrectionOperationCode" IN (2, 3));
 DO $$
 BEGIN
     IF NOT EXISTS (

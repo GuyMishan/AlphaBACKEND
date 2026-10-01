@@ -282,6 +282,7 @@ public sealed class ManualReportProduct : Entity
     public Guid ReportEmployeeId { get; private set; }
     public Guid? SourceReportProductId { get; private set; }
     public bool IsCorrectionChanged { get; private set; }
+    public int? CorrectionOperationCode { get; private set; }
     public PensionProductType ProductType { get; private set; }
     public string PolicyNumber { get; private set; } = string.Empty;
     public DateOnly SalaryMonth { get; private set; }
@@ -309,11 +310,16 @@ public sealed class ManualReportProduct : Entity
         Touch();
     }
 
-    public void MarkCorrectionChanged()
+    public void SetCorrectionState(bool changed, int? operationCode = null)
     {
-        IsCorrectionChanged = true;
+        if (operationCode.HasValue && operationCode is not (2 or 3))
+            throw new ArgumentOutOfRangeException(nameof(operationCode), "Correction operation must be 2 or 3.");
+        IsCorrectionChanged = changed;
+        CorrectionOperationCode = changed ? operationCode ?? 2 : null;
         Touch();
     }
+
+    public void MarkCorrectionChanged(int? operationCode = null) => SetCorrectionState(true, operationCode);
 
     public void Update(PensionProductType productType, string policyNumber, DateOnly salaryMonth, decimal salary,
         string reportingType, string salaryLayer, bool section14, DateOnly? section14StartDate,

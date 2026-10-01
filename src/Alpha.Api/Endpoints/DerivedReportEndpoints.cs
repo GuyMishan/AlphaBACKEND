@@ -78,18 +78,14 @@ public static class DerivedReportEndpoints
 
     private static async Task<IResult> MaterializeCorrectionAsync(
         Guid organizationId, Guid employerId, Guid reportId,
-        MaterializeCorrectionRequest request, IAlphaDbContext db,
-        OrganizationAccessService access, IDataProtectionService protector,
+        IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector,
         ICurrentUser currentUser, HttpContext http, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct))
             return Results.Forbid();
-        if (request.CorrectionOperationCode is not (2 or 3))
-            return Results.BadRequest(new { error = "correction_operation_invalid" });
 
         var result = await CorrectionWorkflowService.MaterializeAsync(
-            organizationId, employerId, reportId, request.CorrectionOperationCode,
-            db, protector, ct);
+            organizationId, employerId, reportId, db, protector, ct);
         if (result is null)
             return Results.Conflict(new
             {
@@ -110,8 +106,7 @@ public static class DerivedReportEndpoints
                 result.SourceReportId,
                 result.NegativeReportId,
                 result.CurrentReportId,
-                result.PendingChanges,
-                request.CorrectionOperationCode
+                result.PendingChanges
             }),
             http.TraceIdentifier));
         await db.SaveChangesAsync(ct);
@@ -457,4 +452,3 @@ public sealed record CreateDerivedManualReportRequest(Guid SourceReportId, Manua
 
 
 public sealed record EnsureCorrectionWorkspaceRequest(Guid? SourceReportProductId = null);
-public sealed record MaterializeCorrectionRequest(int CorrectionOperationCode);
