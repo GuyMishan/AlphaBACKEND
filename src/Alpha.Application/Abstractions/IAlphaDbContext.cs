@@ -47,6 +47,10 @@ public interface IAlphaDbContext
     DbSet<EmployerInterfaceReportProductData> EmployerInterfaceReportProductData { get; }
     DbSet<ReportTransmission> ReportTransmissions { get; }
     DbSet<EmployerInterfaceFeedback> EmployerInterfaceFeedback { get; }
+    DbSet<EmployerInterfaceTransferFeedback> EmployerInterfaceTransferFeedback { get; }
+    DbSet<EmployerInterfaceContributionFeedback> EmployerInterfaceContributionFeedback { get; }
+    DbSet<ReportProductTreatment> ReportProductTreatments { get; }
+    DbSet<ReportProductTreatmentHistory> ReportProductTreatmentHistory { get; }
     DbSet<ContributionPercentageLimit> ContributionPercentageLimits { get; }
     DbSet<AuditEvent> AuditEvents { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

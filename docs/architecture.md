@@ -55,6 +55,12 @@ Next modules:
 Employer assertions, submitted snapshots, payment evidence, and institutional feedback must be
 stored separately. One source must never overwrite another; reconciliation describes the gaps.
 
+Employer Interface 006 summary feedback is retained as encrypted immutable raw evidence and normalized
+into query-oriented transfer/contribution feedback rows. Operational treatment status and free-text notes
+are a third, separate layer with append-only treatment history. UI comparisons therefore distinguish
+what the employer reported, what the manufacturer/clearinghouse returned, and how Alpha users are treating
+the exception.
+
 ## Security invariants
 
 - Scope every organization query server-side.

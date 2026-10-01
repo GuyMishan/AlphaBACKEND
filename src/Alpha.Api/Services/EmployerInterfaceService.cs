@@ -184,8 +184,10 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         if (existingId is not null) return new(null, existingId, validation, 0, 0);
 
         var doc = EmployerInterfaceSchemaRegistry.LoadXml(bytes);
+        var decodedFeedbackXml = DecodeXml(bytes);
+        var parsedFeedback = EmployerInterfaceLineFeedbackParser.ParseSummary(decodedFeedbackXml);
         var feedback = new EmployerInterfaceFeedback(organizationId, employerId, validation.DocumentType!.Value,
-            validation.Version ?? CurrentVersion, sourceFileName, hash, protector.Protect(DecodeXml(bytes), $"employer-interface-feedback:{hash}"), Value(doc, "MISPAR-HAKOVETZ"));
+            validation.Version ?? CurrentVersion, sourceFileName, hash, protector.Protect(decodedFeedbackXml, $"employer-interface-feedback:{hash}"), Value(doc, "MISPAR-HAKOVETZ"));
 
         var correlatedReportIds = new HashSet<Guid>();
         foreach (var transferStatus in Desc(doc, "StatosPirteiHaavaratKsafim"))
@@ -243,6 +245,46 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                     .FirstOrDefaultAsync(ct);
             }
             feedback.Correlate(reportId, transmissionId);
+
+            foreach (var transfer in parsedFeedback.Transfers.Where(x => !string.IsNullOrWhiteSpace(x.TransferIdentifier)))
+            {
+                db.EmployerInterfaceTransferFeedback.Add(new EmployerInterfaceTransferFeedback(
+                    feedback.Id, reportId, transfer.TransferIdentifier, transfer.ClearingIdentifier,
+                    transfer.ReportedDepositAmount, transfer.ActualReceivedAmount, transfer.AllocatedAmount,
+                    transfer.InTransitAmount, transfer.ProactiveRefundAmount, transfer.EmployerAccountRefundAmount,
+                    transfer.MoneyTreatmentStatus, transfer.StatusDetail, transfer.PaymentReference,
+                    transfer.ValueDate, transfer.TrustAccountValueDate, transfer.CorrectnessTimestamp, feedback.ReceivedAt));
+            }
+
+            var reportEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
+                .Where(x => x.ReportId == reportId).Select(x => x.Id).ToArrayAsync(ct);
+            var reportProductIds = await db.ManualReportProducts.AsNoTracking()
+                .Where(x => reportEmployeeIds.Contains(x.ReportEmployeeId)).Select(x => x.Id).ToArrayAsync(ct);
+            var reportContributions = await db.ManualContributions.AsNoTracking()
+                .Where(x => reportProductIds.Contains(x.ReportProductId)).ToListAsync(ct);
+            var contributionByRecord = reportContributions
+                .GroupBy(x => (string.IsNullOrWhiteSpace(x.InterfaceRecordIdentifier)
+                        ? x.Id.ToString("D") : x.InterfaceRecordIdentifier).ToUpperInvariant(), StringComparer.Ordinal)
+                .Where(group => group.Count() == 1)
+                .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
+
+            foreach (var record in parsedFeedback.Records)
+            {
+                if (!contributionByRecord.TryGetValue(record.RecordIdentifier, out var contribution)) continue;
+                var rights = record.Rights is { Count: > 0 }
+                    ? record.Rights.Cast<EmployerInterfaceLineFeedbackParser.RightsStatus?>().ToArray()
+                    : new EmployerInterfaceLineFeedbackParser.RightsStatus?[] { null };
+                var sequence = 0;
+                foreach (var right in rights)
+                {
+                    db.EmployerInterfaceContributionFeedback.Add(new EmployerInterfaceContributionFeedback(
+                        feedback.Id, reportId, contribution.ReportProductId, contribution.Id, record.RecordIdentifier,
+                        sequence++, record.IntakeStatus, record.ErrorCode, record.Description, record.ErrorAmount,
+                        record.ErrorDate, right?.ContributionTypeCode, right?.CalculatedSalary, right?.SalaryMonth,
+                        right?.PolicyNumber, right?.ContributionRate, right?.ContributionAmount,
+                        sourceFileName, feedback.ReceivedAt));
+                }
+            }
         }
 
         db.EmployerInterfaceFeedback.Add(feedback);

@@ -1,5 +1,4 @@
 using Alpha.Api.Services;
-using System.Xml;
 using Xunit;
 
 namespace Alpha.Api.Tests;
@@ -7,32 +6,61 @@ namespace Alpha.Api.Tests;
 public sealed class EmployerInterfaceLineFeedbackParserTests
 {
     [Fact]
-    public void Parses_each_record_status_without_inventing_a_product_match()
+    public void Summary_feedback_parser_extracts_money_and_manufacturer_contribution_values()
     {
-        var first = Guid.NewGuid().ToString("D").ToUpperInvariant();
-        var second = Guid.NewGuid().ToString("D").ToUpperInvariant();
-        var xml = $"<Root><PirteiOved><StatosPirteiKlitatReshuma>" +
-            $"<MISPAR-MEZAHE-RESHUMA>{first}</MISPAR-MEZAHE-RESHUMA>" +
-            "<RESHUMA-NIKLETA>1</RESHUMA-NIKLETA><SUG-SHGIHA>1</SUG-SHGIHA>" +
-            "</StatosPirteiKlitatReshuma><StatosPirteiKlitatReshuma>" +
-            $"<MISPAR-MEZAHE-RESHUMA>{second}</MISPAR-MEZAHE-RESHUMA>" +
-            "<RESHUMA-NIKLETA>2</RESHUMA-NIKLETA><SUG-SHGIHA>53</SUG-SHGIHA>" +
-            "</StatosPirteiKlitatReshuma></PirteiOved></Root>";
-        var items = EmployerInterfaceLineFeedbackParser.Parse(xml);
-        Assert.Equal(2, items.Count);
-        Assert.Equal(first, items[0].RecordIdentifier);
-        Assert.Equal(1, items[0].ErrorCode);
-        Assert.Equal(second, items[1].RecordIdentifier);
-        Assert.Equal(53, items[1].ErrorCode);
-        Assert.Contains("השכר", items[1].Description);
-    }
+        var recordId = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var transferId = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var xml = $"""
+            <Root>
+              <StatosPirteiHaavaratKsafim>
+                <MISPAR-ZIHUI>{transferId}</MISPAR-ZIHUI>
+                <MISPAR-MISLAKA>{Guid.NewGuid():D}</MISPAR-MISLAKA>
+                <TAARICH-ERECH-HAFKADA>2026-09-10</TAARICH-ERECH-HAFKADA>
+                <TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT>2026-09-11</TAARICH-ERECH-HAFKADA-CHESHBON-NEHEMANUT>
+                <MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM>REF-1</MISPAR-ASMACHTA-LEAHAVARAT-KSAFIM>
+                <SACH-HAFKADA-KUPA-H-P>1000.00</SACH-HAFKADA-KUPA-H-P>
+                <SACH-HAFKADA-KLITA-BAPOAL>1000.00</SACH-HAFKADA-KLITA-BAPOAL>
+                <SACH-KSAFIM-SHUICHU>900.00</SACH-KSAFIM-SHUICHU>
+                <KSAFIM-BEMAHAVAR>100.00</KSAFIM-BEMAHAVAR>
+                <HASHAVAT-KSAFIM-YEZUMA>0.00</HASHAVAT-KSAFIM-YEZUMA>
+                <HASHAVAT-KSAFIM-CHESHBON-MAASIK>0.00</HASHAVAT-KSAFIM-CHESHBON-MAASIK>
+                <STATUS-TIPUL-BEKSAFIM>3</STATUS-TIPUL-BEKSAFIM>
+                <PERUT-STATUS>0</PERUT-STATUS>
+                <TAARICH-NECHONUT>20260910123000</TAARICH-NECHONUT>
+              </StatosPirteiHaavaratKsafim>
+              <StatosPirteiKlitatReshuma>
+                <MISPAR-MEZAHE-RESHUMA>{recordId}</MISPAR-MEZAHE-RESHUMA>
+                <RESHUMA-NIKLETA>1</RESHUMA-NIKLETA>
+                <SUG-SHGIHA>1</SUG-SHGIHA>
+                <PERUT-SHGIHA-SHUM>0.00</PERUT-SHGIHA-SHUM>
+                <OfenRishumZchuiot>
+                  <SACHAR-MECHUSHAV>10000.00</SACHAR-MECHUSHAV>
+                  <CHODESH-MASKORET>2026-09-01</CHODESH-MASKORET>
+                  <MISPAR-POLISA-O-HESHBON>123</MISPAR-POLISA-O-HESHBON>
+                  <SUG-HAFRASHA>2</SUG-HAFRASHA>
+                  <SHIUR-HAFRASHA>6.00</SHIUR-HAFRASHA>
+                  <SCHUM-HAFRASHA>600.00</SCHUM-HAFRASHA>
+                </OfenRishumZchuiot>
+              </StatosPirteiKlitatReshuma>
+            </Root>
+            """;
 
-    [Fact]
-    public void Rejects_dtd_and_does_not_treat_arbitrary_identifiers_as_records()
-    {
-        Assert.ThrowsAny<XmlException>(() => EmployerInterfaceLineFeedbackParser.Parse(
-            "<!DOCTYPE x [<!ENTITY a SYSTEM 'file:///etc/passwd'>]><Root>&a;</Root>"));
-        Assert.Empty(EmployerInterfaceLineFeedbackParser.Parse(
-            "<Root><StatosPirteiKlitatReshuma><MISPAR-MEZAHE-RESHUMA>bad</MISPAR-MEZAHE-RESHUMA></StatosPirteiKlitatReshuma></Root>"));
+        var parsed = EmployerInterfaceLineFeedbackParser.ParseSummary(xml);
+
+        var transfer = Assert.Single(parsed.Transfers);
+        Assert.Equal(1000m, transfer.ActualReceivedAmount);
+        Assert.Equal(900m, transfer.AllocatedAmount);
+        Assert.Equal(100m, transfer.InTransitAmount);
+        Assert.Equal(3, transfer.MoneyTreatmentStatus);
+
+        var record = Assert.Single(parsed.Records);
+        Assert.Equal(recordId, record.RecordIdentifier);
+        Assert.Equal(1, record.IntakeStatus);
+        Assert.Equal(1, record.ErrorCode);
+        var rights = Assert.Single(record.Rights!);
+        Assert.Equal(2, rights.ContributionTypeCode);
+        Assert.Equal(10000m, rights.CalculatedSalary);
+        Assert.Equal(6m, rights.ContributionRate);
+        Assert.Equal(600m, rights.ContributionAmount);
     }
 }

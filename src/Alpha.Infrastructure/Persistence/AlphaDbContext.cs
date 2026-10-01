@@ -51,6 +51,10 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<EmployerInterfaceReportProductData> EmployerInterfaceReportProductData => Set<EmployerInterfaceReportProductData>();
     public DbSet<ReportTransmission> ReportTransmissions => Set<ReportTransmission>();
     public DbSet<EmployerInterfaceFeedback> EmployerInterfaceFeedback => Set<EmployerInterfaceFeedback>();
+    public DbSet<EmployerInterfaceTransferFeedback> EmployerInterfaceTransferFeedback => Set<EmployerInterfaceTransferFeedback>();
+    public DbSet<EmployerInterfaceContributionFeedback> EmployerInterfaceContributionFeedback => Set<EmployerInterfaceContributionFeedback>();
+    public DbSet<ReportProductTreatment> ReportProductTreatments => Set<ReportProductTreatment>();
+    public DbSet<ReportProductTreatmentHistory> ReportProductTreatmentHistory => Set<ReportProductTreatmentHistory>();
     public DbSet<ContributionPercentageLimit> ContributionPercentageLimits => Set<ContributionPercentageLimit>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
