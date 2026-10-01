@@ -35,11 +35,6 @@ public static class ReportTransmissionEndpoints
         EmployerInterfaceFileSequenceService fileSequences, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct)) return Results.Forbid();
-        if (!provider.IsConfigured)
-            return Results.Problem(
-                title: "Clearing-house transmission is not configured.",
-                detail: "A real transmission provider must be configured before reports can be sent.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
         if (!entitlement.Allowed)
             return Results.Json(new { error = entitlement.Error, feature = entitlement.Feature }, statusCode: StatusCodes.Status409Conflict);
@@ -65,9 +60,19 @@ public static class ReportTransmissionEndpoints
                 configured = billingDecision.Configured
             });
 
-        var providerName = string.IsNullOrWhiteSpace(request?.Provider) ? "MockClearinghouse" : request.Provider.Trim();
-        var provider = providers.FirstOrDefault(x => string.Equals(x.Name, providerName, StringComparison.OrdinalIgnoreCase));
+        var availableProviders = providers.ToArray();
+        var providerName = string.IsNullOrWhiteSpace(request?.Provider)
+            ? availableProviders.FirstOrDefault(x => x.IsConfigured)?.Name
+                ?? availableProviders.FirstOrDefault()?.Name
+                ?? string.Empty
+            : request.Provider.Trim();
+        var provider = availableProviders.FirstOrDefault(x => string.Equals(x.Name, providerName, StringComparison.OrdinalIgnoreCase));
         if (provider is null) return Results.BadRequest(new { error = "The selected transmission provider does not exist.", provider = providerName });
+        if (!provider.IsConfigured)
+            return Results.Problem(
+                title: "Clearing-house transmission is not configured.",
+                detail: "A real transmission provider must be configured before reports can be sent.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
 
         // Atomically claim the validated report before reserving a file number or contacting
         // the provider. Only one concurrent sender can transition Validated -> Processing.
