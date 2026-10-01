@@ -95,54 +95,27 @@ These sources outrank assumptions, old examples and UI behavior.
 - Clearing-house transmission fails closed when no real provider is configured. `MockReportTransmissionProvider` is opt-in (development or explicit `EmployerInterface006:AllowMockTransmission`) and is not the production default. Production V006 generation also rejects the built-in `000000000` recipient placeholder.
 
 
-## Correction workspaces, retransmission and immutable history
-- Sent reports are immutable. Correcting a sent current report creates or reuses one internal full-report correction workspace linked by `ManualReport.SourceReportId`; the original report remains unchanged.
-- `ManualReportProduct.SourceReportProductId` links each copied deposit/product to its previous version. `IsCorrectionChanged` tracks edited deposit rows, while `ManualReport.HasCorrectionChanges` also captures report-level changes such as employee selection, report details or payment-account changes.
-- Only one open correction workspace may exist per source report. The database enforces this with the partial unique index `UX_manual_reports_open_correction_workspace`.
-- User-facing “דיווח חוזר” materializes the workspace into the official Employer Interface 006 correction chain: first a full negative operation-6 cancellation of the previous current report, then a current correction. Existing unchanged rows become operation 2; edited existing rows become operation 2 or 3 according to the selected money behavior; newly added rows remain regular current rows.
-- Final validation of the current correction requires the preceding negative report to have been transmitted and refreshes the previous transfer/clearing references from its feedback. Until the negative clearing identifier is available, the current correction remains blocked with an explicit validation message.
-- Drafts may be hard-deleted only while editable and only if they have no transmission attempt, no feedback and no derived child report. Once any external history exists, the report remains immutable history and further changes are represented by new report/product versions.
+## Correction workspaces, delta retransmission and immutable revision history
+- Sent/current business reports are immutable. Correcting one creates or reuses a single internal correction workspace linked by `ManualReport.SourceReportId`; that workspace is the complete desired next business revision, not a technical 006 file.
+- User-facing **“דיווח חוזר” is report-level only**. Users may accumulate employee, product, contribution, payment-transfer, metadata and attachment edits in the same workspace, including employee/product additions and removals.
+- Materialization compares the workspace with the latest effective business revision and classifies rows as Added / Changed / Removed / Unchanged. Unchanged rows are not retransmitted.
+- Official Version 006 semantics drive the generated technical documents:
+  - Added rows are emitted only in a current report as operation **1** (regular/current reporting).
+  - Changed source-backed rows are emitted in a negative report as operation **6**, then in a current correction as operation **2** (no additional deposit) or **3** (additional deposit), according to the correction-transfer choice.
+  - Removed source-backed rows are emitted only in the negative operation-6 document.
+  - Operation **6** is the workbook-defined “partial or full cancellation of a transaction without refund to the employer”; therefore ALPHA does **not** cancel the whole previous report by default.
+  - Operation **7** remains the official special case for correction of exempt payments only and is handled by the normal V006 rule set rather than the general 2/3 correction path.
+- Current and negative technical reports are independent Employer Interface documents: current uses `SUG-MIMSHAK = 12` with operations 1/2/3/7; negative uses `SUG-MIMSHAK = 13` with operations 5/6. They must each satisfy their matching official XSD and workbook/clearinghouse rules.
+- Operations 2/3/5/6/7 require previous-report correlation through `MISPAR-ZIHUI-KODEM`, `MISPAR-MISLAKA-KODEM`, or one of the official Version 006 previous-reference exceptions. Current correction validation refreshes those references from the preceding negative transmission/feedback before final export.
+- V006 transfer grouping is based on fund plus operation/reference/payment semantics. A newly added operation-1 product and an operation-2/3 correction for the same fund are emitted as separate transfer blocks; products inside one transfer must share the same operation, payment data and previous-reference data.
+- Payment/transfer edits are part of the delta. A change to payment method, employer/provider account, bank/branch, reference number, value date, MASAV data or other transfer-level fields marks the affected transfer/products as changed even when contribution amounts did not change.
+- `ManualReportProduct.SourceReportProductId` preserves row lineage between business revisions. New rows have no source link; removed rows are absent from the desired workspace snapshot and are discovered by diff against the immutable source.
+- Technical negative/current documents are linked to the workspace through `CorrectionWorkspaceId` and marked `IsTechnicalCorrectionDocument`; they are transmission evidence and are hidden from the primary Reports & Feedback business-report list.
+- After every required technical document for a correction is successfully transmitted, the full workspace is promoted to the next immutable business revision (`RevisionNumber`). Future corrections may start only from the latest effective revision, keeping lineage linear: `Revision 1 -> Revision 2 -> Revision 3`.
+- Only one open correction workspace may exist per source revision. `UX_manual_reports_open_correction_workspace` includes Processing, materialization runs inside one PostgreSQL transaction, and `ManualReport.UpdatedAt` is an optimistic-concurrency token so stale editors cannot resurrect or overwrite a materialized workspace.
+- Pending-change counts are calculated from the actual source-vs-workspace delta, including decrypted purpose-bound employee identifier/contact snapshots, rather than trusting sticky change flags. Reverting a field to its source value removes that delta.
+- Existing correction-workspace products are updated in place so Employer Interface metadata, payments and attachments retain stable workspace identity. Newly added products receive workspace identity and are reported as operation 1; removed products are physically absent from the desired workspace snapshot.
+- Official V006 attachments are purpose-bound re-encrypted when cloned into correction/revision graphs. Payment confirmations remain separate immutable operational evidence and are not treated as official Employer Interface attachments.
+- Drafts may be hard-deleted only while still purely internal/editable and before any transmission attempt, feedback or derived external history exists. Once external interaction exists, history remains immutable and changes are represented by a later business revision.
+- Regression coverage includes PostgreSQL integration testing of a new report revision containing unchanged + changed + removed + added products. The expected delta is verified end-to-end: negative contains Changed+Removed only, current contains Changed+Added only, operation codes are 6 / 2-or-3 / 1 as applicable, the workspace promotes to Revision 2, the old revision cannot be corrected again, and Revision 3 starts from Revision 2.
 
-
-### Correction workflow hardening
-- Existing report products are edited in place inside a correction workspace so their Employer Interface metadata and payment rows are preserved instead of being cascade-deleted.
-- Each changed report product carries its own optional `CorrectionOperationCode` (2 = no additional money, 3 = additional money). Deposit payment saves select operation 3 only when a positive `ActualDepositAmount` is recorded; otherwise changed existing products default to operation 2.
-- Correction materialization atomically claims an eligible workspace immediately before creating the negative/current pair, preventing two operators from materializing parallel correction chains.
-- Official V006 attachments are purpose-bound re-encrypted when cloning into a correction workspace and into the follow-up current correction. Negative operation-6 materialization does not inherit current-report-only attachments.
-
-
-### Correction re-audit follow-up
-- Operation 2/3 is explicitly supplied when editing a correction transfer; it is no longer inferred from whether an amount happened to be present. Because V006 emits one transfer per fund, the backend propagates the selected correction operation and payment details to every source-backed product in that same fund transfer.
-- Correction workspace metadata/previous-reference mutation is workflow-owned. Reporting edits use `CanCreateReport`; employee-master edit permission is not required for report metadata APIs.
-- Pending correction state is recalculated against the immutable source for report/payment-account/employee snapshot changes instead of trusting the historical `HasCorrectionChanges` flag, so reverting changes back to the source no longer leaves a false pending correction.
-- The one-open-workspace database boundary includes `Processing`; a new workspace cannot be created while another operator is materializing the existing one.
-
-
-- Correction-workspace additions are fail-closed until an official op1-within-correction flow is implemented end-to-end. The backend rejects newly added employees/products in a correction workspace and materialization rejects legacy source-less additions; modifying or removing source-backed rows remains supported.
-- Pending-change comparison decrypts purpose-bound employee interface identifier, email and mobile snapshots before comparing workspace vs source, so a correction that changes only those V006 fields is detected and a true revert is not.
-
-
-- Correction workspace structure is locked to the source report: employee selection and the source-product set cannot be added to or removed from. This avoids partially supported op1/new-row cases and keeps correction materialization confined to versioned edits of the immutable source graph.
-
-
-- Correction previous-reference correlation and feedback transfer-ID propagation use the pension product external key when available, falling back to fund code + company name. They no longer correlate funds by `FundCode` alone, avoiding cross-manufacturer collisions while staying aligned with the reference product identity that produces the official 006 fund identifier.
-
-
-- Final validation for the current correction follows the official V006 previous-reference rule: either `PreviousIdentifier`, `PreviousClearingIdentifier`, or an official exception is sufficient. It no longer waits specifically for a clearing identifier when the preceding negative report already provides a valid transfer identifier.
-
-
-- Correction materialization is atomic: claiming the workspace, inserting the negative/current reports and cancelling the workspace run in one EF/PostgreSQL transaction. A failure rolls the materialization back before the workspace is marked Error, preventing orphan derived reports or a permanently Processing workspace.
-
-
-- Correction materialization follows the same official V006 previous-reference alternatives as final validation. It no longer requires a clearing identifier on the original current report when the transmitted transfer identifier (including the canonical emitted fallback) is sufficient.
-
-
-- Manual reports use `UpdatedAt` as an EF optimistic concurrency token. Correction materialization reloads the workspace graph only after the transactional Processing claim; stale editors cannot overwrite the cancelled/materialized workspace and receive HTTP 409 via the API concurrency exception handler.
-
-
-## Delta correction revisions
-- “דיווח חוזר” is report-level only. The editable correction workspace is a complete desired next-state snapshot, including structural employee/product additions and removals.
-- Materialization computes a real delta against the last effective business revision: Removed/Changed source products form the negative operation-6 document; Added/Changed workspace products form the current document. Unchanged products are not retransmitted.
-- Current V006 transfer grouping includes fund + operation/reference/payment semantics, so a newly added operation-1 product and an operation-2/3 correction for the same fund are emitted as separate transfer blocks instead of an invalid mixed transfer.
-- Technical negative/current documents are linked to the correction workspace and hidden from the primary Reports & Feedback list. Once every required technical document is successfully sent, the full workspace is promoted to the next immutable business revision (RevisionNumber), and future corrections must start from that latest effective revision.
-- Revision snapshots preserve the latest emitted transfer/record identifiers for changed/added rows; unchanged rows retain their prior effective identifiers. This keeps the next correction chain anchored to the last effective state rather than the original report.
