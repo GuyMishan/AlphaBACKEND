@@ -86,6 +86,22 @@ public sealed class ReportingSchemaSqlGuardTests
         Assert.All(paths, value => Assert.Contains("search_path=reporting, pg_temp", value, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Feedback_schema_keeps_idempotency_and_product_lookup_indexes()
+    {
+        var root = FindRepoRoot();
+        var feedbackPath = Path.Combine(root, "src", "Alpha.Infrastructure", "Persistence", "EmployerInterfaceFeedbackSchemaInitializer.cs");
+        var operationsPath = Path.Combine(root, "src", "Alpha.Infrastructure", "Persistence", "ReportFeedbackOperationsSchemaInitializer.cs");
+        var feedbackSource = File.ReadAllText(feedbackPath);
+        var operationsSource = File.ReadAllText(operationsPath);
+
+        Assert.Contains("IX_employer_interface_feedback_EmployerId_PayloadHash", feedbackSource, StringComparison.Ordinal);
+        Assert.Contains("CREATE UNIQUE INDEX IF NOT EXISTS", feedbackSource, StringComparison.Ordinal);
+        Assert.Contains("IX_contribution_feedback_Product_ReceivedAt", operationsSource, StringComparison.Ordinal);
+        Assert.Contains(""ReportProductId", "ReceivedAt"", operationsSource, StringComparison.Ordinal);
+        Assert.Contains("IX_contribution_feedback_Feedback_Record_Sequence", operationsSource, StringComparison.Ordinal);
+    }
+
     private static AlphaDbContext CreateDb(string connectionString)
     {
         var options = new DbContextOptionsBuilder<AlphaDbContext>().UseNpgsql(connectionString).Options;
