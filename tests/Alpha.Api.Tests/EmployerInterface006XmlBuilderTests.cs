@@ -25,6 +25,18 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Production_report_rejects_placeholder_recipient_identifier()
+    {
+        var fixture = CreateFixture(false);
+        fixture.Context.Options.RecipientIdentifier = "000000000";
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, issue => issue.Contains("test placeholder", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Negative_report_matches_official_006_xsd()
     {
         var fixture = CreateFixture(true);
