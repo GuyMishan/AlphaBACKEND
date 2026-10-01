@@ -80,7 +80,7 @@ public static class DerivedReportEndpoints
             .ToListAsync(ct);
         var operation6Reports = sourceOperations
             .GroupBy(x => x.ReportId)
-            .Where(g => g.Any() && g.All(x => x.OperationCode == 6))
+            .Where(g => g.Count() == productCounts.GetValueOrDefault(g.Key) && g.All(x => x.OperationCode == 6))
             .Select(g => g.Key)
             .ToHashSet();
 
