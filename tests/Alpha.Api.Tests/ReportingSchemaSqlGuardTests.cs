@@ -98,7 +98,7 @@ public sealed class ReportingSchemaSqlGuardTests
         Assert.Contains("IX_employer_interface_feedback_EmployerId_PayloadHash", feedbackSource, StringComparison.Ordinal);
         Assert.Contains("CREATE UNIQUE INDEX IF NOT EXISTS", feedbackSource, StringComparison.Ordinal);
         Assert.Contains("IX_contribution_feedback_Product_ReceivedAt", operationsSource, StringComparison.Ordinal);
-        Assert.Contains(""ReportProductId", "ReceivedAt"", operationsSource, StringComparison.Ordinal);
+        Assert.Contains("\"ReportProductId\", \"ReceivedAt\"", operationsSource, StringComparison.Ordinal);
         Assert.Contains("IX_contribution_feedback_Feedback_Record_Sequence", operationsSource, StringComparison.Ordinal);
     }
 
