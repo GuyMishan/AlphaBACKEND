@@ -133,7 +133,8 @@ public sealed class CorrectionDeltaIntegrationTests
             var negativeProducts = await db.ManualReportProducts.AsNoTracking()
                 .Where(x => negativeEmployeeIds.Contains(x.ReportEmployeeId)).ToListAsync(ct);
             Assert.Equal(2, negativeProducts.Count);
-            Assert.Equal([p2.Id, p3.Id], negativeProducts.Select(x => x.SourceReportProductId!.Value).Order().ToArray());
+            Assert.Equal(new[] { p2.Id, p3.Id }.Order().ToArray(),
+                negativeProducts.Select(x => x.SourceReportProductId!.Value).Order().ToArray());
 
             var currentEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
                 .Where(x => x.ReportId == materialized.CurrentReportId).Select(x => x.Id).ToArrayAsync(ct);
