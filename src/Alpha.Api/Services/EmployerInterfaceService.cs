@@ -199,10 +199,11 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
             foreach (var transfer in parsed.Transfers.Where(x => !string.IsNullOrWhiteSpace(x.TransferIdentifier)))
             {
-                await PropagateTransferIdentifiersAsync(
-                    reportId, transfer.TransferIdentifier, transfer.ClearingIdentifier, ct);
+                if (!await PropagateTransferIdentifiersAsync(
+                        reportId, transfer.TransferIdentifier, transfer.ClearingIdentifier, ct))
+                    continue;
 
-                if (existingTransfers.Contains(transfer.TransferIdentifier)) continue;
+                if (!existingTransfers.Add(transfer.TransferIdentifier)) continue;
                 db.EmployerInterfaceTransferFeedback.Add(new EmployerInterfaceTransferFeedback(
                     feedback.Id, reportId, transfer.TransferIdentifier, transfer.ClearingIdentifier,
                     transfer.ReportedDepositAmount, transfer.ActualReceivedAmount, transfer.AllocatedAmount,
@@ -233,7 +234,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 foreach (var right in rights)
                 {
                     var key = record.RecordIdentifier + ":" + sequence;
-                    if (!existingContributionKeys.Contains(key))
+                    if (existingContributionKeys.Add(key))
                     {
                         db.EmployerInterfaceContributionFeedback.Add(new EmployerInterfaceContributionFeedback(
                             feedback.Id, reportId, contribution.ReportProductId, contribution.Id, record.RecordIdentifier,
@@ -252,7 +253,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
     public static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-    private async Task PropagateTransferIdentifiersAsync(
+    private async Task<bool> PropagateTransferIdentifiersAsync(
         Guid reportId,
         string transferIdentifier,
         string? clearingIdentifier,
@@ -280,7 +281,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 .FirstOrDefaultAsync(ct);
         }
 
-        if (string.IsNullOrWhiteSpace(fundCode)) return;
+        if (string.IsNullOrWhiteSpace(fundCode)) return false;
 
         var sameFundProductIds = await (
             from product in db.ManualReportProducts.AsNoTracking()
@@ -293,6 +294,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             .Where(x => sameFundProductIds.Contains(x.ReportProductId))
             .ToListAsync(ct);
 
+        if (sameFundMetadata.Count == 0) return false;
         foreach (var item in sameFundMetadata)
         {
             if (!string.Equals(item.InterfaceTransferIdentifier, normalizedTransfer, StringComparison.OrdinalIgnoreCase))
@@ -301,6 +303,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 && !string.Equals(item.ClearingIdentifier, clearingIdentifier.Trim(), StringComparison.OrdinalIgnoreCase))
                 item.SetClearingIdentifier(clearingIdentifier);
         }
+        return true;
     }
 
     private async Task<IngestResult> IngestFeedbackAsync(Guid organizationId, Guid employerId, string sourceFileName,
@@ -339,15 +342,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 .ToListAsync(ct);
 
             foreach (var matched in matchedProducts)
-            {
                 correlatedReportIds.Add(matched.Employee.ReportId);
-                await PropagateTransferIdentifiersAsync(
-                    matched.Employee.ReportId,
-                    normalizedTransfer,
-                    Value(transferStatus, "MISPAR-MISLAKA"),
-                    ct,
-                    matched.Product.FundCode);
-            }
         }
 
         if (correlatedReportIds.Count == 1)
@@ -369,8 +364,14 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             }
             feedback.Correlate(reportId, transmissionId);
 
+            var normalizedTransferIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var transfer in parsedFeedback.Transfers.Where(x => !string.IsNullOrWhiteSpace(x.TransferIdentifier)))
             {
+                if (!await PropagateTransferIdentifiersAsync(
+                        reportId, transfer.TransferIdentifier, transfer.ClearingIdentifier, ct))
+                    continue;
+                if (!normalizedTransferIds.Add(transfer.TransferIdentifier)) continue;
+
                 db.EmployerInterfaceTransferFeedback.Add(new EmployerInterfaceTransferFeedback(
                     feedback.Id, reportId, transfer.TransferIdentifier, transfer.ClearingIdentifier,
                     transfer.ReportedDepositAmount, transfer.ActualReceivedAmount, transfer.AllocatedAmount,
@@ -391,6 +392,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 .Where(group => group.Count() == 1)
                 .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
 
+            var normalizedContributionKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var record in parsedFeedback.Records)
             {
                 if (!contributionByRecord.TryGetValue(record.RecordIdentifier, out var contribution)) continue;
@@ -400,12 +402,17 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 var sequence = 0;
                 foreach (var right in rights)
                 {
-                    db.EmployerInterfaceContributionFeedback.Add(new EmployerInterfaceContributionFeedback(
-                        feedback.Id, reportId, contribution.ReportProductId, contribution.Id, record.RecordIdentifier,
-                        sequence++, record.IntakeStatus, record.ErrorCode, record.Description, record.ErrorAmount,
-                        record.ErrorDate, right?.ContributionTypeCode, right?.CalculatedSalary, right?.SalaryMonth,
-                        right?.PolicyNumber, right?.ContributionRate, right?.ContributionAmount,
-                        sourceFileName, feedback.ReceivedAt));
+                    var key = record.RecordIdentifier + ":" + sequence;
+                    if (normalizedContributionKeys.Add(key))
+                    {
+                        db.EmployerInterfaceContributionFeedback.Add(new EmployerInterfaceContributionFeedback(
+                            feedback.Id, reportId, contribution.ReportProductId, contribution.Id, record.RecordIdentifier,
+                            sequence, record.IntakeStatus, record.ErrorCode, record.Description, record.ErrorAmount,
+                            record.ErrorDate, right?.ContributionTypeCode, right?.CalculatedSalary, right?.SalaryMonth,
+                            right?.PolicyNumber, right?.ContributionRate, right?.ContributionAmount,
+                            sourceFileName, feedback.ReceivedAt));
+                    }
+                    sequence++;
                 }
             }
         }
