@@ -89,7 +89,7 @@ ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "RevisionNumber" i
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "IsRevisionSnapshot" boolean NOT NULL DEFAULT false;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "IsTechnicalCorrectionDocument" boolean NOT NULL DEFAULT false;
 ALTER TABLE reporting.manual_reports ADD COLUMN IF NOT EXISTS "CorrectionWorkspaceId" uuid NULL;
-DO $
+DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_manual_reports_revision_root') THEN
         ALTER TABLE reporting.manual_reports
@@ -101,7 +101,7 @@ BEGIN
             ADD CONSTRAINT "FK_manual_reports_correction_workspace"
             FOREIGN KEY ("CorrectionWorkspaceId") REFERENCES reporting.manual_reports("Id") ON DELETE RESTRICT;
     END IF;
-END $;
+END $$;
 CREATE INDEX IF NOT EXISTS "IX_manual_reports_revision_root"
     ON reporting.manual_reports ("RevisionRootReportId", "RevisionNumber");
 CREATE INDEX IF NOT EXISTS "IX_manual_reports_correction_workspace"

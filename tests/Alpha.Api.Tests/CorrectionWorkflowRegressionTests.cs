@@ -49,18 +49,18 @@ public sealed class CorrectionWorkflowRegressionTests
         var source = File.ReadAllText(path);
 
         Assert.Contains("BeginTransactionAsync", source, StringComparison.Ordinal);
-        Assert.Contains("Re-read after the claim", source, StringComparison.Ordinal);
-        Assert.Contains("pendingChanges = await PendingChangeCountAsync", source, StringComparison.Ordinal);
+        Assert.Contains("sourceGraph = await LoadGraphAsync", source, StringComparison.Ordinal);
+        Assert.Contains("plan = BuildDeltaPlan", source, StringComparison.Ordinal);
         Assert.Contains("CommitAsync", source, StringComparison.Ordinal);
         Assert.Contains("RollbackAsync", source, StringComparison.Ordinal);
         Assert.Contains(".SetProperty(x => x.Status, ManualReportStatus.Processing)", source, StringComparison.Ordinal);
         Assert.Contains("oldProduct.CorrectionOperationCode ?? 2", source, StringComparison.Ordinal);
         Assert.Contains("x.Status == ManualReportStatus.Processing", source, StringComparison.Ordinal);
-        Assert.Contains("HasReportLevelChangesAsync", source, StringComparison.Ordinal);
-        Assert.Contains("!sourceGraph.Metadata.ContainsKey(product.Id)", source, StringComparison.Ordinal);
+        Assert.Contains("BuildDeltaPlan", source, StringComparison.Ordinal);
+        Assert.Contains("plan.NegativeSourceProductIds", source, StringComparison.Ordinal);
         Assert.DoesNotContain("string.IsNullOrWhiteSpace(metadata.ClearingIdentifier)", source, StringComparison.Ordinal);
         Assert.Contains("report-employee-email:{employee.Id}", source, StringComparison.Ordinal);
-        Assert.Contains("workspaceGraph.Products.Any(product => !product.SourceReportProductId.HasValue)", source, StringComparison.Ordinal);
+        Assert.Contains("CurrentWorkspaceProductIds", source, StringComparison.Ordinal);
         Assert.Contains("mappedPaymentProduct", source, StringComparison.Ordinal);
         Assert.Contains("CorrectionFundKey", source, StringComparison.Ordinal);
         Assert.Contains("ManualReportAttachments.AddRange(clone.Attachments)", source, StringComparison.Ordinal);
@@ -77,9 +77,9 @@ public sealed class CorrectionWorkflowRegressionTests
         Assert.Contains("existingBySource", source, StringComparison.Ordinal);
         Assert.Contains("correction_product_lineage_missing", source, StringComparison.Ordinal);
         Assert.Contains("product.SetCorrectionState(changed", source, StringComparison.Ordinal);
-        Assert.Contains("correction_structure_changes_not_supported", source, StringComparison.Ordinal);
-        Assert.Contains("requestedSourceProductIds.SetEquals(sourceProductIds)", source, StringComparison.Ordinal);
-        Assert.Contains("requested.SetEquals(currentEmploymentIds)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("correction_structure_changes_not_supported", source, StringComparison.Ordinal);
+        Assert.Contains("db.ManualReportProducts.RemoveRange(removedProducts)", source, StringComparison.Ordinal);
+        Assert.Contains("WorkspaceReportProductId", source, StringComparison.Ordinal);
     }
 
     private static ManualReportProduct CreateProduct() =>
