@@ -264,29 +264,43 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             ? parsedTransfer.ToString("D").ToUpperInvariant()
             : transferIdentifier.Trim().ToUpperInvariant();
 
-        var fundCode = knownFundCode;
-        if (string.IsNullOrWhiteSpace(fundCode))
-        {
-            var directProductId = Guid.TryParse(normalizedTransfer, out var directProduct)
-                ? directProduct
-                : Guid.Empty;
+        var directProductId = Guid.TryParse(normalizedTransfer, out var directProduct)
+            ? directProduct
+            : Guid.Empty;
 
-            fundCode = await (
+        var matchedProduct = await (
+            from product in db.ManualReportProducts.AsNoTracking()
+            join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+            join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId
+            where employee.ReportId == reportId
+                && (product.Id == directProductId || metadata.InterfaceTransferIdentifier == normalizedTransfer)
+            select product)
+            .FirstOrDefaultAsync(ct);
+
+        if (matchedProduct is null && !string.IsNullOrWhiteSpace(knownFundCode))
+        {
+            matchedProduct = await (
                 from product in db.ManualReportProducts.AsNoTracking()
                 join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId
-                where employee.ReportId == reportId
-                    && (product.Id == directProductId || metadata.InterfaceTransferIdentifier == normalizedTransfer)
-                select product.FundCode)
+                where employee.ReportId == reportId && product.FundCode == knownFundCode
+                select product)
                 .FirstOrDefaultAsync(ct);
         }
+        if (matchedProduct is null) return false;
 
-        if (string.IsNullOrWhiteSpace(fundCode)) return false;
+        var externalKey = matchedProduct.FundExternalKey?.Trim() ?? string.Empty;
+        var fundCode = matchedProduct.FundCode?.Trim() ?? string.Empty;
+        var companyName = matchedProduct.FundCompanyName?.Trim() ?? string.Empty;
 
         var sameFundProductIds = await (
             from product in db.ManualReportProducts.AsNoTracking()
             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-            where employee.ReportId == reportId && product.FundCode == fundCode
+            where employee.ReportId == reportId
+                && (externalKey != string.Empty
+                    ? product.FundExternalKey == externalKey
+                    : product.FundExternalKey == string.Empty
+                        && product.FundCode == fundCode
+                        && product.FundCompanyName == companyName)
             select product.Id)
             .ToArrayAsync(ct);
 

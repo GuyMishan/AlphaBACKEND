@@ -215,7 +215,7 @@ public static class CorrectionWorkflowService
             .ToDictionaryAsync(x => x.ReportProductId, ct);
 
         var sourceByFund = sourceProducts
-            .GroupBy(x => x.FundCode, StringComparer.Ordinal)
+            .GroupBy(CorrectionFundKey, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
                 group =>
@@ -243,7 +243,7 @@ public static class CorrectionWorkflowService
         {
             if (!currentMetadata.TryGetValue(product.Id, out var metadata)
                 || metadata.OperationCode is not (2 or 3)
-                || !sourceByFund.TryGetValue(product.FundCode, out var previous))
+                || !sourceByFund.TryGetValue(CorrectionFundKey(product), out var previous))
                 continue;
 
             metadata.Update(metadata.OperationCode, metadata.DepositStatus, metadata.EmployeeStatus,
@@ -390,7 +390,7 @@ public static class CorrectionWorkflowService
         }
 
         var sourceTransferByFund = source.Products
-            .GroupBy(x => x.FundCode, StringComparer.Ordinal)
+            .GroupBy(CorrectionFundKey, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
                 group =>
@@ -449,7 +449,7 @@ public static class CorrectionWorkflowService
                     oldMetadata.StatusStartDate, oldMetadata.EmploymentPercentage,
                     oldMetadata.WorkDaysInMonth, oldMetadata.LastDeposit, null, null,
                     oldMetadata.EmployerAccountType, oldMetadata.ReceiverAccountType,
-                    sourceTransferByFund[oldProduct.FundCode],
+                    sourceTransferByFund[CorrectionFundKey(oldProduct)],
                     string.IsNullOrWhiteSpace(oldMetadata.ClearingIdentifier)
                         ? null : oldMetadata.ClearingIdentifier,
                     null, oldMetadata.OldPensionTypeCode);
@@ -614,6 +614,11 @@ public static class CorrectionWorkflowService
             protector.Protect(mobile, $"report-employee-mobile:{clone.Id}"));
         return clone;
     }
+
+    private static string CorrectionFundKey(ManualReportProduct product) =>
+        !string.IsNullOrWhiteSpace(product.FundExternalKey)
+            ? product.FundExternalKey.Trim()
+            : $"{product.FundCode.Trim()}|{product.FundCompanyName.Trim()}";
 
     private static string? ResolvePreviousContributionRecord(
         ManualContribution workspaceContribution,

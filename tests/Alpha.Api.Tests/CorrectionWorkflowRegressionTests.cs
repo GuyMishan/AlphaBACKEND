@@ -55,6 +55,7 @@ public sealed class CorrectionWorkflowRegressionTests
         Assert.Contains("report-employee-email:{employee.Id}", source, StringComparison.Ordinal);
         Assert.Contains("workspaceGraph.Products.Any(product => !product.SourceReportProductId.HasValue)", source, StringComparison.Ordinal);
         Assert.Contains("mappedPaymentProduct", source, StringComparison.Ordinal);
+        Assert.Contains("CorrectionFundKey", source, StringComparison.Ordinal);
         Assert.Contains("ManualReportAttachments.AddRange(clone.Attachments)", source, StringComparison.Ordinal);
     }
 

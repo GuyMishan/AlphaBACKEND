@@ -123,3 +123,6 @@ These sources outrank assumptions, old examples and UI behavior.
 
 
 - Correction workspace structure is locked to the source report: employee selection and the source-product set cannot be added to or removed from. This avoids partially supported op1/new-row cases and keeps correction materialization confined to versioned edits of the immutable source graph.
+
+
+- Correction previous-reference correlation and feedback transfer-ID propagation use the pension product external key when available, falling back to fund code + company name. They no longer correlate funds by `FundCode` alone, avoiding cross-manufacturer collisions while staying aligned with the reference product identity that produces the official 006 fund identifier.
