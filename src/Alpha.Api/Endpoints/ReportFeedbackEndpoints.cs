@@ -700,6 +700,7 @@ public static class ReportFeedbackEndpoints
             .OrderByDescending(x => x.ReceivedAt)
             .Select(x => new { x.Id, x.DocumentType, x.SourceFileName, x.InterfaceFileNumber, x.PayloadHash, x.TransmissionId, x.ReceivedAt })
             .ToListAsync(ct);
+        var activeFeedbackIdsForReport = await ActiveFeedbackIdsAsync(reportId, db, ct);
         var employees = await db.ManualReportEmployees.AsNoTracking().Where(x => x.ReportId == reportId).ToListAsync(ct);
         var employeeIds = employees.Select(x => x.Id).ToArray();
         var products = await db.ManualReportProducts.AsNoTracking().Where(x => employeeIds.Contains(x.ReportEmployeeId)).ToListAsync(ct);
@@ -712,7 +713,8 @@ public static class ReportFeedbackEndpoints
             .ToDictionary(group => group.Key, group => group.First().ReportProductId, StringComparer.Ordinal);
         var recordFeedback = new Dictionary<Guid, List<EmployerInterfaceLineFeedbackParser.RecordStatus>>();
         foreach (var file in await db.EmployerInterfaceFeedback.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.ReportId == reportId)
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.ReportId == reportId
+                && activeFeedbackIdsForReport.Contains(x.Id))
             .OrderByDescending(x => x.ReceivedAt).ToListAsync(ct))
         {
             var xml = protector.Unprotect(file.RawXml, $"employer-interface-feedback:{file.PayloadHash}");
@@ -730,6 +732,21 @@ public static class ReportFeedbackEndpoints
             return new { reportProductId = productRow.Id, hasRecordFeedback = statuses is { Count: > 0 }, records = statuses ?? [] };
         }).ToArray();
 
+        var activeContributionRows = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+            .Where(x => x.ReportId == reportId && activeFeedbackIdsForReport.Contains(x.FeedbackId))
+            .OrderByDescending(x => x.ReceivedAt).ThenByDescending(x => x.CreatedAt)
+            .Select(x => new { x.ContributionId, x.ErrorCode })
+            .ToListAsync(ct);
+        var latestActiveContributionRows = activeContributionRows.GroupBy(x => x.ContributionId).Select(g => g.First()).ToArray();
+        var expectedContributionCount = contributions.Count(ReportFeedbackStatusResolver.IsEffectiveContribution);
+        var activeErrorCount = latestActiveContributionRows.Count(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode));
+        var normalizedFeedbackStatus = ReportFeedbackStatusResolver.ResolveReportState(
+            latest?.Status,
+            activeFeedbackIdsForReport.Count,
+            expectedContributionCount,
+            latestActiveContributionRows.Length,
+            activeErrorCount);
+
         var issues = new List<object>();
         if (!string.IsNullOrWhiteSpace(report.ValidationError))
             issues.Add(new { source = "report", code = "REPORT_VALIDATION", description = report.ValidationError, employeeId = (Guid?)null, employeeName = (string?)null, productId = (Guid?)null, productName = (string?)null, actionType = "EditReport" });
@@ -746,21 +763,9 @@ public static class ReportFeedbackEndpoints
         return Results.Ok(new
         {
             report = new { report.Id, report.ReportingMonth, report.SalaryPaymentDate, report.ReportKind, report.Status, report.ValidationError, report.CreatedAt, report.UpdatedAt },
-            feedbackStatus = LegacyFeedbackState(report, latest), issueCount = issues.Count, issues, officialFeedback, depositFeedback,
+            feedbackStatus = normalizedFeedbackStatus, issueCount = issues.Count + activeErrorCount, issues, officialFeedback, depositFeedback,
             transmissions = transmissions.Select(x => new { x.Id, x.AttemptNumber, x.Status, x.Provider, x.ExternalId, x.ErrorMessage, x.StartedAt, x.SentAt, x.CompletedAt, x.CreatedAt })
         });
-    }
-
-    private static string LegacyFeedbackState(ManualReport report, ReportTransmission? transmission)
-    {
-        if (transmission is null) return report.Status == ManualReportStatus.Error ? "error" : "not-sent";
-        return transmission.Status switch
-        {
-            ReportTransmissionStatus.Accepted => "success",
-            ReportTransmissionStatus.Rejected or ReportTransmissionStatus.Error => "error",
-            ReportTransmissionStatus.Sent => "pending",
-            _ => "pending"
-        };
     }
 
     public sealed record UpdateTreatmentRequest(string StatusCode, string? Note);
