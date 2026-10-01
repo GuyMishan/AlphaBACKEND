@@ -44,6 +44,18 @@ public static class ReportFeedbackStatusResolver
         return Math.Round(allocatedAmount / reportedDepositAmount * 100m, 2);
     }
 
+    public static bool CanCreateCorrection(
+        bool canCreateReport,
+        bool isEditable,
+        ManualReportStatus status,
+        ManualReportKind reportKind,
+        bool allProductsOperation6)
+    {
+        if (!canCreateReport || isEditable || status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
+            return false;
+        return reportKind != ManualReportKind.Negative || allProductsOperation6;
+    }
+
     public static bool IsEffectiveContribution(ManualContribution contribution) =>
         contribution.Amount != 0m || contribution.Percentage != 0m || contribution.ExemptPayments != 0m;
 }

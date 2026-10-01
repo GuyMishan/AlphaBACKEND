@@ -75,6 +75,7 @@ public static class ReportFeedbackEndpoints
         IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         skip = Math.Max(skip, 0); take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
         var query = db.ManualReports.AsNoTracking().Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId);
 
@@ -146,14 +147,27 @@ public static class ReportFeedbackEndpoints
                 group contribution by employee.ReportId into g
                 select new { Id = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
-        var feedbackContributionCounts = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
-            .Where(x => candidateIds.Contains(x.ReportId)).GroupBy(x => x.ReportId)
-            .Select(g => new { Id = g.Key, Count = g.Select(x => x.ContributionId).Distinct().Count() })
-            .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
-        var errorCounts = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
-            .Where(x => candidateIds.Contains(x.ReportId) && x.ErrorCode.HasValue && x.ErrorCode != 1)
-            .GroupBy(x => x.ReportId).Select(g => new { Id = g.Key, Count = g.Select(x => x.ContributionId).Distinct().Count() })
-            .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
+        var contributionFeedbackRows = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+            .Where(x => candidateIds.Contains(x.ReportId))
+            .OrderByDescending(x => x.ReceivedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .Select(x => new { x.ReportId, x.ReportProductId, x.ContributionId, x.ErrorCode, x.ReceivedAt, x.CreatedAt })
+            .ToListAsync(ct);
+        var latestContributionFeedback = contributionFeedbackRows
+            .GroupBy(x => x.ContributionId)
+            .Select(g => g.First())
+            .ToArray();
+        var feedbackContributionCounts = latestContributionFeedback
+            .GroupBy(x => x.ReportId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.ContributionId).Distinct().Count());
+        var errorCounts = latestContributionFeedback
+            .Where(x => x.ErrorCode.HasValue && x.ErrorCode != 1)
+            .GroupBy(x => x.ReportId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.ContributionId).Distinct().Count());
+        var attentionProductCounts = latestContributionFeedback
+            .Where(x => x.ErrorCode.HasValue && x.ErrorCode != 1)
+            .GroupBy(x => x.ReportId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.ReportProductId).Distinct().Count());
 
         string State(Guid id)
         {
@@ -182,6 +196,25 @@ public static class ReportFeedbackEndpoints
         var employeeCounts = await db.ManualReportEmployees.AsNoTracking().Where(x => pageIds.Contains(x.ReportId))
             .GroupBy(x => x.ReportId).Select(g => new { Id = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
+        var productCounts = await (
+                from product in db.ManualReportProducts.AsNoTracking()
+                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                where pageIds.Contains(employee.ReportId)
+                group product by employee.ReportId into g
+                select new { Id = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
+        var pageOperations = await (
+                from metadata in db.EmployerInterfaceReportProductData.AsNoTracking()
+                join product in db.ManualReportProducts.AsNoTracking() on metadata.ReportProductId equals product.Id
+                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                where pageIds.Contains(employee.ReportId)
+                select new { employee.ReportId, metadata.OperationCode })
+            .ToListAsync(ct);
+        var operation6Reports = pageOperations
+            .GroupBy(x => x.ReportId)
+            .Where(g => g.Count() == productCounts.GetValueOrDefault(g.Key) && g.All(x => x.OperationCode == 6))
+            .Select(g => g.Key)
+            .ToHashSet();
         var totals = await (from c in db.ManualContributions.AsNoTracking()
                             join p in db.ManualReportProducts.AsNoTracking() on c.ReportProductId equals p.Id
                             join e in db.ManualReportEmployees.AsNoTracking() on p.ReportEmployeeId equals e.Id
@@ -213,9 +246,11 @@ public static class ReportFeedbackEndpoints
             {
                 report.Id, report.ReportingMonth, report.SalaryPaymentDate, report.ReportKind, report.Status,
                 feedbackStatus = State(report.Id), hasFeedback = officialCounts.GetValueOrDefault(report.Id) > 0,
-                issueCount = issues, requiresAttentionCount = issues,
+                issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id),
                 employeeCount = employeeCounts.GetValueOrDefault(report.Id), totalAmount = total, payoffRate,
                 allocatedAmount = cash?.Allocated, actualReceivedAmount = cash?.Received, inTransitAmount = cash?.InTransit,
+                canCreateCorrection = ReportFeedbackStatusResolver.CanCreateCorrection(
+                    canCreateReport, report.IsEditable, report.Status, report.ReportKind, operation6Reports.Contains(report.Id)),
                 report.CreatedAt, report.UpdatedAt,
                 lastTransmission = tx is null ? null : new { tx.Id, tx.AttemptNumber, tx.Status, tx.Provider, tx.ExternalId, tx.ErrorMessage, tx.StartedAt, tx.SentAt, tx.CompletedAt }
             };
@@ -424,10 +459,8 @@ public static class ReportFeedbackEndpoints
                 updatedBy = users.GetValueOrDefault(x.UpdatedByUserId) ?? "משתמש"
             }),
             canUpdateTreatment = canCreateReport,
-            canCreateCorrection = canCreateReport
-                && !report.IsEditable
-                && (report.Status is ManualReportStatus.Sent or ManualReportStatus.Completed)
-                && (report.ReportKind != ManualReportKind.Negative || metadata?.OperationCode == 6)
+            canCreateCorrection = ReportFeedbackStatusResolver.CanCreateCorrection(
+                canCreateReport, report.IsEditable, report.Status, report.ReportKind, metadata?.OperationCode == 6)
         });
     }
 
@@ -555,10 +588,16 @@ public static class ReportFeedbackEndpoints
         }
         else if (normalized == "feedback")
         {
-            var feedback = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+            var feedbackHistory = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
                 .Where(x => x.ReportId == reportId)
-                .OrderByDescending(x => x.ReceivedAt).ThenBy(x => x.RecordIdentifier).ThenBy(x => x.Sequence)
+                .OrderByDescending(x => x.ReceivedAt).ThenByDescending(x => x.CreatedAt)
+                .ThenBy(x => x.RecordIdentifier).ThenBy(x => x.Sequence)
                 .ToListAsync(ct);
+            var feedback = feedbackHistory.GroupBy(x => x.ContributionId).SelectMany(group =>
+            {
+                var latest = group.First();
+                return group.Where(x => x.FeedbackId == latest.FeedbackId).OrderBy(x => x.Sequence);
+            }).ToArray();
             var contributionById = contributions.ToDictionary(x => x.Id);
             lines.Add(string.Join(",", new[] { "עובד", "יצרן", "מוצר", "רכיב", "סכום מעסיק", "שיעור מעסיק", "סכום יצרן", "שיעור יצרן", "שכר מחושב יצרן", "סטטוס קליטה", "קוד שגיאה", "פירוט", "תאריך משוב", "קובץ מקור" }.Select(Csv)));
             foreach (var item in feedback)

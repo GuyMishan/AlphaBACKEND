@@ -81,6 +81,25 @@ public sealed class ReportFeedbackStatusResolverTests
         Assert.Null(ReportFeedbackStatusResolver.ResolvePayoffRate(0, 500));
     }
 
+    [Theory]
+    [InlineData(true, false, ManualReportStatus.Sent, ManualReportKind.Current, false, true)]
+    [InlineData(true, false, ManualReportStatus.Completed, ManualReportKind.Negative, true, true)]
+    [InlineData(true, false, ManualReportStatus.Completed, ManualReportKind.Negative, false, false)]
+    [InlineData(false, false, ManualReportStatus.Sent, ManualReportKind.Current, false, false)]
+    [InlineData(true, true, ManualReportStatus.Sent, ManualReportKind.Current, false, false)]
+    [InlineData(true, false, ManualReportStatus.Draft, ManualReportKind.Current, false, false)]
+    public void Negative_report_requires_operation_6_for_current_correction(
+        bool canCreateReport,
+        bool isEditable,
+        ManualReportStatus status,
+        ManualReportKind kind,
+        bool allOperation6,
+        bool expected)
+    {
+        Assert.Equal(expected, ReportFeedbackStatusResolver.CanCreateCorrection(
+            canCreateReport, isEditable, status, kind, allOperation6));
+    }
+
     [Fact]
     public void Empty_placeholder_contribution_is_not_effective()
     {
