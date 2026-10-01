@@ -150,15 +150,16 @@ public static class ReportValidationEndpoints
                         .Where(x => correctionEmployeeIds.Contains(x.ReportEmployeeId))
                         .Select(x => x.Id)
                         .ToArrayAsync(ct);
-                    var waitingForClearing = await db.EmployerInterfaceReportProductData.AsNoTracking()
+                    var waitingForPreviousReference = await db.EmployerInterfaceReportProductData.AsNoTracking()
                         .AnyAsync(x => correctionProductIds.Contains(x.ReportProductId)
                             && (x.OperationCode == 2 || x.OperationCode == 3)
+                            && string.IsNullOrEmpty(x.PreviousIdentifier)
                             && string.IsNullOrEmpty(x.PreviousClearingIdentifier)
                             && !x.PreviousReferenceExceptionCode.HasValue, ct);
-                    if (waitingForClearing)
+                    if (waitingForPreviousReference)
                     {
-                        issues.Add(new("CORRECTION_NEGATIVE_FEEDBACK_PENDING",
-                            "הדיווח השוטף המתקן ממתין למזהה המסלקה מהמשוב על הדיווח השלילי. לאחר קבלת המשוב ניתן יהיה לאמת ולשלוח.",
+                        issues.Add(new("CORRECTION_PREVIOUS_REFERENCE_PENDING",
+                            "הדיווח השוטף המתקן ממתין למזהה דיווח קודם, מזהה מסלקה קודם או חריג רשמי לפי ממשק מעסיקים 006.",
                             ValidationScope.Report));
                     }
                 }

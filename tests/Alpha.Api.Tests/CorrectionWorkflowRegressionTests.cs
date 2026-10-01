@@ -111,3 +111,27 @@ public sealed class CorrectionEndpointRegressionTests
         return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
     }
 }
+
+
+public sealed class CorrectionValidationRegressionTests
+{
+    [Fact]
+    public void Current_correction_accepts_previous_transfer_identifier_without_clearing_identifier()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Endpoints", "ReportValidationEndpoints.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("string.IsNullOrEmpty(x.PreviousIdentifier)", source, StringComparison.Ordinal);
+        Assert.Contains("string.IsNullOrEmpty(x.PreviousClearingIdentifier)", source, StringComparison.Ordinal);
+        Assert.Contains("CORRECTION_PREVIOUS_REFERENCE_PENDING", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("CORRECTION_NEGATIVE_FEEDBACK_PENDING", source, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}

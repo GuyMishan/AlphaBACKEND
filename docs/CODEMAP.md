@@ -126,3 +126,6 @@ These sources outrank assumptions, old examples and UI behavior.
 
 
 - Correction previous-reference correlation and feedback transfer-ID propagation use the pension product external key when available, falling back to fund code + company name. They no longer correlate funds by `FundCode` alone, avoiding cross-manufacturer collisions while staying aligned with the reference product identity that produces the official 006 fund identifier.
+
+
+- Final validation for the current correction follows the official V006 previous-reference rule: either `PreviousIdentifier`, `PreviousClearingIdentifier`, or an official exception is sufficient. It no longer waits specifically for a clearing identifier when the preceding negative report already provides a valid transfer identifier.
