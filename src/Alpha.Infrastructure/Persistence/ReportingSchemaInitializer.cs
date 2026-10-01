@@ -210,7 +210,7 @@ ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "SalaryAll
 ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "AllocationOrder" integer NOT NULL DEFAULT 0;
 ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "SourceReportProductId" uuid NULL;
 ALTER TABLE reporting.manual_report_products ADD COLUMN IF NOT EXISTS "IsCorrectionChanged" boolean NOT NULL DEFAULT false;
-DO $
+DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
