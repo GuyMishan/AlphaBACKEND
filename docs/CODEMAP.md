@@ -135,3 +135,6 @@ These sources outrank assumptions, old examples and UI behavior.
 
 
 - Correction materialization follows the same official V006 previous-reference alternatives as final validation. It no longer requires a clearing identifier on the original current report when the transmitted transfer identifier (including the canonical emitted fallback) is sufficient.
+
+
+- Manual reports use `UpdatedAt` as an EF optimistic concurrency token. Correction materialization reloads the workspace graph only after the transactional Processing claim; stale editors cannot overwrite the cancelled/materialized workspace and receive HTTP 409 via the API concurrency exception handler.

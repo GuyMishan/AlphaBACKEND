@@ -56,6 +56,7 @@ public sealed class ManualReportConfiguration : IEntityTypeConfiguration<ManualR
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(40);
         b.Property(x => x.ReportKind).HasConversion<string>().HasMaxLength(30);
         b.Property(x => x.ValidationError).HasMaxLength(2000);
+        b.Property(x => x.UpdatedAt).IsConcurrencyToken();
         b.Property(x => x.PaymentAccountNumberMasked).HasMaxLength(40);
         b.Property(x => x.PaymentMandateReference).HasMaxLength(200);
         b.Property(x => x.EmployerLegalNameSnapshot).HasMaxLength(200);

@@ -49,6 +49,8 @@ public sealed class CorrectionWorkflowRegressionTests
         var source = File.ReadAllText(path);
 
         Assert.Contains("BeginTransactionAsync", source, StringComparison.Ordinal);
+        Assert.Contains("Re-read after the claim", source, StringComparison.Ordinal);
+        Assert.Contains("pendingChanges = await PendingChangeCountAsync", source, StringComparison.Ordinal);
         Assert.Contains("CommitAsync", source, StringComparison.Ordinal);
         Assert.Contains("RollbackAsync", source, StringComparison.Ordinal);
         Assert.Contains(".SetProperty(x => x.Status, ManualReportStatus.Processing)", source, StringComparison.Ordinal);
@@ -131,6 +133,26 @@ public sealed class CorrectionValidationRegressionTests
         Assert.Contains("string.IsNullOrEmpty(x.PreviousClearingIdentifier)", source, StringComparison.Ordinal);
         Assert.Contains("CORRECTION_PREVIOUS_REFERENCE_PENDING", source, StringComparison.Ordinal);
         Assert.DoesNotContain("CORRECTION_NEGATIVE_FEEDBACK_PENDING", source, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
+public sealed class ManualReportConcurrencyRegressionTests
+{
+    [Fact]
+    public void Manual_report_updated_at_is_a_concurrency_token()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Infrastructure", "Persistence", "ReportingEntityConfigurations.cs");
+        var source = File.ReadAllText(path);
+        Assert.Contains("b.Property(x => x.UpdatedAt).IsConcurrencyToken()", source, StringComparison.Ordinal);
     }
 
     private static string FindRepoRoot()

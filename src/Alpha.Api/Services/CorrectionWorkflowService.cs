@@ -173,6 +173,25 @@ public static class CorrectionWorkflowService
                 return null;
             }
 
+            // Re-read after the claim so every edit committed before Processing is included.
+            // ManualReport.UpdatedAt is also a concurrency token, so an editor that loaded
+            // before this claim cannot silently write Draft back over the materialized workspace.
+            pendingChanges = await PendingChangeCountAsync(workspace.Id, db, protector, ct);
+            sourceGraph = await LoadGraphAsync(workspace.SourceReportId!.Value, db, ct);
+            workspaceGraph = await LoadGraphAsync(workspace.Id, db, ct);
+            if (pendingChanges == 0 || sourceGraph is null || workspaceGraph is null
+                || sourceGraph.Report.ReportKind != ManualReportKind.Current
+                || sourceGraph.Report.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed)
+                || sourceGraph.Metadata.Count != sourceGraph.Products.Count
+                || sourceGraph.Products.Any(product => !sourceGraph.Metadata.ContainsKey(product.Id))
+                || workspaceGraph.Products.Any(product => !product.SourceReportProductId.HasValue)
+                || workspaceGraph.Products.Any(product =>
+                    product.IsCorrectionChanged && product.CorrectionOperationCode is not (2 or 3)))
+            {
+                await transaction.RollbackAsync(ct);
+                return null;
+            }
+
             var negative = CloneGraph(sourceGraph, ManualReportKind.Negative, sourceGraph.Report.Id,
                 CloneMode.NegativeCancellation, null, protector, null, null);
             var current = CloneGraph(workspaceGraph, ManualReportKind.Current, negative.Report.Id,
