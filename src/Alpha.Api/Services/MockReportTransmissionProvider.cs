@@ -6,6 +6,7 @@ namespace Alpha.Api.Services;
 public sealed class MockReportTransmissionProvider : IReportTransmissionProvider
 {
     public string Name => "MockClearinghouse";
+    public bool IsConfigured => true;
 
     public Task<ReportTransmissionProviderResult> SendAsync(ReportTransmissionEnvelope envelope, CancellationToken cancellationToken)
     {
