@@ -314,6 +314,7 @@ public static class ReportFeedbackEndpoints
         IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(
             x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
@@ -374,7 +375,7 @@ public static class ReportFeedbackEndpoints
 
         return Results.Ok(new
         {
-            report = new { report.Id, report.ReportingMonth, report.ReportKind, report.Status, canEdit = report.IsEditable },
+            report = new { report.Id, report.ReportingMonth, report.ReportKind, report.Status, canEdit = report.IsEditable && canCreateReport },
             employee = new
             {
                 row.Employee.Id, row.Employee.EmploymentId, name = row.Employee.FirstName + " " + row.Employee.LastName,
@@ -422,7 +423,9 @@ public static class ReportFeedbackEndpoints
                 x.StatusCode, statusLabel = labels.GetValueOrDefault(x.StatusCode) ?? x.StatusCode, x.Note, x.CreatedAt,
                 updatedBy = users.GetValueOrDefault(x.UpdatedByUserId) ?? "משתמש"
             }),
-            canCreateCorrection = !report.IsEditable
+            canUpdateTreatment = canCreateReport,
+            canCreateCorrection = canCreateReport
+                && !report.IsEditable
                 && (report.Status is ManualReportStatus.Sent or ManualReportStatus.Completed)
                 && (report.ReportKind != ManualReportKind.Negative || metadata?.OperationCode == 6)
         });
