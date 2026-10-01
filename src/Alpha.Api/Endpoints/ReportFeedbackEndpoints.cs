@@ -134,10 +134,19 @@ public static class ReportFeedbackEndpoints
         var transmissions = await db.ReportTransmissions.AsNoTracking().Where(x => candidateIds.Contains(x.ReportId))
             .OrderByDescending(x => x.AttemptNumber).ToListAsync(ct);
         var latestTransmission = transmissions.GroupBy(x => x.ReportId).ToDictionary(g => g.Key, g => g.First());
-        var officialCounts = await db.EmployerInterfaceFeedback.AsNoTracking()
+        var feedbackFiles = await db.EmployerInterfaceFeedback.AsNoTracking()
             .Where(x => x.ReportId.HasValue && candidateIds.Contains(x.ReportId.Value))
-            .GroupBy(x => x.ReportId!.Value).Select(g => new { Id = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
+            .Select(x => new { x.Id, ReportId = x.ReportId!.Value, x.TransmissionId })
+            .ToListAsync(ct);
+        var activeFeedbackFiles = feedbackFiles.Where(x =>
+        {
+            latestTransmission.TryGetValue(x.ReportId, out var tx);
+            return tx is null ? x.TransmissionId is null : x.TransmissionId == tx.Id;
+        }).ToArray();
+        var activeFeedbackIds = activeFeedbackFiles.Select(x => x.Id).ToHashSet();
+        var officialCounts = activeFeedbackFiles
+            .GroupBy(x => x.ReportId)
+            .ToDictionary(g => g.Key, g => g.Count());
         var expectedContributionCounts = await (
                 from contribution in db.ManualContributions.AsNoTracking()
                 join reportProduct in db.ManualReportProducts.AsNoTracking() on contribution.ReportProductId equals reportProduct.Id
@@ -148,7 +157,7 @@ public static class ReportFeedbackEndpoints
                 select new { Id = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
         var contributionFeedbackRows = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
-            .Where(x => candidateIds.Contains(x.ReportId))
+            .Where(x => candidateIds.Contains(x.ReportId) && activeFeedbackIds.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt)
             .ThenByDescending(x => x.CreatedAt)
             .Select(x => new { x.ReportId, x.ReportProductId, x.ContributionId, x.ErrorCode, x.ReceivedAt, x.CreatedAt })
@@ -224,7 +233,8 @@ public static class ReportFeedbackEndpoints
                             where pageIds.Contains(e.ReportId)
                             group c by e.ReportId into g select new { Id = g.Key, Total = g.Sum(x => x.Amount) })
             .ToDictionaryAsync(x => x.Id, x => x.Total, ct);
-        var transferRows = await db.EmployerInterfaceTransferFeedback.AsNoTracking().Where(x => pageIds.Contains(x.ReportId))
+        var transferRows = await db.EmployerInterfaceTransferFeedback.AsNoTracking()
+            .Where(x => pageIds.Contains(x.ReportId) && activeFeedbackIds.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt).ToListAsync(ct);
         var money = transferRows.GroupBy(x => new { x.ReportId, x.TransferIdentifier }).Select(g => g.First())
             .GroupBy(x => x.ReportId).ToDictionary(g => g.Key, g => new
@@ -295,13 +305,15 @@ public static class ReportFeedbackEndpoints
             .ThenBy(x => x.Product.AllocationOrder).ThenBy(x => x.Product.CreatedAt).Skip(skip).Take(take + 1).ToListAsync(ct);
         var hasMore = page.Count > take; if (hasMore) page.RemoveAt(page.Count - 1);
         var productIds = page.Select(x => x.Product.Id).ToArray();
+        var activeFeedbackIdsForReport = await ActiveFeedbackIdsAsync(reportId, db, ct);
 
         var totals = await db.ManualContributions.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId)
                 && (x.Amount != 0m || x.Percentage != 0m || x.ExemptPayments != 0m))
             .GroupBy(x => x.ReportProductId).Select(g => new { Id = g.Key, Total = g.Sum(x => x.Amount), Count = g.Count() })
             .ToDictionaryAsync(x => x.Id, ct);
-        var feedback = await db.EmployerInterfaceContributionFeedback.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId))
+        var feedback = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId) && activeFeedbackIdsForReport.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt).ToListAsync(ct);
         var latestFeedback = feedback.GroupBy(x => x.ContributionId).Select(g => g.First())
             .GroupBy(x => x.ReportProductId).ToDictionary(g => g.Key, g => g.ToArray());
@@ -309,7 +321,8 @@ public static class ReportFeedbackEndpoints
             .ToDictionaryAsync(x => x.ReportProductId, ct);
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
-        var transfers = await db.EmployerInterfaceTransferFeedback.AsNoTracking().Where(x => x.ReportId == reportId)
+        var transfers = await db.EmployerInterfaceTransferFeedback.AsNoTracking()
+            .Where(x => x.ReportId == reportId && activeFeedbackIdsForReport.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt).ToListAsync(ct);
         var latestTransfers = transfers.GroupBy(x => x.TransferIdentifier, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
@@ -365,11 +378,13 @@ public static class ReportFeedbackEndpoints
             .SingleOrDefaultAsync(ct);
         if (row is null) return Results.NotFound();
 
+        var activeFeedbackIdsForReport = await ActiveFeedbackIdsAsync(reportId, db, ct);
         var contributions = await db.ManualContributions.AsNoTracking()
             .Where(x => x.ReportProductId == reportProductId
                 && (x.Amount != 0m || x.Percentage != 0m || x.ExemptPayments != 0m))
             .OrderBy(x => x.Party).ThenBy(x => x.Component).ToListAsync(ct);
-        var feedbackRows = await db.EmployerInterfaceContributionFeedback.AsNoTracking().Where(x => x.ReportProductId == reportProductId)
+        var feedbackRows = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+            .Where(x => x.ReportProductId == reportProductId && activeFeedbackIdsForReport.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt).ThenBy(x => x.Sequence).ToListAsync(ct);
         var manufacturer = feedbackRows.GroupBy(x => x.ContributionId).SelectMany(group =>
         {
@@ -379,7 +394,8 @@ public static class ReportFeedbackEndpoints
         var transferKey = !string.IsNullOrWhiteSpace(metadata?.InterfaceTransferIdentifier)
             ? metadata.InterfaceTransferIdentifier : reportProductId.ToString("D").ToUpperInvariant();
         var transfer = await db.EmployerInterfaceTransferFeedback.AsNoTracking()
-            .Where(x => x.ReportId == reportId && x.TransferIdentifier == transferKey)
+            .Where(x => x.ReportId == reportId && x.TransferIdentifier == transferKey
+                && activeFeedbackIdsForReport.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt).FirstOrDefaultAsync(ct);
         var payment = await db.ManualReportPayments.AsNoTracking().SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
         var treatment = await db.ReportProductTreatments.AsNoTracking().SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
@@ -595,8 +611,9 @@ public static class ReportFeedbackEndpoints
         }
         else if (normalized == "feedback")
         {
+            var activeFeedbackIdsForReport = await ActiveFeedbackIdsAsync(reportId, db, ct);
             var feedbackHistory = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
-                .Where(x => x.ReportId == reportId)
+                .Where(x => x.ReportId == reportId && activeFeedbackIdsForReport.Contains(x.FeedbackId))
                 .OrderByDescending(x => x.ReceivedAt).ThenByDescending(x => x.CreatedAt)
                 .ThenBy(x => x.RecordIdentifier).ThenBy(x => x.Sequence)
                 .ToListAsync(ct);
@@ -639,6 +656,22 @@ public static class ReportFeedbackEndpoints
         var bytes = ReportCsvFormatter.Utf8WithBom(lines);
         var fileName = $"alpha-{report.ReportingMonth:yyyy-MM}-{normalized}.csv";
         return Results.File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+
+    private static async Task<HashSet<Guid>> ActiveFeedbackIdsAsync(
+        Guid reportId, IAlphaDbContext db, CancellationToken ct)
+    {
+        var latestTransmissionId = await db.ReportTransmissions.AsNoTracking()
+            .Where(x => x.ReportId == reportId)
+            .OrderByDescending(x => x.AttemptNumber)
+            .Select(x => (Guid?)x.Id)
+            .FirstOrDefaultAsync(ct);
+
+        var query = db.EmployerInterfaceFeedback.AsNoTracking().Where(x => x.ReportId == reportId);
+        query = latestTransmissionId.HasValue
+            ? query.Where(x => x.TransmissionId == latestTransmissionId.Value)
+            : query.Where(x => x.TransmissionId == null);
+        return (await query.Select(x => x.Id).ToListAsync(ct)).ToHashSet();
     }
 
     private static async Task<IResult> DetailsAsync(
