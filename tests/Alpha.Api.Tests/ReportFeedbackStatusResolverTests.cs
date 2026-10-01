@@ -90,11 +90,11 @@ public sealed class ReportCsvFormatterTests
     [Fact]
     public void Csv_escapes_quotes_and_commas()
     {
-        Assert.Equal(""a,b ""quoted"""", ReportCsvFormatter.Escape("a,b "quoted""));
+        Assert.Equal("\"a,b \"\"quoted\"\"\"", ReportCsvFormatter.Escape("a,b \"quoted\""));
     }
 
     [Theory]
-    [InlineData("=HYPERLINK("https://example.com")")]
+    [InlineData("=HYPERLINK(\"https://example.com\")")]
     [InlineData("+SUM(1,2)")]
     [InlineData("-1+2")]
     [InlineData("@cmd")]
@@ -102,13 +102,13 @@ public sealed class ReportCsvFormatterTests
     public void Csv_neutralizes_formula_like_strings(string value)
     {
         var escaped = ReportCsvFormatter.Escape(value);
-        Assert.StartsWith(""'", escaped, StringComparison.Ordinal);
+        Assert.StartsWith("\"'", escaped, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Csv_does_not_rewrite_numeric_negative_values()
     {
-        Assert.Equal(""-10"", ReportCsvFormatter.Escape(-10m));
+        Assert.Equal("\"-10\"", ReportCsvFormatter.Escape(-10m));
     }
 
     [Fact]
