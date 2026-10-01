@@ -228,11 +228,11 @@ public static class ReportFeedbackEndpoints
         var workspaceChangedCounts = workspaceIds.Length == 0
             ? new Dictionary<Guid, int>()
             : await (
-                from product in db.ManualReportProducts.AsNoTracking()
+                from reportProduct in db.ManualReportProducts.AsNoTracking()
                 join employee in db.ManualReportEmployees.AsNoTracking()
-                    on product.ReportEmployeeId equals employee.Id
-                where workspaceIds.Contains(employee.ReportId) && product.IsCorrectionChanged
-                group product by employee.ReportId into g
+                    on reportProduct.ReportEmployeeId equals employee.Id
+                where workspaceIds.Contains(employee.ReportId) && reportProduct.IsCorrectionChanged
+                group reportProduct by employee.ReportId into g
                 select new { ReportId = g.Key, Count = g.Count() })
               .ToDictionaryAsync(x => x.ReportId, x => x.Count, ct);
 

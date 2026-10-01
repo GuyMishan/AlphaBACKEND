@@ -514,11 +514,11 @@ public static class ManualReportEndpoints
         if (report is null) return Results.NotFound();
         if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
 
-        var product = await (from product in db.ManualReportProducts
-                             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                             where product.Id == reportProductId && employee.ReportId == reportId
+        var product = await (from reportProduct in db.ManualReportProducts
+                             join employee in db.ManualReportEmployees.AsNoTracking() on reportProduct.ReportEmployeeId equals employee.Id
+                             where reportProduct.Id == reportProductId && employee.ReportId == reportId
                                  && employee.OrganizationId == organizationId && employee.EmployerId == employerId
-                             select product).SingleOrDefaultAsync(ct);
+                             select reportProduct).SingleOrDefaultAsync(ct);
         if (product is null) return Results.NotFound();
 
         var payment = await db.ManualReportPayments.SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
