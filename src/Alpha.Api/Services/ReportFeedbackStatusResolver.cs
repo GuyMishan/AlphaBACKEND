@@ -50,14 +50,16 @@ public static class ReportCsvFormatter
         if (value is string)
         {
             var probe = text.TrimStart();
-            if (probe.Length > 0 && "=+-@	".IndexOf(probe[0]) >= 0)
+            if (probe.Length > 0 && probe[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
                 text = "'" + text;
         }
 
-        return """ + text.Replace(""", """") + """;
+        return "\"" + text.Replace("\"", "\"\"") + "\"";
     }
 
-    public static byte[] Utf8WithBom(IEnumerable<string> lines) =>
-        System.Text.Encoding.UTF8.GetBytes("﻿" + string.Join("
-", lines));
+    public static byte[] Utf8WithBom(IEnumerable<string> lines)
+    {
+        var payload = System.Text.Encoding.UTF8.GetBytes(string.Join("\r\n", lines));
+        return [0xEF, 0xBB, 0xBF, .. payload];
+    }
 }
