@@ -74,6 +74,8 @@ public static class ReportFeedbackOperationsSchemaInitializer
             );
             CREATE INDEX IF NOT EXISTS "IX_contribution_feedback_ReportId_Product_ReceivedAt"
                 ON reporting.employer_interface_contribution_feedback ("ReportId", "ReportProductId", "ReceivedAt");
+            CREATE INDEX IF NOT EXISTS "IX_contribution_feedback_Product_ReceivedAt"
+                ON reporting.employer_interface_contribution_feedback ("ReportProductId", "ReceivedAt");
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_contribution_feedback_Feedback_Record_Sequence"
                 ON reporting.employer_interface_contribution_feedback ("FeedbackId", "RecordIdentifier", "Sequence");
             CREATE INDEX IF NOT EXISTS "IX_contribution_feedback_ContributionId"

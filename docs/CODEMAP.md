@@ -87,3 +87,5 @@ These sources outrank assumptions, old examples and UI behavior.
 
 - Feedback ingestion is idempotent under concurrent duplicate uploads: the unique employer+payload-hash index is the database boundary and a losing concurrent request resolves to the already-persisted feedback instead of surfacing a 500.
 - Report transmission atomically claims Validated -> Processing before file reservation. After the transmission evidence row is persisted, provider dispatch and result persistence are intentionally detached from the HTTP request-abort token so a browser disconnect cannot cancel an irreversible provider side effect and leave a misleading retryable local state.
+
+- The normalized contribution-feedback table has a dedicated `(ReportProductId, ReceivedAt)` index for the Reports & Feedback per-product modal; the broader report/product index remains for report-level reconciliation.

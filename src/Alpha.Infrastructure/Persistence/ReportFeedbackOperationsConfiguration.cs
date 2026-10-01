@@ -44,6 +44,7 @@ public sealed class EmployerInterfaceContributionFeedbackConfiguration : IEntity
         b.Property(x => x.PolicyNumber).HasMaxLength(100);
         b.Property(x => x.SourceFileName).HasMaxLength(260);
         b.HasIndex(x => new { x.ReportId, x.ReportProductId, x.ReceivedAt });
+        b.HasIndex(x => new { x.ReportProductId, x.ReceivedAt });
         b.HasIndex(x => new { x.FeedbackId, x.RecordIdentifier, x.Sequence }).IsUnique();
         b.HasIndex(x => x.ContributionId);
         b.HasOne<EmployerInterfaceFeedback>().WithMany().HasForeignKey(x => x.FeedbackId).OnDelete(DeleteBehavior.Cascade);
