@@ -75,6 +75,10 @@ public static class ReportFeedbackEndpoints
         IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var employerName = await db.Employers.AsNoTracking()
+            .Where(x => x.Id == employerId && x.OrganizationId == organizationId)
+            .Select(x => x.LegalName)
+            .SingleOrDefaultAsync(ct) ?? string.Empty;
         var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         skip = Math.Max(skip, 0); take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
         var query = db.ManualReports.AsNoTracking().Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId);
@@ -265,7 +269,7 @@ public static class ReportFeedbackEndpoints
                 + (tx is null || string.IsNullOrWhiteSpace(tx.ErrorMessage) ? 0 : 1);
             return new
             {
-                report.Id, report.ReportingMonth, report.SalaryPaymentDate, report.ReportKind, report.Status,
+                report.Id, employerName, report.ReportingMonth, report.SalaryPaymentDate, report.ReportKind, report.Status,
                 feedbackStatus = State(report.Id), hasFeedback = officialCounts.GetValueOrDefault(report.Id) > 0,
                 issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id),
                 employeeCount = employeeCounts.GetValueOrDefault(report.Id), totalAmount = total, payoffRate,
