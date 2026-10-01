@@ -52,9 +52,11 @@ public static class ReportFeedbackStatusResolver
         bool isEditable,
         ManualReportStatus status,
         ManualReportKind reportKind,
+        bool hasCompleteMetadata,
         bool allProductsOperation6)
     {
-        if (!canCreateReport || isEditable || status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
+        if (!canCreateReport || isEditable || !hasCompleteMetadata
+            || status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
             return false;
         return reportKind != ManualReportKind.Negative || allProductsOperation6;
     }

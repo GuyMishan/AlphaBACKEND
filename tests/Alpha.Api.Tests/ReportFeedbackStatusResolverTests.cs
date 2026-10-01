@@ -105,7 +105,14 @@ public sealed class ReportFeedbackStatusResolverTests
         bool expected)
     {
         Assert.Equal(expected, ReportFeedbackStatusResolver.CanCreateCorrection(
-            canCreateReport, isEditable, status, kind, allOperation6));
+            canCreateReport, isEditable, status, kind, true, allOperation6));
+    }
+
+    [Fact]
+    public void Missing_source_metadata_blocks_correction()
+    {
+        Assert.False(ReportFeedbackStatusResolver.CanCreateCorrection(
+            true, false, ManualReportStatus.Sent, ManualReportKind.Current, false, false));
     }
 
     [Fact]

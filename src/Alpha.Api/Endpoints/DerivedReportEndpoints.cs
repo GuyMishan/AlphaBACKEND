@@ -175,6 +175,16 @@ public static class DerivedReportEndpoints
             .Where(x => sourceProductIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
 
+        if (request.ReportKind == ManualReportKind.Negative)
+        {
+            if (source.ReportKind != ManualReportKind.Current)
+                return Results.BadRequest(new { error = "A negative correction must be based on a current report." });
+            if (source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed) && !source.ExternalSourceReference)
+                return Results.Conflict(new { error = "The source current report must already have been transmitted, or carry an official external source reference." });
+            if (sourceProducts.Any(p => !sourceMetadata.ContainsKey(p.Id)))
+                return Results.Conflict(new { error = "The source report is missing Employer Interface metadata required for a formal correction." });
+        }
+
         if (isCurrentCorrection)
         {
             if (source.ReportKind != ManualReportKind.Negative)

@@ -210,6 +210,9 @@ public static class ReportFeedbackEndpoints
                 where pageIds.Contains(employee.ReportId)
                 select new { employee.ReportId, metadata.OperationCode })
             .ToListAsync(ct);
+        var metadataCounts = pageOperations
+            .GroupBy(x => x.ReportId)
+            .ToDictionary(g => g.Key, g => g.Count());
         var operation6Reports = pageOperations
             .GroupBy(x => x.ReportId)
             .Where(g => g.Count() == productCounts.GetValueOrDefault(g.Key) && g.All(x => x.OperationCode == 6))
@@ -250,7 +253,10 @@ public static class ReportFeedbackEndpoints
                 employeeCount = employeeCounts.GetValueOrDefault(report.Id), totalAmount = total, payoffRate,
                 allocatedAmount = cash?.Allocated, actualReceivedAmount = cash?.Received, inTransitAmount = cash?.InTransit,
                 canCreateCorrection = ReportFeedbackStatusResolver.CanCreateCorrection(
-                    canCreateReport, report.IsEditable, report.Status, report.ReportKind, operation6Reports.Contains(report.Id)),
+                    canCreateReport, report.IsEditable, report.Status, report.ReportKind,
+                    productCounts.GetValueOrDefault(report.Id) > 0
+                        && metadataCounts.GetValueOrDefault(report.Id) == productCounts.GetValueOrDefault(report.Id),
+                    operation6Reports.Contains(report.Id)),
                 report.CreatedAt, report.UpdatedAt,
                 lastTransmission = tx is null ? null : new { tx.Id, tx.AttemptNumber, tx.Status, tx.Provider, tx.ExternalId, tx.ErrorMessage, tx.StartedAt, tx.SentAt, tx.CompletedAt }
             };
@@ -460,7 +466,8 @@ public static class ReportFeedbackEndpoints
             }),
             canUpdateTreatment = canCreateReport,
             canCreateCorrection = ReportFeedbackStatusResolver.CanCreateCorrection(
-                canCreateReport, report.IsEditable, report.Status, report.ReportKind, metadata?.OperationCode == 6)
+                canCreateReport, report.IsEditable, report.Status, report.ReportKind,
+                metadata is not null, metadata?.OperationCode == 6)
         });
     }
 
