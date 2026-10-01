@@ -8,5 +8,6 @@ public sealed record ReportTransmissionProviderResult(bool Success, string Statu
 public interface IReportTransmissionProvider
 {
     string Name { get; }
+    bool IsConfigured { get; }
     Task<ReportTransmissionProviderResult> SendAsync(ReportTransmissionEnvelope envelope, CancellationToken cancellationToken);
 }
