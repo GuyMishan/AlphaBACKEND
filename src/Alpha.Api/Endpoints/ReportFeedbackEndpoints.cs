@@ -63,6 +63,7 @@ public static class ReportFeedbackEndpoints
         group.MapGet("/{reportId:guid}/deposits", DepositListAsync);
         group.MapGet("/{reportId:guid}/deposits/{reportProductId:guid}", DepositDetailsAsync);
         group.MapPut("/{reportId:guid}/deposits/{reportProductId:guid}/treatment", UpdateTreatmentAsync);
+        group.MapGet("/{reportId:guid}/exports/{exportType}", ExportAsync);
         return endpoints;
     }
 
@@ -443,6 +444,133 @@ public static class ReportFeedbackEndpoints
             treatment.StatusCode, label = TreatmentStatuses.First(x => x.Code == request.StatusCode).Label,
             treatment.Note, treatment.UpdatedAt
         });
+    }
+
+    private static async Task<IResult> ExportAsync(
+        Guid organizationId, Guid employerId, Guid reportId, string exportType,
+        IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var report = await db.ManualReports.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+
+        var employees = await db.ManualReportEmployees.AsNoTracking().Where(x => x.ReportId == reportId).ToListAsync(ct);
+        var employeeIds = employees.Select(x => x.Id).ToArray();
+        var products = await db.ManualReportProducts.AsNoTracking().Where(x => employeeIds.Contains(x.ReportEmployeeId)).ToListAsync(ct);
+        var productIds = products.Select(x => x.Id).ToArray();
+        var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var employeeById = employees.ToDictionary(x => x.Id);
+        var productById = products.ToDictionary(x => x.Id);
+
+        static string Csv(object? value)
+        {
+            var text = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+            return """ + text.Replace(""", """") + """;
+        }
+        static string ContributionName(ManualContribution c) => (c.Party, c.Component) switch
+        {
+            (ContributionParty.Employee, ContributionComponent.Benefits) => "תגמולי עובד",
+            (ContributionParty.Employer, ContributionComponent.Benefits) => "תגמולי מעביד",
+            (ContributionParty.Employer, ContributionComponent.Severance) => "פיצויים",
+            (ContributionParty.Employee, ContributionComponent.Severance) => "תגמולים 47",
+            (ContributionParty.Employee, ContributionComponent.Disability) => "אכ״ע עובד",
+            (ContributionParty.Employer, ContributionComponent.Disability) => "אכ״ע מעסיק",
+            (ContributionParty.Employee, ContributionComponent.Other) => "רכיב עובד נוסף",
+            (ContributionParty.Employer, ContributionComponent.Other) => "רכיב מעסיק נוסף",
+            _ => "רכיב הפרשה"
+        };
+
+        var lines = new List<string>();
+        var normalized = exportType.Trim().ToLowerInvariant();
+        if (normalized == "contributions")
+        {
+            lines.Add(string.Join(",", new[] { "חודש דיווח", "עובד", "מזהה עובד", "יצרן", "מוצר", "פוליסה/חשבון", "רכיב", "שכר מבוטח", "שיעור", "סכום" }.Select(Csv)));
+            foreach (var contribution in contributions.OrderBy(x => x.ReportProductId).ThenBy(x => x.Party).ThenBy(x => x.Component))
+            {
+                var product = productById[contribution.ReportProductId];
+                var employee = employeeById[product.ReportEmployeeId];
+                lines.Add(string.Join(",", new object?[]
+                {
+                    report.ReportingMonth.ToString("yyyy-MM"),
+                    employee.FirstName + " " + employee.LastName,
+                    protector.Unprotect(employee.NationalId, $"report-employee-national-id:{employee.Id}"),
+                    product.FundCompanyName,
+                    product.FundName,
+                    product.PolicyNumber,
+                    ContributionName(contribution),
+                    product.Salary,
+                    contribution.Percentage,
+                    contribution.Amount
+                }.Select(Csv)));
+            }
+        }
+        else if (normalized == "deposits")
+        {
+            var payments = await db.ManualReportPayments.AsNoTracking()
+                .Where(x => productIds.Contains(x.ReportProductId)).ToDictionaryAsync(x => x.ReportProductId, ct);
+            var totals = contributions.GroupBy(x => x.ReportProductId).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+            lines.Add(string.Join(",", new[] { "חודש דיווח", "עובד", "יצרן", "מוצר", "פוליסה/חשבון", "סכום כולל", "אמצעי תשלום", "חשבון יצרן", "אסמכתא", "תאריך ערך" }.Select(Csv)));
+            foreach (var product in products.OrderBy(x => employeeById[x.ReportEmployeeId].LastName).ThenBy(x => x.FundCompanyName))
+            {
+                var employee = employeeById[product.ReportEmployeeId];
+                payments.TryGetValue(product.Id, out var payment);
+                lines.Add(string.Join(",", new object?[]
+                {
+                    report.ReportingMonth.ToString("yyyy-MM"),
+                    employee.FirstName + " " + employee.LastName,
+                    product.FundCompanyName,
+                    product.FundName,
+                    product.PolicyNumber,
+                    totals.GetValueOrDefault(product.Id),
+                    payment?.PaymentMethod ?? string.Empty,
+                    payment?.ProviderAccount ?? string.Empty,
+                    payment?.ReferenceNumber ?? string.Empty,
+                    payment?.ValueDate?.ToString("yyyy-MM-dd") ?? string.Empty
+                }.Select(Csv)));
+            }
+        }
+        else if (normalized == "feedback")
+        {
+            var feedback = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+                .Where(x => x.ReportId == reportId)
+                .OrderByDescending(x => x.ReceivedAt).ThenBy(x => x.RecordIdentifier).ThenBy(x => x.Sequence)
+                .ToListAsync(ct);
+            var contributionById = contributions.ToDictionary(x => x.Id);
+            lines.Add(string.Join(",", new[] { "עובד", "יצרן", "מוצר", "רכיב", "סכום מעסיק", "שיעור מעסיק", "סכום יצרן", "שיעור יצרן", "שכר מחושב יצרן", "סטטוס קליטה", "קוד שגיאה", "פירוט", "תאריך משוב", "קובץ מקור" }.Select(Csv)));
+            foreach (var item in feedback)
+            {
+                if (!contributionById.TryGetValue(item.ContributionId, out var contribution)) continue;
+                var product = productById[item.ReportProductId];
+                var employee = employeeById[product.ReportEmployeeId];
+                lines.Add(string.Join(",", new object?[]
+                {
+                    employee.FirstName + " " + employee.LastName,
+                    product.FundCompanyName,
+                    product.FundName,
+                    ContributionName(contribution),
+                    contribution.Amount,
+                    contribution.Percentage,
+                    item.ContributionAmount,
+                    item.ContributionRate,
+                    item.CalculatedSalary,
+                    item.IntakeStatus,
+                    item.ErrorCode,
+                    item.ErrorDescription,
+                    item.ReceivedAt.ToString("yyyy-MM-dd HH:mm:ss"),
+                    item.SourceFileName
+                }.Select(Csv)));
+            }
+        }
+        else
+        {
+            return Results.BadRequest(new { error = "export_type_invalid" });
+        }
+
+        var csv = "﻿" + string.Join("\r\n", lines);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
+        var fileName = $"alpha-{report.ReportingMonth:yyyy-MM}-{normalized}.csv";
+        return Results.File(bytes, "text/csv; charset=utf-8", fileName);
     }
 
     private static async Task<IResult> DetailsAsync(

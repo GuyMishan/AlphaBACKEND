@@ -80,3 +80,5 @@ These sources outrank assumptions, old examples and UI behavior.
 
 - Report-feedback normalization is idempotently backfilled at API startup for already-correlated encrypted summary feedback, so historical reports receive the same money/contribution projections as newly ingested feedback.
 - Derived/correction drafts accept an optional source-product selection; selected products and their owning employees are cloned with the same immutable snapshot/previous-record semantics, enabling a focused employee+product correction workflow without mutating the submitted source report.
+
+- Reports & Feedback exports are generated server-side from authorized report snapshots/normalized feedback as UTF-8 BOM CSV: employee contribution detail, deposit summary and manufacturer feedback. Export reads never mutate submitted evidence.
