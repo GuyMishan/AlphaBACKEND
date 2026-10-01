@@ -23,7 +23,7 @@ public static class EmployerInterfaceEndpoints
     private static async Task<IResult> ValidateAsync(Guid organizationId, Guid employerId, HttpRequest request,
         OrganizationAccessService access, EmployerInterfaceService service, CancellationToken ct)
     {
-        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var read = await ReadXmlAsync(request, ct);
         if (read.Error is not null) return Results.BadRequest(new { error = read.Error });
         var validation = service.Validate(read.Bytes!);
