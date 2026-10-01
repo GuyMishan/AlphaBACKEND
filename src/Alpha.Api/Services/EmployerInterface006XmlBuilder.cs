@@ -354,6 +354,8 @@ public static class EmployerInterface006XmlBuilder
         if (!IdentifierTypeCodes.Contains(o.RecipientIdentifierType))
             issues.Add("EmployerInterface006:RecipientIdentifierType must be one of 1,2,3,4,5,7,8,9,10,11,12,13.");
         if (string.IsNullOrWhiteSpace(o.RecipientIdentifier)) issues.Add("EmployerInterface006:RecipientIdentifier is required.");
+        if (o.EnvironmentCode == 2 && o.RecipientIdentifier.Trim() == "000000000")
+            issues.Add("EmployerInterface006: production recipient identifier is still the ALPHA test placeholder and must be configured before transmission.");
         if (Digits(c.Employer.RegistrationNumber).Length is 0 or > 16) issues.Add("Employer registration number must contain 1-16 digits for Version 006.");
         if (!negative)
         {
