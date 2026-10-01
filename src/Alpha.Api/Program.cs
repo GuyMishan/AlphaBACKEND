@@ -49,7 +49,12 @@ builder.Services.AddSingleton<EmployerInterfaceSchemaRegistry>();
 builder.Services.AddScoped<EmployerInterfaceService>();
 builder.Services.AddScoped<EmployerInterface006ExportService>();
 builder.Services.AddScoped<EmployerInterfaceFileSequenceService>();
-builder.Services.AddScoped<IReportTransmissionProvider, MockReportTransmissionProvider>();
+var allowMockTransmission = builder.Environment.IsDevelopment()
+    || builder.Configuration.GetValue<bool>("EmployerInterface006:AllowMockTransmission");
+if (allowMockTransmission)
+    builder.Services.AddScoped<IReportTransmissionProvider, MockReportTransmissionProvider>();
+else
+    builder.Services.AddScoped<IReportTransmissionProvider, UnavailableReportTransmissionProvider>();
 builder.Services.AddHttpClient("otp-sms", c => c.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpClient("otp-email", c => c.Timeout = TimeSpan.FromSeconds(25));
 builder.Services.AddScoped<OtpDelivery>();
