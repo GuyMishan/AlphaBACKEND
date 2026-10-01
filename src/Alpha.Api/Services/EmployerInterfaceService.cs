@@ -295,8 +295,10 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
         foreach (var item in sameFundMetadata)
         {
-            item.SetInterfaceTransferIdentifier(normalizedTransfer);
-            if (!string.IsNullOrWhiteSpace(clearingIdentifier))
+            if (!string.Equals(item.InterfaceTransferIdentifier, normalizedTransfer, StringComparison.OrdinalIgnoreCase))
+                item.SetInterfaceTransferIdentifier(normalizedTransfer);
+            if (!string.IsNullOrWhiteSpace(clearingIdentifier)
+                && !string.Equals(item.ClearingIdentifier, clearingIdentifier.Trim(), StringComparison.OrdinalIgnoreCase))
                 item.SetClearingIdentifier(clearingIdentifier);
         }
     }
