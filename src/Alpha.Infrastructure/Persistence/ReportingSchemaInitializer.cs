@@ -223,7 +223,7 @@ BEGIN
             REFERENCES reporting.manual_report_products("Id")
             ON DELETE RESTRICT;
     END IF;
-END $;
+END $$;
 UPDATE reporting.manual_report_products
 SET "SalaryAllocationValue" = "Salary"
 WHERE "SalaryAllocationType" = 'Fixed' AND "SalaryAllocationValue" IS NULL AND "Salary" > 0;
