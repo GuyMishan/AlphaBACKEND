@@ -24,6 +24,9 @@ public sealed class EmployerInterface006Options
     // A service bureau/vault owner must configure its assigned/appropriate direction.
     public int FileDirectionCode { get; set; } = 3;
 
+    // Explicit opt-in for local/test environments only. Production must use a real provider.
+    public bool AllowMockTransmission { get; set; }
+
     // TEMPORARY ALPHA FLOW PLACEHOLDERS.
     // Replace these with the real recipient/vault values assigned to ALPHA before the first
     // clearinghouse transmission. These defaults only unblock end-to-end local/product testing.
