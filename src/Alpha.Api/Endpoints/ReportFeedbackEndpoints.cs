@@ -197,16 +197,16 @@ public static class ReportFeedbackEndpoints
             .GroupBy(x => x.ReportId).Select(g => new { Id = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
         var productCounts = await (
-                from product in db.ManualReportProducts.AsNoTracking()
-                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                from reportProduct in db.ManualReportProducts.AsNoTracking()
+                join employee in db.ManualReportEmployees.AsNoTracking() on reportProduct.ReportEmployeeId equals employee.Id
                 where pageIds.Contains(employee.ReportId)
-                group product by employee.ReportId into g
+                group reportProduct by employee.ReportId into g
                 select new { Id = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
         var pageOperations = await (
                 from metadata in db.EmployerInterfaceReportProductData.AsNoTracking()
-                join product in db.ManualReportProducts.AsNoTracking() on metadata.ReportProductId equals product.Id
-                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                join reportProduct in db.ManualReportProducts.AsNoTracking() on metadata.ReportProductId equals reportProduct.Id
+                join employee in db.ManualReportEmployees.AsNoTracking() on reportProduct.ReportEmployeeId equals employee.Id
                 where pageIds.Contains(employee.ReportId)
                 select new { employee.ReportId, metadata.OperationCode })
             .ToListAsync(ct);
