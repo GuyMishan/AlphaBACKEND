@@ -480,11 +480,7 @@ public static class ReportFeedbackEndpoints
         var employeeById = employees.ToDictionary(x => x.Id);
         var productById = products.ToDictionary(x => x.Id);
 
-        static string Csv(object? value)
-        {
-            var text = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
-            return "\"" + text.Replace("\"", "\"\"") + "\"";
-        }
+        static string Csv(object? value) => ReportCsvFormatter.Escape(value);
         static string ContributionName(ManualContribution c) => (c.Party, c.Component) switch
         {
             (ContributionParty.Employee, ContributionComponent.Benefits) => "תגמולי עובד",
