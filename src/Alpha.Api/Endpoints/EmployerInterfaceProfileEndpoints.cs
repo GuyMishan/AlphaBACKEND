@@ -174,11 +174,13 @@ public static class EmployerInterfaceProfileEndpoints
         Guid reportProductId, EmployerInterfaceProductMetadataRequest request, IAlphaDbContext db,
         OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.SingleOrDefaultAsync(x => x.Id == reportId
             && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
         if (!report.IsEditable) return Results.Conflict(new { error = "report_not_editable" });
+        if (report.IsCorrectionWorkspace)
+            return Results.Conflict(new { error = "correction_metadata_managed_by_workflow" });
 
         var belongsToReport = await (from product in db.ManualReportProducts.AsNoTracking()
                                      join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id

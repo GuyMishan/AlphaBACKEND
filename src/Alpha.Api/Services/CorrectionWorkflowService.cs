@@ -43,6 +43,12 @@ public static class CorrectionWorkflowService
             || source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
             return null;
 
+        var processingExists = await db.ManualReports.AsNoTracking().AnyAsync(x =>
+            x.OrganizationId == organizationId && x.EmployerId == employerId
+            && x.SourceReportId == sourceReportId && x.IsCorrectionWorkspace
+            && x.Status == ManualReportStatus.Processing, ct);
+        if (processingExists) return null;
+
         var existing = await db.ManualReports.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
                 && x.SourceReportId == sourceReportId && x.IsCorrectionWorkspace
@@ -87,9 +93,11 @@ public static class CorrectionWorkflowService
             var concurrent = await db.ManualReports.AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
                     && x.SourceReportId == sourceReportId && x.IsCorrectionWorkspace
-                    && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation || x.Status == ManualReportStatus.Error))
+                    && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
+                        || x.Status == ManualReportStatus.Error || x.Status == ManualReportStatus.Processing))
                 .OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync(CancellationToken.None);
             if (concurrent is null) throw;
+            if (concurrent.Status == ManualReportStatus.Processing) return null;
 
             Guid? concurrentProductId = null;
             if (sourceReportProductId.HasValue)
@@ -261,7 +269,57 @@ public static class CorrectionWorkflowService
             ? 0
             : await db.ManualReportProducts.AsNoTracking()
                 .CountAsync(x => employeeIds.Contains(x.ReportEmployeeId) && x.IsCorrectionChanged, ct);
-        return Math.Max(productChanges, report.HasCorrectionChanges ? 1 : 0);
+        var reportLevelChanges = report.IsCorrectionWorkspace && report.SourceReportId.HasValue
+            && await HasReportLevelChangesAsync(report, db, ct);
+        return productChanges + (reportLevelChanges ? 1 : 0);
+    }
+
+    private static async Task<bool> HasReportLevelChangesAsync(
+        ManualReport workspace, IAlphaDbContext db, CancellationToken ct)
+    {
+        if (!workspace.SourceReportId.HasValue) return false;
+        var source = await db.ManualReports.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == workspace.SourceReportId.Value, ct);
+        if (source is null) return true;
+
+        if (workspace.ReportingMonth != source.ReportingMonth
+            || workspace.SalaryPaymentDate != source.SalaryPaymentDate
+            || workspace.PaymentAccountId != source.PaymentAccountId
+            || workspace.PaymentBankId != source.PaymentBankId
+            || workspace.PaymentBranchId != source.PaymentBranchId
+            || !string.Equals(workspace.PaymentAccountNumberMasked, source.PaymentAccountNumberMasked, StringComparison.Ordinal)
+            || !string.Equals(workspace.PaymentMandateReference, source.PaymentMandateReference, StringComparison.Ordinal))
+            return true;
+
+        var sourceEmployees = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => x.ReportId == source.Id).ToListAsync(ct);
+        var workspaceEmployees = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => x.ReportId == workspace.Id).ToListAsync(ct);
+        if (sourceEmployees.Count != workspaceEmployees.Count) return true;
+
+        var sourceByEmployment = sourceEmployees.ToDictionary(x => x.EmploymentId);
+        foreach (var employee in workspaceEmployees)
+        {
+            if (!sourceByEmployment.TryGetValue(employee.EmploymentId, out var original)) return true;
+            if (employee.PersonId != original.PersonId
+                || employee.MonthlySalary != original.MonthlySalary
+                || employee.InterfaceIdentifierType != original.InterfaceIdentifierType
+                || !string.Equals(employee.NationalIdLookupHash, original.NationalIdLookupHash, StringComparison.Ordinal)
+                || employee.BirthDateSnapshot != original.BirthDateSnapshot
+                || employee.GenderSnapshot != original.GenderSnapshot
+                || !string.Equals(employee.FirstName, original.FirstName, StringComparison.Ordinal)
+                || !string.Equals(employee.LastName, original.LastName, StringComparison.Ordinal)
+                || !string.Equals(employee.EmployeeNumber, original.EmployeeNumber, StringComparison.Ordinal)
+                || !string.Equals(employee.CitySnapshot, original.CitySnapshot, StringComparison.Ordinal)
+                || !string.Equals(employee.StreetSnapshot, original.StreetSnapshot, StringComparison.Ordinal)
+                || !string.Equals(employee.HouseNumberSnapshot, original.HouseNumberSnapshot, StringComparison.Ordinal)
+                || !string.Equals(employee.ApartmentSnapshot, original.ApartmentSnapshot, StringComparison.Ordinal)
+                || !string.Equals(employee.PostalCodeSnapshot, original.PostalCodeSnapshot, StringComparison.Ordinal)
+                || !string.Equals(employee.PostOfficeBoxSnapshot, original.PostOfficeBoxSnapshot, StringComparison.Ordinal)
+                || employee.EmploymentStartDateSnapshot != original.EmploymentStartDateSnapshot)
+                return true;
+        }
+        return false;
     }
 
     private static async Task<ReportGraph?> LoadGraphAsync(

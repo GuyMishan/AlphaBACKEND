@@ -109,3 +109,10 @@ These sources outrank assumptions, old examples and UI behavior.
 - Each changed report product carries its own optional `CorrectionOperationCode` (2 = no additional money, 3 = additional money). Deposit payment saves select operation 3 only when a positive `ActualDepositAmount` is recorded; otherwise changed existing products default to operation 2.
 - Correction materialization atomically claims an eligible workspace immediately before creating the negative/current pair, preventing two operators from materializing parallel correction chains.
 - Official V006 attachments are purpose-bound re-encrypted when cloning into a correction workspace and into the follow-up current correction. Negative operation-6 materialization does not inherit current-report-only attachments.
+
+
+### Correction re-audit follow-up
+- Operation 2/3 is explicitly supplied when editing a correction transfer; it is no longer inferred from whether an amount happened to be present. Because V006 emits one transfer per fund, the backend propagates the selected correction operation and payment details to every source-backed product in that same fund transfer.
+- Correction workspace metadata/previous-reference mutation is workflow-owned. Reporting edits use `CanCreateReport`; employee-master edit permission is not required for report metadata APIs.
+- Pending correction state is recalculated against the immutable source for report/payment-account/employee snapshot changes instead of trusting the historical `HasCorrectionChanges` flag, so reverting changes back to the source no longer leaves a false pending correction.
+- The one-open-workspace database boundary includes `Processing`; a new workspace cannot be created while another operator is materializing the existing one.

@@ -483,6 +483,8 @@ public static class ManualReportEndpoints
                 valueDate = payment?.ValueDate,
                 trustAccountValueDate = payment?.TrustAccountValueDate,
                 actualDepositAmount = payment?.ActualDepositAmount,
+                isCorrectionWorkspace = report.IsCorrectionWorkspace,
+                correctionOperationCode = x.Product.CorrectionOperationCode,
                 masavSenderCode = payment?.MasavSenderCode ?? string.Empty,
                 referenceNumber = payment?.ReferenceNumber ?? string.Empty,
                 employerBankName = payment?.EmployerBankName ?? string.Empty,
@@ -521,22 +523,70 @@ public static class ManualReportEndpoints
                              select reportProduct).SingleOrDefaultAsync(ct);
         if (product is null) return Results.NotFound();
 
-        var payment = await db.ManualReportPayments.SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
-        if (payment is null)
-        {
-            payment = new ManualReportPayment(reportProductId);
-            db.ManualReportPayments.Add(payment);
-        }
-        payment.Update(request.ProviderName, request.ProviderAccount, request.PaymentMethod, request.ValueDate,
-            request.TrustAccountValueDate, request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode,
-            request.EmployerBranch, protector.Protect(request.EmployerAccount ?? string.Empty, $"report-payment-account:{reportProductId}"), request.ConfirmationFileName,
-            request.ActualDepositAmount, request.MasavSenderCode);
         if (report.IsCorrectionWorkspace)
         {
-            product.MarkCorrectionChanged(request.ActualDepositAmount.GetValueOrDefault() > 0 ? 3 : 2);
-            report.MarkCorrectionChanged();
+            if (request.CorrectionOperationCode is not (2 or 3))
+                return Results.BadRequest(new { error = "correction_operation_required" });
+            if (request.CorrectionOperationCode == 3 && request.ActualDepositAmount.GetValueOrDefault() <= 0)
+                return Results.BadRequest(new { error = "correction_additional_deposit_amount_required" });
+            if (request.CorrectionOperationCode == 2 && request.ActualDepositAmount.GetValueOrDefault() > 0)
+                return Results.BadRequest(new { error = "correction_no_money_cannot_have_additional_amount" });
+
+            // Version 006 emits one transfer block per fund. A correction operation and its payment
+            // details therefore belong to the whole fund transfer, even when the user enters through
+            // one employee+product row. Keep every source-backed product in the same transfer aligned.
+            var correctionProducts = await (
+                from sibling in db.ManualReportProducts
+                join siblingEmployee in db.ManualReportEmployees.AsNoTracking()
+                    on sibling.ReportEmployeeId equals siblingEmployee.Id
+                where siblingEmployee.ReportId == reportId
+                    && (product.FundExternalKey != string.Empty
+                        ? sibling.FundExternalKey == product.FundExternalKey
+                        : sibling.FundExternalKey == string.Empty
+                            && sibling.FundCode == product.FundCode
+                            && sibling.FundCompanyName == product.FundCompanyName)
+                    && sibling.SourceReportProductId != null
+                select sibling).ToListAsync(ct);
+
+            if (correctionProducts.Count == 0)
+                correctionProducts.Add(product);
+
+            var correctionProductIds = correctionProducts.Select(x => x.Id).ToArray();
+            var payments = await db.ManualReportPayments
+                .Where(x => correctionProductIds.Contains(x.ReportProductId))
+                .ToDictionaryAsync(x => x.ReportProductId, ct);
+
+            foreach (var correctionProduct in correctionProducts)
+            {
+                if (!payments.TryGetValue(correctionProduct.Id, out var payment))
+                {
+                    payment = new ManualReportPayment(correctionProduct.Id);
+                    db.ManualReportPayments.Add(payment);
+                }
+                payment.Update(request.ProviderName, request.ProviderAccount, request.PaymentMethod, request.ValueDate,
+                    request.TrustAccountValueDate, request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode,
+                    request.EmployerBranch,
+                    protector.Protect(request.EmployerAccount ?? string.Empty, $"report-payment-account:{correctionProduct.Id}"),
+                    request.ConfirmationFileName, request.CorrectionOperationCode == 3 ? request.ActualDepositAmount : null,
+                    request.MasavSenderCode);
+                correctionProduct.MarkCorrectionChanged(request.CorrectionOperationCode);
+            }
+            report.MarkDirty();
         }
-        else report.MarkDirty();
+        else
+        {
+            var payment = await db.ManualReportPayments.SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
+            if (payment is null)
+            {
+                payment = new ManualReportPayment(reportProductId);
+                db.ManualReportPayments.Add(payment);
+            }
+            payment.Update(request.ProviderName, request.ProviderAccount, request.PaymentMethod, request.ValueDate,
+                request.TrustAccountValueDate, request.ReferenceNumber, request.EmployerBankName, request.EmployerBankCode,
+                request.EmployerBranch, protector.Protect(request.EmployerAccount ?? string.Empty, $"report-payment-account:{reportProductId}"),
+                request.ConfirmationFileName, request.ActualDepositAmount, request.MasavSenderCode);
+            report.MarkDirty();
+        }
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -725,8 +775,7 @@ public static class ManualReportEndpoints
                 removed.SetValidationResult(false, "המוצר הוסר מטיוטת התיקון.");
             }
         }
-        if (report.IsCorrectionWorkspace) report.MarkCorrectionChanged();
-        else report.MarkDirty();
+        report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
@@ -880,5 +929,5 @@ public sealed record ManualContributionInput(ContributionComponent Component, de
 public sealed record SaveManualReportPaymentRequest(string ProviderName, string ProviderAccount, string PaymentMethod,
     DateOnly? ValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,
     string EmployerBranch, string EmployerAccount, string ConfirmationFileName, DateOnly? TrustAccountValueDate = null,
-    decimal? ActualDepositAmount = null, string? MasavSenderCode = null);
+    decimal? ActualDepositAmount = null, string? MasavSenderCode = null, int? CorrectionOperationCode = null);
 

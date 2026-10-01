@@ -50,6 +50,8 @@ public sealed class CorrectionWorkflowRegressionTests
 
         Assert.Contains(".SetProperty(x => x.Status, ManualReportStatus.Processing)", source, StringComparison.Ordinal);
         Assert.Contains("oldProduct.CorrectionOperationCode ?? 2", source, StringComparison.Ordinal);
+        Assert.Contains("x.Status == ManualReportStatus.Processing", source, StringComparison.Ordinal);
+        Assert.Contains("HasReportLevelChangesAsync", source, StringComparison.Ordinal);
         Assert.Contains("mappedPaymentProduct", source, StringComparison.Ordinal);
         Assert.Contains("ManualReportAttachments.AddRange(clone.Attachments)", source, StringComparison.Ordinal);
     }
@@ -71,6 +73,30 @@ public sealed class CorrectionWorkflowRegressionTests
         new(Guid.NewGuid(), PensionProductType.PensionFund, "12345",
             new DateOnly(2026, 9, 1), 1000m, "1", "1", false, null,
             fundCode: "123", fundName: "Test Fund");
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
+public sealed class CorrectionEndpointRegressionTests
+{
+    [Fact]
+    public void Correction_payment_requires_explicit_per_transfer_operation()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Endpoints", "ManualReportEndpoints.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("correction_operation_required", source, StringComparison.Ordinal);
+        Assert.Contains("CorrectionOperationCode is not (2 or 3)", source, StringComparison.Ordinal);
+        Assert.Contains("correctionProducts", source, StringComparison.Ordinal);
+        Assert.Contains("correctionProduct.MarkCorrectionChanged(request.CorrectionOperationCode)", source, StringComparison.Ordinal);
+    }
 
     private static string FindRepoRoot()
     {

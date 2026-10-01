@@ -237,11 +237,12 @@ CREATE INDEX IF NOT EXISTS "IX_manual_report_products_employee"
     ON reporting.manual_report_products ("ReportEmployeeId");
 CREATE INDEX IF NOT EXISTS "IX_manual_report_products_source"
     ON reporting.manual_report_products ("SourceReportProductId");
-CREATE UNIQUE INDEX IF NOT EXISTS "UX_manual_reports_open_correction_workspace"
+DROP INDEX IF EXISTS reporting."UX_manual_reports_open_correction_workspace";
+CREATE UNIQUE INDEX "UX_manual_reports_open_correction_workspace"
     ON reporting.manual_reports ("SourceReportId")
     WHERE "IsCorrectionWorkspace" = true
       AND "SourceReportId" IS NOT NULL
-      AND "Status" IN ('Draft', 'ReadyForValidation', 'Error');
+      AND "Status" IN ('Draft', 'ReadyForValidation', 'Error', 'Processing');
 
 CREATE TABLE IF NOT EXISTS reporting.manual_contributions (
     "Id" uuid PRIMARY KEY,
