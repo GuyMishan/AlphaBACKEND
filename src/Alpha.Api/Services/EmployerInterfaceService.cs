@@ -418,8 +418,23 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         }
 
         db.EmployerInterfaceFeedback.Add(feedback);
-        await db.SaveChangesAsync(ct);
-        return new(null, feedback.Id, validation, 0, 0);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return new(null, feedback.Id, validation, 0, 0);
+        }
+        catch (DbUpdateException)
+        {
+            // The unique (EmployerId, PayloadHash) index is the final idempotency boundary.
+            // A concurrent upload can pass the pre-check before the winning request commits.
+            var concurrentExistingId = await db.EmployerInterfaceFeedback.AsNoTracking()
+                .Where(x => x.EmployerId == employerId && x.PayloadHash == hash)
+                .Select(x => (Guid?)x.Id)
+                .FirstOrDefaultAsync(CancellationToken.None);
+            if (concurrentExistingId is not null)
+                return new(null, concurrentExistingId, validation, 0, 0);
+            throw;
+        }
     }
 
     private async Task<IngestResult> ImportReportAsync(Guid organizationId, Guid employerId, byte[] bytes,

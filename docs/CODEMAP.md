@@ -83,3 +83,7 @@ These sources outrank assumptions, old examples and UI behavior.
 - Derived/correction drafts accept an optional source-product selection; selected products and their owning employees are cloned with the same immutable snapshot/previous-record semantics, enabling a focused employee+product correction workflow without mutating the submitted source report.
 
 - Reports & Feedback exports are generated server-side from authorized report snapshots/normalized feedback as UTF-8 BOM CSV: employee contribution detail, deposit summary and manufacturer feedback. Export reads never mutate submitted evidence.
+
+
+- Feedback ingestion is idempotent under concurrent duplicate uploads: the unique employer+payload-hash index is the database boundary and a losing concurrent request resolves to the already-persisted feedback instead of surfacing a 500.
+- Report transmission atomically claims Validated -> Processing before file reservation. After the transmission evidence row is persisted, provider dispatch and result persistence are intentionally detached from the HTTP request-abort token so a browser disconnect cannot cancel an irreversible provider side effect and leave a misleading retryable local state.
