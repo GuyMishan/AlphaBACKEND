@@ -139,8 +139,8 @@ public static class ReportFeedbackEndpoints
             .ToDictionaryAsync(x => x.Id, x => x.Count, ct);
         var expectedContributionCounts = await (
                 from contribution in db.ManualContributions.AsNoTracking()
-                join product in db.ManualReportProducts.AsNoTracking() on contribution.ReportProductId equals product.Id
-                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                join reportProduct in db.ManualReportProducts.AsNoTracking() on contribution.ReportProductId equals reportProduct.Id
+                join employee in db.ManualReportEmployees.AsNoTracking() on reportProduct.ReportEmployeeId equals employee.Id
                 where candidateIds.Contains(employee.ReportId)
                     && (contribution.Amount != 0m || contribution.Percentage != 0m || contribution.ExemptPayments != 0m)
                 group contribution by employee.ReportId into g
