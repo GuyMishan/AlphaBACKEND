@@ -557,7 +557,7 @@ public static class ManualReportEndpoints
             employee.PostalCodeSnapshot, employee.PostOfficeBoxSnapshot,
             products = products.Select(p => new
             {
-                p.Id, p.SourceReportProductId, p.IsCorrectionChanged, p.CorrectionOperationCode, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName, p.FundClassification,
+                p.Id, workspaceReportProductId = p.Id, p.SourceReportProductId, p.IsCorrectionChanged, p.CorrectionOperationCode, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName, p.FundClassification,
                 p.SalaryMonth, p.Salary, p.SalaryAllocationType, p.SalaryAllocationValue, p.AllocationOrder,
                 p.ReportingType, p.SalaryLayer, p.Section14, p.Section14Code, p.Section14StartDate,
                 employerContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employer).OrderBy(c => c.Component),
@@ -642,6 +642,7 @@ public static class ManualReportEndpoints
             var existingBySource = existingProducts
                 .Where(x => x.SourceReportProductId.HasValue)
                 .ToDictionary(x => x.SourceReportProductId!.Value);
+            var existingById = existingProducts.ToDictionary(x => x.Id);
             var requestedSourceIds = resolvedProducts.Items
                 .Select(x => x.Input.SourceReportProductId)
                 .Where(x => x.HasValue)
@@ -686,12 +687,29 @@ public static class ManualReportEndpoints
                 }
                 else
                 {
-                    var product = new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
-                        input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
-                        input.Section14StartDate, input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
-                        item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
+                    ManualReportProduct product;
+                    if (input.WorkspaceReportProductId.HasValue)
+                    {
+                        if (!existingById.TryGetValue(input.WorkspaceReportProductId.Value, out product!)
+                            || product.SourceReportProductId.HasValue)
+                            return Results.Conflict(new { error = "correction_workspace_product_invalid" });
+
+                        product.Update(input.ProductType, input.PolicyNumber, input.SalaryMonth, item.InsuredSalary,
+                            input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate,
+                            input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
+                            item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
+                        await db.ManualContributions.Where(x => x.ReportProductId == product.Id).ExecuteDeleteAsync(ct);
+                    }
+                    else
+                    {
+                        product = new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
+                            input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
+                            input.Section14StartDate, input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
+                            item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
+                        db.ManualReportProducts.Add(product);
+                    }
+
                     product.SetCorrectionState(true, 2);
-                    db.ManualReportProducts.Add(product);
                     AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
                     AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
                 }
@@ -857,7 +875,7 @@ public sealed record ManualProductInput(PensionProductType ProductType, string P
     string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName, string? FundClassification,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions,
-    Guid? SourceReportProductId = null);
+    Guid? SourceReportProductId = null, Guid? WorkspaceReportProductId = null);
 public sealed record ManualContributionInput(ContributionComponent Component, decimal Amount, decimal Percentage, decimal ExemptPayments);
 public sealed record SaveManualReportPaymentRequest(string ProviderName, string ProviderAccount, string PaymentMethod,
     DateOnly? ValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,
