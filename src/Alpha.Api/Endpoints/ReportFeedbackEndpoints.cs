@@ -129,7 +129,7 @@ public static class ReportFeedbackEndpoints
         }
 
         var candidateIds = await query.Select(x => x.Id).ToListAsync(ct);
-        if (candidateIds.Count == 0) return Results.Ok(new { items = Array.Empty<object>(), hasMore = false });
+        if (candidateIds.Count == 0) return Results.Ok(new { items = Array.Empty<object>(), hasMore = false, summary = new { total = 0, completed = 0, attention = 0, pending = 0 } });
 
         var transmissions = await db.ReportTransmissions.AsNoTracking().Where(x => candidateIds.Contains(x.ReportId))
             .OrderByDescending(x => x.AttemptNumber).ToListAsync(ct);
@@ -194,7 +194,15 @@ public static class ReportFeedbackEndpoints
             candidateIds = candidateIds.Where(id => State(id) == normalizedStatus).ToList();
         if (requiresAttention == true)
             candidateIds = candidateIds.Where(id => State(id) == "attention").ToList();
-        if (candidateIds.Count == 0) return Results.Ok(new { items = Array.Empty<object>(), hasMore = false });
+        if (candidateIds.Count == 0) return Results.Ok(new { items = Array.Empty<object>(), hasMore = false, summary = new { total = 0, completed = 0, attention = 0, pending = 0 } });
+
+        var summary = new
+        {
+            total = candidateIds.Count,
+            completed = candidateIds.Count(id => State(id) == "completed"),
+            attention = candidateIds.Sum(id => attentionProductCounts.GetValueOrDefault(id)),
+            pending = candidateIds.Count(id => State(id) is "pending" or "partial")
+        };
 
         var page = await db.ManualReports.AsNoTracking().Where(x => candidateIds.Contains(x.Id))
             .OrderByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
@@ -271,7 +279,7 @@ public static class ReportFeedbackEndpoints
                 lastTransmission = tx is null ? null : new { tx.Id, tx.AttemptNumber, tx.Status, tx.Provider, tx.ExternalId, tx.ErrorMessage, tx.StartedAt, tx.SentAt, tx.CompletedAt }
             };
         }).ToList();
-        return Results.Ok(new { items, hasMore });
+        return Results.Ok(new { items, hasMore, summary });
     }
 
     private static async Task<IResult> TreatmentStatusOptionsAsync(Guid organizationId, Guid employerId, OrganizationAccessService access, CancellationToken ct)
