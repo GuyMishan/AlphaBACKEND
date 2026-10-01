@@ -63,4 +63,45 @@ public sealed class EmployerInterfaceLineFeedbackParserTests
         Assert.Equal(6m, rights.ContributionRate);
         Assert.Equal(600m, rights.ContributionAmount);
     }
+
+    [Fact]
+    public void Summary_feedback_parser_preserves_multiple_rights_rows_in_order()
+    {
+        var recordId = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var xml = $"""
+            <Root>
+              <StatosPirteiKlitatReshuma>
+                <MISPAR-MEZAHE-RESHUMA>{recordId}</MISPAR-MEZAHE-RESHUMA>
+                <RESHUMA-NIKLETA>1</RESHUMA-NIKLETA>
+                <SUG-SHGIHA>1</SUG-SHGIHA>
+                <OfenRishumZchuiot>
+                  <SUG-HAFRASHA>2</SUG-HAFRASHA>
+                  <SHIUR-HAFRASHA>6.00</SHIUR-HAFRASHA>
+                  <SCHUM-HAFRASHA>600.00</SCHUM-HAFRASHA>
+                </OfenRishumZchuiot>
+                <OfenRishumZchuiot>
+                  <SUG-HAFRASHA>3</SUG-HAFRASHA>
+                  <SHIUR-HAFRASHA>6.50</SHIUR-HAFRASHA>
+                  <SCHUM-HAFRASHA>650.00</SCHUM-HAFRASHA>
+                </OfenRishumZchuiot>
+              </StatosPirteiKlitatReshuma>
+            </Root>
+            """;
+
+        var record = Assert.Single(EmployerInterfaceLineFeedbackParser.ParseSummary(xml).Records);
+
+        Assert.Collection(record.Rights!,
+            first =>
+            {
+                Assert.Equal(2, first.ContributionTypeCode);
+                Assert.Equal(6m, first.ContributionRate);
+                Assert.Equal(600m, first.ContributionAmount);
+            },
+            second =>
+            {
+                Assert.Equal(3, second.ContributionTypeCode);
+                Assert.Equal(6.5m, second.ContributionRate);
+                Assert.Equal(650m, second.ContributionAmount);
+            });
+    }
 }
