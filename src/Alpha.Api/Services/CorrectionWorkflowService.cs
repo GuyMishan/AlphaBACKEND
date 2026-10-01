@@ -441,12 +441,12 @@ public static class CorrectionWorkflowService
         foreach (var pair in workspaceBySource)
         {
             if (!sourceProducts.TryGetValue(pair.Key, out var original)) continue;
-            var current = pair.Value;
-            if (!ProductEquivalent(original, current)
-                || !ContributionSetEquivalent(source, original.Id, workspace, current.Id)
-                || !PaymentEquivalent(source, original.Id, workspace, current.Id, protector)
-                || !MetadataEquivalent(source.Metadata.GetValueOrDefault(original.Id), workspace.Metadata.GetValueOrDefault(current.Id))
-                || !ProductAttachmentsEquivalent(source, original.Id, workspace, current.Id))
+            var currentProduct = pair.Value;
+            if (!ProductEquivalent(original, currentProduct)
+                || !ContributionSetEquivalent(source, original.Id, workspace, currentProduct.Id)
+                || !PaymentEquivalent(source, original.Id, workspace, currentProduct.Id, protector)
+                || !MetadataEquivalent(source.Metadata.GetValueOrDefault(original.Id), workspace.Metadata.GetValueOrDefault(currentProduct.Id))
+                || !ProductAttachmentsEquivalent(source, original.Id, workspace, currentProduct.Id))
                 changed.Add(original.Id);
         }
 

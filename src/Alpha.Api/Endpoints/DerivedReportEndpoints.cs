@@ -72,7 +72,8 @@ public static class DerivedReportEndpoints
             reportId = result.ReportId,
             reportProductId = result.ReportProductId,
             result.Created,
-            result.PendingChanges
+            result.PendingChanges,
+            result.RevisionNumber
         });
     }
 
@@ -97,7 +98,7 @@ public static class DerivedReportEndpoints
             currentUser.UserId,
             "report-correction.materialized",
             nameof(ManualReport),
-            result.CurrentReportId,
+            result.CurrentReportId ?? result.NegativeReportId ?? result.WorkspaceId,
             organizationId,
             employerId,
             System.Text.Json.JsonSerializer.Serialize(new
