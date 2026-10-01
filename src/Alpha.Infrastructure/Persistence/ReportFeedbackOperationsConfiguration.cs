@@ -62,6 +62,7 @@ public sealed class ReportProductTreatmentConfiguration : IEntityTypeConfigurati
         b.HasKey(x => x.Id);
         b.Property(x => x.StatusCode).HasMaxLength(80).IsRequired();
         b.Property(x => x.Note).HasColumnType("text");
+        b.Property(x => x.UpdatedAt).IsConcurrencyToken();
         b.HasIndex(x => x.ReportProductId).IsUnique();
         b.HasIndex(x => x.StatusCode);
         b.HasOne<ManualReportProduct>().WithOne().HasForeignKey<ReportProductTreatment>(x => x.ReportProductId).OnDelete(DeleteBehavior.Cascade);

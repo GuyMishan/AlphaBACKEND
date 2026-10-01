@@ -89,3 +89,5 @@ These sources outrank assumptions, old examples and UI behavior.
 - Report transmission atomically claims Validated -> Processing before file reservation. After the transmission evidence row is persisted, provider dispatch and result persistence are intentionally detached from the HTTP request-abort token so a browser disconnect cannot cancel an irreversible provider side effect and leave a misleading retryable local state.
 
 - The normalized contribution-feedback table has a dedicated `(ReportProductId, ReceivedAt)` index for the Reports & Feedback per-product modal; the broader report/product index remains for report-level reconciliation.
+
+- Treatment updates use optimistic concurrency on `UpdatedAt`; concurrent operators cannot silently overwrite each other's current treatment state. The losing update returns a conflict while the successful update, history row and audit event remain atomic in one SaveChanges transaction.

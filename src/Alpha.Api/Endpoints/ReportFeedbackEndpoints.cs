@@ -509,6 +509,7 @@ public static class ReportFeedbackEndpoints
         if (!belongs) return Results.NotFound();
 
         var treatment = await db.ReportProductTreatments.SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
+        var creatingTreatment = treatment is null;
         var previous = treatment?.StatusCode ?? string.Empty;
         if (treatment is null)
         {
@@ -526,7 +527,21 @@ public static class ReportFeedbackEndpoints
             employerId,
             JsonSerializer.Serialize(new { reportId, reportProductId, previousStatus = previous, statusCode = request.StatusCode }),
             http.TraceIdentifier));
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Results.Conflict(new { error = "treatment_conflict" });
+        }
+        catch (DbUpdateException) when (creatingTreatment)
+        {
+            var existsNow = await db.ReportProductTreatments.AsNoTracking()
+                .AnyAsync(x => x.ReportProductId == reportProductId, CancellationToken.None);
+            if (existsNow) return Results.Conflict(new { error = "treatment_conflict" });
+            throw;
+        }
         return Results.Ok(new
         {
             treatment.StatusCode, label = TreatmentStatuses.First(x => x.Code == request.StatusCode).Label,
