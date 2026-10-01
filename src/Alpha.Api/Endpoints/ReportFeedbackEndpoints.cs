@@ -161,11 +161,11 @@ public static class ReportFeedbackEndpoints
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ContributionId).Distinct().Count());
         var errorCounts = latestContributionFeedback
-            .Where(x => x.ErrorCode.HasValue && x.ErrorCode != 1)
+            .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ContributionId).Distinct().Count());
         var attentionProductCounts = latestContributionFeedback
-            .Where(x => x.ErrorCode.HasValue && x.ErrorCode != 1)
+            .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ReportProductId).Distinct().Count());
 
@@ -314,7 +314,7 @@ public static class ReportFeedbackEndpoints
             latestFeedback.TryGetValue(x.Product.Id, out var rows); treatments.TryGetValue(x.Product.Id, out var treatment);
             metadata.TryGetValue(x.Product.Id, out var productMetadata); totals.TryGetValue(x.Product.Id, out var total);
             var expected = total?.Count ?? 0; var received = rows?.Length ?? 0;
-            var hasError = rows?.Any(item => item.ErrorCode.HasValue && item.ErrorCode != 1) == true;
+            var hasError = rows?.Any(item => ReportFeedbackStatusResolver.IsActionableFeedbackError(item.ErrorCode)) == true;
             var feedbackState = received == 0 ? "pending" : hasError ? "attention" : received < expected ? "partial" : "completed";
             var transferKey = !string.IsNullOrWhiteSpace(productMetadata?.InterfaceTransferIdentifier)
                 ? productMetadata.InterfaceTransferIdentifier : x.Product.Id.ToString("D").ToUpperInvariant();

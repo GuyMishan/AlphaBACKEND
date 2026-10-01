@@ -54,6 +54,14 @@ public sealed class ReportFeedbackStatusResolverTests
             ReportTransmissionStatus.Rejected, 0, 2, 0, 0));
     }
 
+    [Fact]
+    public void Corrective_match_code_31_is_not_actionable()
+    {
+        Assert.False(ReportFeedbackStatusResolver.IsActionableFeedbackError(31));
+        Assert.False(ReportFeedbackStatusResolver.IsActionableFeedbackError(1));
+        Assert.True(ReportFeedbackStatusResolver.IsActionableFeedbackError(53));
+    }
+
     [Theory]
     [InlineData(1000, 1000, 900, 100, "in-transit")]
     [InlineData(1000, 1000, 1000, 0, "allocated")]

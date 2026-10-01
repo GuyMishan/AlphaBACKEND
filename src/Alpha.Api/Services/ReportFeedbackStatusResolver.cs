@@ -44,6 +44,9 @@ public static class ReportFeedbackStatusResolver
         return Math.Round(allocatedAmount / reportedDepositAmount * 100m, 2);
     }
 
+    public static bool IsActionableFeedbackError(int? errorCode) =>
+        errorCode.HasValue && errorCode is not (1 or 31);
+
     public static bool CanCreateCorrection(
         bool canCreateReport,
         bool isEditable,

@@ -104,4 +104,13 @@ public sealed class EmployerInterfaceLineFeedbackParserTests
                 Assert.Equal(650m, second.ContributionAmount);
             });
     }
+
+    [Theory]
+    [InlineData(31, "התנועה המקורית תקינה ומותאמת (עבור דיווח מתקן)")]
+    [InlineData(53, "אין התאמה בין אחוז הפרשה, סכום הפרשה ושכר")]
+    [InlineData(116, "הפקדה לקרן שאינה תואמת את מנגנון החלוקה בהתאם לספרת הביקורת בת.ז. של העמית")]
+    public void Official_error_descriptions_cover_version_006_codes(int code, string expected)
+    {
+        Assert.Equal(expected, EmployerInterfaceLineFeedbackParser.Description(code));
+    }
 }
