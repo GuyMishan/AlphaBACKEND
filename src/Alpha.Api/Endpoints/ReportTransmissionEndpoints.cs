@@ -35,6 +35,11 @@ public static class ReportTransmissionEndpoints
         EmployerInterfaceFileSequenceService fileSequences, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!provider.IsConfigured)
+            return Results.Problem(
+                title: "Clearing-house transmission is not configured.",
+                detail: "A real transmission provider must be configured before reports can be sent.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
         if (!entitlement.Allowed)
             return Results.Json(new { error = entitlement.Error, feature = entitlement.Feature }, statusCode: StatusCodes.Status409Conflict);
