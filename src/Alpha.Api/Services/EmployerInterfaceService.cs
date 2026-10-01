@@ -197,9 +197,12 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             var decodedXml = protector.Unprotect(feedback.RawXml, $"employer-interface-feedback:{feedback.PayloadHash}");
             var parsed = EmployerInterfaceLineFeedbackParser.ParseSummary(decodedXml);
 
-            foreach (var transfer in parsed.Transfers.Where(x => !string.IsNullOrWhiteSpace(x.TransferIdentifier)
-                && !existingTransfers.Contains(x.TransferIdentifier)))
+            foreach (var transfer in parsed.Transfers.Where(x => !string.IsNullOrWhiteSpace(x.TransferIdentifier)))
             {
+                await PropagateTransferIdentifiersAsync(
+                    reportId, transfer.TransferIdentifier, transfer.ClearingIdentifier, ct);
+
+                if (existingTransfers.Contains(transfer.TransferIdentifier)) continue;
                 db.EmployerInterfaceTransferFeedback.Add(new EmployerInterfaceTransferFeedback(
                     feedback.Id, reportId, transfer.TransferIdentifier, transfer.ClearingIdentifier,
                     transfer.ReportedDepositAmount, transfer.ActualReceivedAmount, transfer.AllocatedAmount,
@@ -249,6 +252,55 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
 
     public static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
+    private async Task PropagateTransferIdentifiersAsync(
+        Guid reportId,
+        string transferIdentifier,
+        string? clearingIdentifier,
+        CancellationToken ct,
+        string? knownFundCode = null)
+    {
+        var normalizedTransfer = Guid.TryParse(transferIdentifier, out var parsedTransfer)
+            ? parsedTransfer.ToString("D").ToUpperInvariant()
+            : transferIdentifier.Trim().ToUpperInvariant();
+
+        var fundCode = knownFundCode;
+        if (string.IsNullOrWhiteSpace(fundCode))
+        {
+            var directProductId = Guid.TryParse(normalizedTransfer, out var directProduct)
+                ? directProduct
+                : Guid.Empty;
+
+            fundCode = await (
+                from product in db.ManualReportProducts.AsNoTracking()
+                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId
+                where employee.ReportId == reportId
+                    && (product.Id == directProductId || metadata.InterfaceTransferIdentifier == normalizedTransfer)
+                select product.FundCode)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        if (string.IsNullOrWhiteSpace(fundCode)) return;
+
+        var sameFundProductIds = await (
+            from product in db.ManualReportProducts.AsNoTracking()
+            join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+            where employee.ReportId == reportId && product.FundCode == fundCode
+            select product.Id)
+            .ToArrayAsync(ct);
+
+        var sameFundMetadata = await db.EmployerInterfaceReportProductData
+            .Where(x => sameFundProductIds.Contains(x.ReportProductId))
+            .ToListAsync(ct);
+
+        foreach (var item in sameFundMetadata)
+        {
+            item.SetInterfaceTransferIdentifier(normalizedTransfer);
+            if (!string.IsNullOrWhiteSpace(clearingIdentifier))
+                item.SetClearingIdentifier(clearingIdentifier);
+        }
+    }
+
     private async Task<IngestResult> IngestFeedbackAsync(Guid organizationId, Guid employerId, string sourceFileName,
         byte[] bytes, FileValidation validation, CancellationToken ct)
     {
@@ -287,18 +339,12 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             foreach (var matched in matchedProducts)
             {
                 correlatedReportIds.Add(matched.Employee.ReportId);
-                var clearingIdentifier = Value(transferStatus, "MISPAR-MISLAKA");
-                if (!string.IsNullOrWhiteSpace(clearingIdentifier))
-                {
-                    var sameFundProductIds = await (
-                        from p in db.ManualReportProducts.AsNoTracking()
-                        join e in db.ManualReportEmployees.AsNoTracking() on p.ReportEmployeeId equals e.Id
-                        where e.ReportId == matched.Employee.ReportId && p.FundCode == matched.Product.FundCode
-                        select p.Id).ToArrayAsync(ct);
-                    var sameFundMetadata = await db.EmployerInterfaceReportProductData
-                        .Where(x => sameFundProductIds.Contains(x.ReportProductId)).ToListAsync(ct);
-                    foreach (var item in sameFundMetadata) item.SetClearingIdentifier(clearingIdentifier);
-                }
+                await PropagateTransferIdentifiersAsync(
+                    matched.Employee.ReportId,
+                    normalizedTransfer,
+                    Value(transferStatus, "MISPAR-MISLAKA"),
+                    ct,
+                    matched.Product.FundCode);
             }
         }
 
