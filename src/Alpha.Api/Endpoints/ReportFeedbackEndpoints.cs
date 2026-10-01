@@ -466,7 +466,7 @@ public static class ReportFeedbackEndpoints
         static string Csv(object? value)
         {
             var text = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
-            return """ + text.Replace(""", """") + """;
+            return "\"" + text.Replace("\"", "\"\"") + "\"";
         }
         static string ContributionName(ManualContribution c) => (c.Party, c.Component) switch
         {
