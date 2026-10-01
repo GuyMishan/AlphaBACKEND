@@ -56,5 +56,25 @@ ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT E
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "PreviousIdentifier" varchar(36) NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "PreviousClearingIdentifier" varchar(36) NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "PreviousReferenceExceptionCode" integer NULL;
+
+UPDATE reporting.employer_interface_report_product_data
+SET "InterfaceTransferIdentifier" = COALESCE("InterfaceTransferIdentifier", ''),
+    "ClearingIdentifier" = COALESCE("ClearingIdentifier", ''),
+    "PreviousIdentifier" = COALESCE("PreviousIdentifier", ''),
+    "PreviousClearingIdentifier" = COALESCE("PreviousClearingIdentifier", '')
+WHERE "InterfaceTransferIdentifier" IS NULL
+   OR "ClearingIdentifier" IS NULL
+   OR "PreviousIdentifier" IS NULL
+   OR "PreviousClearingIdentifier" IS NULL;
+
+ALTER TABLE reporting.employer_interface_report_product_data
+    ALTER COLUMN "InterfaceTransferIdentifier" SET DEFAULT '',
+    ALTER COLUMN "InterfaceTransferIdentifier" SET NOT NULL,
+    ALTER COLUMN "ClearingIdentifier" SET DEFAULT '',
+    ALTER COLUMN "ClearingIdentifier" SET NOT NULL,
+    ALTER COLUMN "PreviousIdentifier" SET DEFAULT '',
+    ALTER COLUMN "PreviousIdentifier" SET NOT NULL,
+    ALTER COLUMN "PreviousClearingIdentifier" SET DEFAULT '',
+    ALTER COLUMN "PreviousClearingIdentifier" SET NOT NULL;
 """;
 }

@@ -102,6 +102,21 @@ public sealed class ReportingSchemaSqlGuardTests
         Assert.Contains("IX_contribution_feedback_Feedback_Record_Sequence", operationsSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Employer_interface_006_initializer_backfills_required_identifier_strings()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Infrastructure", "Persistence", "EmployerInterface006SchemaInitializer.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("SET \"InterfaceTransferIdentifier\" = COALESCE(\"InterfaceTransferIdentifier\", '')", source, StringComparison.Ordinal);
+        Assert.Contains("\"PreviousClearingIdentifier\" = COALESCE(\"PreviousClearingIdentifier\", '')", source, StringComparison.Ordinal);
+        Assert.Contains("ALTER COLUMN \"InterfaceTransferIdentifier\" SET NOT NULL", source, StringComparison.Ordinal);
+        Assert.Contains("ALTER COLUMN \"ClearingIdentifier\" SET NOT NULL", source, StringComparison.Ordinal);
+        Assert.Contains("ALTER COLUMN \"PreviousIdentifier\" SET NOT NULL", source, StringComparison.Ordinal);
+        Assert.Contains("ALTER COLUMN \"PreviousClearingIdentifier\" SET NOT NULL", source, StringComparison.Ordinal);
+    }
+
     private static AlphaDbContext CreateDb(string connectionString)
     {
         var options = new DbContextOptionsBuilder<AlphaDbContext>().UseNpgsql(connectionString).Options;
