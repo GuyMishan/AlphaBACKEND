@@ -81,14 +81,16 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
         using var json = await ReadJson(response, "CardCom API 11 Transactions/Transaction", ct);
         var root = json.RootElement;
         var responseCode = IntValue(root, "ResponseCode");
-        var success = response.IsSuccessStatusCode && responseCode == 0;
+        var transactionId = NumberOrStringValue(root, "TranzactionId") ?? NumberOrStringValue(root, "TransactionId") ?? string.Empty;
+        var providerApproved = response.IsSuccessStatusCode && responseCode == 0;
+        var success = providerApproved && !string.IsNullOrWhiteSpace(transactionId);
 
         return new PaymentChargeResult(
             success,
-            NumberOrStringValue(root, "TranzactionId") ?? NumberOrStringValue(root, "TransactionId") ?? string.Empty,
+            transactionId,
             null,
-            success ? null : responseCode?.ToString(CultureInfo.InvariantCulture) ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
-            success ? null : StringValue(root, "Description") ?? $"CardCom API 11 charge failed ({(int)response.StatusCode}).");
+            success ? null : providerApproved ? "transaction_id_missing" : responseCode?.ToString(CultureInfo.InvariantCulture) ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
+            success ? null : providerApproved ? "CardCom approved the charge without a transaction id." : StringValue(root, "Description") ?? $"CardCom API 11 charge failed ({(int)response.StatusCode}).");
     }
 
     public async Task<PaymentRefundResult> Refund(PaymentRefundRequest request, CancellationToken ct = default)
