@@ -139,6 +139,37 @@ public sealed class PayPlusPaymentProviderTests
         Assert.EndsWith("/PaymentPages/ipn-full", captured!.RequestUri!.AbsolutePath);
     }
 
+
+    [Fact]
+    public async Task Failed_setup_callback_cannot_activate_token()
+    {
+        var body = """{"payment_request_uid":"req-failed"}""";
+        var provider = CreateProvider(_ => Task.FromResult(Json(HttpStatusCode.OK, new
+        {
+            results = new { status = "success", code = 0 },
+            data = new
+            {
+                status = "rejected",
+                token_uid = "token-that-must-not-activate",
+                customer_uid = "customer-1",
+                more_info = "11111111-1111-1111-1111-111111111111:setup"
+            }
+        })));
+        var hash = Hmac(body, "secret");
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            provider.ResolvePaymentMethodFromCallback(
+                body,
+                new Dictionary<string, string>
+                {
+                    ["user-agent"] = "PayPlus Callback",
+                    ["hash"] = hash
+                },
+                TestContext.Current.CancellationToken));
+
+        Assert.Contains("not approved", error.Message);
+    }
+
     private static PayPlusPaymentProvider CreateProvider(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler)
     {
         var configuration = new ConfigurationBuilder()
