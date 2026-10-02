@@ -188,6 +188,24 @@ public sealed class CardComPaymentProviderTests
         Assert.Equal("transaction_id_missing", result.ErrorCode);
     }
 
+
+    [Fact]
+    public async Task Refund_approved_without_refund_id_is_not_treated_as_success()
+    {
+        var provider = CreateProvider(_ => Json(HttpStatusCode.OK, new
+        {
+            ResponseCode = 0,
+            Description = "OK"
+        }));
+
+        var result = await provider.Refund(new PaymentRefundRequest(
+            "12345", "token", 25m, "ILS", "refund-key"),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Success);
+        Assert.Equal("refund_id_missing", result.ErrorCode);
+    }
+
     private static CardComPaymentProvider CreateProvider(
         Func<HttpRequestMessage, Task<HttpResponseMessage>> handler,
         string apiPassword = "")
