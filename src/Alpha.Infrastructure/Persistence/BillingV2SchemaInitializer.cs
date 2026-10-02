@@ -11,7 +11,10 @@ public static class BillingV2SchemaInitializer
             ALTER TABLE billing.billing_accounts
                 ADD COLUMN IF NOT EXISTS "BillingMode" varchar(40) NOT NULL DEFAULT 'OrganizationBilling',
                 ADD COLUMN IF NOT EXISTS "Status" varchar(40) NOT NULL DEFAULT 'PendingSetup',
-                ADD COLUMN IF NOT EXISTS "DefaultPaymentMethodId" uuid NULL;
+                ADD COLUMN IF NOT EXISTS "DefaultPaymentMethodId" uuid NULL,
+                ADD COLUMN IF NOT EXISTS "PendingProvider" varchar(40) NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS "PendingProviderCustomerId" varchar(200) NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS "PendingSetupReference" varchar(200) NOT NULL DEFAULT '';
 
             UPDATE billing.billing_accounts
             SET "Status" = CASE "PaymentMethodStatus"
