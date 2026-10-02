@@ -133,6 +133,38 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             }
         }
 
+        if (!negative)
+        {
+            var repeatedEmployees = Desc(document, "PirteiOved")
+                .Select(employee => new
+                {
+                    Key = $"{IntValue(employee, "SUG-MEZAHE-OVED")}:{Value(employee, "MISPAR-MEZAHE")?.Trim()}",
+                    Snapshot = string.Join("|",
+                        Value(employee, "SHEM-PRATI")?.Trim() ?? "",
+                        Value(employee, "SHEM-MISHPACHA")?.Trim() ?? "",
+                        Value(employee, "TAARICH-LEIDA")?.Trim() ?? "",
+                        Value(employee, "MISPAR-OVED-ETZEL-MAASIK")?.Trim() ?? "",
+                        Value(employee, "SHEM-YISHUV")?.Trim() ?? "",
+                        Value(employee, "SHEM-RECHOV")?.Trim() ?? "",
+                        Value(employee, "MISPAR-BAIT")?.Trim() ?? "",
+                        Value(employee, "MISPAR-DIRA")?.Trim() ?? "",
+                        Value(employee, "MIKUD")?.Trim() ?? "",
+                        Value(employee, "TA-DOAR")?.Trim() ?? "",
+                        Value(employee, "E-MAIL")?.Trim() ?? "",
+                        Digits(Value(employee, "MISPAR-CELLULARI")),
+                        Value(employee, "MIN")?.Trim() ?? "",
+                        Value(employee, "MOED-TCHILAT-AHASAKAT-OVED")?.Trim() ?? "")
+                })
+                .Where(x => !x.Key.EndsWith(":", StringComparison.Ordinal))
+                .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var employee in repeatedEmployees)
+            {
+                if (employee.Select(x => x.Snapshot).Distinct(StringComparer.Ordinal).Skip(1).Any())
+                    issues.Add($"Employee {employee.Key} appears in multiple transfer blocks with conflicting snapshot data.");
+            }
+        }
+
         return issues;
     }
 
