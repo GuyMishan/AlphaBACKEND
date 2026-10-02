@@ -150,10 +150,18 @@ public static class ReportTransmissionEndpoints
         }
         catch (Exception)
         {
-            transmission.Complete(ReportTransmissionStatus.Error, null, null, "Transmission provider failed.");
-            report.MarkTransmissionError("Transmission provider failed.");
+            // A provider exception is an ambiguous outcome: the remote clearing house may have
+            // accepted the payload before the connection failed. Keep the report in Processing
+            // so validation/transmission cannot be retried blindly and create a duplicate send.
+            // Reconciliation must determine the external outcome before any further irreversible action.
+            transmission.Complete(ReportTransmissionStatus.Error, null, null, "Transmission outcome is uncertain; reconciliation is required.");
             await db.SaveChangesAsync(CancellationToken.None);
-            return Results.Json(ToResponse(report, transmission, generated.Validation), statusCode: StatusCodes.Status502BadGateway);
+            return Results.Json(new
+            {
+                error = "transmission_reconciliation_required",
+                detail = "The clearing-house outcome is uncertain. The report remains locked in Processing until the transmission is reconciled.",
+                result = ToResponse(report, transmission, generated.Validation)
+            }, statusCode: StatusCodes.Status502BadGateway);
         }
     }
 
