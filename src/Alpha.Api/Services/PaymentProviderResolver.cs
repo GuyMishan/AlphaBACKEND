@@ -24,8 +24,14 @@ public sealed class PaymentProviderResolver(
         var selected = string.IsNullOrWhiteSpace(providerName)
             ? configuration["Payments:DefaultProvider"]
                 ?? configuration["Payments:Provider"]
-                ?? "Fake"
             : providerName;
+        if (string.IsNullOrWhiteSpace(selected))
+            throw new InvalidOperationException("A payment provider must be configured.");
+
+        if (string.Equals(selected, fake.Name, StringComparison.OrdinalIgnoreCase) &&
+            !configuration.GetValue("Payments:AllowFakeProvider", false))
+            throw new InvalidOperationException("The fake payment provider is disabled.");
+
         return Providers.TryGetValue(selected, out var provider)
             ? provider
             : throw new InvalidOperationException($"Payment provider '{selected}' is not registered.");
