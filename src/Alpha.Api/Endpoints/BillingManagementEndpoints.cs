@@ -570,6 +570,8 @@ public static class BillingManagementEndpoints
         if (!currentUser.IsPlatformAdmin) return Results.Forbid();
         if (request.Amount <= 0 || string.IsNullOrWhiteSpace(request.IdempotencyKey))
             return Results.BadRequest(new { error = "amount_and_idempotency_key_required" });
+        if (decimal.Round(request.Amount, 2, MidpointRounding.AwayFromZero) != request.Amount)
+            return Results.BadRequest(new { error = "refund_amount_precision_invalid" });
         if (request.IdempotencyKey.Trim().Length > 160)
             return Results.BadRequest(new { error = "idempotency_key_too_long" });
 
@@ -591,8 +593,12 @@ public static class BillingManagementEndpoints
                 });
             }
 
-            payment = await db.Payments.SingleOrDefaultAsync(x => x.Id == paymentId, ct)
-                ?? throw new InvalidOperationException("payment_not_found");
+            payment = await db.Payments.SingleOrDefaultAsync(x => x.Id == paymentId, ct);
+            if (payment is null)
+            {
+                await reservation.RollbackAsync(ct);
+                return Results.NotFound();
+            }
             if (payment.Status is not BillingPaymentStatus.Succeeded and not BillingPaymentStatus.PartiallyRefunded)
             {
                 await reservation.RollbackAsync(ct);
@@ -620,7 +626,22 @@ public static class BillingManagementEndpoints
         }
 
         var account = await db.BillingAccounts.SingleAsync(x => x.Id == payment.BillingAccountId, ct);
-        var provider = providers.Resolve(payment.Provider);
+        IPaymentProvider provider;
+        try
+        {
+            provider = providers.Resolve(payment.Provider);
+        }
+        catch (InvalidOperationException)
+        {
+            refund.RecordPendingError("provider_unavailable");
+            await db.SaveChangesAsync(ct);
+            return Results.Json(new
+            {
+                refund.Id,
+                refund.Status,
+                errorCode = "payment_provider_unavailable"
+            }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
 
         PaymentRefundResult result;
         try
