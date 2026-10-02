@@ -172,6 +172,16 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
 
         using var response = await SendAsync(HttpMethod.Post, "/PaymentPages/ipn-full", lookup, ct);
         var root = await ReadJsonAsync(response, ct);
+        var data = Find(root, "data");
+        if (data.HasValue)
+        {
+            var transactionStatus = FirstString(data.Value, "status");
+            if (!string.IsNullOrWhiteSpace(transactionStatus) &&
+                !string.Equals(transactionStatus, "approved", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(transactionStatus, "success", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"PayPlus payment setup was not approved (status={transactionStatus}).");
+        }
+
         var token = FirstString(root, "token_uid", "card_token", "token")
             ?? throw new InvalidOperationException("PayPlus callback lookup did not include a card token.");
         var masked = FirstString(root, "card_number_masked", "card_number", "masked_card_number") ?? string.Empty;
