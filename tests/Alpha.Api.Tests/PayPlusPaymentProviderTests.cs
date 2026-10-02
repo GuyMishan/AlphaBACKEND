@@ -62,7 +62,7 @@ public sealed class PayPlusPaymentProviderTests
         Assert.Equal("original-tx", body.RootElement.GetProperty("transaction_uid").GetString());
         Assert.Equal(25m, body.RootElement.GetProperty("amount").GetDecimal());
         Assert.Equal("refund:key:1", body.RootElement.GetProperty("more_info").GetString());
-        Assert.True(body.RootElement.GetProperty("initial_invoice").GetBoolean());
+        Assert.False(body.RootElement.TryGetProperty("initial_invoice", out _));
     }
 
     [Fact]
