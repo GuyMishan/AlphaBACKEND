@@ -268,48 +268,52 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             ? directProduct
             : Guid.Empty;
 
-        var matchedProduct = await (
+        var matched = await (
             from product in db.ManualReportProducts.AsNoTracking()
             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
             join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId
             where employee.ReportId == reportId
                 && (product.Id == directProductId || metadata.InterfaceTransferIdentifier == normalizedTransfer)
-            select product)
+            select new { Product = product, Metadata = metadata })
             .FirstOrDefaultAsync(ct);
 
-        if (matchedProduct is null && !string.IsNullOrWhiteSpace(knownFundCode))
+        if (matched is null && !string.IsNullOrWhiteSpace(knownFundCode))
         {
-            matchedProduct = await (
+            matched = await (
                 from product in db.ManualReportProducts.AsNoTracking()
                 join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId
                 where employee.ReportId == reportId && product.FundCode == knownFundCode
-                select product)
+                select new { Product = product, Metadata = metadata })
                 .FirstOrDefaultAsync(ct);
         }
-        if (matchedProduct is null) return false;
+        if (matched is null) return false;
 
-        var externalKey = matchedProduct.FundExternalKey?.Trim() ?? string.Empty;
-        var fundCode = matchedProduct.FundCode?.Trim() ?? string.Empty;
-        var companyName = matchedProduct.FundCompanyName?.Trim() ?? string.Empty;
+        var externalKey = matched.Product.FundExternalKey?.Trim() ?? string.Empty;
+        var fundCode = matched.Product.FundCode?.Trim() ?? string.Empty;
+        var companyName = matched.Product.FundCompanyName?.Trim() ?? string.Empty;
+        var matchedGroupKey = TransferFeedbackGroupKey(matched.Metadata);
 
-        var sameFundProductIds = await (
+        var sameTransferMetadata = await (
             from product in db.ManualReportProducts.AsNoTracking()
             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+            join metadata in db.EmployerInterfaceReportProductData
+                on product.Id equals metadata.ReportProductId
             where employee.ReportId == reportId
                 && (externalKey != string.Empty
                     ? product.FundExternalKey == externalKey
                     : product.FundExternalKey == string.Empty
                         && product.FundCode == fundCode
                         && product.FundCompanyName == companyName)
-            select product.Id)
-            .ToArrayAsync(ct);
-
-        var sameFundMetadata = await db.EmployerInterfaceReportProductData
-            .Where(x => sameFundProductIds.Contains(x.ReportProductId))
+            select metadata)
             .ToListAsync(ct);
 
-        if (sameFundMetadata.Count == 0) return false;
-        foreach (var item in sameFundMetadata)
+        sameTransferMetadata = sameTransferMetadata
+            .Where(x => string.Equals(TransferFeedbackGroupKey(x), matchedGroupKey, StringComparison.Ordinal))
+            .ToList();
+
+        if (sameTransferMetadata.Count == 0) return false;
+        foreach (var item in sameTransferMetadata)
         {
             if (!string.Equals(item.InterfaceTransferIdentifier, normalizedTransfer, StringComparison.OrdinalIgnoreCase))
                 item.SetInterfaceTransferIdentifier(normalizedTransfer);
@@ -319,6 +323,16 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         }
         return true;
     }
+
+    private static string TransferFeedbackGroupKey(EmployerInterfaceReportProductData metadata) =>
+        string.Join("|",
+            metadata.OperationCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+            metadata.PaymentMethodCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+            metadata.EmployerAccountType?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+            metadata.ReceiverAccountType?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+            metadata.PreviousIdentifier?.Trim().ToUpperInvariant() ?? "",
+            metadata.PreviousClearingIdentifier?.Trim().ToUpperInvariant() ?? "",
+            metadata.PreviousReferenceExceptionCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "");
 
     private async Task<IngestResult> IngestFeedbackAsync(Guid organizationId, Guid employerId, string sourceFileName,
         byte[] bytes, FileValidation validation, CancellationToken ct)
