@@ -441,6 +441,16 @@ public static class PaymentProviderEndpoints
             return Results.BadRequest(new { error = "provider_payment_method_incomplete" });
         }
 
+        var tokenOwner = await db.PaymentMethods.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.Provider == provider.Name &&
+            x.ProviderPaymentMethodId == result.PaymentMethodId, ct);
+        if (tokenOwner is not null && tokenOwner.BillingAccountId != account.Id)
+        {
+            webhook.Complete(ProviderWebhookStatus.Failed, "provider_payment_method_already_assigned");
+            await db.SaveChangesAsync(ct);
+            return Results.Conflict(new { error = "provider_payment_method_already_assigned" });
+        }
+
         account.UpdateProviderMetadata(
             BillingPaymentMethodStatus.Active,
             customerId,
@@ -451,10 +461,9 @@ public static class PaymentProviderEndpoints
             result.ExpiryYear,
             result.BankDebitMandateReference);
 
-        var method = await db.PaymentMethods.SingleOrDefaultAsync(x =>
-            x.BillingAccountId == account.Id &&
-            x.Provider == provider.Name &&
-            x.ProviderPaymentMethodId == result.PaymentMethodId, ct);
+        var method = tokenOwner is not null
+            ? await db.PaymentMethods.SingleAsync(x => x.Id == tokenOwner.Id, ct)
+            : null;
 
         if (method is null)
         {
