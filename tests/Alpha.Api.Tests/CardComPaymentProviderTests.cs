@@ -196,7 +196,7 @@ public sealed class CardComPaymentProviderTests
         {
             ResponseCode = 0,
             Description = "OK"
-        })));
+        })), apiPassword: "refund-secret");
 
         var result = await provider.Refund(new PaymentRefundRequest(
             "12345", "token", 25m, "ILS", "refund-key"),
