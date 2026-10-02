@@ -659,7 +659,6 @@ public static class ReportFeedbackEndpoints
         var employeeById = employees.ToDictionary(x => x.Id);
         var productById = products.ToDictionary(x => x.Id);
 
-        static string Csv(object? value) => ReportCsvFormatter.Escape(value);
         static string ContributionName(ManualContribution c) => (c.Party, c.Component) switch
         {
             (ContributionParty.Employee, ContributionComponent.Benefits) => "תגמולי עובד",
@@ -673,16 +672,19 @@ public static class ReportFeedbackEndpoints
             _ => "רכיב הפרשה"
         };
 
-        var lines = new List<string>();
+        var rows = new List<IReadOnlyList<object?>>();
         var normalized = exportType.Trim().ToLowerInvariant();
+        var sheetName = "דוח";
+
         if (normalized == "contributions")
         {
-            lines.Add(string.Join(",", new[] { "חודש דיווח", "עובד", "מזהה עובד", "יצרן", "מוצר", "פוליסה/חשבון", "רכיב", "שכר מבוטח", "שיעור", "סכום" }.Select(Csv)));
+            sheetName = "פירוט הפרשות";
+            rows.Add(new object?[] { "חודש דיווח", "עובד", "מזהה עובד", "יצרן", "מוצר", "פוליסה/חשבון", "רכיב", "שכר מבוטח", "שיעור", "סכום" });
             foreach (var contribution in contributions.OrderBy(x => x.ReportProductId).ThenBy(x => x.Party).ThenBy(x => x.Component))
             {
                 var product = productById[contribution.ReportProductId];
                 var employee = employeeById[product.ReportEmployeeId];
-                lines.Add(string.Join(",", new object?[]
+                rows.Add(new object?[]
                 {
                     report.ReportingMonth.ToString("yyyy-MM"),
                     employee.FirstName + " " + employee.LastName,
@@ -694,20 +696,21 @@ public static class ReportFeedbackEndpoints
                     product.Salary,
                     contribution.Percentage,
                     contribution.Amount
-                }.Select(Csv)));
+                });
             }
         }
         else if (normalized == "deposits")
         {
+            sheetName = "סיכום הפקדות";
             var payments = await db.ManualReportPayments.AsNoTracking()
                 .Where(x => productIds.Contains(x.ReportProductId)).ToDictionaryAsync(x => x.ReportProductId, ct);
             var totals = contributions.GroupBy(x => x.ReportProductId).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
-            lines.Add(string.Join(",", new[] { "חודש דיווח", "עובד", "יצרן", "מוצר", "פוליסה/חשבון", "סכום כולל", "אמצעי תשלום", "חשבון יצרן", "אסמכתא", "תאריך ערך" }.Select(Csv)));
+            rows.Add(new object?[] { "חודש דיווח", "עובד", "יצרן", "מוצר", "פוליסה/חשבון", "סכום כולל", "אמצעי תשלום", "חשבון יצרן", "אסמכתא", "תאריך ערך" });
             foreach (var product in products.OrderBy(x => employeeById[x.ReportEmployeeId].LastName).ThenBy(x => x.FundCompanyName))
             {
                 var employee = employeeById[product.ReportEmployeeId];
                 payments.TryGetValue(product.Id, out var payment);
-                lines.Add(string.Join(",", new object?[]
+                rows.Add(new object?[]
                 {
                     report.ReportingMonth.ToString("yyyy-MM"),
                     employee.FirstName + " " + employee.LastName,
@@ -718,12 +721,13 @@ public static class ReportFeedbackEndpoints
                     payment?.PaymentMethod ?? string.Empty,
                     payment?.ProviderAccount ?? string.Empty,
                     payment?.ReferenceNumber ?? string.Empty,
-                    payment?.ValueDate?.ToString("yyyy-MM-dd") ?? string.Empty
-                }.Select(Csv)));
+                    payment?.ValueDate?.ToString("dd/MM/yyyy") ?? string.Empty
+                });
             }
         }
         else if (normalized == "feedback")
         {
+            sheetName = "משוב יצרן";
             var activeFeedbackIdsForReport = await ActiveFeedbackIdsAsync(reportId, db, ct);
             var feedbackHistory = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
                 .Where(x => x.ReportId == reportId && activeFeedbackIdsForReport.Contains(x.FeedbackId))
@@ -736,13 +740,13 @@ public static class ReportFeedbackEndpoints
                 return group.Where(x => x.FeedbackId == latest.FeedbackId).OrderBy(x => x.Sequence);
             }).ToArray();
             var contributionById = contributions.ToDictionary(x => x.Id);
-            lines.Add(string.Join(",", new[] { "עובד", "יצרן", "מוצר", "רכיב", "סכום מעסיק", "שיעור מעסיק", "סכום יצרן", "שיעור יצרן", "שכר מחושב יצרן", "סטטוס קליטה", "קוד שגיאה", "פירוט", "תאריך משוב", "קובץ מקור" }.Select(Csv)));
+            rows.Add(new object?[] { "עובד", "יצרן", "מוצר", "רכיב", "סכום מעסיק", "שיעור מעסיק", "סכום יצרן", "שיעור יצרן", "שכר מחושב יצרן", "סטטוס קליטה", "קוד שגיאה", "פירוט", "תאריך משוב", "קובץ מקור" });
             foreach (var item in feedback)
             {
                 if (!contributionById.TryGetValue(item.ContributionId, out var contribution)) continue;
                 var product = productById[item.ReportProductId];
                 var employee = employeeById[product.ReportEmployeeId];
-                lines.Add(string.Join(",", new object?[]
+                rows.Add(new object?[]
                 {
                     employee.FirstName + " " + employee.LastName,
                     product.FundCompanyName,
@@ -756,9 +760,9 @@ public static class ReportFeedbackEndpoints
                     item.IntakeStatus,
                     item.ErrorCode,
                     item.ErrorDescription,
-                    item.ReceivedAt.ToString("yyyy-MM-dd HH:mm:ss"),
+                    item.ReceivedAt.ToString("dd/MM/yyyy HH:mm:ss"),
                     item.SourceFileName
-                }.Select(Csv)));
+                });
             }
         }
         else
@@ -766,9 +770,12 @@ public static class ReportFeedbackEndpoints
             return Results.BadRequest(new { error = "export_type_invalid" });
         }
 
-        var bytes = ReportCsvFormatter.Utf8WithBom(lines);
-        var fileName = $"alpha-{report.ReportingMonth:yyyy-MM}-{normalized}.csv";
-        return Results.File(bytes, "text/csv; charset=utf-8", fileName);
+        var bytes = ExcelWorkbookBuilder.Build(sheetName, rows);
+        var fileName = $"alpha-{report.ReportingMonth:yyyy-MM}-{normalized}.xlsx";
+        return Results.File(
+            bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            fileName);
     }
 
     private static async Task<HashSet<Guid>> ActiveFeedbackIdsAsync(
