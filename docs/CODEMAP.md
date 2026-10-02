@@ -44,6 +44,7 @@
 - Reporting application/domain: `Alpha.Application/Reporting/*`, `Alpha.Domain/Reporting/*`.
 - Persistence: `EmployerInterface006*Initializer.cs`, reporting/report lifecycle/transmission/feedback configurations and initializers.
 - Tests: `EmployerInterface006*Tests.cs`, `ReportingSchemaSqlGuardTests.cs`.
+- Reporting stress/audit matrix and safety invariants: `docs/reporting-006-stress-audit.md`.
 - Formal correction creation fails closed when the selected immutable source product is missing Employer Interface metadata; negative corrections must originate from a transmitted/completed (or officially external) current report, and current operation 2/3 corrections must originate from negative operation 6 data. Reports & Feedback receives correction eligibility from the backend rather than guessing from status/kind in the UI.
 
 ## Authoritative 006 specifications
