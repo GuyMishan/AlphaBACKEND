@@ -307,7 +307,17 @@ public static class PaymentProviderEndpoints
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
         using var reader = new StreamReader(http.Request.Body);
-        var rawBody = await reader.ReadToEndAsync(ct);
+        var body = new StringBuilder(Math.Min(maxWebhookBytes, 4096));
+        var buffer = new char[4096];
+        while (true)
+        {
+            var read = await reader.ReadAsync(buffer.AsMemory(), ct);
+            if (read == 0) break;
+            body.Append(buffer, 0, read);
+            if (body.Length > maxWebhookBytes)
+                return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+        var rawBody = body.ToString();
         if (Encoding.UTF8.GetByteCount(rawBody) > maxWebhookBytes)
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
         var headers = http.Request.Headers.ToDictionary(
