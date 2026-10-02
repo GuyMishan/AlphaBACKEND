@@ -231,16 +231,11 @@ public static class CorrectionWorkflowService
         }
         catch
         {
+            // The Processing claim and every technical document are part of this transaction.
+            // Roll the whole materialization back atomically. Do not issue another command through
+            // the already-completed transaction in the catch path; the workspace returns to its
+            // pre-materialization editable state and can be investigated/retried safely.
             await transaction.RollbackAsync(CancellationToken.None);
-            await db.ManualReports.Where(x => x.Id == workspaceId
-                    && x.OrganizationId == organizationId && x.EmployerId == employerId
-                    && x.IsCorrectionWorkspace
-                    && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
-                        || x.Status == ManualReportStatus.Error || x.Status == ManualReportStatus.Processing))
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(x => x.Status, ManualReportStatus.Error)
-                    .SetProperty(x => x.ValidationError, "Correction materialization failed.")
-                    .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow), CancellationToken.None);
             throw;
         }
     }
