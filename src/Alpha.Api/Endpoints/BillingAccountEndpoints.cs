@@ -15,16 +15,6 @@ public sealed record BillingAccountDetailsRequest(
     string? BillingAddress,
     BillingPaymentMethodType PaymentMethodType);
 
-public sealed record BillingProviderMetadataRequest(
-    BillingPaymentMethodStatus PaymentMethodStatus,
-    string? ProviderCustomerId,
-    string? ProviderPaymentMethodId,
-    string? CardBrand,
-    string? CardLast4,
-    int? CardExpiryMonth,
-    int? CardExpiryYear,
-    string? BankDebitMandateReference);
-
 public static class BillingAccountEndpoints
 {
     public static IEndpointRouteBuilder MapBillingAccountEndpoints(this IEndpointRouteBuilder endpoints)
@@ -33,7 +23,6 @@ public static class BillingAccountEndpoints
             .RequireAuthorization().WithTags("Alpha Billing");
         org.MapGet("/", GetOrganizationBillingAsync);
         org.MapPut("/", UpsertOrganizationBillingAsync);
-        org.MapPut("/provider-metadata", UpdateOrganizationProviderMetadataAsync);
 
         var employer = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/billing-account")
             .RequireAuthorization().WithTags("Alpha Billing");
@@ -41,7 +30,6 @@ public static class BillingAccountEndpoints
         employer.MapGet("/resolution", GetEmployerBillingResolutionAsync);
         employer.MapGet("/gate", GetEmployerBillingGateAsync);
         employer.MapPut("/", UpsertEmployerBillingAsync);
-        employer.MapPut("/provider-metadata", UpdateEmployerProviderMetadataAsync);
 
         return endpoints;
     }
@@ -166,42 +154,6 @@ public static class BillingAccountEndpoints
         return Results.Ok(ToResponse(account, null, employerId));
     }
 
-    private static async Task<IResult> UpdateOrganizationProviderMetadataAsync(Guid organizationId,
-        BillingProviderMetadataRequest request, IAlphaDbContext db, ICurrentUser currentUser,
-        OrganizationAccessService access, HttpContext http, CancellationToken ct)
-    {
-        if (!currentUser.IsPlatformAdmin) return Results.Forbid();
-        if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
-
-        var account = await db.BillingAccounts
-            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == null, ct);
-        if (account is null) return Results.NotFound();
-
-        var error = ApplyProviderMetadata(account, request);
-        if (error is not null) return Results.BadRequest(new { error });
-        AddAudit(db, currentUser, http, "billing.organization.provider-metadata.updated", account, organizationId, null);
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(ToResponse(account, organizationId, null));
-    }
-
-    private static async Task<IResult> UpdateEmployerProviderMetadataAsync(Guid organizationId, Guid employerId,
-        BillingProviderMetadataRequest request, IAlphaDbContext db, ICurrentUser currentUser,
-        OrganizationAccessService access, HttpContext http, CancellationToken ct)
-    {
-        if (!currentUser.IsPlatformAdmin) return Results.Forbid();
-        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
-
-        var account = await db.BillingAccounts
-            .SingleOrDefaultAsync(x => x.EmployerId == employerId && x.OrganizationId == null, ct);
-        if (account is null) return Results.NotFound();
-
-        var error = ApplyProviderMetadata(account, request);
-        if (error is not null) return Results.BadRequest(new { error });
-        AddAudit(db, currentUser, http, "billing.employer.provider-metadata.updated", account, organizationId, employerId);
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(ToResponse(account, null, employerId));
-    }
-
     private static string? ValidateBillingDetails(BillingAccountDetailsRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.BillingName)) return "billing_name_required";
@@ -211,32 +163,6 @@ public static class BillingAccountEndpoints
         if (string.IsNullOrWhiteSpace(request.BillingAddress)) return "billing_address_required";
         if (!Enum.IsDefined(request.PaymentMethodType)) return "invalid_payment_method_type";
         return null;
-    }
-
-    private static string? ApplyProviderMetadata(BillingAccount account, BillingProviderMetadataRequest request)
-    {
-        if (!Enum.IsDefined(request.PaymentMethodStatus)) return "invalid_payment_method_status";
-
-        if (account.PaymentMethodType == BillingPaymentMethodType.CreditCard &&
-            !string.IsNullOrWhiteSpace(request.BankDebitMandateReference))
-            return "bank_debit_reference_not_allowed_for_card";
-
-        if (account.PaymentMethodType == BillingPaymentMethodType.BankDebit &&
-            (!string.IsNullOrWhiteSpace(request.CardBrand) || !string.IsNullOrWhiteSpace(request.CardLast4) ||
-             request.CardExpiryMonth.HasValue || request.CardExpiryYear.HasValue))
-            return "card_metadata_not_allowed_for_bank_debit";
-
-        try
-        {
-            account.UpdateProviderMetadata(request.PaymentMethodStatus, request.ProviderCustomerId,
-                request.ProviderPaymentMethodId, request.CardBrand, request.CardLast4,
-                request.CardExpiryMonth, request.CardExpiryYear, request.BankDebitMandateReference);
-            return null;
-        }
-        catch (ArgumentException ex)
-        {
-            return ex.Message;
-        }
     }
 
     private static object ToResponse(BillingAccount? account, Guid? organizationId, Guid? employerId)
