@@ -77,7 +77,6 @@ public static class ExcelWorkbookBuilder
         writer.WriteAttributeString("xmlns", "r", null, RelationshipsNamespace);
         writer.WriteStartElement("bookViews", SpreadsheetNamespace);
         writer.WriteStartElement("workbookView", SpreadsheetNamespace);
-        writer.WriteAttributeString("rightToLeft", "1");
         writer.WriteEndElement();
         writer.WriteEndElement();
         writer.WriteStartElement("sheets", SpreadsheetNamespace);
@@ -280,7 +279,7 @@ public static class ExcelWorkbookBuilder
             writer.WriteAttributeString("t", "inlineStr");
             writer.WriteStartElement("is", SpreadsheetNamespace);
             writer.WriteStartElement("t", SpreadsheetNamespace);
-            writer.WriteAttributeString("xml", "space", null, "preserve");
+            writer.WriteAttributeString("xml", "space", "http://www.w3.org/XML/1998/namespace", "preserve");
             writer.WriteString(DisplayValue(value));
             writer.WriteEndElement();
             writer.WriteEndElement();
