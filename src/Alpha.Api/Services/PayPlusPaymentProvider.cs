@@ -86,7 +86,7 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
             customer_uid = request.CustomerId,
             initial_invoice = request.CreateInvoice,
             extra_info = request.Description,
-            more_info_1 = request.ExternalReference
+            more_info = request.ExternalReference
         };
 
         using var response = await SendAsync(HttpMethod.Post, "/Transactions/Charge", payload, ct, throwOnFailure: false);
@@ -104,15 +104,13 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
     {
         var payload = new
         {
-            terminal_uid = TerminalUid,
-            cashier_uid = CashierUid,
-            amount = request.Amount,
-            currency_code = request.Currency,
             transaction_uid = request.TransactionId,
-            more_info_1 = request.ExternalReference
+            amount = request.Amount,
+            more_info = request.ExternalReference,
+            initial_invoice = true
         };
 
-        using var response = await SendAsync(HttpMethod.Post, "/Transactions/Refund", payload, ct, throwOnFailure: false);
+        using var response = await SendAsync(HttpMethod.Post, "/Transactions/RefundByTransactionUID", payload, ct, throwOnFailure: false);
         var root = await ReadJsonAsync(response, ct, allowFailureStatus: true);
         var success = response.IsSuccessStatusCode && IsSuccess(root);
         return new PaymentRefundResult(
@@ -152,7 +150,17 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
     public async Task<PaymentMethodStatusResult> ResolvePaymentMethodFromCallback(string rawBody, IReadOnlyDictionary<string, string> headers, CancellationToken ct = default)
     {
         ValidateCallback(rawBody, headers);
-        using var callback = JsonDocument.Parse(rawBody);
+        JsonDocument callback;
+        try
+        {
+            callback = JsonDocument.Parse(rawBody);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("PayPlus callback contained invalid JSON.", ex);
+        }
+        using (callback)
+        {
         var requestUid = FirstString(callback.RootElement, "payment_request_uid", "page_request_uid");
         var transactionUid = FirstString(callback.RootElement, "transaction_uid");
 
@@ -181,6 +189,7 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
             null,
             FirstString(root, "customer_uid", "customer_id"),
             FirstString(root, "more_info", "external_reference"));
+        }
     }
 
     private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, object? payload, CancellationToken ct, bool throwOnFailure = true)
@@ -207,8 +216,15 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!allowFailureStatus && !response.IsSuccessStatusCode)
             throw new InvalidOperationException($"Payment provider request failed ({(int)response.StatusCode}).");
-        using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
-        return document.RootElement.Clone();
+        try
+        {
+            using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("PayPlus returned invalid JSON.", ex);
+        }
     }
 
     private void ValidateCallback(string rawBody, IReadOnlyDictionary<string, string> headers)
