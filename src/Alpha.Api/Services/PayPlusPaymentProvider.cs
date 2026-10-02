@@ -108,8 +108,7 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
         {
             transaction_uid = request.TransactionId,
             amount = request.Amount,
-            more_info = request.ExternalReference,
-            initial_invoice = true
+            more_info = request.ExternalReference
         };
 
         using var response = await SendAsync(HttpMethod.Post, "/Transactions/RefundByTransactionUID", payload, ct, throwOnFailure: false);
