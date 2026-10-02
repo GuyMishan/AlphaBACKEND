@@ -340,7 +340,7 @@ public static class ReportFeedbackEndpoints
     }
 
     private static async Task<IResult> DepositListAsync(
-        Guid organizationId, Guid employerId, Guid reportId, string? search, int skip, int take,
+        Guid organizationId, Guid employerId, Guid reportId, string? search, string? manufacturer, int skip, int take,
         IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
@@ -352,6 +352,13 @@ public static class ReportFeedbackEndpoints
         var query = from p in db.ManualReportProducts.AsNoTracking()
                     join e in db.ManualReportEmployees.AsNoTracking() on p.ReportEmployeeId equals e.Id
                     where e.ReportId == reportId select new { Product = p, Employee = e };
+
+        var manufacturers = await query
+            .Select(x => string.IsNullOrWhiteSpace(x.Product.FundCompanyName) ? x.Product.FundName : x.Product.FundCompanyName)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct()
+            .OrderBy(x => x)
+            .ToListAsync(ct);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
@@ -359,6 +366,14 @@ public static class ReportFeedbackEndpoints
             query = query.Where(x => x.Employee.FirstName.ToLower().Contains(term) || x.Employee.LastName.ToLower().Contains(term)
                 || x.Employee.NationalIdLookupHash == idHash || x.Product.FundName.ToLower().Contains(term)
                 || x.Product.FundCompanyName.ToLower().Contains(term) || x.Product.PolicyNumber.ToLower().Contains(term));
+        }
+        if (!string.IsNullOrWhiteSpace(manufacturer))
+        {
+            var manufacturerTerm = manufacturer.Trim().ToLower();
+            query = query.Where(x =>
+                (!string.IsNullOrWhiteSpace(x.Product.FundCompanyName)
+                    ? x.Product.FundCompanyName.ToLower()
+                    : x.Product.FundName.ToLower()) == manufacturerTerm);
         }
         var page = await query.OrderBy(x => x.Employee.LastName).ThenBy(x => x.Employee.FirstName)
             .ThenBy(x => x.Product.AllocationOrder).ThenBy(x => x.Product.CreatedAt).Skip(skip).Take(take + 1).ToListAsync(ct);
@@ -456,7 +471,7 @@ public static class ReportFeedbackEndpoints
                         || correctionProduct.Changed)
             };
         });
-        return Results.Ok(new { items, hasMore });
+        return Results.Ok(new { items, hasMore, manufacturers });
     }
 
     private static async Task<IResult> DepositDetailsAsync(
