@@ -305,8 +305,12 @@ public sealed class Refund : Entity
         if (paymentId == Guid.Empty || amount <= 0) throw new ArgumentException("Payment and positive amount are required.");
         PaymentId = paymentId;
         Amount = amount;
-        Reason = reason?.Trim() ?? string.Empty;
-        IdempotencyKey = string.IsNullOrWhiteSpace(idempotencyKey) ? throw new ArgumentException("Idempotency key is required.") : idempotencyKey.Trim();
+        Reason = Truncate(reason, 500);
+        var cleanKey = string.IsNullOrWhiteSpace(idempotencyKey)
+            ? throw new ArgumentException("Idempotency key is required.")
+            : idempotencyKey.Trim();
+        if (cleanKey.Length > 160) throw new ArgumentException("Idempotency key is too long.", nameof(idempotencyKey));
+        IdempotencyKey = cleanKey;
     }
 
     public Guid PaymentId { get; private set; }
@@ -316,6 +320,13 @@ public sealed class Refund : Entity
     public string ProviderRefundId { get; private set; } = string.Empty;
     public string ErrorMessage { get; private set; } = string.Empty;
     public string IdempotencyKey { get; private set; } = string.Empty;
+
+    public void RecordPendingError(string? errorMessage)
+    {
+        Status = BillingRefundStatus.Pending;
+        ErrorMessage = Truncate(errorMessage, 1000);
+        Touch();
+    }
 
     public void Complete(bool success, string? providerRefundId, string? errorMessage)
     {
