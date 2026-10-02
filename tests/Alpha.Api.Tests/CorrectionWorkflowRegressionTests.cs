@@ -134,6 +134,53 @@ public sealed class ReportTransmissionSafetyRegressionTests
 }
 
 
+public sealed class CorrectionMaterializationRollbackRegressionTests
+{
+    [Fact]
+    public void Materialization_failure_rolls_back_without_reusing_completed_transaction()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Services", "CorrectionWorkflowService.cs");
+        var source = File.ReadAllText(path);
+
+        var catchIndex = source.IndexOf("// The Processing claim and every technical document are part of this transaction.", StringComparison.Ordinal);
+        Assert.True(catchIndex >= 0);
+        var catchBody = source[catchIndex..];
+        Assert.Contains("RollbackAsync", catchBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExecuteUpdateAsync", catchBody.Split("throw;", 2)[0], StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
+public sealed class EmployerInterfaceImportConsistencyRegressionTests
+{
+    [Fact]
+    public void Current_import_rejects_conflicting_snapshots_for_same_employee_across_transfers()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Services", "EmployerInterfaceService.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("appears in multiple transfer blocks with conflicting snapshot data", source, StringComparison.Ordinal);
+        Assert.Contains("GroupBy(x => x.Key", source, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
 public sealed class EmployerInterfaceTransferCorrelationRegressionTests
 {
     [Fact]
