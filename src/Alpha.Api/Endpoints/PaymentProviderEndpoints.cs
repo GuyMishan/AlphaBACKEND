@@ -271,47 +271,22 @@ public static class PaymentProviderEndpoints
         }
     }
 
-    private static async Task<IResult> ChargeAsync(Guid billingAccountId, BillingChargeRequest request,
-        IAlphaDbContext db, ICurrentUser currentUser, IPaymentProviderResolver resolver, CancellationToken ct)
+    private static Task<IResult> ChargeAsync(Guid billingAccountId, BillingChargeRequest request,
+        ICurrentUser currentUser)
     {
-        if (!currentUser.IsPlatformAdmin) return Results.Forbid();
-        if (request.Amount <= 0) return Results.BadRequest(new { error = "invalid_amount" });
+        if (!currentUser.IsPlatformAdmin) return Task.FromResult<IResult>(Results.Forbid());
+        if (request.Amount <= 0)
+            return Task.FromResult<IResult>(Results.BadRequest(new { error = "invalid_amount" }));
 
-        var account = await db.BillingAccounts.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == billingAccountId, ct);
-        if (account is null) return Results.NotFound();
-        var method = account.DefaultPaymentMethodId.HasValue
-            ? await db.PaymentMethods.AsNoTracking().SingleOrDefaultAsync(
-                x => x.Id == account.DefaultPaymentMethodId.Value &&
-                     x.BillingAccountId == account.Id &&
-                     x.Status == BillingPaymentMethodStatus.Active, ct)
-            : null;
-        if (account.PaymentMethodStatus != BillingPaymentMethodStatus.Active || method is null)
-            return Results.Conflict(new { error = "payment_method_not_active" });
-
-        try
+        // One-off provider charges bypass the billing ledger and cannot be reconciled safely after
+        // network ambiguity. All ALPHA subscription charges must go through a billing period so the
+        // deterministic payment idempotency key, attempts and reconciliation state are persisted.
+        return Task.FromResult<IResult>(Results.Conflict(new
         {
-            var provider = resolver.Resolve(method.Provider);
-            var charge = await provider.Charge(new PaymentChargeRequest(
-                method.ProviderCustomerId,
-                method.ProviderPaymentMethodId,
-                request.Amount,
-                "ILS",
-                request.Description?.Trim() ?? "Alpha subscription charge",
-                $"alpha:{account.Id}:{Guid.NewGuid():N}",
-                request.CreateInvoice,
-                method.CardExpiryMonth,
-                method.CardExpiryYear), ct);
-
-            return charge.Success
-                ? Results.Ok(charge)
-                : Results.Json(charge, statusCode: StatusCodes.Status402PaymentRequired);
-        }
-        catch (InvalidOperationException)
-        {
-            return Results.Json(new { error = "payment_provider_unavailable" },
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
+            error = "direct_provider_charge_disabled",
+            billingAccountId,
+            use = "POST /api/platform/billing/accounts/{billingAccountId}/run"
+        }));
     }
 
     private static Task<IResult> LegacyPayPlusCallbackAsync(
