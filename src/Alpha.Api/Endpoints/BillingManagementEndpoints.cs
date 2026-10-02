@@ -570,6 +570,8 @@ public static class BillingManagementEndpoints
         if (!currentUser.IsPlatformAdmin) return Results.Forbid();
         if (request.Amount <= 0 || string.IsNullOrWhiteSpace(request.IdempotencyKey))
             return Results.BadRequest(new { error = "amount_and_idempotency_key_required" });
+        if (request.IdempotencyKey.Trim().Length > 160)
+            return Results.BadRequest(new { error = "idempotency_key_too_long" });
 
         Refund refund;
         Payment payment;
@@ -580,6 +582,8 @@ public static class BillingManagementEndpoints
             if (existing is not null)
             {
                 await reservation.RollbackAsync(ct);
+                if (existing.PaymentId != paymentId || existing.Amount != request.Amount)
+                    return Results.Conflict(new { error = "idempotency_key_reused_with_different_request" });
                 return Results.Ok(new
                 {
                     existing.Id, existing.PaymentId, existing.Amount, existing.Status,
@@ -632,11 +636,21 @@ public static class BillingManagementEndpoints
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            refund.RecordPendingError("provider_result_unknown");
+            await db.SaveChangesAsync(CancellationToken.None);
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            result = new PaymentRefundResult(false, string.Empty, "provider_exception", ex.Message);
+            refund.RecordPendingError("provider_result_unknown");
+            await db.SaveChangesAsync(CancellationToken.None);
+            return Results.Json(new
+            {
+                refund.Id,
+                refund.Status,
+                errorCode = "provider_result_unknown",
+                errorMessage = "Refund result is unknown and requires reconciliation before retry."
+            }, statusCode: StatusCodes.Status502BadGateway);
         }
 
         refund.Complete(result.Success, result.RefundId, result.ErrorMessage);
@@ -791,7 +805,12 @@ public static class BillingManagementEndpoints
             db.BillingAccountPricingComponents.Add(new BillingAccountPricingComponent(
                 account.Id, targetMetric, BillingPricingType.PerUnit, unitPrice, 0, null, null, true, version, now));
         await db.SaveChangesAsync(ct);
-        return Results.Ok(new { billingType, unitPrice, accountValid = billingType == "Free" || true });
+        var accountValid = billingType == "Free" ||
+            (account.PaymentMethodStatus == BillingPaymentMethodStatus.Active &&
+             (account.PaymentMethodType == BillingPaymentMethodType.CreditCard
+                 ? !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId)
+                 : !string.IsNullOrWhiteSpace(account.BankDebitMandateReference)));
+        return Results.Ok(new { billingType, unitPrice, accountValid });
     }
 
     private static async Task<IResult> GetOrganizationBillingContextAsync(
