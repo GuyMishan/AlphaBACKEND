@@ -63,6 +63,13 @@ public static class BillingAccountEndpoints
             db.BillingAccounts.Add(account);
         }
 
+        if (account.PaymentMethodType != request.PaymentMethodType &&
+            (account.DefaultPaymentMethodId.HasValue ||
+             account.PaymentMethodStatus == BillingPaymentMethodStatus.Active ||
+             !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId) ||
+             !string.IsNullOrWhiteSpace(account.BankDebitMandateReference)))
+            return Results.Conflict(new { error = "payment_method_type_change_requires_cancel" });
+
         account.UpdateBillingDetails(request.BillingName, request.TaxId, request.InvoiceEmail,
             request.BillingAddress, request.PaymentMethodType);
         AddAudit(db, currentUser, http, "billing.organization.updated", account, organizationId, null);
@@ -146,6 +153,13 @@ public static class BillingAccountEndpoints
             account = new BillingAccount(null, employerId);
             db.BillingAccounts.Add(account);
         }
+
+        if (account.PaymentMethodType != request.PaymentMethodType &&
+            (account.DefaultPaymentMethodId.HasValue ||
+             account.PaymentMethodStatus == BillingPaymentMethodStatus.Active ||
+             !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId) ||
+             !string.IsNullOrWhiteSpace(account.BankDebitMandateReference)))
+            return Results.Conflict(new { error = "payment_method_type_change_requires_cancel" });
 
         account.UpdateBillingDetails(request.BillingName, request.TaxId, request.InvoiceEmail,
             request.BillingAddress, request.PaymentMethodType);
