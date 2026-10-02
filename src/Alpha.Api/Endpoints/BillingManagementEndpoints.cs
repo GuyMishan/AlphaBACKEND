@@ -593,12 +593,13 @@ public static class BillingManagementEndpoints
                 });
             }
 
-            payment = await db.Payments.SingleOrDefaultAsync(x => x.Id == paymentId, ct);
-            if (payment is null)
+            var foundPayment = await db.Payments.SingleOrDefaultAsync(x => x.Id == paymentId, ct);
+            if (foundPayment is null)
             {
                 await reservation.RollbackAsync(ct);
                 return Results.NotFound();
             }
+            payment = foundPayment;
             if (payment.Status is not BillingPaymentStatus.Succeeded and not BillingPaymentStatus.PartiallyRefunded)
             {
                 await reservation.RollbackAsync(ct);
