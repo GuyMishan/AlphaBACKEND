@@ -170,6 +170,24 @@ public sealed class CardComPaymentProviderTests
         Assert.True(json.RootElement.GetProperty("AllowMultipleRefunds").GetBoolean());
     }
 
+
+    [Fact]
+    public async Task Charge_approved_without_transaction_id_is_not_treated_as_success()
+    {
+        var provider = CreateProvider(_ => Json(HttpStatusCode.OK, new
+        {
+            ResponseCode = 0,
+            Description = "OK"
+        }));
+
+        var result = await provider.Charge(new PaymentChargeRequest(
+            "customer", "token", 100m, "ILS", "billing", "billing-key", true, 12, 2030),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Success);
+        Assert.Equal("transaction_id_missing", result.ErrorCode);
+    }
+
     private static CardComPaymentProvider CreateProvider(
         Func<HttpRequestMessage, Task<HttpResponseMessage>> handler,
         string apiPassword = "")
