@@ -352,6 +352,14 @@ public sealed class ProviderWebhookEvent : Entity
     public string ErrorMessage { get; private set; } = string.Empty;
     public DateTimeOffset? ProcessedAt { get; private set; }
 
+    public void Retry()
+    {
+        Status = ProviderWebhookStatus.Received;
+        ErrorMessage = string.Empty;
+        ProcessedAt = null;
+        Touch();
+    }
+
     public void Complete(ProviderWebhookStatus status, string? error = null)
     {
         Status = status;
