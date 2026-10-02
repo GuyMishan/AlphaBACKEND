@@ -181,33 +181,43 @@ public sealed class BillingCycleService(
                 period.Currency, currentCalculation, payment.Id, payment.Status, "provider_result_unknown");
         }
 
-        attempt.Complete(result.Success, result.TransactionId, result.ErrorCode, result.ErrorMessage);
-        if (result.Success)
+        if (!result.Success && result.ErrorCode == "transaction_id_missing")
         {
-            payment.Succeed(result.TransactionId, result.InvoiceReference);
-            period.MarkCharged();
-            account.MarkStatus(BillingAccountStatus.Active);
+            attempt.MarkReconciliationRequired(result.ErrorMessage ?? "provider_result_unknown");
+            payment.MarkReconciliationRequired("Provider approved the charge but did not return a transaction id.");
+            period.MarkReconciliationRequired();
+            account.MarkStatus(BillingAccountStatus.PastDue);
         }
         else
         {
-            payment.Fail(result.ErrorCode, result.ErrorMessage);
-            period.MarkPastDue();
-            if (result.ErrorCode is "expiry_required" or "token_required")
+            attempt.Complete(result.Success, result.TransactionId, result.ErrorCode, result.ErrorMessage);
+            if (result.Success)
             {
-                paymentMethod.MarkStatus(BillingPaymentMethodStatus.Failed);
-                account.UpdateProviderMetadata(
-                    BillingPaymentMethodStatus.Failed,
-                    paymentMethod.ProviderCustomerId,
-                    paymentMethod.ProviderPaymentMethodId,
-                    paymentMethod.CardBrand,
-                    paymentMethod.CardLast4,
-                    paymentMethod.CardExpiryMonth,
-                    paymentMethod.CardExpiryYear,
-                    paymentMethod.MandateReference);
+                payment.Succeed(result.TransactionId, result.InvoiceReference);
+                period.MarkCharged();
+                account.MarkStatus(BillingAccountStatus.Active);
             }
             else
             {
-                account.MarkStatus(BillingAccountStatus.PastDue);
+                payment.Fail(result.ErrorCode, result.ErrorMessage);
+                period.MarkPastDue();
+                if (result.ErrorCode is "expiry_required" or "token_required")
+                {
+                    paymentMethod.MarkStatus(BillingPaymentMethodStatus.Failed);
+                    account.UpdateProviderMetadata(
+                        BillingPaymentMethodStatus.Failed,
+                        paymentMethod.ProviderCustomerId,
+                        paymentMethod.ProviderPaymentMethodId,
+                        paymentMethod.CardBrand,
+                        paymentMethod.CardLast4,
+                        paymentMethod.CardExpiryMonth,
+                        paymentMethod.CardExpiryYear,
+                        paymentMethod.MandateReference);
+                }
+                else
+                {
+                    account.MarkStatus(BillingAccountStatus.PastDue);
+                }
             }
         }
 
