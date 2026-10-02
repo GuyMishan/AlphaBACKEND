@@ -1,4 +1,5 @@
 using Alpha.Api.Services;
+using Alpha.Api.Security;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Domain.Reporting;
@@ -90,13 +91,33 @@ public static class EmployerInterfaceEndpoints
     }
 
     private static async Task<IResult> ExportAsync(Guid organizationId, Guid employerId, Guid reportId,
-        IAlphaDbContext db, OrganizationAccessService access, EmployerInterface006ExportService exporter, CancellationToken ct)
+        IAlphaDbContext db, OrganizationAccessService access, EmployerInterface006ExportService exporter,
+        IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var report = await db.ManualReports.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
         if (report.Status is not ManualReportStatus.Validated and not ManualReportStatus.Processing and not ManualReportStatus.Sent and not ManualReportStatus.Completed)
             return Results.Conflict(new { error = "Employer Interface XML can only be exported after final Alpha report validation." });
+
+        if (report.Status is ManualReportStatus.Processing or ManualReportStatus.Sent or ManualReportStatus.Completed)
+        {
+            var transmission = await db.ReportTransmissions.AsNoTracking()
+                .Where(x => x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId
+                    && x.Payload.Length > 0)
+                .OrderByDescending(x => x.AttemptNumber)
+                .FirstOrDefaultAsync(ct);
+            if (transmission is null)
+                return Results.Conflict(new
+                {
+                    error = "transmission_evidence_not_available",
+                    detail = "The report has entered transmission state but its immutable payload evidence is not yet available."
+                });
+
+            var payload = protector.UnprotectBytes(transmission.Payload, $"report-transmission:{transmission.Id}");
+            return Results.File(payload, "application/xml", transmission.PayloadFileName);
+        }
+
         var generated = await exporter.ExportAsync(report, ct);
         if (!generated.Validation.IsValid)
             return Results.BadRequest(new { error = "Generated Employer Interface XML does not validate against its official report-type-specific 006 XSD.", generated.Validation });
