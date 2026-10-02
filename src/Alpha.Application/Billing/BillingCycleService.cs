@@ -186,7 +186,23 @@ public sealed class BillingCycleService(
         {
             payment.Fail(result.ErrorCode, result.ErrorMessage);
             period.MarkPastDue();
-            account.MarkStatus(BillingAccountStatus.PastDue);
+            if (result.ErrorCode is "expiry_required" or "token_required")
+            {
+                paymentMethod.MarkStatus(BillingPaymentMethodStatus.Failed);
+                account.UpdateProviderMetadata(
+                    BillingPaymentMethodStatus.Failed,
+                    paymentMethod.ProviderCustomerId,
+                    paymentMethod.ProviderPaymentMethodId,
+                    paymentMethod.CardBrand,
+                    paymentMethod.CardLast4,
+                    paymentMethod.CardExpiryMonth,
+                    paymentMethod.CardExpiryYear,
+                    paymentMethod.MandateReference);
+            }
+            else
+            {
+                account.MarkStatus(BillingAccountStatus.PastDue);
+            }
         }
 
         await db.SaveChangesAsync(ct);
