@@ -32,12 +32,32 @@ public sealed class PaymentProviderResolverTests
         Assert.Throws<InvalidOperationException>(() => resolver.Resolve("UnknownProvider"));
     }
 
-    private static PaymentProviderResolver CreateResolver(string defaultProvider)
+
+    [Fact]
+    public void Missing_default_provider_fails_closed()
+    {
+        var resolver = CreateResolver(null);
+
+        Assert.Throws<InvalidOperationException>(() => resolver.Resolve());
+    }
+
+    [Fact]
+    public void Fake_provider_requires_explicit_opt_in()
+    {
+        var disabled = CreateResolver("Fake");
+        Assert.Throws<InvalidOperationException>(() => disabled.Resolve());
+
+        var enabled = CreateResolver("Fake", allowFake: true);
+        Assert.Equal("Fake", enabled.Resolve().Name);
+    }
+
+    private static PaymentProviderResolver CreateResolver(string? defaultProvider, bool allowFake = false)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Payments:DefaultProvider"] = defaultProvider
+                ["Payments:DefaultProvider"] = defaultProvider,
+                ["Payments:AllowFakeProvider"] = allowFake.ToString()
             })
             .Build();
 
