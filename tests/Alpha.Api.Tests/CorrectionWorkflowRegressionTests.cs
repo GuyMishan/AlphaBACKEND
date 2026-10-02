@@ -42,6 +42,18 @@ public sealed class CorrectionWorkflowRegressionTests
     }
 
     [Fact]
+    public void Correction_previous_references_follow_product_lineage_not_only_fund()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Services", "CorrectionWorkflowService.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("negativeByOriginalProductId", source, StringComparison.Ordinal);
+        Assert.Contains("workspaceProduct.SourceReportProductId", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("sourceByFund", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Correction_materialization_claims_workspace_and_uses_per_product_operation()
     {
         var root = FindRepoRoot();
@@ -86,6 +98,29 @@ public sealed class CorrectionWorkflowRegressionTests
         new(Guid.NewGuid(), PensionProductType.PensionFund, "12345",
             new DateOnly(2026, 9, 1), 1000m, "1", "1", false, null,
             fundCode: "123", fundName: "Test Fund");
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
+public sealed class EmployerInterfaceTransferCorrelationRegressionTests
+{
+    [Fact]
+    public void Feedback_transfer_identifier_is_scoped_to_the_exact_transfer_group()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Services", "EmployerInterfaceService.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("TransferFeedbackGroupKey", source, StringComparison.Ordinal);
+        Assert.Contains("sameTransferMetadata", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("sameFundMetadata", source, StringComparison.Ordinal);
+    }
 
     private static string FindRepoRoot()
     {
