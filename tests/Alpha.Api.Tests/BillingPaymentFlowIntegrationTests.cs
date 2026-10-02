@@ -140,6 +140,31 @@ public sealed class BillingPaymentFlowIntegrationTests
         });
     }
 
+
+    [Fact]
+    public async Task Non_retryable_token_error_deactivates_payment_method()
+    {
+        await InIsolatedDatabase(async (db, ct) =>
+        {
+            var fixture = await CreateFixtureAsync(db, ct);
+            var provider = new ScenarioProvider(_ =>
+                Task.FromResult(new PaymentChargeResult(
+                    false, "", null, "expiry_required", "Stored card expiry is invalid.")));
+            var service = Service(db, provider);
+
+            var first = await service.RunPeriodAsync(
+                fixture.Account.Id, fixture.Start, fixture.End, true, ct);
+            var second = await service.RunPeriodAsync(
+                fixture.Account.Id, fixture.Start, fixture.End, true, ct);
+
+            Assert.Equal(BillingPeriodStatus.PastDue, first.Status);
+            Assert.Equal("payment_method_not_active", second.Error);
+            Assert.Equal(1, provider.ChargeCalls);
+            Assert.Equal(BillingPaymentMethodStatus.Failed, fixture.Account.PaymentMethodStatus);
+            Assert.Equal(BillingPaymentMethodStatus.Failed, fixture.Method.Status);
+        });
+    }
+
     private static BillingCycleService Service(AlphaDbContext db, ScenarioProvider provider) =>
         new(
             db,
