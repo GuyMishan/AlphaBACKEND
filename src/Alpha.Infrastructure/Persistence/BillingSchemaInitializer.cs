@@ -25,6 +25,9 @@ public static class BillingSchemaInitializer
                 "CardExpiryMonth" integer NULL,
                 "CardExpiryYear" integer NULL,
                 "BankDebitMandateReference" varchar(200) NOT NULL DEFAULT '',
+                "PendingProvider" varchar(40) NOT NULL DEFAULT '',
+                "PendingProviderCustomerId" varchar(200) NOT NULL DEFAULT '',
+                "PendingSetupReference" varchar(200) NOT NULL DEFAULT '',
                 "CreatedAt" timestamptz NOT NULL,
                 "UpdatedAt" timestamptz NOT NULL,
                 CONSTRAINT "CK_billing_accounts_scope"
