@@ -114,12 +114,14 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
 
         using var response = await SendAsync(HttpMethod.Post, "/Transactions/RefundByTransactionUID", payload, ct, throwOnFailure: false);
         var root = await ReadJsonAsync(response, ct, allowFailureStatus: true);
-        var success = response.IsSuccessStatusCode && IsSuccess(root);
+        var refundId = FirstString(root, "transaction_uid", "refund_uid", "uid") ?? string.Empty;
+        var providerApproved = response.IsSuccessStatusCode && IsSuccess(root);
+        var success = providerApproved && !string.IsNullOrWhiteSpace(refundId);
         return new PaymentRefundResult(
             success,
-            FirstString(root, "transaction_uid", "refund_uid", "uid") ?? string.Empty,
-            success ? null : FirstString(root, "code"),
-            success ? null : FirstString(root, "description", "message") ?? "PayPlus refund failed.");
+            refundId,
+            success ? null : providerApproved ? "refund_id_missing" : FirstString(root, "code"),
+            success ? null : providerApproved ? "PayPlus approved the refund without a refund transaction uid." : FirstString(root, "description", "message") ?? "PayPlus refund failed.");
     }
 
     public async Task<PaymentMethodStatusResult> GetPaymentMethodStatus(string customerId, string paymentMethodId, CancellationToken ct = default)
