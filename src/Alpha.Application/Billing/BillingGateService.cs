@@ -75,8 +75,7 @@ public sealed class BillingGateService(BillingInheritanceService inheritance, IA
                 !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId),
 
             BillingPaymentMethodType.BankDebit =>
-                !string.IsNullOrWhiteSpace(account.BankDebitMandateReference)
-                || !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId),
+                !string.IsNullOrWhiteSpace(account.BankDebitMandateReference),
 
             _ => false
         };
