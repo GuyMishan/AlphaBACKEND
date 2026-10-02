@@ -10,8 +10,7 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
 {
     public string Name => "PayPlus";
 
-    private string BaseUrl => configuration["Payments:PayPlus:BaseUrl"]?.TrimEnd('/')
-        ?? "https://restapidev.payplus.co.il/api/v1.0";
+    private string BaseUrl => Required("Payments:PayPlus:BaseUrl").TrimEnd('/');
     private string ApiKey => Required("Payments:PayPlus:ApiKey");
     private string SecretKey => Required("Payments:PayPlus:SecretKey");
     private string TerminalUid => Required("Payments:PayPlus:TerminalUid");
