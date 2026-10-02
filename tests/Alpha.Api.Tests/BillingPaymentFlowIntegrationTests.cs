@@ -213,6 +213,52 @@ public sealed class BillingPaymentFlowIntegrationTests
         });
     }
 
+
+    [Fact]
+    public async Task Billing_cycle_never_uses_payment_method_of_different_type()
+    {
+        await InIsolatedDatabase(async (db, ct) =>
+        {
+            var fixture = await CreateFixtureAsync(db, ct);
+            fixture.Account.UpdateBillingDetails(
+                "Billing Test", "515151515", "billing@example.test",
+                "1 Test Street", BillingPaymentMethodType.BankDebit);
+            await db.SaveChangesAsync(ct);
+
+            var provider = new ScenarioProvider(_ =>
+                Task.FromResult(new PaymentChargeResult(true, "should-not-run", null, null, null)));
+
+            var result = await Service(db, provider).RunPeriodAsync(
+                fixture.Account.Id, fixture.Start, fixture.End, true, ct);
+
+            Assert.Equal("payment_method_not_active", result.Error);
+            Assert.Equal(0, provider.ChargeCalls);
+        });
+    }
+
+    [Fact]
+    public async Task Provider_approved_without_transaction_id_requires_reconciliation_and_no_retry()
+    {
+        await InIsolatedDatabase(async (db, ct) =>
+        {
+            var fixture = await CreateFixtureAsync(db, ct);
+            var provider = new ScenarioProvider(_ =>
+                Task.FromResult(new PaymentChargeResult(
+                    false, "", null, "transaction_id_missing", "Approved without transaction id")));
+            var service = Service(db, provider);
+
+            var first = await service.RunPeriodAsync(
+                fixture.Account.Id, fixture.Start, fixture.End, true, ct);
+            var second = await service.RunPeriodAsync(
+                fixture.Account.Id, fixture.Start, fixture.End, true, ct);
+
+            Assert.Equal(BillingPeriodStatus.ReconciliationRequired, first.Status);
+            Assert.Equal(BillingPaymentStatus.ReconciliationRequired, first.PaymentStatus);
+            Assert.Equal("payment_reconciliation_required", second.Error);
+            Assert.Equal(1, provider.ChargeCalls);
+        });
+    }
+
     private static BillingCycleService Service(AlphaDbContext db, ScenarioProvider provider) =>
         new(
             db,
