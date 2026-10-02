@@ -108,6 +108,32 @@ public sealed class CorrectionWorkflowRegressionTests
 }
 
 
+public sealed class ReportTransmissionSafetyRegressionTests
+{
+    [Fact]
+    public void Ambiguous_provider_exception_keeps_report_locked_for_reconciliation()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Endpoints", "ReportTransmissionEndpoints.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("transmission_reconciliation_required", source, StringComparison.Ordinal);
+        Assert.Contains("report remains locked in Processing", source, StringComparison.Ordinal);
+        var catchIndex = source.IndexOf("catch (Exception)", StringComparison.Ordinal);
+        Assert.True(catchIndex >= 0);
+        var catchBody = source[catchIndex..];
+        Assert.DoesNotContain("report.MarkTransmissionError", catchBody, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
 public sealed class EmployerInterfaceTransferCorrelationRegressionTests
 {
     [Fact]
