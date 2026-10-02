@@ -108,6 +108,28 @@ public sealed class CorrectionWorkflowRegressionTests
 }
 
 
+public sealed class ReportValidationConcurrencyRegressionTests
+{
+    [Fact]
+    public void Concurrent_validation_returns_conflict_instead_of_committing_stale_state()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Endpoints", "ReportValidationEndpoints.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("report_changed_during_validation", source, StringComparison.Ordinal);
+        Assert.Contains("catch (DbUpdateConcurrencyException)", source, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
 public sealed class EmployerInterfaceImmutableEvidenceRegressionTests
 {
     [Fact]
