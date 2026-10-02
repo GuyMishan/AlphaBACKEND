@@ -165,6 +165,54 @@ public sealed class BillingPaymentFlowIntegrationTests
         });
     }
 
+
+    [Fact]
+    public async Task Zero_value_period_does_not_reactivate_suspended_account()
+    {
+        await InIsolatedDatabase(async (db, ct) =>
+        {
+            var fixture = await CreateFixtureAsync(db, ct);
+            fixture.Account.MarkStatus(BillingAccountStatus.Suspended);
+            await db.SaveChangesAsync(ct);
+
+            var provider = new ScenarioProvider(_ =>
+                Task.FromResult(new PaymentChargeResult(true, "should-not-run", null, null, null)));
+            var service = new BillingCycleService(
+                db,
+                new FixedUsageCollector(new BillingUsageSnapshot(0, 0, 0, 0, 0)),
+                new BillingCalculator(),
+                new ScenarioResolver(provider));
+
+            var result = await service.RunPeriodAsync(
+                fixture.Account.Id, fixture.Start, fixture.End, true, ct);
+
+            Assert.Equal("billing_account_not_chargeable", result.Error);
+            Assert.Equal(BillingAccountStatus.Suspended, fixture.Account.Status);
+            Assert.Equal(0, provider.ChargeCalls);
+        });
+    }
+
+    [Fact]
+    public async Task Cancelled_account_cannot_be_charged_manually()
+    {
+        await InIsolatedDatabase(async (db, ct) =>
+        {
+            var fixture = await CreateFixtureAsync(db, ct);
+            fixture.Account.MarkStatus(BillingAccountStatus.Cancelled);
+            await db.SaveChangesAsync(ct);
+
+            var provider = new ScenarioProvider(_ =>
+                Task.FromResult(new PaymentChargeResult(true, "should-not-run", null, null, null)));
+
+            var result = await Service(db, provider).RunPeriodAsync(
+                fixture.Account.Id, fixture.Start, fixture.End, true, ct);
+
+            Assert.Equal("billing_account_not_chargeable", result.Error);
+            Assert.Equal(BillingAccountStatus.Cancelled, fixture.Account.Status);
+            Assert.Equal(0, provider.ChargeCalls);
+        });
+    }
+
     private static BillingCycleService Service(AlphaDbContext db, ScenarioProvider provider) =>
         new(
             db,
