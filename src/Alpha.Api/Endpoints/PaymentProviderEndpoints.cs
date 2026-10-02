@@ -81,7 +81,7 @@ public static class PaymentProviderEndpoints
             var customerId = string.Equals(account.PendingProvider, provider.Name, StringComparison.OrdinalIgnoreCase)
                 ? account.PendingProviderCustomerId
                 : string.Equals(currentMethod?.Provider, provider.Name, StringComparison.OrdinalIgnoreCase)
-                    ? currentMethod.ProviderCustomerId
+                    ? currentMethod?.ProviderCustomerId ?? string.Empty
                     : string.Empty;
 
             if (string.IsNullOrWhiteSpace(customerId))
