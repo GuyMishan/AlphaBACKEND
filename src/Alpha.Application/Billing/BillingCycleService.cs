@@ -74,6 +74,18 @@ public sealed class BillingCycleService(
             return new BillingRunResult(period.Id, account.Id, period.Status, period.Total,
                 period.Currency, currentCalculation, null, null, null);
 
+        if (period.Status == BillingPeriodStatus.ReconciliationRequired)
+        {
+            var unresolvedPayment = await db.Payments.AsNoTracking()
+                .Where(x => x.BillingPeriodId == period.Id &&
+                            x.Status == BillingPaymentStatus.ReconciliationRequired)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+            return new BillingRunResult(period.Id, account.Id, period.Status, period.Total,
+                period.Currency, currentCalculation, unresolvedPayment?.Id,
+                unresolvedPayment?.Status, "payment_reconciliation_required");
+        }
+
         if (period.Total == 0)
         {
             period.MarkCharged();
