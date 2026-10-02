@@ -188,6 +188,24 @@ public sealed class PayPlusPaymentProviderTests
         Assert.Equal("transaction_id_missing", result.ErrorCode);
     }
 
+
+    [Fact]
+    public async Task Refund_approved_without_transaction_uid_is_not_treated_as_success()
+    {
+        var provider = CreateProvider(_ => Task.FromResult(Json(HttpStatusCode.OK, new
+        {
+            results = new { status = "success", code = 0 },
+            data = new { }
+        })));
+
+        var result = await provider.Refund(new PaymentRefundRequest(
+            "original-tx", "token", 25m, "ILS", "refund-key"),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Success);
+        Assert.Equal("refund_id_missing", result.ErrorCode);
+    }
+
     private static PayPlusPaymentProvider CreateProvider(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler)
     {
         var configuration = new ConfigurationBuilder()
