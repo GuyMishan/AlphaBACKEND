@@ -8,9 +8,9 @@ public enum BillingAccountStatus { PendingSetup = 1, Active = 2, PastDue = 3, Su
 public enum BillingMetricType { Base = 1, Employer = 2, Employee = 3, ReportRow = 4, Correction = 5 }
 public enum BillingPricingType { Fixed = 1, PerUnit = 2, Tiered = 3 }
 public enum CorrectionBillingMode { Free = 1, PerCorrection = 2, PerCorrectedRow = 3, SameAsRegularRows = 4 }
-public enum BillingPeriodStatus { Open = 1, Calculated = 2, Charging = 3, Charged = 4, PastDue = 5, Suspended = 6, Cancelled = 7 }
-public enum BillingPaymentStatus { Pending = 1, Processing = 2, Succeeded = 3, Failed = 4, Refunded = 5, PartiallyRefunded = 6, Cancelled = 7 }
-public enum BillingPaymentAttemptStatus { Pending = 1, Succeeded = 2, Failed = 3 }
+public enum BillingPeriodStatus { Open = 1, Calculated = 2, Charging = 3, Charged = 4, PastDue = 5, Suspended = 6, Cancelled = 7, ReconciliationRequired = 8 }
+public enum BillingPaymentStatus { Pending = 1, Processing = 2, Succeeded = 3, Failed = 4, Refunded = 5, PartiallyRefunded = 6, Cancelled = 7, ReconciliationRequired = 8 }
+public enum BillingPaymentAttemptStatus { Pending = 1, Succeeded = 2, Failed = 3, ReconciliationRequired = 4 }
 public enum BillingRefundStatus { Pending = 1, Succeeded = 2, Failed = 3 }
 public enum ProviderWebhookStatus { Received = 1, Processed = 2, Ignored = 3, Failed = 4 }
 
@@ -129,6 +129,7 @@ public sealed class BillingPeriod : Entity
     public void MarkCharging() { Status = BillingPeriodStatus.Charging; Touch(); }
     public void MarkCharged() { Status = BillingPeriodStatus.Charged; ChargedAt = DateTimeOffset.UtcNow; Touch(); }
     public void MarkPastDue() { Status = BillingPeriodStatus.PastDue; Touch(); }
+    public void MarkReconciliationRequired() { Status = BillingPeriodStatus.ReconciliationRequired; Touch(); }
     public void MarkSuspended() { Status = BillingPeriodStatus.Suspended; Touch(); }
 }
 
@@ -247,6 +248,13 @@ public sealed class Payment : Entity
     public void MarkProcessing(string provider) { Provider = Truncate(provider, 40); Status = BillingPaymentStatus.Processing; Touch(); }
     public void Succeed(string transactionId, string? invoiceReference) { ProviderTransactionId = Truncate(transactionId, 200); InvoiceReference = Truncate(invoiceReference, 200); Status = BillingPaymentStatus.Succeeded; PaidAt = DateTimeOffset.UtcNow; FailureCode = FailureMessage = string.Empty; Touch(); }
     public void Fail(string? code, string? message) { Status = BillingPaymentStatus.Failed; FailureCode = Truncate(code, 120); FailureMessage = Truncate(message, 1000); Touch(); }
+    public void MarkReconciliationRequired(string? message)
+    {
+        Status = BillingPaymentStatus.ReconciliationRequired;
+        FailureCode = "provider_result_unknown";
+        FailureMessage = Truncate(message, 1000);
+        Touch();
+    }
     public void MarkRefunded(bool partial) { Status = partial ? BillingPaymentStatus.PartiallyRefunded : BillingPaymentStatus.Refunded; Touch(); }
 
     private static string Truncate(string? value, int max)
@@ -278,6 +286,15 @@ public sealed class PaymentAttempt : Entity
     public string ErrorCode { get; private set; } = string.Empty;
     public string ErrorMessage { get; private set; } = string.Empty;
     public DateTimeOffset? CompletedAt { get; private set; }
+
+    public void MarkReconciliationRequired(string? errorMessage)
+    {
+        Status = BillingPaymentAttemptStatus.ReconciliationRequired;
+        ErrorCode = "provider_result_unknown";
+        ErrorMessage = Truncate(errorMessage, 1000);
+        CompletedAt = DateTimeOffset.UtcNow;
+        Touch();
+    }
 
     public void Complete(bool success, string? transactionId, string? errorCode, string? errorMessage)
     {
