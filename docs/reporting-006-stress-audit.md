@@ -1,0 +1,159 @@
+# Employer Interface 006 reporting stress audit
+
+Last reviewed: 2026-10-02
+
+## Scope
+
+This audit covers ALPHA's Employer Interface 006 pension reporting flow end-to-end:
+
+1. manual report creation and resumable drafts
+2. Excel/CSV intake
+3. XML/DAT/TST intake
+4. canonical report snapshots
+5. employee/product/contribution/payment validation
+6. official Version 006 workbook rules and XSD validation
+7. export and file naming
+8. transmission and failure handling
+9. clearing-house feedback ingestion and normalization
+10. correction workspaces, negative/current technical documents and revision promotion
+11. tenant authorization and immutable evidence
+12. concurrency, duplicate delivery and database constraints
+13. security and large/failing input paths
+14. Reports & Feedback operational reads
+15. frontend flow review (audit only unless separately approved)
+
+Authoritative sources remain:
+
+- `docs/specifications/employer-interface/006/Employer interface V 6.xlsx`
+- the four official Version 006 XSD files in that directory
+- `docs/specifications/mislaka/`
+
+## Safety invariants
+
+- A submitted/transmitted business report is immutable.
+- A browser timeout or disconnect does not imply the clearing house did not receive the payload.
+- A provider exception after dispatch is an ambiguous transmission outcome and must not become a blind retry.
+- Once a report has entered transmission, downloadable XML evidence must be the exact persisted transmitted payload, not a regenerated approximation.
+- Only one concurrent sender may claim a Validated report.
+- Duplicate clearing-house feedback must be idempotent at the database boundary.
+- Feedback association must use exact saved identifiers; it must not guess across unrelated transfers.
+- Multiple transfer blocks for the same fund remain distinct when operation/payment/previous-reference semantics differ.
+- A correction workspace never mutates its immutable source.
+- Correction materialization is atomic: either all technical correction documents are created and the workspace is claimed, or the whole transaction rolls back.
+- Current correction previous references follow product lineage to the matching negative technical product.
+- Added / Changed / Removed / Unchanged classification is derived from source-vs-workspace state, not sticky UI flags.
+- Unchanged products are not retransmitted.
+- Manual, Excel and XML paths must converge on the same persisted reporting model and final backend validation/export rules.
+- Tenant scope is enforced server-side for report, product, payment evidence, feedback and export access.
+- XML parsing prohibits DTD/XXE and enforces bounded document size.
+- Sensitive report identifiers, bank accounts, provider payloads and official feedback evidence remain encrypted at rest.
+
+## Findings fixed during this audit
+
+| Severity | Finding | Fix | Regression |
+| --- | --- | --- | --- |
+| Critical | Provider exception after V006 dispatch changed the report to editable `Error`, allowing a potentially duplicated retry after an unknown remote outcome | Ambiguous provider exceptions keep the report locked in `Processing` and return `transmission_reconciliation_required` | `ReportTransmissionSafetyRegressionTests` |
+| High | Feedback `MISPAR-ZIHUI` propagation updated every product in the same fund, even when that fund contained multiple distinct transfer blocks | Propagation is restricted to the exact transfer semantics rather than fund alone | `EmployerInterfaceTransferCorrelationRegressionTests` |
+| High | Current correction previous references were refreshed by fund and could select the wrong negative transfer when the same fund was split | Previous reference refresh follows current product -> workspace product -> original product -> matching negative product lineage | `CorrectionWorkflowRegressionTests.Correction_previous_references_follow_product_lineage_not_only_fund` |
+| High | XML download for `Processing/Sent/Completed` reports regenerated Version 006 XML with a new preparation time/default sequence rather than returning the exact sent evidence | Post-transmission XML download decrypts and returns the persisted `ReportTransmission.Payload` byte-for-byte; if evidence is not available, generation fails closed | `EmployerInterfaceImmutableEvidenceRegressionTests` |
+| High | Repeated employee blocks across different transfer groups could contain conflicting employee snapshots and import silently kept whichever block was encountered first | Current-report import rejects conflicting snapshots for the same identifier/type across transfer blocks | `EmployerInterfaceImportConsistencyRegressionTests` |
+| Medium | Correction materialization catch path rolled back a transaction and then attempted another update through the completed transaction | Failure path now performs a full atomic rollback and does not issue post-rollback writes through that transaction | `CorrectionMaterializationRollbackRegressionTests` |
+| Medium | Concurrent final validations could surface an unhandled concurrency exception instead of explicitly rejecting stale validation | `DbUpdateConcurrencyException` returns `409 report_changed_during_validation`; stale validation cannot be committed | `ReportValidationConcurrencyRegressionTests` |
+
+## Verified implementation areas
+
+| Area | Scenario / invariant | Status |
+| --- | --- | --- |
+| XML security | DTD/XXE disabled, XmlResolver null, document character ceiling | Passed |
+| XML upload | Empty/oversized/wrong extension rejected | Passed |
+| XSD | Current and negative output validated against dedicated official XSDs | Passed |
+| Workbook rules | Operation/payment combinations and conditional bank/trust-account rules | Passed |
+| Contribution mapping | Official contribution codes and irrelevant empty editor placeholders | Passed |
+| Employee identifier | Israeli ID and passport snapshots supported in reporting/import | Passed |
+| Import tenant binding | Uploaded employer registration must match selected employer | Passed |
+| Import month | Exactly one salary month required | Passed |
+| Free-plan import | Staged employments included in entitlement check | Passed |
+| Draft resume | Existing editable report IDs are resumed instead of duplicated | Reviewed / covered |
+| Dirty state | Employee/product/payment/selection/profile/payment-evidence changes mark editable report dirty | Passed |
+| Double validation | Optimistic concurrency rejects stale commit | Fixed |
+| Double send | Atomic `Validated -> Processing` claim | Passed |
+| Browser disconnect after persisted transmission evidence | Provider send detached from request-abort token | Passed |
+| Provider exception / uncertain result | Blind retry blocked pending reconciliation | Fixed |
+| File sequence | PostgreSQL upsert increments sender/day sequence atomically and caps at 9999 | Passed |
+| Duplicate feedback | Unique employer + payload hash database boundary | Passed |
+| Feedback source evidence | Raw official feedback preserved as encrypted immutable evidence | Passed |
+| Feedback contribution association | Saved contribution record identifiers used; unmatched rows are not guessed | Passed |
+| Same-fund multi-transfer feedback | Transfer correlation does not bleed across transfer semantics | Fixed |
+| Correction workspace uniqueness | Partial unique index prevents multiple open workspaces for one source | Passed |
+| Correction materialization claim | Workspace atomically claimed as Processing inside transaction | Passed |
+| Correction rollback | Partial materialization is rolled back completely | Fixed |
+| Delta | Added / Changed / Removed / Unchanged computed source-vs-workspace | Passed |
+| New product in correction | Emitted as current operation 1 | Passed |
+| Changed product | Negative operation 6 + current operation 2/3 | Passed |
+| Removed product | Negative operation 6 only | Passed |
+| Previous contribution IDs | Current correction derives previous record from matching negative contribution | Passed |
+| Previous transfer IDs | Current correction follows product lineage | Fixed |
+| Revision promotion | Workspace promoted only after all technical documents are sent/completed | Passed |
+| Old revision correction | Newer completed revision prevents correction of superseded revision | Passed |
+| Tenant isolation | Main report/read/write/transmission/export queries scope organization + employer server-side | Reviewed / passed on inspected endpoints |
+| Evidence download | Sent XML comes from immutable transmission payload | Fixed |
+| Payment evidence | Report/product ownership checked server-side; immutable versioned records | Passed |
+| Large tables/API shape | Report and deposit lists are paged/infinite-loaded; deposit evidence has report-wide listing | Reviewed |
+| N+1 hotspots | Deposit/report screens batch major contribution/payment/feedback reads | Reviewed |
+
+## Frontend audit findings awaiting explicit approval
+
+No frontend code was modified during this audit.
+
+### High — hard-coded mock transmission provider
+
+`src/lib/report-transmission-api.ts` currently defines:
+
+`send(..., provider = "MockClearinghouse")`
+
+The normal report wizard calls `send(...)` without passing a provider. That makes the browser explicitly request the mock provider rather than letting the backend select the configured real provider. In production, where mock transmission correctly fails closed, this can make a valid real-provider configuration fail at the frontend boundary.
+
+Recommended frontend change: do not send a provider unless the user/operator explicitly selected one. Let the backend choose its configured provider by default.
+
+This remains **not changed** pending approval.
+
+## Coverage still requiring real external integration
+
+The repository has no real clearing-house test environment. The following cannot be truthfully marked as end-to-end Passed from CI alone:
+
+- actual clearing-house acceptance of generated DAT/TST/XML
+- real provider timeout after remote acceptance
+- real asynchronous feedback timing/order
+- actual clearing-house interpretation of the documented birth-date wire-format discrepancy
+- production recipient/sender credentials and clearing identifiers
+- very large production-scale files at the clearing-house boundary
+- operational reconciliation procedure for a report intentionally left in `Processing` after an ambiguous provider outcome
+
+For these, ALPHA intentionally fails closed rather than assuming success/failure.
+
+## Automated regression files
+
+Primary reporting audit coverage currently lives in:
+
+- `tests/Alpha.Api.Tests/EmployerInterface006XmlBuilderTests.cs`
+- `tests/Alpha.Api.Tests/EmployerInterface006PreflightValidationTests.cs`
+- `tests/Alpha.Api.Tests/EmployerInterface006FileNamingTests.cs`
+- `tests/Alpha.Api.Tests/EmployerInterface006WorkbookDiscoveryTests.cs`
+- `tests/Alpha.Api.Tests/EmployerInterfaceLineFeedbackParserTests.cs`
+- `tests/Alpha.Api.Tests/CorrectionWorkflowRegressionTests.cs`
+- `tests/Alpha.Api.Tests/CorrectionDeltaIntegrationTests.cs`
+- `tests/Alpha.Api.Tests/ReportingSchemaSqlGuardTests.cs`
+
+PostgreSQL integration scenarios use the repository's existing integration-test setup where required.
+
+## Verification
+
+Repository verification remains the authoritative completion gate:
+
+```bash
+dotnet restore AlphaBackend.slnx
+dotnet build AlphaBackend.slnx --no-restore --configuration Release
+dotnet test --solution AlphaBackend.slnx --no-build --configuration Release
+```
+
+GitHub `backend-ci` runs the same Release restore/build/test sequence. Do not mark a change verified until its workflow succeeds.
