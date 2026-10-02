@@ -89,7 +89,18 @@ public static class ReportValidationEndpoints
         else if (normalizedStage == ValidationStage.Final)
             result.Report.MarkValidated();
 
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Results.Conflict(new
+            {
+                error = "report_changed_during_validation",
+                detail = "The report changed while validation was running. Reload the latest draft and validate again."
+            });
+        }
         return Results.Ok(ToResponse(result));
     }
 
