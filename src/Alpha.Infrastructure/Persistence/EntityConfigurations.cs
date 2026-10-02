@@ -262,6 +262,9 @@ public sealed class BillingAccountConfiguration : IEntityTypeConfiguration<Billi
         b.Property(x => x.CardBrand).HasMaxLength(40);
         b.Property(x => x.CardLast4).HasMaxLength(4);
         b.Property(x => x.BankDebitMandateReference).HasMaxLength(200);
+        b.Property(x => x.PendingProvider).HasMaxLength(40);
+        b.Property(x => x.PendingProviderCustomerId).HasMaxLength(200);
+        b.Property(x => x.PendingSetupReference).HasMaxLength(200);
         b.HasIndex(x => x.OrganizationId).IsUnique().HasFilter("\"OrganizationId\" IS NOT NULL");
         b.HasIndex(x => x.EmployerId).IsUnique().HasFilter("\"EmployerId\" IS NOT NULL");
         b.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
