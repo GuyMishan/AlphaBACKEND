@@ -653,6 +653,19 @@ public static class BillingManagementEndpoints
             }, statusCode: StatusCodes.Status502BadGateway);
         }
 
+        if (!result.Success && result.ErrorCode == "refund_id_missing")
+        {
+            refund.RecordPendingError("provider_result_unknown");
+            await db.SaveChangesAsync(ct);
+            return Results.Json(new
+            {
+                refund.Id,
+                refund.Status,
+                errorCode = "provider_result_unknown",
+                errorMessage = "Provider approved the refund without a refund id; reconciliation is required."
+            }, statusCode: StatusCodes.Status502BadGateway);
+        }
+
         refund.Complete(result.Success, result.RefundId, result.ErrorMessage);
         if (result.Success)
         {
