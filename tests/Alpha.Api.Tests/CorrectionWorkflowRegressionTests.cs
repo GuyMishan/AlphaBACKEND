@@ -108,6 +108,30 @@ public sealed class CorrectionWorkflowRegressionTests
 }
 
 
+public sealed class EmployerInterfaceImmutableEvidenceRegressionTests
+{
+    [Fact]
+    public void Sent_report_xml_download_returns_persisted_transmission_payload()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Endpoints", "EmployerInterfaceEndpoints.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("transmission_evidence_not_available", source, StringComparison.Ordinal);
+        Assert.Contains("protector.UnprotectBytes(transmission.Payload", source, StringComparison.Ordinal);
+        Assert.Contains("transmission.PayloadFileName", source, StringComparison.Ordinal);
+        Assert.Contains("ManualReportStatus.Processing or ManualReportStatus.Sent or ManualReportStatus.Completed", source, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
 public sealed class ReportTransmissionSafetyRegressionTests
 {
     [Fact]
