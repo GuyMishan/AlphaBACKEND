@@ -136,6 +136,7 @@ public sealed class CardComPaymentProviderTests
         Assert.Equal(99.90m, json.RootElement.GetProperty("Amount").GetDecimal());
         Assert.Equal("1230", json.RootElement.GetProperty("CardExpirationMMYY").GetString());
         Assert.True(json.RootElement.GetProperty("ExternalUniqTranId").GetString()!.Length <= 25);
+        Assert.True(json.RootElement.GetProperty("ExternalUniqUniqTranIdResponse").GetBoolean());
     }
 
     [Fact]
