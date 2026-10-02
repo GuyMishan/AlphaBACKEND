@@ -73,7 +73,17 @@ public static class PaymentProviderEndpoints
 
         try
         {
-            var customerId = account.ProviderCustomerId;
+            var currentMethod = account.DefaultPaymentMethodId.HasValue
+                ? await db.PaymentMethods.AsNoTracking().SingleOrDefaultAsync(
+                    x => x.Id == account.DefaultPaymentMethodId.Value && x.BillingAccountId == account.Id, ct)
+                : null;
+
+            var customerId = string.Equals(account.PendingProvider, provider.Name, StringComparison.OrdinalIgnoreCase)
+                ? account.PendingProviderCustomerId
+                : string.Equals(currentMethod?.Provider, provider.Name, StringComparison.OrdinalIgnoreCase)
+                    ? currentMethod.ProviderCustomerId
+                    : string.Empty;
+
             if (string.IsNullOrWhiteSpace(customerId))
             {
                 var customer = await provider.CreateCustomer(new PaymentProviderCustomerRequest(
@@ -84,6 +94,10 @@ public static class PaymentProviderEndpoints
                     account.Id.ToString()), ct);
                 customerId = customer.CustomerId;
             }
+
+            var setupReference = $"{account.Id:D}:{Guid.NewGuid():N}";
+            account.BeginProviderSetup(provider.Name, customerId, setupReference);
+            await db.SaveChangesAsync(ct);
 
             var frontend = config["Frontend:BaseUrl"]?.TrimEnd('/');
             if (string.IsNullOrWhiteSpace(frontend))
@@ -104,21 +118,11 @@ public static class PaymentProviderEndpoints
                 $"{frontend}{safeReturnPath}{returnSeparator}payment=failed",
                 $"{frontend}{safeReturnPath}{returnSeparator}payment=cancelled",
                 $"{callbackBase}/api/billing/providers/{Uri.EscapeDataString(provider.Name)}/callback",
-                account.Id.ToString(),
+                setupReference,
                 account.BillingName,
                 account.TaxId,
                 account.InvoiceEmail,
                 account.BillingAddress), ct);
-
-            account.UpdateProviderMetadata(
-                BillingPaymentMethodStatus.Pending,
-                customerId,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                null,
-                null,
-                string.Empty);
 
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "billing.payment-method.setup-started",
                 nameof(BillingAccount), account.Id, organizationId, employerId,
@@ -162,6 +166,8 @@ public static class PaymentProviderEndpoints
         IPaymentProviderResolver resolver, CancellationToken ct)
     {
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
+        if (!string.IsNullOrWhiteSpace(account.PendingSetupReference))
+            return Results.Conflict(new { error = "payment_method_setup_pending" });
         if (string.IsNullOrWhiteSpace(account.ProviderCustomerId) ||
             string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId))
             return Results.Conflict(new { error = "payment_method_not_configured" });
@@ -346,20 +352,34 @@ public static class PaymentProviderEndpoints
 
         var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawBody))).ToLowerInvariant();
         var eventKey = $"{provider.Name}:{payloadHash}";
-        if (await db.ProviderWebhookEvents.AsNoTracking()
-            .AnyAsync(x => x.Provider == provider.Name && x.EventKey == eventKey, ct))
-            return Results.Ok(new { ok = true, duplicate = true });
+        var webhook = await db.ProviderWebhookEvents.SingleOrDefaultAsync(
+            x => x.Provider == provider.Name && x.EventKey == eventKey, ct);
 
-        var webhook = new ProviderWebhookEvent(provider.Name, eventKey, payloadHash, string.Empty);
-        db.ProviderWebhookEvents.Add(webhook);
-        try
+        if (webhook is not null)
         {
+            if (webhook.Status is ProviderWebhookStatus.Processed or ProviderWebhookStatus.Ignored)
+                return Results.Ok(new { ok = true, duplicate = true });
+
+            if (webhook.Status == ProviderWebhookStatus.Received &&
+                DateTimeOffset.UtcNow - webhook.UpdatedAt < TimeSpan.FromMinutes(2))
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+
+            webhook.Retry();
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException)
+        else
         {
-            // Concurrent delivery of the same event is guarded by the unique provider/event key.
-            return Results.Ok(new { ok = true, duplicate = true });
+            webhook = new ProviderWebhookEvent(provider.Name, eventKey, payloadHash, string.Empty);
+            db.ProviderWebhookEvents.Add(webhook);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                // Never acknowledge a concurrent duplicate before the winning handler has finished.
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
         }
 
         PaymentMethodStatusResult result;
@@ -374,7 +394,9 @@ public static class PaymentProviderEndpoints
             return Results.Unauthorized();
         }
 
-        if (!Guid.TryParse(result.ExternalReference, out var billingAccountId))
+        var externalReference = result.ExternalReference?.Trim() ?? string.Empty;
+        var accountIdPart = externalReference.Split(':', 2)[0];
+        if (!Guid.TryParse(accountIdPart, out var billingAccountId))
         {
             webhook.Complete(ProviderWebhookStatus.Failed, "billing_account_reference_missing");
             await db.SaveChangesAsync(ct);
@@ -389,8 +411,35 @@ public static class PaymentProviderEndpoints
             return Results.NotFound();
         }
 
-        if (!string.IsNullOrWhiteSpace(account.ProviderCustomerId) && !string.IsNullOrWhiteSpace(result.CustomerId)
-            && !string.Equals(account.ProviderCustomerId, result.CustomerId, StringComparison.Ordinal))
+        if (!result.Active)
+        {
+            webhook.Complete(ProviderWebhookStatus.Failed, "provider_payment_method_inactive");
+            await db.SaveChangesAsync(ct);
+            return Results.BadRequest(new { error = "provider_payment_method_inactive" });
+        }
+
+        if (!string.IsNullOrWhiteSpace(account.PendingSetupReference))
+        {
+            if (!string.Equals(account.PendingProvider, provider.Name, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(account.PendingSetupReference, externalReference, StringComparison.Ordinal))
+            {
+                webhook.Complete(ProviderWebhookStatus.Ignored, "stale_payment_setup_callback");
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new { ok = true, stale = true });
+            }
+        }
+        else if (!string.Equals(externalReference, account.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            webhook.Complete(ProviderWebhookStatus.Ignored, "stale_payment_setup_callback");
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { ok = true, stale = true });
+        }
+
+        var expectedCustomerId = !string.IsNullOrWhiteSpace(account.PendingProviderCustomerId)
+            ? account.PendingProviderCustomerId
+            : account.ProviderCustomerId;
+        if (!string.IsNullOrWhiteSpace(expectedCustomerId) && !string.IsNullOrWhiteSpace(result.CustomerId)
+            && !string.Equals(expectedCustomerId, result.CustomerId, StringComparison.Ordinal))
         {
             webhook.Complete(ProviderWebhookStatus.Failed, "provider_customer_mismatch");
             await db.SaveChangesAsync(ct);
@@ -399,7 +448,7 @@ public static class PaymentProviderEndpoints
 
         var customerId = !string.IsNullOrWhiteSpace(result.CustomerId)
             ? result.CustomerId
-            : account.ProviderCustomerId;
+            : expectedCustomerId;
         if (string.IsNullOrWhiteSpace(customerId) || string.IsNullOrWhiteSpace(result.PaymentMethodId))
         {
             webhook.Complete(ProviderWebhookStatus.Failed, "provider_payment_method_incomplete");
@@ -439,6 +488,7 @@ public static class PaymentProviderEndpoints
         method.Activate(customerId, result.PaymentMethodId, result.Brand, result.Last4,
             result.ExpiryMonth, result.ExpiryYear, result.BankDebitMandateReference);
         account.SetDefaultPaymentMethod(method.Id);
+        account.CompleteProviderSetup();
         webhook.Complete(ProviderWebhookStatus.Processed);
 
         await db.SaveChangesAsync(ct);
