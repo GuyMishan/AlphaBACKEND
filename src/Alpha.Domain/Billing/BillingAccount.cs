@@ -51,6 +51,9 @@ public sealed class BillingAccount : Entity
     public int? CardExpiryYear { get; private set; }
 
     public string BankDebitMandateReference { get; private set; } = string.Empty;
+    public string PendingProvider { get; private set; } = string.Empty;
+    public string PendingProviderCustomerId { get; private set; } = string.Empty;
+    public string PendingSetupReference { get; private set; } = string.Empty;
 
     public void Configure(BillingMode mode, BillingAccountStatus status, Guid? defaultPaymentMethodId = null)
     {
@@ -83,6 +86,24 @@ public sealed class BillingAccount : Entity
         Touch();
     }
 
+    public void BeginProviderSetup(string provider, string? customerId, string setupReference)
+    {
+        PendingProvider = Clean(provider, 40);
+        PendingProviderCustomerId = Clean(customerId, 200);
+        PendingSetupReference = Clean(setupReference, 200);
+        if (PaymentMethodStatus != BillingPaymentMethodStatus.Active || !DefaultPaymentMethodId.HasValue)
+            PaymentMethodStatus = BillingPaymentMethodStatus.Pending;
+        Touch();
+    }
+
+    public void CompleteProviderSetup()
+    {
+        PendingProvider = string.Empty;
+        PendingProviderCustomerId = string.Empty;
+        PendingSetupReference = string.Empty;
+        Touch();
+    }
+
     public void ResetBillingSetup()
     {
         BillingName = string.Empty;
@@ -100,6 +121,9 @@ public sealed class BillingAccount : Entity
         CardExpiryMonth = null;
         CardExpiryYear = null;
         BankDebitMandateReference = string.Empty;
+        PendingProvider = string.Empty;
+        PendingProviderCustomerId = string.Empty;
+        PendingSetupReference = string.Empty;
         Touch();
     }
 
