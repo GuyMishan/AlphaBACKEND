@@ -266,8 +266,9 @@ public static class CorrectionWorkflowService
             .Where(x => sourceProductIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
 
-        var sourceByFund = sourceProducts
-            .GroupBy(CorrectionFundKey, StringComparer.Ordinal)
+        var negativeByOriginalProductId = sourceProducts
+            .Where(x => x.SourceReportProductId.HasValue)
+            .GroupBy(x => x.SourceReportProductId!.Value)
             .ToDictionary(
                 group => group.Key,
                 group =>
@@ -279,8 +280,7 @@ public static class CorrectionWorkflowService
                             ? metadata.InterfaceTransferIdentifier
                             : product.Id.ToString("D").ToUpperInvariant(),
                         Clearing: metadata?.ClearingIdentifier ?? string.Empty);
-                },
-                StringComparer.Ordinal);
+                });
 
         var currentEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
             .Where(x => x.ReportId == report.Id).Select(x => x.Id).ToArrayAsync(ct);
@@ -291,11 +291,23 @@ public static class CorrectionWorkflowService
             .Where(x => currentProductIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
 
+        var workspaceProductIds = currentProducts
+            .Where(x => x.SourceReportProductId.HasValue)
+            .Select(x => x.SourceReportProductId!.Value)
+            .Distinct()
+            .ToArray();
+        var workspaceProducts = await db.ManualReportProducts.AsNoTracking()
+            .Where(x => workspaceProductIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, ct);
+
         foreach (var product in currentProducts)
         {
             if (!currentMetadata.TryGetValue(product.Id, out var metadata)
                 || metadata.OperationCode is not (2 or 3)
-                || !sourceByFund.TryGetValue(CorrectionFundKey(product), out var previous))
+                || !product.SourceReportProductId.HasValue
+                || !workspaceProducts.TryGetValue(product.SourceReportProductId.Value, out var workspaceProduct)
+                || !workspaceProduct.SourceReportProductId.HasValue
+                || !negativeByOriginalProductId.TryGetValue(workspaceProduct.SourceReportProductId.Value, out var previous))
                 continue;
 
             metadata.Update(metadata.OperationCode, metadata.DepositStatus, metadata.EmployeeStatus,
