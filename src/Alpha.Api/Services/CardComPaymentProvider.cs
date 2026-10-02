@@ -73,7 +73,7 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
             Token = request.PaymentMethodId,
             CardExpirationMMYY = ExpiryMmYy(request.ExpiryMonth!.Value, request.ExpiryYear!.Value),
             ExternalUniqTranId = ExternalTransactionId(request.ExternalReference),
-            ExternalUniqUniqTranIdResponse = false,
+            ExternalUniqUniqTranIdResponse = true,
             NumOfPayments = 1
         };
 
