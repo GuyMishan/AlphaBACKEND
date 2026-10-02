@@ -26,7 +26,11 @@
 - Endpoints: `BillingAccountEndpoints.cs`, `BillingManagementEndpoints.cs`, `PaymentProviderEndpoints.cs`.
 - Application: `Billing/*`, `Entitlements/*`.
 - Provider boundary: `Alpha.Application/Billing/IPaymentProvider.cs`.
-- Adapters: `Alpha.Api/Services/CardComPaymentProvider.cs`, `PayPlusPaymentProvider.cs`, `PaymentProviderResolver.cs`. Provider callbacks persist a payload hash/idempotency record rather than the raw callback body; provider exception details are not returned to API callers.
+- Adapters: `Alpha.Api/Services/CardComPaymentProvider.cs`, `PayPlusPaymentProvider.cs`, `PaymentProviderResolver.cs`. Provider callbacks persist a payload hash/idempotency record rather than the raw callback body; provider exception details are not returned to API callers. Payment setup is correlated to the latest pending setup reference so a late callback cannot replace a newer card; an already-active method remains active until its replacement is verified. Failed/stale webhook deliveries are retryable without acknowledging an in-flight duplicate prematurely, and anonymous callback bodies are stream-bounded to 64 KiB.
+- CardCom charges use deterministic external transaction identifiers with duplicate-response replay enabled. PayPlus billing correlation uses searchable `more_info`; refunds use the provider's refund-by-original-transaction-UID endpoint.
+- Billing-period charges distinguish explicit declines from ambiguous provider outcomes. Network cancellation, provider exceptions, or stale `Charging/Processing` records move to `ReconciliationRequired` and are never blindly re-charged; unsafe direct provider charges outside the billing ledger are disabled. Ambiguous refunds remain Pending so their amounts stay reserved until reconciled.
+- Payment provider resolution fails closed when configuration is missing. The Fake provider requires explicit `Payments:AllowFakeProvider=true`; it is never the implicit production fallback.
+- Stress/audit matrix and regression scenarios: `docs/billing-payment-stress-audit.md`.
 - Persistence: `Billing*SchemaInitializer.cs`, `BillingConfigurations.cs`.
 - Free-plan quota mutations are serialized per organization by `Alpha.Infrastructure/Persistence/OrganizationEntitlementLock.cs`; guarded writes require an explicit transaction commit and otherwise roll back; flows that already own a transaction (such as invitation acceptance during registration) join the same organization advisory lock. PostgreSQL concurrency/rollback coverage lives in `OrganizationEntitlementLockConcurrencyTests.cs`.
 
