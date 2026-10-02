@@ -35,6 +35,13 @@ Providers currently implemented: CardCom API 11 and PayPlus.
 - Direct one-off provider charges are disabled because they bypass the billing ledger.
 - Fake payment processing is disabled unless explicitly enabled.
 - Raw provider callback bodies and sensitive card data are never persisted.
+- Provider customer/token/mandate identifiers never leave the backend API; the browser receives booleans plus masked card metadata only.
+- Payment-method type cannot be changed while an active/default method exists; the existing method must be cancelled first.
+- Suspended/cancelled billing accounts are never reactivated by a zero-value period or manual charge run.
+- Partially refunded/refunded payments remain settled and can never be charged again for the same billing period.
+- A provider “success” response without a transaction/refund identifier is treated as ambiguous and requires reconciliation.
+- Local cancellation is authoritative before provider cleanup, so a provider outage cannot leave ALPHA charging enabled.
+- Test/staging payment credentials and endpoints are never implicit production defaults.
 
 ## Scenarios
 
@@ -70,7 +77,11 @@ Providers currently implemented: CardCom API 11 and PayPlus.
 | Billing | Manual RunPeriod called again while reconciliation required | Provider is not called again |
 | Billing | Worker dies after persisting Charging/Processing | Recovery marks stale records ReconciliationRequired |
 | Billing | Active payment method missing/cancelled | PastDue without provider call |
-| Billing | Zero-value period | Charged without provider call |
+| Billing | Zero-value period on active account | Period closes without provider call |
+| Billing | Zero-value period on suspended/cancelled account | Account state is preserved; no provider call |
+| Billing | Refunded/partially-refunded payment period is run again | Existing settled payment is returned; provider is not called |
+| Billing | Default payment method type differs from account type | Provider is not called |
+| Billing | Manual run against suspended/cancelled account | Rejected without provider call |
 | Billing | Concurrent period creation | Unique DB boundary prevents duplicate period/payment |
 | Retry | PastDue explicit decline is within retry policy | Retry creates another attempt |
 | Retry | ReconciliationRequired payment | Never included in automatic retry |
@@ -87,7 +98,14 @@ Providers currently implemented: CardCom API 11 and PayPlus.
 | Configuration | Payment provider missing | Fails closed |
 | Configuration | Fake provider without opt-in | Rejected |
 | Configuration | Fake provider with explicit opt-in | Allowed for controlled development/test use |
-| Provider outage | Setup/sync/cancel network failure | Normalized 503 payment_provider_unavailable |
+| Provider outage | Setup/sync network failure | Normalized 503 payment_provider_unavailable |
+| Provider outage | Cancel cleanup fails externally | ALPHA remains locally cancelled and cannot charge |
+| Provider response | Charge approved but transaction id missing | ReconciliationRequired; never blindly retried |
+| Provider response | Refund approved but refund id missing | Refund remains Pending; amount stays reserved |
+| API exposure | Billing-account GET | Provider customer/token/mandate identifiers remain server-side |
+| Configuration | PayPlus Invoice+ disabled | Charge does not request initial invoice |
+| Configuration | PayPlus environment URL missing | Fails closed instead of using staging |
+| Configuration | CardCom test merchant defaults | No test terminal/interface defaults are shipped |
 | Unsafe API | Direct one-off platform provider charge | Rejected; callers must use billing-period run |
 
 ## Regression coverage
