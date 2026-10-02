@@ -145,11 +145,22 @@ public sealed class BillingCycleService(
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            attempt.MarkReconciliationRequired("provider_result_unknown");
+            payment.MarkReconciliationRequired("Charge request was cancelled after dispatch; provider result is unknown.");
+            period.MarkReconciliationRequired();
+            account.MarkStatus(BillingAccountStatus.PastDue);
+            await db.SaveChangesAsync(CancellationToken.None);
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            result = new PaymentChargeResult(false, string.Empty, null, "provider_exception", ex.Message);
+            attempt.MarkReconciliationRequired("provider_result_unknown");
+            payment.MarkReconciliationRequired("Charge result is unknown and requires reconciliation.");
+            period.MarkReconciliationRequired();
+            account.MarkStatus(BillingAccountStatus.PastDue);
+            await db.SaveChangesAsync(CancellationToken.None);
+            return new BillingRunResult(period.Id, account.Id, period.Status, period.Total,
+                period.Currency, currentCalculation, payment.Id, payment.Status, "provider_result_unknown");
         }
 
         attempt.Complete(result.Success, result.TransactionId, result.ErrorCode, result.ErrorMessage);
@@ -177,6 +188,31 @@ public sealed class BillingCycleService(
         if (maxAttempts < 1) throw new ArgumentOutOfRangeException(nameof(maxAttempts));
         var now = DateTimeOffset.UtcNow;
         var retryBefore = now - retryDelay;
+
+        var staleCharging = await db.BillingPeriods
+            .Where(x => x.Status == BillingPeriodStatus.Charging && x.UpdatedAt <= retryBefore)
+            .ToListAsync(ct);
+        foreach (var period in staleCharging)
+        {
+            period.MarkReconciliationRequired();
+            var payments = await db.Payments
+                .Where(x => x.BillingPeriodId == period.Id && x.Status == BillingPaymentStatus.Processing)
+                .ToListAsync(ct);
+            foreach (var payment in payments)
+            {
+                payment.MarkReconciliationRequired("Billing worker stopped before the provider result was persisted.");
+                var attempts = await db.PaymentAttempts
+                    .Where(x => x.PaymentId == payment.Id && x.Status == BillingPaymentAttemptStatus.Pending)
+                    .ToListAsync(ct);
+                foreach (var attempt in attempts)
+                    attempt.MarkReconciliationRequired("Billing worker stopped before the provider result was persisted.");
+            }
+            var account = await db.BillingAccounts.SingleAsync(x => x.Id == period.BillingAccountId, ct);
+            account.MarkStatus(BillingAccountStatus.PastDue);
+        }
+        if (staleCharging.Count > 0)
+            await db.SaveChangesAsync(ct);
+
         var due = await db.BillingPeriods.AsNoTracking()
             .Where(x => x.Status == BillingPeriodStatus.PastDue && x.UpdatedAt <= retryBefore)
             .OrderBy(x => x.PeriodEnd)
