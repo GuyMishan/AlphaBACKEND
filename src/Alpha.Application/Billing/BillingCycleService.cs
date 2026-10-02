@@ -102,6 +102,7 @@ public sealed class BillingCycleService(
             ? await db.PaymentMethods.SingleOrDefaultAsync(
                 x => x.Id == account.DefaultPaymentMethodId.Value &&
                      x.BillingAccountId == account.Id &&
+                     x.Type == account.PaymentMethodType &&
                      x.Status == BillingPaymentMethodStatus.Active, ct)
             : null;
 
