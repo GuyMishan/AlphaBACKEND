@@ -34,6 +34,7 @@ public sealed class PayPlusPaymentProviderTests
         Assert.EndsWith("/Transactions/Charge", captured!.RequestUri!.AbsolutePath);
         using var body = JsonDocument.Parse(await captured.Content!.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("billing:key:1", body.RootElement.GetProperty("more_info").GetString());
+        Assert.False(body.RootElement.GetProperty("initial_invoice").GetBoolean());
         Assert.False(body.RootElement.TryGetProperty("more_info_1", out _));
     }
 
@@ -137,6 +138,8 @@ public sealed class PayPlusPaymentProviderTests
         Assert.Equal("11111111-1111-1111-1111-111111111111:setup", result.ExternalReference);
         Assert.NotNull(captured);
         Assert.EndsWith("/PaymentPages/ipn-full", captured!.RequestUri!.AbsolutePath);
+        using var lookup = JsonDocument.Parse(await captured.Content!.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.False(lookup.RootElement.GetProperty("related_transaction").GetBoolean());
     }
 
 
