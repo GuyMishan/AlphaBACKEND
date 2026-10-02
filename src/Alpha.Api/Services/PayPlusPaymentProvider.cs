@@ -84,7 +84,7 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
             use_token = true,
             token = request.PaymentMethodId,
             customer_uid = request.CustomerId,
-            initial_invoice = request.CreateInvoice,
+            initial_invoice = request.CreateInvoice && configuration.GetValue("Payments:PayPlus:CreateInvoice", false),
             extra_info = request.Description,
             more_info = request.ExternalReference
         };
@@ -168,9 +168,9 @@ public sealed class PayPlusPaymentProvider(IHttpClientFactory httpClients, IConf
         var transactionUid = FirstString(callback.RootElement, "transaction_uid");
 
         object lookup = !string.IsNullOrWhiteSpace(requestUid)
-            ? new { payment_request_uid = requestUid, related_transaction = true }
+            ? new { payment_request_uid = requestUid, related_transaction = false }
             : !string.IsNullOrWhiteSpace(transactionUid)
-                ? new { transaction_uid = transactionUid, related_transaction = true }
+                ? new { transaction_uid = transactionUid, related_transaction = false }
                 : throw new InvalidOperationException("PayPlus callback did not include a payment or transaction uid.");
 
         using var response = await SendAsync(HttpMethod.Post, "/PaymentPages/ipn-full", lookup, ct);
