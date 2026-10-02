@@ -174,11 +174,11 @@ public sealed class CardComPaymentProviderTests
     [Fact]
     public async Task Charge_approved_without_transaction_id_is_not_treated_as_success()
     {
-        var provider = CreateProvider(_ => Json(HttpStatusCode.OK, new
+        var provider = CreateProvider(_ => Task.FromResult(Json(HttpStatusCode.OK, new
         {
             ResponseCode = 0,
             Description = "OK"
-        }));
+        })));
 
         var result = await provider.Charge(new PaymentChargeRequest(
             "customer", "token", 100m, "ILS", "billing", "billing-key", true, 12, 2030),
@@ -192,11 +192,11 @@ public sealed class CardComPaymentProviderTests
     [Fact]
     public async Task Refund_approved_without_refund_id_is_not_treated_as_success()
     {
-        var provider = CreateProvider(_ => Json(HttpStatusCode.OK, new
+        var provider = CreateProvider(_ => Task.FromResult(Json(HttpStatusCode.OK, new
         {
             ResponseCode = 0,
             Description = "OK"
-        }));
+        })));
 
         var result = await provider.Refund(new PaymentRefundRequest(
             "12345", "token", 25m, "ILS", "refund-key"),
