@@ -86,10 +86,13 @@ public sealed class BillingCycleService(
                 unresolvedPayment?.Status, "payment_reconciliation_required");
         }
 
+        if (account.Status is BillingAccountStatus.Suspended or BillingAccountStatus.Cancelled)
+            return new BillingRunResult(period.Id, account.Id, period.Status, period.Total,
+                period.Currency, currentCalculation, null, null, "billing_account_not_chargeable");
+
         if (period.Total == 0)
         {
             period.MarkCharged();
-            account.MarkStatus(BillingAccountStatus.Active);
             await db.SaveChangesAsync(ct);
             return new BillingRunResult(period.Id, account.Id, period.Status, 0,
                 period.Currency, currentCalculation, null, null, null);
