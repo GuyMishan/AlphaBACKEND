@@ -124,10 +124,13 @@ public sealed class BillingCycleService(
             db.Payments.Add(payment);
             await db.SaveChangesAsync(ct);
         }
-        else if (payment.Status == BillingPaymentStatus.Succeeded)
+        else if (payment.Status is BillingPaymentStatus.Succeeded
+                 or BillingPaymentStatus.PartiallyRefunded
+                 or BillingPaymentStatus.Refunded)
         {
             period.MarkCharged();
-            account.MarkStatus(BillingAccountStatus.Active);
+            if (account.Status == BillingAccountStatus.PastDue)
+                account.MarkStatus(BillingAccountStatus.Active);
             await db.SaveChangesAsync(ct);
             return new BillingRunResult(period.Id, account.Id, period.Status, period.Total,
                 period.Currency, currentCalculation, payment.Id, payment.Status, null);
