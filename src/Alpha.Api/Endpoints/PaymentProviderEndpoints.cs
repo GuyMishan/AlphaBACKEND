@@ -240,35 +240,44 @@ public static class PaymentProviderEndpoints
     {
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
 
-        try
-        {
-            var method = account.DefaultPaymentMethodId.HasValue
-                ? await db.PaymentMethods.SingleOrDefaultAsync(
-                    x => x.Id == account.DefaultPaymentMethodId.Value &&
-                         x.BillingAccountId == account.Id, ct)
-                : null;
+        var method = account.DefaultPaymentMethodId.HasValue
+            ? await db.PaymentMethods.SingleOrDefaultAsync(
+                x => x.Id == account.DefaultPaymentMethodId.Value &&
+                     x.BillingAccountId == account.Id, ct)
+            : null;
 
-            if (method is not null)
+        string? providerName = null;
+        string? customerId = null;
+        string? paymentMethodId = null;
+        if (method is not null)
+        {
+            providerName = method.Provider;
+            customerId = method.ProviderCustomerId;
+            paymentMethodId = method.ProviderPaymentMethodId;
+            method.MarkStatus(BillingPaymentMethodStatus.Cancelled);
+        }
+
+        // Local cancellation is authoritative for ALPHA charging. Persist it before any
+        // provider-side cleanup so an external outage can never leave the account chargeable.
+        account.ResetBillingSetup();
+        await db.SaveChangesAsync(ct);
+
+        if (!string.IsNullOrWhiteSpace(providerName) &&
+            !string.IsNullOrWhiteSpace(paymentMethodId))
+        {
+            try
             {
-                if (!string.IsNullOrWhiteSpace(method.ProviderPaymentMethodId))
-                {
-                    var provider = resolver.Resolve(method.Provider);
-                    await provider.CancelPaymentMethod(
-                        method.ProviderCustomerId, method.ProviderPaymentMethodId, ct);
-                }
-
-                method.MarkStatus(BillingPaymentMethodStatus.Cancelled);
+                var provider = resolver.Resolve(providerName);
+                await provider.CancelPaymentMethod(customerId ?? string.Empty, paymentMethodId, ct);
             }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The token may remain at the provider, but ALPHA has already stopped using it.
+                // A later provider-side cleanup can be performed without reopening local billing.
+            }
+        }
 
-            account.ResetBillingSetup();
-            await db.SaveChangesAsync(ct);
-            return Results.NoContent();
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Results.Json(new { error = "payment_provider_unavailable" },
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
+        return Results.NoContent();
     }
 
     private static Task<IResult> ChargeAsync(Guid billingAccountId, BillingChargeRequest request,
