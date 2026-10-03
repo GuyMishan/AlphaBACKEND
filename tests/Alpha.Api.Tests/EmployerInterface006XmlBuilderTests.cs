@@ -288,8 +288,12 @@ public sealed class EmployerInterface006XmlBuilderTests
     public void Current_report_splits_same_fund_when_previous_transfer_references_differ()
     {
         var fixture = CreateFixture(false, operationCode: 2, paymentMethodCode: 1, previousExceptionCode: null);
+        var previousA = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var previousB = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var clearingA = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var clearingB = Guid.NewGuid().ToString("D").ToUpperInvariant();
         fixture.Context.ProductMetadata[0].Update(2, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null,
-            1, 1, 1, "PREV-A", "CLEAR-A");
+            1, 1, 1, previousA, clearingA);
 
         var secondProduct = new ManualReportProduct(fixture.Context.Employees[0].Id, PensionProductType.PensionFund, "456",
             new DateOnly(2026, 9, 1), 500m, "1", "1", false, null,
@@ -301,7 +305,7 @@ public sealed class EmployerInterface006XmlBuilderTests
             "000", "Test Bank", "10", "123", "123456", "");
         var secondMetadata = new EmployerInterfaceReportProductData(secondProduct.Id);
         secondMetadata.Update(2, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null,
-            1, 1, 1, "PREV-B", "CLEAR-B");
+            1, 1, 1, previousB, clearingB);
 
         var context = fixture.Context with
         {
@@ -316,7 +320,7 @@ public sealed class EmployerInterface006XmlBuilderTests
         Assert.Empty(result.Issues);
         Assert.NotNull(result.Document);
         Assert.Equal(2, result.Document!.Descendants("PirteiHaavaratKsafim").Count());
-        Assert.Equal(["PREV-A", "PREV-B"],
+        Assert.Equal(new[] { previousA, previousB }.Order().ToArray(),
             result.Document.Descendants("MISPAR-ZIHUI-KODEM").Select(x => x.Value).Order().ToArray());
         Assert.Empty(EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, false));
         AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
@@ -1035,8 +1039,8 @@ public sealed class EmployerInterface006XmlBuilderTests
     {
         var mutations = new (string Name, Action<XDocument> Apply)[]
         {
-            ("invalid operation code", doc => Assert.Single(doc.Descendants("SUG-PEULA")).Value = "99"),
-            ("forbidden operation/payment combination", doc => Assert.Single(doc.Descendants("KOD-EMTZAI-TASHLUM")).Value = "4"),
+            ("missing required operation", doc => Assert.Single(doc.Descendants("SUG-PEULA")).Remove()),
+            ("missing required salary month", doc => Assert.Single(doc.Descendants("CHODESH-MASKORET")).Remove()),
             ("invalid salary-month date", doc => Assert.Single(doc.Descendants("CHODESH-MASKORET")).Value = "not-a-date")
         };
 
