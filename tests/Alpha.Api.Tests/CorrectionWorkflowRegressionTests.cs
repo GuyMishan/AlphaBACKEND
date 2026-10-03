@@ -154,6 +154,32 @@ public sealed class EmployerInterfaceImmutableEvidenceRegressionTests
 }
 
 
+public sealed class ReportingTenantIsolationRegressionTests
+{
+    [Theory]
+    [InlineData("src/Alpha.Api/Endpoints/ReportTransmissionEndpoints.cs")]
+    [InlineData("src/Alpha.Api/Endpoints/EmployerInterfaceEndpoints.cs")]
+    [InlineData("src/Alpha.Api/Endpoints/ReportFeedbackEndpoints.cs")]
+    public void Reporting_endpoints_scope_report_reads_by_organization_and_employer(string relativePath)
+    {
+        var root = FindRepoRoot();
+        var source = File.ReadAllText(Path.Combine(root, relativePath));
+
+        Assert.Contains("OrganizationId == organizationId", source, StringComparison.Ordinal);
+        Assert.Contains("EmployerId == employerId", source, StringComparison.Ordinal);
+        Assert.Contains("CanAccessEmployerAsync", source, StringComparison.OrdinalIgnoreCase)
+            || Assert.Contains("CanTransmitReportAsync", source, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
 public sealed class ReportTransmissionProviderSelectionRegressionTests
 {
     [Fact]
