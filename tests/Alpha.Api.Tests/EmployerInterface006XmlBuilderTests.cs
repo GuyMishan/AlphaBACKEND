@@ -320,9 +320,10 @@ public sealed class EmployerInterface006XmlBuilderTests
         Assert.Empty(result.Issues);
         Assert.NotNull(result.Document);
         Assert.Equal(2, result.Document!.Descendants("PirteiHaavaratKsafim").Count());
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, false);
+        Assert.Empty(workbookIssues);
         Assert.Equal(new[] { previousA, previousB }.Order().ToArray(),
             result.Document.Descendants("MISPAR-ZIHUI-KODEM").Select(x => x.Value).Order().ToArray());
-        Assert.Empty(EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, false));
         AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
     }
 
