@@ -103,6 +103,17 @@ public sealed class ReportingSchemaSqlGuardTests
     }
 
     [Fact]
+    public void Duplicate_feedback_is_blocked_by_employer_and_payload_hash_database_boundary()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Infrastructure", "Persistence", "EmployerInterfaceFeedbackSchemaInitializer.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_employer_interface_feedback_EmployerId_PayloadHash\"", source, StringComparison.Ordinal);
+        Assert.Contains("(\"EmployerId\", \"PayloadHash\")", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Employer_interface_006_initializer_backfills_required_identifier_strings()
     {
         var root = FindRepoRoot();
