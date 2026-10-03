@@ -285,6 +285,44 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_splits_same_fund_when_previous_transfer_references_differ()
+    {
+        var fixture = CreateFixture(false, operationCode: 2, paymentMethodCode: 1, previousExceptionCode: null);
+        fixture.Context.ProductMetadata[0].Update(2, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null,
+            1, 1, 1, "PREV-A", "CLEAR-A");
+
+        var secondProduct = new ManualReportProduct(fixture.Context.Employees[0].Id, PensionProductType.PensionFund, "456",
+            new DateOnly(2026, 9, 1), 500m, "1", "1", false, null,
+            fundCode: fixture.Product.FundCode, fundName: "Test Fund");
+        var secondContribution = new ManualContribution(secondProduct.Id, ContributionParty.Employee,
+            ContributionComponent.Benefits, 50m, 10m, 0m);
+        var secondPayment = new ManualReportPayment(secondProduct.Id);
+        secondPayment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), null,
+            "000", "Test Bank", "10", "123", "123456", "");
+        var secondMetadata = new EmployerInterfaceReportProductData(secondProduct.Id);
+        secondMetadata.Update(2, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null,
+            1, 1, 1, "PREV-B", "CLEAR-B");
+
+        var context = fixture.Context with
+        {
+            Products = [.. fixture.Context.Products, secondProduct],
+            Contributions = [.. fixture.Context.Contributions, secondContribution],
+            Payments = [.. fixture.Context.Payments, secondPayment],
+            ProductMetadata = [.. fixture.Context.ProductMetadata, secondMetadata]
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal(2, result.Document!.Descendants("PirteiHaavaratKsafim").Count());
+        Assert.Equal(["PREV-A", "PREV-B"],
+            result.Document.Descendants("MISPAR-ZIHUI-KODEM").Select(x => x.Value).Order().ToArray());
+        Assert.Empty(EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, false));
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
     public void Current_report_rejects_mixed_product_types_inside_one_fund_transfer()
     {
         var fixture = CreateFixture(false);
