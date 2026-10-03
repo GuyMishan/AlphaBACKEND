@@ -946,6 +946,78 @@ public sealed class EmployerInterface006XmlBuilderTests
         Assert.Equal(expectedComponent, mapped.Item2);
     }
 
+    [Fact]
+    public void Large_current_report_with_many_transfer_groups_still_builds_and_matches_official_xsd()
+    {
+        var fixture = CreateFixture(false);
+        var employee = fixture.Context.Employees[0];
+        var products = new List<ManualReportProduct>();
+        var contributions = new List<ManualContribution>();
+        var payments = new List<ManualReportPayment>();
+        var metadata = new List<EmployerInterfaceReportProductData>();
+
+        for (var i = 1; i <= 120; i++)
+        {
+            var product = new ManualReportProduct(employee.Id, PensionProductType.PensionFund, $"P-{i}",
+                new DateOnly(2026, 9, 1), 1000m, "1", "1", false, null,
+                fundCode: i.ToString().PadLeft(30, '0'), fundName: $"Fund {i}", allocationOrder: i);
+            var contribution = new ManualContribution(product.Id, ContributionParty.Employee,
+                ContributionComponent.Benefits, 100m, 10m, 0m);
+            var payment = new ManualReportPayment(product.Id);
+            payment.Update($"Fund {i}", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), null,
+                $"REF-{i}", "Test Bank", "10", "123", "123456", "");
+            var item = new EmployerInterfaceReportProductData(product.Id);
+            item.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1);
+
+            products.Add(product);
+            contributions.Add(contribution);
+            payments.Add(payment);
+            metadata.Add(item);
+        }
+
+        var context = fixture.Context with
+        {
+            Products = products,
+            Contributions = contributions,
+            Payments = payments,
+            ProductMetadata = metadata
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Empty(result.Issues);
+        Assert.NotNull(result.Document);
+        Assert.Equal(120, result.Document!.Descendants("PirteiHaavaratKsafim").Count());
+        Assert.Empty(EmployerInterface006WorkbookRules.ValidateAndApply(result.Document, context, false));
+        AssertValid(result.Document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+    }
+
+    [Fact]
+    public void Mutation_sweep_rejects_single_field_corruption_of_otherwise_valid_payload()
+    {
+        var mutations = new Action<XDocument>[]
+        {
+            doc => Assert.Single(doc.Descendants("SUG-PEULA")).Value = "99",
+            doc => Assert.Single(doc.Descendants("KOD-EMTZAI-TASHLUM")).Value = "4",
+            doc => Assert.Single(doc.Descendants("MISPAR-SNIF-MAASIK")).Value = "ABC",
+            doc => Assert.Single(doc.Descendants("MISPAR-ZIHUI")).Value = new string('9', 80)
+        };
+
+        foreach (var mutate in mutations)
+        {
+            var fixture = CreateFixture(false);
+            var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
+            Assert.NotNull(result.Document);
+            var document = new XDocument(result.Document!);
+            mutate(document);
+
+            var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(document, fixture.Context, false);
+            var xsdIssues = ValidateAgainstXsd(document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
+            Assert.True(workbookIssues.Count > 0 || xsdIssues.Count > 0,
+                "A one-field corruption unexpectedly passed both workbook and XSD validation.");
+        }
+    }
+
     private static (EmployerInterface006XmlBuilder.BuildContext Context, ManualReportProduct Product) CreateFixture(
         bool negative, int? operationCode = null, int? previousExceptionCode = 1, int? section14Code = null,
         string employerMobile = "0501234567", int? paymentMethodCode = 1, string policyNumber = "123",
@@ -1015,6 +1087,19 @@ public sealed class EmployerInterface006XmlBuilderTests
             new Dictionary<Guid, Employment> { [employment.Id] = employment },
             [product], [contribution], [payment], [metadata], options, 1, 1, attachments, annualAffidavitSatisfied);
         return (context, product);
+    }
+
+    private static List<string> ValidateAgainstXsd(XDocument document, string xsdFileName)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Specifications", "EmployerInterface", "006", xsdFileName);
+        Assert.True(File.Exists(path), $"Missing official XSD test fixture: {path}");
+        var schemas = new XmlSchemaSet { XmlResolver = null };
+        using (var reader = XmlReader.Create(path, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null }))
+            schemas.Add(null, reader);
+        schemas.Compile();
+        var issues = new List<string>();
+        document.Validate(schemas, (_, e) => issues.Add(e.Message), true);
+        return issues;
     }
 
     private static void AssertValid(XDocument document, string xsdFileName)
