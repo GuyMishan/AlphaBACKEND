@@ -543,7 +543,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                 .Select(x => Guid.TryParse(x, out var parsed) ? (Guid?)parsed : null)
                 .Where(x => x.HasValue).Select(x => x!.Value).ToArray();
 
-            sourceId = await (
+            var productSourceIds = await (
                 from product in db.ManualReportProducts.AsNoTracking()
                 join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
                 join sourceReport in db.ManualReports.AsNoTracking() on employee.ReportId equals sourceReport.Id
@@ -553,18 +553,35 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
                     && (previousProductIds.Contains(product.Id)
                         || (metadata != null && (previousIdentifiers.Contains(metadata.InterfaceTransferIdentifier)
                             || previousIdentifiers.Contains(metadata.ClearingIdentifier))))
-                select (Guid?)sourceReport.Id).FirstOrDefaultAsync(ct);
+                select sourceReport.Id)
+                .Distinct()
+                .Take(2)
+                .ToArrayAsync(ct);
+
+            if (productSourceIds.Length > 1)
+                return InvalidIngest(validation,
+                    "Imported correction references more than one local source report; source association is ambiguous.");
+            sourceId = productSourceIds.SingleOrDefault();
+            if (sourceId == Guid.Empty) sourceId = null;
 
             if (sourceId is null)
             {
-                sourceId = await (
+                var transmissionSourceIds = await (
                     from transmission in db.ReportTransmissions.AsNoTracking()
                     join sourceReport in db.ManualReports.AsNoTracking() on transmission.ReportId equals sourceReport.Id
                     where sourceReport.OrganizationId == organizationId && sourceReport.EmployerId == employerId
                         && !string.IsNullOrEmpty(transmission.ExternalId)
                         && previousIdentifiers.Contains(transmission.ExternalId.ToUpper())
-                    orderby transmission.CreatedAt descending
-                    select (Guid?)sourceReport.Id).FirstOrDefaultAsync(ct);
+                    select sourceReport.Id)
+                    .Distinct()
+                    .Take(2)
+                    .ToArrayAsync(ct);
+
+                if (transmissionSourceIds.Length > 1)
+                    return InvalidIngest(validation,
+                        "Imported correction references more than one local transmission source; source association is ambiguous.");
+                sourceId = transmissionSourceIds.SingleOrDefault();
+                if (sourceId == Guid.Empty) sourceId = null;
             }
         }
 
