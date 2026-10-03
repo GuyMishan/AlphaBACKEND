@@ -146,6 +146,10 @@ A further stress pass added:
 
 The imported-correction ambiguity check is a safety fix discovered by this round: ALPHA's correction model has one SourceReportId, so a file that resolves to multiple local ancestors is rejected rather than silently attaching the correction to the wrong revision.
 
+### Feedback matching hardening
+
+The feedback stress pass also removed the dormant fund-only fallback from `PropagateTransferIdentifiersAsync`. Transfer feedback now requires an exact saved product/transfer identifier match; ALPHA will not fall back to "first product in the same fund" when the official transfer identifier is unknown. A regression guard ensures the fund-only fallback cannot be reintroduced silently.
+
 ## Coverage still requiring real external integration
 
 The repository has no real clearing-house test environment. The following cannot be truthfully marked as end-to-end Passed from CI alone:
