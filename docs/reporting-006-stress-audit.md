@@ -74,7 +74,7 @@ Authoritative sources remain:
 | Import month | Exactly one salary month required | Passed |
 | Free-plan import | Staged employments included in entitlement check | Passed |
 | Draft resume | Existing editable report IDs are resumed instead of duplicated | Reviewed / covered |
-| Dirty state | Employee/product/payment/selection/profile/payment-evidence changes mark editable report dirty | Passed |
+| Dirty state | Changes while the report is still editable mark it dirty; successful Final Validation then freezes the report until transmission | Passed |
 | Double validation | Optimistic concurrency rejects stale commit | Fixed |
 | Double send | Atomic `Validated -> Processing` claim | Passed |
 | Browser disconnect after persisted transmission evidence | Provider send detached from request-abort token | Passed |
@@ -127,7 +127,7 @@ The follow-up stress round added ten explicit cases to the existing reporting te
 4. duplicate feedback at the PostgreSQL boundary; employer + payload hash remains a unique idempotency key
 5. large current report with 120 separate transfer groups; builder + workbook validation + official current-report XSD must all pass
 6. manual and Employer Interface import paths converge on the same ManualReport/Employee/Product/Contribution canonical persistence model
-7. a previously Validated report changed before transmission returns to Draft and requires validation again
+7. a successfully Final-Validated report is immutable before transmission; edits are rejected so validated bytes cannot drift before send
 8. multi-user/stale validation is protected by the EF concurrency token plus an explicit 409 conflict path
 9. mutation sweep corrupts one field at a time in an otherwise valid V006 payload; workbook or XSD validation must reject every mutation
 10. ambiguous provider/reconciliation path remains non-retryable and correction materialization rollback remains atomic
