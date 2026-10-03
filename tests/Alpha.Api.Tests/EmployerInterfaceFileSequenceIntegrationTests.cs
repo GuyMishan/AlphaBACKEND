@@ -45,7 +45,6 @@ public sealed class EmployerInterfaceFileSequenceIntegrationTests
                 UPDATE reporting.employer_interface_file_sequences
                 SET "LastSequence" = 9999
                 WHERE "SenderIdentifier" = {first.SenderIdentifier}
-                  AND "BusinessDate" = {DateOnly.FromDateTime(first.PreparedAt.Date).ToDateTime(TimeOnly.MinValue)}
                 """, ct);
 
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
