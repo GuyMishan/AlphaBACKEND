@@ -289,8 +289,7 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
         Guid reportId,
         string transferIdentifier,
         string? clearingIdentifier,
-        CancellationToken ct,
-        string? knownFundCode = null)
+        CancellationToken ct)
     {
         var normalizedTransfer = Guid.TryParse(transferIdentifier, out var parsedTransfer)
             ? parsedTransfer.ToString("D").ToUpperInvariant()
@@ -309,16 +308,6 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             select new { Product = product, Metadata = metadata })
             .FirstOrDefaultAsync(ct);
 
-        if (matched is null && !string.IsNullOrWhiteSpace(knownFundCode))
-        {
-            matched = await (
-                from product in db.ManualReportProducts.AsNoTracking()
-                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-                join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId
-                where employee.ReportId == reportId && product.FundCode == knownFundCode
-                select new { Product = product, Metadata = metadata })
-                .FirstOrDefaultAsync(ct);
-        }
         if (matched is null) return false;
 
         var externalKey = matched.Product.FundExternalKey?.Trim() ?? string.Empty;
