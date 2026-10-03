@@ -287,6 +287,7 @@ public sealed class EmployerInterfaceTransferCorrelationRegressionTests
         Assert.Contains("TransferFeedbackGroupKey", source, StringComparison.Ordinal);
         Assert.Contains("sameTransferMetadata", source, StringComparison.Ordinal);
         Assert.DoesNotContain("sameFundMetadata", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("knownFundCode", source, StringComparison.Ordinal);
     }
 
     private static string FindRepoRoot()
