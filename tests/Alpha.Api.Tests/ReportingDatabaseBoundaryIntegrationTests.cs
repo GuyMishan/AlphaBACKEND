@@ -26,7 +26,7 @@ public sealed class ReportingDatabaseBoundaryIntegrationTests
             await ReportTransmissionSchemaInitializer.EnsureUpdatedAsync(db);
 
             var now = DateTimeOffset.UtcNow;
-            await db.Database.ExecuteSqlInterpolatedAsync($$"""
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO reporting.report_transmissions
                     ("Id","ReportId","OrganizationId","EmployerId","Provider","AttemptNumber","Status",
                      "ExternalId","PayloadHash","PayloadFileName","Payload","AttachmentManifestJson",
@@ -37,7 +37,7 @@ public sealed class ReportingDatabaseBoundaryIntegrationTests
                 """, ct);
 
             var ex = await Assert.ThrowsAsync<PostgresException>(() =>
-                db.Database.ExecuteSqlInterpolatedAsync($$"""
+                db.Database.ExecuteSqlInterpolatedAsync($"""
                     INSERT INTO reporting.report_transmissions
                         ("Id","ReportId","OrganizationId","EmployerId","Provider","AttemptNumber","Status",
                          "ExternalId","PayloadHash","PayloadFileName","Payload","AttachmentManifestJson",
@@ -80,7 +80,7 @@ public sealed class ReportingDatabaseBoundaryIntegrationTests
 
     private static Task<int> InsertFeedback(
         AlphaDbContext db, Guid organizationId, Guid employerId, string hash, DateTimeOffset now, CancellationToken ct) =>
-        db.Database.ExecuteSqlInterpolatedAsync($$"""
+        db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO reporting.employer_interface_feedback
                 ("Id","OrganizationId","EmployerId","ReportId","TransmissionId","DocumentType","InterfaceVersion",
                  "SourceFileName","InterfaceFileNumber","PayloadHash","RawXml","ReceivedAt","CreatedAt","UpdatedAt")
