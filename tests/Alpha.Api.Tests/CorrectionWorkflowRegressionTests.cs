@@ -344,3 +344,92 @@ public sealed class CorrectionDeltaRevisionRegressionTests
         return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
     }
 }
+
+
+public sealed class ReportingStressScenarioRegressionTests
+{
+    [Fact]
+    public void Validated_report_changed_after_validation_returns_to_draft_and_requires_revalidation()
+    {
+        var report = NewReport();
+        report.MarkReadyForValidation();
+        report.MarkValidated();
+
+        report.UpdateDetails(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 9));
+
+        Assert.Equal(ManualReportStatus.Draft, report.Status);
+        Assert.Null(report.ValidatedAt);
+        Assert.True(report.IsEditable);
+    }
+
+    [Fact]
+    public void Simulated_process_crash_after_transmission_claim_keeps_report_locked()
+    {
+        var report = NewReport();
+        report.MarkReadyForValidation();
+        report.MarkValidated();
+        report.MarkTransmissionStarted();
+
+        Assert.Equal(ManualReportStatus.Processing, report.Status);
+        Assert.False(report.IsEditable);
+        Assert.Throws<InvalidOperationException>(() =>
+            report.UpdateDetails(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 10)));
+    }
+
+    [Fact]
+    public void Feedback_projection_reads_only_feedback_for_latest_transmission_attempt()
+    {
+        var source = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
+        Assert.Contains("OrderByDescending(x => x.AttemptNumber)", source, StringComparison.Ordinal);
+        Assert.Contains("query.Where(x => x.TransmissionId == latestTransmissionId.Value)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void All_reporting_input_paths_converge_on_the_same_manual_reporting_entities()
+    {
+        var import = Read("src", "Alpha.Api", "Services", "EmployerInterfaceService.cs");
+        var manual = Read("src", "Alpha.Api", "Endpoints", "ManualReportEndpoints.cs");
+
+        Assert.Contains("new ManualReport(", import, StringComparison.Ordinal);
+        Assert.Contains("new ManualReportEmployee(", import, StringComparison.Ordinal);
+        Assert.Contains("new ManualReportProduct(", import, StringComparison.Ordinal);
+        Assert.Contains("new ManualContribution(", import, StringComparison.Ordinal);
+        Assert.Contains("new ManualReportProduct(", manual, StringComparison.Ordinal);
+        Assert.Contains("new ManualContribution(", manual, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Multi_user_report_updates_have_both_ef_concurrency_token_and_api_conflict_handling()
+    {
+        var config = Read("src", "Alpha.Infrastructure", "Persistence", "ReportingEntityConfigurations.cs");
+        var validation = Read("src", "Alpha.Api", "Endpoints", "ReportValidationEndpoints.cs");
+
+        Assert.Contains("b.Property(x => x.UpdatedAt).IsConcurrencyToken()", config, StringComparison.Ordinal);
+        Assert.Contains("catch (DbUpdateConcurrencyException)", validation, StringComparison.Ordinal);
+        Assert.Contains("report_changed_during_validation", validation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Reconciliation_path_never_turns_unknown_provider_outcome_into_retryable_error()
+    {
+        var source = Read("src", "Alpha.Api", "Endpoints", "ReportTransmissionEndpoints.cs");
+        var catchIndex = source.IndexOf("catch (Exception)", StringComparison.Ordinal);
+        Assert.True(catchIndex >= 0);
+        var body = source[catchIndex..];
+
+        Assert.Contains("transmission_reconciliation_required", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("report.MarkTransmissionError", body, StringComparison.Ordinal);
+        Assert.Contains("StatusCodes.Status502BadGateway", body, StringComparison.Ordinal);
+    }
+
+    private static ManualReport NewReport() =>
+        new(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 9));
+
+    private static string Read(params string[] parts)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        var root = dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+        return File.ReadAllText(Path.Combine(new[] { root }.Concat(parts).ToArray()));
+    }
+}
