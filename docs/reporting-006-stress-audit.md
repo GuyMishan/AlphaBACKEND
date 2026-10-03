@@ -150,6 +150,16 @@ The imported-correction ambiguity check is a safety fix discovered by this round
 
 The feedback stress pass also removed the dormant fund-only fallback from `PropagateTransferIdentifiersAsync`. Transfer feedback now requires an exact saved product/transfer identifier match; ALPHA will not fall back to "first product in the same fund" when the official transfer identifier is unknown. A regression guard ensures the fund-only fallback cannot be reintroduced silently.
 
+### Full-suite recheck and new database boundary tests
+
+The existing backend test suite was re-run after the reporting fixes: 284 tests passed together on the green reporting head with 0 failures, 0 skipped and 0 build warnings.
+
+The next stress increment adds:
+- PostgreSQL exhaustion coverage for daily file sequence 9999 (must fail closed without wrapping or reusing a number)
+- tenant-scope guards for transmission, Employer Interface export/preflight and report-feedback endpoints
+- PostgreSQL unique-boundary tests for duplicate (ReportId, AttemptNumber) transmission attempts
+- PostgreSQL unique-boundary tests for duplicate (EmployerId, PayloadHash) feedback, while allowing the same payload hash for a different employer
+
 ## Coverage still requiring real external integration
 
 The repository has no real clearing-house test environment. The following cannot be truthfully marked as end-to-end Passed from CI alone:
