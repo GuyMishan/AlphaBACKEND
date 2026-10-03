@@ -134,6 +134,18 @@ The follow-up stress round added ten explicit cases to the existing reporting te
 
 This round found an additional same-fund correction bug: negative operation 6 previously derived its previous transfer identifier from the first product in the fund. It now uses the exact original product's saved InterfaceTransferIdentifier, falling back only to that product's own immutable ID.
 
+## Additional transmission/import hardening round
+
+A further stress pass added:
+
+- domain-level transmission lifecycle tests for immutable payload copying, accepted timestamps, explicit rejection semantics, retry eligibility after an explicit rejection, duplicate Processing claims and terminal-status validation
+- a same-fund current-correction case where two products have different previous transfer/clearing references; the exporter must emit two separate transfer blocks
+- imported-correction source correlation now fails closed when official previous identifiers resolve to more than one local source report or more than one local transmission source, instead of selecting an arbitrary FirstOrDefault match
+- a PostgreSQL concurrency test that reserves 20 Employer Interface file sequences simultaneously for one sender/day and requires the exact unique monotonic set 1..20
+- mutation tests restricted to structurally/schema-invalid corruptions to avoid treating values that the official V006 schema permits as invalid merely by assumption
+
+The imported-correction ambiguity check is a safety fix discovered by this round: ALPHA's correction model has one SourceReportId, so a file that resolves to multiple local ancestors is rejected rather than silently attaching the correction to the wrong revision.
+
 ## Coverage still requiring real external integration
 
 The repository has no real clearing-house test environment. The following cannot be truthfully marked as end-to-end Passed from CI alone:
