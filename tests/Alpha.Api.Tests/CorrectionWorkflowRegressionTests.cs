@@ -154,6 +154,30 @@ public sealed class EmployerInterfaceImmutableEvidenceRegressionTests
 }
 
 
+public sealed class ReportTransmissionProviderSelectionRegressionTests
+{
+    [Fact]
+    public void Default_transmission_provider_selection_uses_configured_provider_and_fails_closed()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Endpoints", "ReportTransmissionEndpoints.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("availableProviders.FirstOrDefault(x => x.IsConfigured)", source, StringComparison.Ordinal);
+        Assert.Contains("if (!provider.IsConfigured)", source, StringComparison.Ordinal);
+        Assert.Contains("StatusCodes.Status503ServiceUnavailable", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("MockClearinghouse", source, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
 public sealed class ReportTransmissionSafetyRegressionTests
 {
     [Fact]
