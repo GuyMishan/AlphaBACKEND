@@ -1000,7 +1000,7 @@ public sealed class EmployerInterface006XmlBuilderTests
             doc => Assert.Single(doc.Descendants("SUG-PEULA")).Value = "99",
             doc => Assert.Single(doc.Descendants("KOD-EMTZAI-TASHLUM")).Value = "4",
             doc => Assert.Single(doc.Descendants("MISPAR-SNIF-MAASIK")).Value = "ABC",
-            doc => Assert.Single(doc.Descendants("SUG-MEZAHE-OVED")).Value = "99"
+            doc => Assert.Single(doc.Descendants("CHODESH-MASKORET")).Value = "not-a-date"
         };
 
         foreach (var mutate in mutations)
