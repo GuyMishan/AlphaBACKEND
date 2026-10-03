@@ -167,8 +167,10 @@ public sealed class ReportingTenantIsolationRegressionTests
 
         Assert.Contains("OrganizationId == organizationId", source, StringComparison.Ordinal);
         Assert.Contains("EmployerId == employerId", source, StringComparison.Ordinal);
-        Assert.Contains("CanAccessEmployerAsync", source, StringComparison.OrdinalIgnoreCase)
-            || Assert.Contains("CanTransmitReportAsync", source, StringComparison.OrdinalIgnoreCase);
+        Assert.True(
+            source.Contains("CanAccessEmployerAsync", StringComparison.OrdinalIgnoreCase)
+            || source.Contains("CanTransmitReportAsync", StringComparison.OrdinalIgnoreCase),
+            "Reporting endpoint must perform an employer-scope authorization check.");
     }
 
     private static string FindRepoRoot()
