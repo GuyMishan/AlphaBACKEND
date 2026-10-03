@@ -72,10 +72,13 @@ public sealed class CorrectionDeltaIntegrationTests
                 protector.Protect("0507654321", $"report-employee-mobile:{reportEmployee.Id}"));
 
             var p1 = Product(reportEmployee.Id, "P1", "fund-1", new string('1', 30), 0);
-            var p2 = Product(reportEmployee.Id, "P2", "fund-2", new string('2', 30), 1);
-            var p3 = Product(reportEmployee.Id, "P3", "fund-3", new string('3', 30), 2);
+            // P2 and P3 intentionally share one fund but represent different original transfers.
+            // Negative correction references must follow the exact source product, not "first transfer in fund".
+            var p2 = Product(reportEmployee.Id, "P2", "fund-shared", new string('2', 30), 1);
+            var p3 = Product(reportEmployee.Id, "P3", "fund-shared", new string('2', 30), 2);
 
             db.AddRange(organization, employer, person, employment, source, reportEmployee, p1, p2, p3);
+            var expectedTransferBySourceProduct = new Dictionary<Guid, string>();
             foreach (var product in new[] { p1, p2, p3 })
             {
                 var contribution = new ManualContribution(product.Id, ContributionParty.Employee,
@@ -83,7 +86,9 @@ public sealed class CorrectionDeltaIntegrationTests
                 contribution.SetInterfaceRecordIdentifier(Guid.NewGuid().ToString("D"));
                 var payment = Payment(product.Id, protector);
                 var metadata = Metadata(product.Id, 1);
-                metadata.SetInterfaceTransferIdentifier(Guid.NewGuid().ToString("D"));
+                var transferIdentifier = Guid.NewGuid().ToString("D").ToUpperInvariant();
+                metadata.SetInterfaceTransferIdentifier(transferIdentifier);
+                expectedTransferBySourceProduct[product.Id] = transferIdentifier;
                 db.AddRange(contribution, payment, metadata);
             }
 
@@ -148,8 +153,15 @@ public sealed class CorrectionDeltaIntegrationTests
 
             var negativeMetadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
                 .Where(x => negativeProducts.Select(p => p.Id).Contains(x.ReportProductId))
-                .Select(x => x.OperationCode).ToArrayAsync(ct);
-            Assert.All(negativeMetadata, operation => Assert.Equal(6, operation));
+                .ToDictionaryAsync(x => x.ReportProductId, ct);
+            Assert.All(negativeMetadata.Values, metadata => Assert.Equal(6, metadata.OperationCode));
+            foreach (var negativeProduct in negativeProducts)
+            {
+                Assert.True(negativeProduct.SourceReportProductId.HasValue);
+                Assert.Equal(
+                    expectedTransferBySourceProduct[negativeProduct.SourceReportProductId!.Value],
+                    negativeMetadata[negativeProduct.Id].PreviousIdentifier);
+            }
 
             var technicalReports = await db.ManualReports
                 .Where(x => x.CorrectionWorkspaceId == workspaceId && x.IsTechnicalCorrectionDocument)
