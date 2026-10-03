@@ -786,7 +786,13 @@ public static class ReportFeedbackEndpoints
         }
 
         var bytes = ExcelWorkbookBuilder.Build(sheetName, rows);
-        var fileName = $"alpha-{report.ReportingMonth:yyyy-MM}-{normalized}.xlsx";
+        var fileLabel = normalized switch
+        {
+            "contributions" => "פירוט עובדים והפרשות",
+            "deposits" => "סיכום הפקדות",
+            _ => "משוב קופות"
+        };
+        var fileName = $"{fileLabel} - {report.ReportingMonth:MM-yyyy}.xlsx";
         return Results.File(
             bytes,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
