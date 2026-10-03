@@ -227,6 +227,30 @@ public sealed class EmployerInterfaceImportConsistencyRegressionTests
 }
 
 
+public sealed class EmployerInterfaceImportedCorrectionSourceRegressionTests
+{
+    [Fact]
+    public void Imported_correction_rejects_multiple_local_source_reports_instead_of_guessing()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "src", "Alpha.Api", "Services", "EmployerInterfaceService.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("Imported correction references more than one local source report", source, StringComparison.Ordinal);
+        Assert.Contains("Imported correction references more than one local transmission source", source, StringComparison.Ordinal);
+        Assert.Contains(".Distinct()", source, StringComparison.Ordinal);
+        Assert.Contains(".Take(2)", source, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+}
+
+
 public sealed class EmployerInterfaceTransferCorrelationRegressionTests
 {
     [Fact]
