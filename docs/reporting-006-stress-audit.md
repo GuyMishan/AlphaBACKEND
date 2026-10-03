@@ -117,6 +117,23 @@ Recommended frontend change: do not send a provider unless the user/operator exp
 
 This remains **not changed** pending approval.
 
+## Additional aggressive regression round
+
+The follow-up stress round added ten explicit cases to the existing reporting test suites:
+
+1. same-fund correction with two different original transfer identifiers; negative cancellation must preserve the exact source-product reference
+2. simulated process crash after a report has been claimed for transmission; Processing remains immutable/non-editable
+3. late/old feedback projection after a newer transmission attempt; operational reads use only feedback correlated to the latest attempt
+4. duplicate feedback at the PostgreSQL boundary; employer + payload hash remains a unique idempotency key
+5. large current report with 120 separate transfer groups; builder + workbook validation + official current-report XSD must all pass
+6. manual and Employer Interface import paths converge on the same ManualReport/Employee/Product/Contribution canonical persistence model
+7. a previously Validated report changed before transmission returns to Draft and requires validation again
+8. multi-user/stale validation is protected by the EF concurrency token plus an explicit 409 conflict path
+9. mutation sweep corrupts one field at a time in an otherwise valid V006 payload; workbook or XSD validation must reject every mutation
+10. ambiguous provider/reconciliation path remains non-retryable and correction materialization rollback remains atomic
+
+This round found an additional same-fund correction bug: negative operation 6 previously derived its previous transfer identifier from the first product in the fund. It now uses the exact original product's saved InterfaceTransferIdentifier, falling back only to that product's own immutable ID.
+
 ## Coverage still requiring real external integration
 
 The repository has no real clearing-house test environment. The following cannot be truthfully marked as end-to-end Passed from CI alone:
