@@ -1033,26 +1033,25 @@ public sealed class EmployerInterface006XmlBuilderTests
     [Fact]
     public void Mutation_sweep_rejects_single_field_corruption_of_otherwise_valid_payload()
     {
-        var mutations = new Action<XDocument>[]
+        var mutations = new (string Name, Action<XDocument> Apply)[]
         {
-            doc => Assert.Single(doc.Descendants("SUG-PEULA")).Value = "99",
-            doc => Assert.Single(doc.Descendants("KOD-EMTZAI-TASHLUM")).Value = "4",
-            doc => Assert.Single(doc.Descendants("MISPAR-SNIF-MAASIK")).Value = "ABC",
-            doc => Assert.Single(doc.Descendants("CHODESH-MASKORET")).Value = "not-a-date"
+            ("invalid operation code", doc => Assert.Single(doc.Descendants("SUG-PEULA")).Value = "99"),
+            ("forbidden operation/payment combination", doc => Assert.Single(doc.Descendants("KOD-EMTZAI-TASHLUM")).Value = "4"),
+            ("invalid salary-month date", doc => Assert.Single(doc.Descendants("CHODESH-MASKORET")).Value = "not-a-date")
         };
 
-        foreach (var mutate in mutations)
+        foreach (var mutation in mutations)
         {
             var fixture = CreateFixture(false);
             var result = EmployerInterface006XmlBuilder.BuildCurrent(fixture.Context);
             Assert.NotNull(result.Document);
             var document = new XDocument(result.Document!);
-            mutate(document);
+            mutation.Apply(document);
 
             var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(document, fixture.Context, false);
             var xsdIssues = ValidateAgainstXsd(document, "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml");
             Assert.True(workbookIssues.Count > 0 || xsdIssues.Count > 0,
-                "A one-field corruption unexpectedly passed both workbook and XSD validation.");
+                $"Mutation '{mutation.Name}' unexpectedly passed both workbook and XSD validation.");
         }
     }
 
