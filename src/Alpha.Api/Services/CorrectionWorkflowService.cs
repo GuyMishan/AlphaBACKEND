@@ -728,20 +728,6 @@ public static class CorrectionWorkflowService
             employeeMap[oldEmployee.Id] = clone;
         }
 
-        var sourceTransferByFund = source.Products
-            .GroupBy(CorrectionFundKey, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group =>
-                {
-                    var product = group.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).First();
-                    source.Metadata.TryGetValue(product.Id, out var metadata);
-                    return !string.IsNullOrWhiteSpace(metadata?.InterfaceTransferIdentifier)
-                        ? metadata.InterfaceTransferIdentifier
-                        : product.Id.ToString("D").ToUpperInvariant();
-                },
-                StringComparer.Ordinal);
-
         var products = new List<ManualReportProduct>(source.Products.Count);
         var metadataRows = new List<EmployerInterfaceReportProductData>(source.Products.Count);
         var productMap = new Dictionary<Guid, ManualReportProduct>(source.Products.Count);
@@ -796,7 +782,9 @@ public static class CorrectionWorkflowService
                     oldMetadata.StatusStartDate, oldMetadata.EmploymentPercentage,
                     oldMetadata.WorkDaysInMonth, oldMetadata.LastDeposit, null, null,
                     oldMetadata.EmployerAccountType, oldMetadata.ReceiverAccountType,
-                    sourceTransferByFund[CorrectionFundKey(oldProduct)],
+                    !string.IsNullOrWhiteSpace(oldMetadata.InterfaceTransferIdentifier)
+                        ? oldMetadata.InterfaceTransferIdentifier
+                        : oldProduct.Id.ToString("D").ToUpperInvariant(),
                     string.IsNullOrWhiteSpace(oldMetadata.ClearingIdentifier)
                         ? null : oldMetadata.ClearingIdentifier,
                     null, oldMetadata.OldPensionTypeCode);
