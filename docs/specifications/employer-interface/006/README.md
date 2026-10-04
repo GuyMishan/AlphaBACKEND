@@ -107,6 +107,10 @@ The TEST-only simulated vault can auto-respond to an outbound report. A `<payloa
 
 CI reads the committed summary-feedback XSD and fails if Alpha's error-code catalog drifts from the official `SUG-SHGIHA` enumeration.
 
+Initial feedback is intentionally separate from summary feedback. `FEDBKA` is the stage-A technical feedback interface and the simulator currently models the documented file-level codes 1 (invalid filename; duplicate filename uses the same code with duplicate detail), 2 (unreadable file), 3 (illegal XML structure), 4 (invalid main hierarchy), and 11 (future file date). Use `fedbka:accepted`, `fedbka:<code>`, `fedbka:duplicate`, or `fedbka:all-errors`. A FEDBKA rejection updates transmission/report failure state; it is never forged into an `EMPFED` summary-feedback row.
+
+`FEDBKB` is recognized as the stage-B content-level initial feedback interface. Its error codes are request/interface-specific and the matching Events Interface XSD/codebook is not currently committed under this repository's official specifications. The simulator therefore supports `fedbkb:accepted` but rejects arbitrary `fedbkb:<code>` scenarios until that authoritative source is added. Do not invent FEDBKB codes.
+
 ## Testing
 
 `tests/Alpha.Api.Tests/EmployerInterface006XmlBuilderTests.cs` builds representative current and negative XML documents, applies workbook-derived business rules, and validates the results against these exact official XSD files. The tests run in CI.
