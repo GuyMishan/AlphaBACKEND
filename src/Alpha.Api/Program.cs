@@ -58,6 +58,7 @@ if (simulatedVaultEnabled)
 {
     builder.Services.AddScoped<IReportTransmissionProvider, SimulatedVaultReportTransmissionProvider>();
     builder.Services.AddScoped<SimulatedClearinghouseFeedbackIngestor>();
+    builder.Services.AddScoped<SimulatedClearinghouseTechnicalFeedbackHandler>();
     builder.Services.AddHostedService<SimulatedClearinghouseResponder>();
     builder.Services.AddHostedService<SimulatedClearinghouseVaultWorker>();
 }
