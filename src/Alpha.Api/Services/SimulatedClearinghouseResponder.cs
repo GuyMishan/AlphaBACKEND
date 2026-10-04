@@ -88,11 +88,7 @@ public sealed class SimulatedClearinghouseResponder(
                 var inbox = Path.Combine(root, "inbox", employerId.ToString("N"));
                 Directory.CreateDirectory(inbox);
 
-                var expanded = scenario.Mode == "all-errors"
-                    ? EmployerInterfaceLineFeedbackParser.OfficialFailureCodes
-                        .Select(code => new SimulatedClearinghouseScenario("error", code))
-                        .ToArray()
-                    : [scenario];
+                var expanded = ExpandScenario(scenario);
 
                 foreach (var item in expanded)
                 {
@@ -147,6 +143,14 @@ public sealed class SimulatedClearinghouseResponder(
     }
 
     internal static string NormalizeScenario(string? value) => ParseScenario(value).CanonicalName;
+
+    internal static IReadOnlyList<SimulatedClearinghouseScenario> ExpandScenario(SimulatedClearinghouseScenario scenario) =>
+        scenario.Mode == "all-errors"
+            ? EmployerInterfaceLineFeedbackParser.OfficialFailureCodes
+                .Select(code => new SimulatedClearinghouseScenario("error", code))
+                .ToArray()
+            : [scenario];
+
 
     private static async Task WriteAtomicallyAsync(string targetPath, byte[] content, CancellationToken ct)
     {
