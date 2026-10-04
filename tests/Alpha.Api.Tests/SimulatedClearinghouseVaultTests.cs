@@ -31,13 +31,13 @@ public sealed class SimulatedClearinghouseVaultTests
                     payload,
                     "0123456789abcdef0123456789abcdef",
                     [new ReportTransmissionAttachment("proof.pdf", "application/pdf", "proof"u8.ToArray(), "hash")],
-                    "003_TEST.DAT"),
+                    "003000123456789EMPONG000006202609250809100001.TST"),
                 CancellationToken.None);
 
             Assert.True(result.Success);
             Assert.Equal("Queued", result.Status);
-            Assert.True(File.Exists(Path.Combine(root, "outbox", employerId.ToString("N"), "003_TEST.DAT")));
-            Assert.True(File.Exists(Path.Combine(root, "outbox", employerId.ToString("N"), "003_TEST.DAT.attachments", "proof.pdf")));
+            Assert.True(File.Exists(Path.Combine(root, "outbox", employerId.ToString("N"), "003000123456789EMPONG000006202609250809100001.TST")));
+            Assert.True(File.Exists(Path.Combine(root, "outbox", employerId.ToString("N"), "003000123456789EMPONG000006202609250809100001.TST.attachments", "proof.pdf")));
         }
         finally
         {
