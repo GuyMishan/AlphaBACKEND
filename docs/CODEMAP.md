@@ -130,3 +130,5 @@ These sources outrank assumptions, old examples and UI behavior.
 
 
 - Employer Interface sender defaults now model ALPHA as a service bureau/intermediary: `SenderCode=6` and Annex VI `FileDirectionCode=006`. Direct-employer `003` remains supported only when explicitly configured for an employer-owned vault.
+
+- Simulated clearing-house stress coverage supports per-transmission sidecars `success`, `partial`, `error`, `in-transit`, `error:<official-code>`, `partial:<official-code>`, and `all-errors`. `all-errors` expands to every `SUG-SHGIHA` failure code allowed by the committed V006 summary-feedback XSD. CI asserts the in-code error catalog exactly matches the XSD and exercises persistence of every official code through the simulated feedback ingestion path.
