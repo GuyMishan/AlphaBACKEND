@@ -57,6 +57,8 @@ var allowMockTransmission = builder.Environment.IsDevelopment()
 if (simulatedVaultEnabled)
 {
     builder.Services.AddScoped<IReportTransmissionProvider, SimulatedVaultReportTransmissionProvider>();
+    builder.Services.AddScoped<SimulatedClearinghouseFeedbackIngestor>();
+    builder.Services.AddHostedService<SimulatedClearinghouseResponder>();
     builder.Services.AddHostedService<SimulatedClearinghouseVaultWorker>();
 }
 else if (allowMockTransmission)
