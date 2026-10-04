@@ -45,13 +45,21 @@ builder.Services.AddScoped<OrganizationEntitlementLock>();
 builder.Services.AddScoped<InvitationService>();
 builder.Services.AddScoped<ReportPaymentAccountService>();
 builder.Services.Configure<EmployerInterface006Options>(builder.Configuration.GetSection(EmployerInterface006Options.SectionName));
+builder.Services.Configure<SimulatedClearinghouseVaultOptions>(builder.Configuration.GetSection(SimulatedClearinghouseVaultOptions.SectionName));
 builder.Services.AddSingleton<EmployerInterfaceSchemaRegistry>();
 builder.Services.AddScoped<EmployerInterfaceService>();
 builder.Services.AddScoped<EmployerInterface006ExportService>();
 builder.Services.AddScoped<EmployerInterfaceFileSequenceService>();
+var simulatedVaultEnabled = builder.Configuration.GetValue<bool>("EmployerInterface006:SimulatedVault:Enabled")
+    && builder.Configuration.GetValue<int>("EmployerInterface006:EnvironmentCode") == 1;
 var allowMockTransmission = builder.Environment.IsDevelopment()
     || builder.Configuration.GetValue<bool>("EmployerInterface006:AllowMockTransmission");
-if (allowMockTransmission)
+if (simulatedVaultEnabled)
+{
+    builder.Services.AddScoped<IReportTransmissionProvider, SimulatedVaultReportTransmissionProvider>();
+    builder.Services.AddHostedService<SimulatedClearinghouseVaultWorker>();
+}
+else if (allowMockTransmission)
     builder.Services.AddScoped<IReportTransmissionProvider, MockReportTransmissionProvider>();
 else
     builder.Services.AddScoped<IReportTransmissionProvider, UnavailableReportTransmissionProvider>();
