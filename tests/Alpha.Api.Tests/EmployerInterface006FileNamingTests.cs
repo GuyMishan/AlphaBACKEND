@@ -27,7 +27,16 @@ public sealed class EmployerInterface006FileNamingTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             EmployerInterface006FileNaming.Build("123456789", direction, negative: false,
                 DateTimeOffset.UtcNow, sequence: 1, testFile: true));
+    
+    [Fact]
+    public void Default_options_use_service_bureau_direction()
+    {
+        var options = new EmployerInterface006Options();
+
+        Assert.Equal(6, options.SenderCode);
+        Assert.Equal(EmployerInterface006FileNaming.ServiceBureauToClearinghouseDirection, options.FileDirectionCode);
     }
+}
 
     [Theory]
     [InlineData("003000123456789EMPONG000006202609250809100001.TST", true)]
