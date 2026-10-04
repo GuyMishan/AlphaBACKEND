@@ -298,6 +298,10 @@ public static class ReportValidationEndpoints
         }
 
         var generated = await exporter.ExportAsync(result.Report, ct);
+
+        foreach (var finding in EmployerInterface006ClearinghousePreflight.Validate(generated))
+            result.Issues.Add(new($"FEDBKA_{finding.FedbkaCode}", finding.Message, ValidationScope.Report));
+
         if (generated.Validation.IsValid) return;
 
         foreach (var issue in generated.Validation.Issues.Distinct(StringComparer.Ordinal).Take(100))
