@@ -13,6 +13,9 @@ public sealed class SimulatedClearinghouseVaultOptions
     public bool Enabled { get; set; }
     public string RootDirectory { get; set; } = "simulated-clearinghouse-vault";
     public int PollIntervalSeconds { get; set; } = 5;
+    public bool AutoRespond { get; set; } = true;
+    public string DefaultScenario { get; set; } = "success";
+    public int ResponseDelaySeconds { get; set; } = 2;
 }
 
 public sealed class SimulatedVaultReportTransmissionProvider(
@@ -202,6 +205,33 @@ public sealed class SimulatedClearinghouseVaultWorker(
                 return;
             }
 
+            if (safeName.EndsWith(".simulation.json", StringComparison.OrdinalIgnoreCase))
+            {
+                var json = await File.ReadAllTextAsync(processingPath, ct);
+                var instruction = JsonSerializer.Deserialize<SimulatedVaultFeedbackInstruction>(json);
+                if (instruction is null)
+                {
+                    MoveTo(root, "failed", employerId, processingPath, safeName);
+                    return;
+                }
+
+                var simulatedIngestor = scope.ServiceProvider.GetRequiredService<SimulatedClearinghouseFeedbackIngestor>();
+                var feedbackId = await simulatedIngestor.IngestAsync(employerId, instruction, safeName, ct);
+                if (!feedbackId.HasValue)
+                {
+                    MoveTo(root, "failed", employerId, processingPath, safeName);
+                    logger.LogWarning("Simulated vault scenario feedback for employer {EmployerId} was not ingested.", employerId);
+                    return;
+                }
+
+                MoveTo(root, "processed", employerId, processingPath, safeName);
+                logger.LogInformation(
+                    "Simulated clearing-house scenario feedback was ingested for employer {EmployerId}; feedback {FeedbackId}.",
+                    employerId,
+                    feedbackId.Value);
+                return;
+            }
+
             var bytes = await File.ReadAllBytesAsync(processingPath, ct);
             var validation = service.Validate(bytes);
             if (!validation.IsValid
@@ -250,7 +280,8 @@ public sealed class SimulatedClearinghouseVaultWorker(
     private static bool IsFeedbackFile(string path)
     {
         var extension = Path.GetExtension(path);
-        return extension.Equals(".xml", StringComparison.OrdinalIgnoreCase)
+        return path.EndsWith(".simulation.json", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".xml", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".dat", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".tst", StringComparison.OrdinalIgnoreCase);
     }
