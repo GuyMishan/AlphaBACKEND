@@ -71,6 +71,10 @@ the exception.
 - Do not delete submitted financial records; reverse or supersede them.
 
 
+## Clearing-house transport boundary
+
+Employer Interface transmission is separated from reporting semantics behind `IReportTransmissionProvider`. Before production clearing-house credentials exist, Alpha can exercise the same outbound/inbound boundary with an explicit TEST-only filesystem vault: validated outbound files are atomically written to an employer-scoped outbox, and a hosted inbox worker claims feedback files, validates them against the committed official Version 006 schemas, and sends them through the same encrypted feedback ingestion/correlation/normalization flow used by real clearing-house feedback. The simulator is enabled only when `EmployerInterface006:EnvironmentCode=1` and `EmployerInterface006:SimulatedVault:Enabled=true`. Replacing it with SFTP/API must not change report, transmission, correction, or feedback domain semantics.
+
 ## Reporting correction revision model
 
 Submitted employer reports are business revisions, while Employer Interface 006 negative/current files created to move between revisions are technical transmission documents. A correction workspace is a full desired next-state snapshot. The delta planner compares it to the latest effective revision and emits only the Added/Changed/Removed rows required by Version 006. Technical documents never become the source of a later user correction; after successful transmission, the workspace itself is promoted to the next immutable business revision. This keeps lineage linear (Revision 1 -> Revision 2 -> Revision 3) while preserving every technical transmission as immutable evidence.
