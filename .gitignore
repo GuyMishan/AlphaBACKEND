@@ -10,3 +10,9 @@
 appsettings.Local.json
 TestResults/
 coverage/
+
+
+# Local simulated clearing-house vault runtime data
+simulated-clearinghouse-vault/*
+!simulated-clearinghouse-vault/README.md
+!simulated-clearinghouse-vault/.gitkeep
