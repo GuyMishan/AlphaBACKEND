@@ -101,6 +101,12 @@ The following items are intentionally deferred until the real clearinghouse inte
 - Employee identifier type (`SUG-MEZAHE-OVED`): Alpha currently emits type `1`. Add/verify support for the other official identifier type when a real use case is introduced.
 - Old pension fund subtype (`SUG-KEREN-PENSIA`): Alpha currently emits `xsi:nil`. Add/verify support for old-pension-fund cases when needed and during clearinghouse integration.
 
+## Simulated clearing-house testing
+
+The TEST-only simulated vault can auto-respond to an outbound report. A `<payload>.scenario` sidecar may contain `success`, `partial`, `error`, `in-transit`, `error:<SUG-SHGIHA>`, `partial:<SUG-SHGIHA>`, or `all-errors`. The `all-errors` mode emits one simulated feedback instruction for every official failure code allowed by the Version 006 summary-feedback XSD. These simulator instructions are not official clearing-house XML; they deliberately exercise Alpha's correlation, normalized feedback persistence, status/error handling, and UI-facing data model. Real XML/DAT/TST feedback still requires validation against the official XSD before ingestion.
+
+CI reads the committed summary-feedback XSD and fails if Alpha's error-code catalog drifts from the official `SUG-SHGIHA` enumeration.
+
 ## Testing
 
 `tests/Alpha.Api.Tests/EmployerInterface006XmlBuilderTests.cs` builds representative current and negative XML documents, applies workbook-derived business rules, and validates the results against these exact official XSD files. The tests run in CI.
