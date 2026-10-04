@@ -122,6 +122,39 @@ public sealed class SimulatedClearinghouseEndToEndTests
         });
     }
 
+    [Fact]
+    public async Task Fedbka_technical_rejection_marks_transmission_and_report_as_error()
+    {
+        await WithDatabase(async (db, ct) =>
+        {
+            var fixture = await CreateReportFixtureAsync(db, ct);
+            var handler = new SimulatedClearinghouseTechnicalFeedbackHandler(db);
+            var instruction = new SimulatedVaultFeedbackInstruction(
+                fixture.Report.Id,
+                fixture.Transmission.Id,
+                fixture.Organization.Id,
+                fixture.Employer.Id,
+                "error",
+                fixture.Transmission.PayloadFileName,
+                DateTimeOffset.UtcNow,
+                3,
+                ClearinghouseInitialFeedbackCatalog.TechnicalInterface,
+                ClearinghouseInitialFeedbackCatalog.StageADescription(3));
+
+            Assert.True(await handler.HandleAsync(fixture.Employer.Id, instruction, ct));
+
+            var transmission = await db.ReportTransmissions.AsNoTracking()
+                .SingleAsync(x => x.Id == fixture.Transmission.Id, ct);
+            var report = await db.ManualReports.AsNoTracking()
+                .SingleAsync(x => x.Id == fixture.Report.Id, ct);
+
+            Assert.Equal(ReportTransmissionStatus.Rejected, transmission.Status);
+            Assert.Contains("FEDBKA 3", transmission.ErrorMessage, StringComparison.Ordinal);
+            Assert.Equal(ManualReportStatus.Error, report.Status);
+            Assert.Contains("FEDBKA 3", report.ValidationError, StringComparison.Ordinal);
+        });
+    }
+
     private static SimulatedClearinghouseFeedbackIngestor NewIngestor(AlphaDbContext db)
     {
         var key = Convert.ToBase64String(Enumerable.Range(1, 32).Select(x => (byte)x).ToArray());
@@ -146,6 +179,10 @@ public sealed class SimulatedClearinghouseEndToEndTests
             new DateOnly(2025, 1, 1), "E-1", 10_000m);
         var report = new ManualReport(organization.Id, employer.Id,
             new DateOnly(2026, 9, 1), new DateOnly(2026, 10, 1));
+        report.MarkReadyForValidation();
+        report.MarkValidated();
+        report.MarkTransmissionStarted();
+        report.MarkSent();
         var reportEmployee = new ManualReportEmployee(report.Id, organization.Id, employer.Id,
             employment.Id, person.Id, "123456782", "Test", "Employee", "E-1", 10_000m);
         var product = new ManualReportProduct(reportEmployee.Id, PensionProductType.PensionFund,
