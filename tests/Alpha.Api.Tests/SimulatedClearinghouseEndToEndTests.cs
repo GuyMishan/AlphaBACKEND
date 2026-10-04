@@ -61,7 +61,7 @@ public sealed class SimulatedClearinghouseEndToEndTests
             Assert.Equal("allocated", ReportFeedbackStatusResolver.ResolveMoneyState(
                 transfers[0].ReportedDepositAmount, transfers[0].ActualReceivedAmount,
                 transfers[0].AllocatedAmount, transfers[0].InTransitAmount));
-            Assert.Equal("received-partial", ReportFeedbackStatusResolver.ResolveMoneyState(
+            Assert.Equal("in-transit", ReportFeedbackStatusResolver.ResolveMoneyState(
                 transfers[1].ReportedDepositAmount, transfers[1].ActualReceivedAmount,
                 transfers[1].AllocatedAmount, transfers[1].InTransitAmount));
             Assert.Equal("unresolved", ReportFeedbackStatusResolver.ResolveMoneyState(
