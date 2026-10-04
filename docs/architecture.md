@@ -73,6 +73,8 @@ the exception.
 
 ## Clearing-house transport boundary
 
+ALPHA's default clearing-house role is service bureau/intermediary: outbound Employer Interface traffic uses Annex VI direction `006`. Direct-employer direction `003` is retained as an explicit alternative for a future employer-owned vault, not as the ALPHA default.
+
 Employer Interface transmission is separated from reporting semantics behind `IReportTransmissionProvider`. Before production clearing-house credentials exist, Alpha can exercise the same outbound/inbound boundary with an explicit TEST-only filesystem vault: validated outbound files are atomically written to an employer-scoped outbox, and a hosted inbox worker claims feedback files, validates them against the committed official Version 006 schemas, and sends them through the same encrypted feedback ingestion/correlation/normalization flow used by real clearing-house feedback. The simulator is enabled only when `EmployerInterface006:EnvironmentCode=1` and `EmployerInterface006:SimulatedVault:Enabled=true`. Replacing it with SFTP/API must not change report, transmission, correction, or feedback domain semantics. The optional TEST auto-responder simulates asynchronous clearing-house outcomes after an outbound file appears. Its generated `.simulation.json` inbox messages are a simulator control/data artifact, not an assertion about the clearing house's real feedback file format; genuine XML/DAT/TST feedback continues through official XSD validation.
 
 ## Reporting correction revision model
