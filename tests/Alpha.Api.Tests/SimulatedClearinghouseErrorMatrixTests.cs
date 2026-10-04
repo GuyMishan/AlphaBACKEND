@@ -53,6 +53,17 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
         Assert.All(expanded, x => Assert.Equal("error", x.Mode));
     }
 
+    [Fact]
+    public void Mixed_scenario_is_preserved_for_auto_responder()
+    {
+        var scenario = SimulatedClearinghouseResponder.ParseScenario("mixed");
+
+        Assert.Equal("mixed", scenario.Mode);
+        Assert.Equal("mixed", scenario.CanonicalName);
+        Assert.Null(scenario.ErrorCode);
+        Assert.Equal("EMPFED", scenario.FeedbackInterface);
+    }
+
     [Theory]
     [InlineData("success", "success", null)]
     [InlineData("partial", "partial", null)]
