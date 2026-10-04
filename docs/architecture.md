@@ -79,6 +79,8 @@ Employer Interface transmission is separated from reporting semantics behind `IR
 
 Initial clearing-house acknowledgements are a separate lifecycle layer from employer summary/business feedback. FEDBKA technical rejections affect the transmission/report state; they must not be normalized as EMPFED contribution feedback. FEDBKB remains a distinct content-level stage and its request-specific error catalog is fail-closed until the authoritative Events Interface schema/codebook is available.
 
+Before transport is invoked, final report validation generates the outbound V006 package and runs a local FEDBKA-style technical preflight. Locally knowable file/format/hierarchy/date failures block transmission. Clearing-house-only facts such as sender authorization and remote duplicate history remain outside local validation and are resolved by the real FEDBKA acknowledgement.
+
 ## Reporting correction revision model
 
 Submitted employer reports are business revisions, while Employer Interface 006 negative/current files created to move between revisions are technical transmission documents. A correction workspace is a full desired next-state snapshot. The delta planner compares it to the latest effective revision and emits only the Added/Changed/Removed rows required by Version 006. Technical documents never become the source of a later user correction; after successful transmission, the workspace itself is promoted to the next immutable business revision. This keeps lineage linear (Revision 1 -> Revision 2 -> Revision 3) while preserving every technical transmission as immutable evidence.
