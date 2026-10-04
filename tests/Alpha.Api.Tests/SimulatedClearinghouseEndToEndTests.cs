@@ -282,6 +282,79 @@ public sealed class SimulatedClearinghouseEndToEndTests
         return new SimulatedClearinghouseFeedbackIngestor(db, new AesDataProtectionService(configuration));
     }
 
+    private static async Task<MultiManufacturerFixture> CreateMultiManufacturerReportFixtureAsync(
+        AlphaDbContext db,
+        CancellationToken ct)
+    {
+        var organization = new Organization("Demo Multi Manufacturer", OrganizationType.PayrollOffice);
+        var employer = new Employer(organization.Id, "Demo Employer", "512345678", "987654321",
+            "Test", "Contact", "031234567", "test@example.test", "0501234567");
+        var report = new ManualReport(organization.Id, employer.Id,
+            new DateOnly(2026, 9, 1), new DateOnly(2026, 10, 1));
+        report.MarkReadyForValidation();
+        report.MarkValidated();
+        report.MarkTransmissionStarted();
+        report.MarkSent();
+
+        db.AddRange(organization, employer, report);
+
+        var transferA = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var transferB = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var transferC = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        var aProducts = new List<Guid>();
+        var bProducts = new List<Guid>();
+        var cProducts = new List<Guid>();
+
+        void AddEmployee(
+            int index,
+            string fundKey,
+            string fundCode,
+            string transferId,
+            List<Guid> bucket)
+        {
+            var nationalId = $"1234567{index}2";
+            var person = new Person(organization.Id, nationalId, $"Employee{index}", "Test",
+                new DateOnly(1990, 1, Math.Min(index, 28)), PersonGender.Female,
+                $"employee{index}@example.test", $"05011111{index:00}",
+                "תל אביב", "הרצל", index.ToString(), "1", "6100000", null);
+            var employment = new Employment(organization.Id, employer.Id, person.Id,
+                new DateOnly(2025, 1, 1), $"E-{index}", 10_000m + index * 100m);
+            var reportEmployee = new ManualReportEmployee(report.Id, organization.Id, employer.Id,
+                employment.Id, person.Id, nationalId, $"Employee{index}", "Test", $"E-{index}", 10_000m + index * 100m);
+            var product = new ManualReportProduct(reportEmployee.Id, PensionProductType.PensionFund,
+                $"POL-{index}", new DateOnly(2026, 9, 1), 10_000m + index * 100m, "שוטף", "", false, null,
+                fundExternalKey: fundKey, fundCode: fundCode, fundName: $"Fund {fundCode}");
+            var contribution = new ManualContribution(product.Id, ContributionParty.Employee,
+                ContributionComponent.Benefits, 600m + index, 6m, 0m);
+            contribution.SetInterfaceRecordIdentifier(Guid.NewGuid().ToString("D"));
+            var metadata = new EmployerInterfaceReportProductData(product.Id);
+            metadata.SetInterfaceTransferIdentifier(transferId);
+
+            db.AddRange(person, employment, reportEmployee, product, contribution, metadata);
+            bucket.Add(product.Id);
+        }
+
+        AddEmployee(1, "manufacturer-a", "1001", transferA, aProducts);
+        AddEmployee(2, "manufacturer-a", "1001", transferA, aProducts);
+        AddEmployee(3, "manufacturer-b", "2002", transferB, bProducts);
+        AddEmployee(4, "manufacturer-c", "3003", transferC, cProducts);
+        AddEmployee(5, "manufacturer-c", "3003", transferC, cProducts);
+
+        var transmission = new ReportTransmission(report.Id, organization.Id, employer.Id, "SimulatedVault", 1);
+        transmission.Start("demo-multi-hash",
+            "006000123456789EMPONG000006202610040900000001.TST",
+            "<demo />"u8.ToArray());
+        transmission.Complete(ReportTransmissionStatus.Accepted, "SIM-MULTI", "queued", null);
+        db.Add(transmission);
+
+        await db.SaveChangesAsync(ct);
+
+        return new MultiManufacturerFixture(
+            organization, employer, report, transmission,
+            transferA, transferB, transferC,
+            aProducts, bProducts, cProducts);
+    }
+
     private static async Task<Fixture> CreateReportFixtureAsync(AlphaDbContext db, CancellationToken ct)
     {
         var organization = new Organization("Demo Clearinghouse", OrganizationType.PayrollOffice);
