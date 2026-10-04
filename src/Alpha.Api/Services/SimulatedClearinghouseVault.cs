@@ -222,6 +222,16 @@ public sealed class SimulatedClearinghouseVaultWorker(
                     return;
                 }
 
+                if (!string.Equals(instruction.FeedbackInterface, "EMPFED", StringComparison.OrdinalIgnoreCase))
+                {
+                    var technicalHandler = scope.ServiceProvider.GetRequiredService<SimulatedClearinghouseTechnicalFeedbackHandler>();
+                    var handled = await technicalHandler.HandleAsync(employerId, instruction, ct);
+                    MoveTo(root, handled ? "processed" : "failed", employerId, processingPath, safeName);
+                    if (!handled)
+                        logger.LogWarning("Simulated initial feedback for employer {EmployerId} was not applied.", employerId);
+                    return;
+                }
+
                 var simulatedIngestor = scope.ServiceProvider.GetRequiredService<SimulatedClearinghouseFeedbackIngestor>();
                 var feedbackId = await simulatedIngestor.IngestAsync(employerId, instruction, safeName, ct);
                 if (!feedbackId.HasValue)
