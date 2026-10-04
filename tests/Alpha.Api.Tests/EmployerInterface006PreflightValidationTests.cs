@@ -1,6 +1,7 @@
 using Alpha.Api.Services;
 using Alpha.Api.Endpoints;
 using Alpha.Api.Validation;
+using Alpha.Domain.Reporting;
 using Xunit;
 
 namespace Alpha.Api.Tests;
