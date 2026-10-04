@@ -9,6 +9,11 @@ using Microsoft.Extensions.Options;
 
 namespace Alpha.Api.Services;
 
+public sealed record SimulatedTransferOutcome(
+    string TransferIdentifier,
+    string Mode,
+    int? ErrorCode = null);
+
 public sealed record SimulatedVaultFeedbackInstruction(
     Guid ReportId,
     Guid TransmissionId,
@@ -19,7 +24,8 @@ public sealed record SimulatedVaultFeedbackInstruction(
     DateTimeOffset CreatedAt,
     int? ErrorCode = null,
     string FeedbackInterface = "EMPFED",
-    string ErrorDetail = "");
+    string ErrorDetail = "",
+    IReadOnlyList<SimulatedTransferOutcome>? TransferOutcomes = null);
 
 public sealed record SimulatedClearinghouseScenario(
     string Mode,
@@ -373,6 +379,13 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
             .Where(x => productIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
 
+        var outcomeByTransfer = (instruction.TransferOutcomes ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x.TransferIdentifier))
+            .ToDictionary(
+                x => x.TransferIdentifier.Trim().ToUpperInvariant(),
+                x => x,
+                StringComparer.OrdinalIgnoreCase);
+
         foreach (var group in products.GroupBy(product =>
         {
             if (metadata.TryGetValue(product.Id, out var item)
@@ -383,7 +396,12 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
         {
             var groupProductIds = group.Select(x => x.Id).ToHashSet();
             var reported = contributions.Where(x => groupProductIds.Contains(x.ReportProductId)).Sum(x => x.Amount);
-            var (received, allocated, inTransit, status) = scenario switch
+            var transferScenario = outcomeByTransfer.TryGetValue(group.Key, out var transferOutcome)
+                ? SimulatedClearinghouseResponder.ParseScenario(
+                    transferOutcome.ErrorCode.HasValue ? $"{transferOutcome.Mode}:{transferOutcome.ErrorCode.Value}" : transferOutcome.Mode)
+                : parsedScenario;
+            var transferMode = transferScenario.Mode;
+            var (received, allocated, inTransit, status) = transferMode switch
             {
                 "in-transit" => (reported, 0m, reported, 3),
                 "partial" => (reported, Math.Round(reported / 2m, 2), reported - Math.Round(reported / 2m, 2), 3),
@@ -405,7 +423,7 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
                 0m,
                 0m,
                 status,
-                $"SIMULATION:{scenario}",
+                $"SIMULATION:{transferMode}",
                 instruction.TransmissionId.ToString("N"),
                 DateOnly.FromDateTime(DateTime.UtcNow),
                 null,
@@ -423,10 +441,19 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
         {
             var contribution = effective[index];
             var product = products.Single(x => x.Id == contribution.ReportProductId);
-            var errorCode = scenario switch
+            metadata.TryGetValue(contribution.ReportProductId, out var contributionMetadata);
+            var contributionTransferId = contributionMetadata is not null
+                && !string.IsNullOrWhiteSpace(contributionMetadata.InterfaceTransferIdentifier)
+                ? contributionMetadata.InterfaceTransferIdentifier.Trim().ToUpperInvariant()
+                : contribution.ReportProductId.ToString("D").ToUpperInvariant();
+            var contributionScenario = outcomeByTransfer.TryGetValue(contributionTransferId, out var contributionOutcome)
+                ? SimulatedClearinghouseResponder.ParseScenario(
+                    contributionOutcome.ErrorCode.HasValue ? $"{contributionOutcome.Mode}:{contributionOutcome.ErrorCode.Value}" : contributionOutcome.Mode)
+                : parsedScenario;
+            var errorCode = contributionScenario.Mode switch
             {
-                "error" => selectedErrorCode ?? 53,
-                "partial" when index == 0 => selectedErrorCode ?? 53,
+                "error" => contributionScenario.ErrorCode ?? selectedErrorCode ?? 53,
+                "partial" => contributionScenario.ErrorCode ?? selectedErrorCode ?? 53,
                 _ => 1
             };
             var intakeStatus = errorCode == 1 ? 1 : 2;
