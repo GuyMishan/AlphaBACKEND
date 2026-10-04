@@ -125,7 +125,7 @@ public sealed class SimulatedClearinghouseResponder(
         return ParseScenario(raw);
     }
 
-    internal static SimulatedClearinghouseScenario ParseScenario(string? value)
+    public static SimulatedClearinghouseScenario ParseScenario(string? value)
     {
         var raw = value?.Trim().ToLowerInvariant() ?? string.Empty;
         if (raw == "all-errors") return new("all-errors");
@@ -142,9 +142,9 @@ public sealed class SimulatedClearinghouseResponder(
         return new("success");
     }
 
-    internal static string NormalizeScenario(string? value) => ParseScenario(value).CanonicalName;
+    public static string NormalizeScenario(string? value) => ParseScenario(value).CanonicalName;
 
-    internal static IReadOnlyList<SimulatedClearinghouseScenario> ExpandScenario(SimulatedClearinghouseScenario scenario) =>
+    public static IReadOnlyList<SimulatedClearinghouseScenario> ExpandScenario(SimulatedClearinghouseScenario scenario) =>
         scenario.Mode == "all-errors"
             ? EmployerInterfaceLineFeedbackParser.OfficialFailureCodes
                 .Select(code => new SimulatedClearinghouseScenario("error", code))
