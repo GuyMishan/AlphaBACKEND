@@ -16,7 +16,13 @@ public sealed record SimulatedVaultFeedbackInstruction(
     Guid EmployerId,
     string Scenario,
     string SourcePayloadFileName,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    int? ErrorCode = null);
+
+public sealed record SimulatedClearinghouseScenario(string Mode, int? ErrorCode = null)
+{
+    public string CanonicalName => ErrorCode.HasValue ? $"{Mode}:{ErrorCode.Value}" : Mode;
+}
 
 public sealed class SimulatedClearinghouseResponder(
     IServiceScopeFactory scopeFactory,
@@ -79,46 +85,68 @@ public sealed class SimulatedClearinghouseResponder(
                 if (transmission is null) continue;
 
                 var scenario = ResolveScenario(payloadPath, _options.DefaultScenario);
-                var instruction = new SimulatedVaultFeedbackInstruction(
-                    transmission.ReportId,
-                    transmission.Id,
-                    transmission.OrganizationId,
-                    transmission.EmployerId,
-                    scenario,
-                    fileName,
-                    DateTimeOffset.UtcNow);
-
                 var inbox = Path.Combine(root, "inbox", employerId.ToString("N"));
                 Directory.CreateDirectory(inbox);
-                var instructionPath = Path.Combine(inbox, fileName + ".simulation.json");
-                var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(instruction));
-                await WriteAtomicallyAsync(instructionPath, bytes, ct);
+
+                var expanded = scenario.Mode == "all-errors"
+                    ? EmployerInterfaceLineFeedbackParser.OfficialFailureCodes
+                        .Select(code => new SimulatedClearinghouseScenario("error", code))
+                        .ToArray()
+                    : [scenario];
+
+                foreach (var item in expanded)
+                {
+                    var instruction = new SimulatedVaultFeedbackInstruction(
+                        transmission.ReportId,
+                        transmission.Id,
+                        transmission.OrganizationId,
+                        transmission.EmployerId,
+                        item.Mode,
+                        fileName,
+                        DateTimeOffset.UtcNow,
+                        item.ErrorCode);
+
+                    var suffix = item.ErrorCode.HasValue ? $".error-{item.ErrorCode.Value:000}" : $".{item.Mode}";
+                    var instructionPath = Path.Combine(inbox, fileName + suffix + ".simulation.json");
+                    var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(instruction));
+                    await WriteAtomicallyAsync(instructionPath, bytes, ct);
+                }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(respondedPath)!);
-                await File.WriteAllTextAsync(respondedPath, scenario, ct);
+                await File.WriteAllTextAsync(respondedPath, scenario.CanonicalName, ct);
                 logger.LogInformation(
                     "Simulated clearing-house queued {Scenario} feedback for report {ReportId}.",
-                    scenario,
+                    scenario.CanonicalName,
                     transmission.ReportId);
             }
         }
     }
 
-    private static string ResolveScenario(string payloadPath, string defaultScenario)
+    private static SimulatedClearinghouseScenario ResolveScenario(string payloadPath, string defaultScenario)
     {
         var sidecar = payloadPath + ".scenario";
         var raw = File.Exists(sidecar) ? File.ReadAllText(sidecar).Trim() : defaultScenario?.Trim();
-        return NormalizeScenario(raw);
+        return ParseScenario(raw);
     }
 
-    internal static string NormalizeScenario(string? value) =>
-        value?.Trim().ToLowerInvariant() switch
-        {
-            "partial" => "partial",
-            "error" => "error",
-            "in-transit" => "in-transit",
-            _ => "success"
-        };
+    internal static SimulatedClearinghouseScenario ParseScenario(string? value)
+    {
+        var raw = value?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (raw == "all-errors") return new("all-errors");
+        if (raw is "success" or "error" or "partial" or "in-transit") return new(raw);
+
+        var parts = raw.Split(':', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length == 2
+            && parts[0] is "error" or "partial"
+            && int.TryParse(parts[1], out var code)
+            && EmployerInterfaceLineFeedbackParser.IsOfficialErrorCode(code)
+            && code != 1)
+            return new(parts[0], code);
+
+        return new("success");
+    }
+
+    internal static string NormalizeScenario(string? value) => ParseScenario(value).CanonicalName;
 
     private static async Task WriteAtomicallyAsync(string targetPath, byte[] content, CancellationToken ct)
     {
@@ -161,8 +189,18 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
                 && x.EmployerId == instruction.EmployerId, ct);
         if (!transmissionExists) return null;
 
-        var scenario = SimulatedClearinghouseResponder.NormalizeScenario(instruction.Scenario);
-        var rawSimulation = JsonSerializer.Serialize(instruction with { Scenario = scenario });
+        var parsedScenario = SimulatedClearinghouseResponder.ParseScenario(
+            instruction.ErrorCode.HasValue ? $"{instruction.Scenario}:{instruction.ErrorCode.Value}" : instruction.Scenario);
+        var scenario = parsedScenario.Mode;
+        var selectedErrorCode = parsedScenario.ErrorCode
+            ?? (instruction.ErrorCode.HasValue && EmployerInterfaceLineFeedbackParser.IsOfficialErrorCode(instruction.ErrorCode.Value)
+                ? instruction.ErrorCode.Value
+                : null);
+        var rawSimulation = JsonSerializer.Serialize(instruction with
+        {
+            Scenario = scenario,
+            ErrorCode = selectedErrorCode
+        });
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawSimulation))).ToLowerInvariant();
 
         var existing = await db.EmployerInterfaceFeedback.AsNoTracking()
@@ -250,8 +288,8 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
             var product = products.Single(x => x.Id == contribution.ReportProductId);
             var errorCode = scenario switch
             {
-                "error" => 53,
-                "partial" when index == 0 => 53,
+                "error" => selectedErrorCode ?? 53,
+                "partial" when index == 0 => selectedErrorCode ?? 53,
                 _ => 1
             };
             var intakeStatus = errorCode == 1 ? 1 : 2;
