@@ -49,6 +49,13 @@ public sealed class SimulatedVaultReportTransmissionProvider(
         var payloadFileName = SafeFileName(envelope.PayloadFileName);
         if (string.IsNullOrWhiteSpace(payloadFileName))
             return new ReportTransmissionProviderResult(false, "Rejected", null, null, "A payload file name is required.");
+        if (!EmployerInterface006FileNaming.IsOfficialOutboundEmployerInterfaceName(payloadFileName))
+            return new ReportTransmissionProviderResult(
+                false,
+                "Rejected",
+                null,
+                null,
+                "The simulated clearing-house vault only accepts official Annex VI Employer Interface outbound file names.");
 
         var employerFolder = envelope.EmployerId.ToString("N");
         var outbox = Path.Combine(ResolveRoot(_vault.RootDirectory), "outbox", employerFolder);
