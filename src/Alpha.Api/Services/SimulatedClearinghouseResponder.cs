@@ -17,11 +17,26 @@ public sealed record SimulatedVaultFeedbackInstruction(
     string Scenario,
     string SourcePayloadFileName,
     DateTimeOffset CreatedAt,
-    int? ErrorCode = null);
+    int? ErrorCode = null,
+    string FeedbackInterface = "EMPFED",
+    string ErrorDetail = "");
 
-public sealed record SimulatedClearinghouseScenario(string Mode, int? ErrorCode = null)
+public sealed record SimulatedClearinghouseScenario(
+    string Mode,
+    int? ErrorCode = null,
+    string FeedbackInterface = "EMPFED",
+    string ErrorDetail = "")
 {
-    public string CanonicalName => ErrorCode.HasValue ? $"{Mode}:{ErrorCode.Value}" : Mode;
+    public string CanonicalName =>
+        FeedbackInterface switch
+        {
+            ClearinghouseInitialFeedbackCatalog.TechnicalInterface when Mode == "accepted" => "fedbka:accepted",
+            ClearinghouseInitialFeedbackCatalog.TechnicalInterface when Mode == "duplicate" => "fedbka:duplicate",
+            ClearinghouseInitialFeedbackCatalog.TechnicalInterface when ErrorCode.HasValue => $"fedbka:{ErrorCode.Value}",
+            ClearinghouseInitialFeedbackCatalog.TechnicalInterface when Mode == "all-errors" => "fedbka:all-errors",
+            ClearinghouseInitialFeedbackCatalog.ContentInterface when Mode == "accepted" => "fedbkb:accepted",
+            _ => ErrorCode.HasValue ? $"{Mode}:{ErrorCode.Value}" : Mode
+        };
 }
 
 public sealed class SimulatedClearinghouseResponder(
@@ -92,6 +107,14 @@ public sealed class SimulatedClearinghouseResponder(
 
                 foreach (var item in expanded)
                 {
+                    if (item.Mode == "unsupported")
+                    {
+                        logger.LogWarning(
+                            "Simulated clearing-house scenario {Scenario} was rejected because the authoritative code catalog is not available.",
+                            scenario.CanonicalName);
+                        continue;
+                    }
+
                     var instruction = new SimulatedVaultFeedbackInstruction(
                         transmission.ReportId,
                         transmission.Id,
@@ -100,9 +123,16 @@ public sealed class SimulatedClearinghouseResponder(
                         item.Mode,
                         fileName,
                         DateTimeOffset.UtcNow,
-                        item.ErrorCode);
+                        item.ErrorCode,
+                        item.FeedbackInterface,
+                        item.Mode == "duplicate"
+                            ? ClearinghouseInitialFeedbackCatalog.DuplicateFileDetail(fileName)
+                            : item.ErrorDetail);
 
-                    var suffix = item.ErrorCode.HasValue ? $".error-{item.ErrorCode.Value:000}" : $".{item.Mode}";
+                    var stage = item.FeedbackInterface.ToLowerInvariant();
+                    var suffix = item.ErrorCode.HasValue
+                        ? $".{stage}-{item.ErrorCode.Value:000}"
+                        : $".{stage}-{item.Mode}";
                     var instructionPath = Path.Combine(inbox, fileName + suffix + ".simulation.json");
                     var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(instruction));
                     await WriteAtomicallyAsync(instructionPath, bytes, ct);
@@ -128,28 +158,67 @@ public sealed class SimulatedClearinghouseResponder(
     public static SimulatedClearinghouseScenario ParseScenario(string? value)
     {
         var raw = value?.Trim().ToLowerInvariant() ?? string.Empty;
+
         if (raw == "all-errors") return new("all-errors");
         if (raw is "success" or "error" or "partial" or "in-transit") return new(raw);
+
+        if (raw == "fedbka:accepted")
+            return new("accepted", null, ClearinghouseInitialFeedbackCatalog.TechnicalInterface);
+        if (raw == "fedbka:duplicate")
+            return new("duplicate", 1, ClearinghouseInitialFeedbackCatalog.TechnicalInterface);
+        if (raw == "fedbka:all-errors")
+            return new("all-errors", null, ClearinghouseInitialFeedbackCatalog.TechnicalInterface);
+        if (raw == "fedbkb:accepted")
+            return new("accepted", null, ClearinghouseInitialFeedbackCatalog.ContentInterface);
 
         var parts = raw.Split(':', 2, StringSplitOptions.TrimEntries);
         if (parts.Length == 2
             && parts[0] is "error" or "partial"
-            && int.TryParse(parts[1], out var code)
-            && EmployerInterfaceLineFeedbackParser.IsOfficialErrorCode(code)
-            && code != 1)
-            return new(parts[0], code);
+            && int.TryParse(parts[1], out var summaryCode)
+            && EmployerInterfaceLineFeedbackParser.IsOfficialErrorCode(summaryCode)
+            && summaryCode != 1)
+            return new(parts[0], summaryCode);
+
+        if (parts.Length == 2
+            && parts[0] == "fedbka"
+            && int.TryParse(parts[1], out var technicalCode)
+            && ClearinghouseInitialFeedbackCatalog.IsStageAFileError(technicalCode))
+            return new(
+                "error",
+                technicalCode,
+                ClearinghouseInitialFeedbackCatalog.TechnicalInterface,
+                ClearinghouseInitialFeedbackCatalog.StageADescription(technicalCode));
+
+        // FEDBKB error codes are intentionally fail-closed until its official, request-specific
+        // Events Interface schema/codebook is committed to this repository.
+        if (raw.StartsWith("fedbkb:", StringComparison.Ordinal))
+            return new("unsupported", null, ClearinghouseInitialFeedbackCatalog.ContentInterface,
+                "FEDBKB error simulation requires the authoritative request-specific Events Interface specification.");
 
         return new("success");
     }
 
     public static string NormalizeScenario(string? value) => ParseScenario(value).CanonicalName;
 
-    public static IReadOnlyList<SimulatedClearinghouseScenario> ExpandScenario(SimulatedClearinghouseScenario scenario) =>
-        scenario.Mode == "all-errors"
-            ? EmployerInterfaceLineFeedbackParser.OfficialFailureCodes
-                .Select(code => new SimulatedClearinghouseScenario("error", code))
-                .ToArray()
-            : [scenario];
+    public static IReadOnlyList<SimulatedClearinghouseScenario> ExpandScenario(SimulatedClearinghouseScenario scenario)
+    {
+        if (scenario.Mode != "all-errors") return [scenario];
+
+        if (scenario.FeedbackInterface == ClearinghouseInitialFeedbackCatalog.TechnicalInterface)
+        {
+            return ClearinghouseInitialFeedbackCatalog.StageAFileErrors
+                .Select(item => new SimulatedClearinghouseScenario(
+                    "error",
+                    item.Code,
+                    ClearinghouseInitialFeedbackCatalog.TechnicalInterface,
+                    item.Description))
+                .ToArray();
+        }
+
+        return EmployerInterfaceLineFeedbackParser.OfficialFailureCodes
+            .Select(code => new SimulatedClearinghouseScenario("error", code))
+            .ToArray();
+    }
 
 
     private static async Task WriteAtomicallyAsync(string targetPath, byte[] content, CancellationToken ct)
