@@ -123,6 +123,121 @@ public sealed class SimulatedClearinghouseEndToEndTests
     }
 
     [Fact]
+    public async Task One_report_can_return_mixed_results_per_manufacturer_without_cross_contamination()
+    {
+        await WithDatabase(async (db, ct) =>
+        {
+            var fixture = await CreateMultiManufacturerReportFixtureAsync(db, ct);
+            var ingestor = NewIngestor(db);
+
+            var instruction = new SimulatedVaultFeedbackInstruction(
+                fixture.Report.Id,
+                fixture.Transmission.Id,
+                fixture.Organization.Id,
+                fixture.Employer.Id,
+                "success",
+                fixture.Transmission.PayloadFileName,
+                DateTimeOffset.UtcNow,
+                TransferOutcomes:
+                [
+                    new(fixture.TransferA, "success"),
+                    new(fixture.TransferB, "error", 53),
+                    new(fixture.TransferC, "partial", 116)
+                ]);
+
+            var feedbackId = Assert.IsType<Guid>(await ingestor.IngestAsync(
+                fixture.Employer.Id, instruction, "mixed-manufacturers.simulation.json", ct));
+
+            var transfers = await db.EmployerInterfaceTransferFeedback.AsNoTracking()
+                .Where(x => x.FeedbackId == feedbackId)
+                .ToDictionaryAsync(x => x.TransferIdentifier, StringComparer.OrdinalIgnoreCase, ct);
+            Assert.Equal(3, transfers.Count);
+            Assert.Equal("allocated", ReportFeedbackStatusResolver.ResolveMoneyState(
+                transfers[fixture.TransferA].ReportedDepositAmount,
+                transfers[fixture.TransferA].ActualReceivedAmount,
+                transfers[fixture.TransferA].AllocatedAmount,
+                transfers[fixture.TransferA].InTransitAmount));
+            Assert.Equal("unresolved", ReportFeedbackStatusResolver.ResolveMoneyState(
+                transfers[fixture.TransferB].ReportedDepositAmount,
+                transfers[fixture.TransferB].ActualReceivedAmount,
+                transfers[fixture.TransferB].AllocatedAmount,
+                transfers[fixture.TransferB].InTransitAmount));
+            Assert.Equal("in-transit", ReportFeedbackStatusResolver.ResolveMoneyState(
+                transfers[fixture.TransferC].ReportedDepositAmount,
+                transfers[fixture.TransferC].ActualReceivedAmount,
+                transfers[fixture.TransferC].AllocatedAmount,
+                transfers[fixture.TransferC].InTransitAmount));
+
+            var rows = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+                .Where(x => x.FeedbackId == feedbackId)
+                .ToListAsync(ct);
+
+            Assert.Equal(5, rows.Count);
+
+            var byProduct = rows.GroupBy(x => x.ReportProductId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorCode).ToArray());
+
+            Assert.All(fixture.TransferAProducts, productId =>
+                Assert.All(byProduct[productId], code => Assert.Equal(1, code)));
+            Assert.All(fixture.TransferBProducts, productId =>
+                Assert.All(byProduct[productId], code => Assert.Equal(53, code)));
+            Assert.All(fixture.TransferCProducts, productId =>
+                Assert.All(byProduct[productId], code => Assert.Equal(116, code)));
+
+            var errorCount = rows.Count(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode));
+            var state = ReportFeedbackStatusResolver.ResolveReportState(
+                ReportTransmissionStatus.Accepted,
+                officialFeedbackCount: 1,
+                expectedContributionCount: 5,
+                receivedContributionCount: rows.Count,
+                errorContributionCount: errorCount);
+
+            Assert.Equal("attention", state);
+        });
+    }
+
+    [Fact]
+    public async Task Same_manufacturer_can_have_multiple_employees_and_keep_each_product_result_scoped()
+    {
+        await WithDatabase(async (db, ct) =>
+        {
+            var fixture = await CreateMultiManufacturerReportFixtureAsync(db, ct);
+            var ingestor = NewIngestor(db);
+
+            var instruction = new SimulatedVaultFeedbackInstruction(
+                fixture.Report.Id,
+                fixture.Transmission.Id,
+                fixture.Organization.Id,
+                fixture.Employer.Id,
+                "success",
+                fixture.Transmission.PayloadFileName,
+                DateTimeOffset.UtcNow,
+                TransferOutcomes:
+                [
+                    new(fixture.TransferA, "error", 4),
+                    new(fixture.TransferB, "success"),
+                    new(fixture.TransferC, "success")
+                ]);
+
+            var feedbackId = Assert.IsType<Guid>(await ingestor.IngestAsync(
+                fixture.Employer.Id, instruction, "same-manufacturer-multi-employee.simulation.json", ct));
+
+            var rows = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+                .Where(x => x.FeedbackId == feedbackId)
+                .ToListAsync(ct);
+
+            Assert.Equal(2, fixture.TransferAProducts.Count);
+            Assert.All(fixture.TransferAProducts, productId =>
+                Assert.All(rows.Where(x => x.ReportProductId == productId),
+                    row => Assert.Equal(4, row.ErrorCode)));
+
+            Assert.All(fixture.TransferBProducts.Concat(fixture.TransferCProducts), productId =>
+                Assert.All(rows.Where(x => x.ReportProductId == productId),
+                    row => Assert.Equal(1, row.ErrorCode)));
+        });
+    }
+
+    [Fact]
     public async Task Fedbka_technical_rejection_marks_transmission_and_report_as_error()
     {
         await WithDatabase(async (db, ct) =>
@@ -236,6 +351,18 @@ public sealed class SimulatedClearinghouseEndToEndTests
             await drop.ExecuteNonQueryAsync(CancellationToken.None);
         }
     }
+
+    private sealed record MultiManufacturerFixture(
+        Organization Organization,
+        Employer Employer,
+        ManualReport Report,
+        ReportTransmission Transmission,
+        string TransferA,
+        string TransferB,
+        string TransferC,
+        IReadOnlyList<Guid> TransferAProducts,
+        IReadOnlyList<Guid> TransferBProducts,
+        IReadOnlyList<Guid> TransferCProducts);
 
     private sealed record Fixture(
         Organization Organization,
