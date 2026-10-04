@@ -65,4 +65,93 @@ public sealed class EmployerInterface006PreflightValidationTests
     {
         Assert.Equal(expected, EmployerInterface006WorkbookRules.IsPaymentMethodAllowed(operationCode, paymentMethodCode));
     }
+
+    [Fact]
+    public void Clearinghouse_preflight_accepts_valid_generated_package()
+    {
+        var preparedAt = new DateTimeOffset(2026, 10, 4, 10, 30, 0, TimeSpan.FromHours(3));
+        var name = EmployerInterface006FileNaming.Build("123456789", 6, negative: false,
+            preparedAt, sequence: 1, testFile: true).PayloadFileName;
+        var xml = System.Text.Encoding.UTF8.GetBytes(
+            "<MimshakMaasikim><KoteretKovetz><TAARICH-BITZUA>20261004103000</TAARICH-BITZUA></KoteretKovetz></MimshakMaasikim>");
+        var generated = new EmployerInterfaceService.GeneratedDocument(
+            xml,
+            new EmployerInterfaceService.FileValidation(true, EmployerInterfaceDocumentType.CurrentReport, "006", "schema.xsd", []),
+            name,
+            []);
+
+        var findings = EmployerInterface006ClearinghousePreflight.Validate(generated, preparedAt);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public void Clearinghouse_preflight_maps_bad_filename_to_fedbka_1()
+    {
+        var preparedAt = new DateTimeOffset(2026, 10, 4, 10, 30, 0, TimeSpan.FromHours(3));
+        var xml = System.Text.Encoding.UTF8.GetBytes(
+            "<MimshakMaasikim><KoteretKovetz><TAARICH-BITZUA>20261004103000</TAARICH-BITZUA></KoteretKovetz></MimshakMaasikim>");
+        var generated = new EmployerInterfaceService.GeneratedDocument(
+            xml,
+            new EmployerInterfaceService.FileValidation(true, EmployerInterfaceDocumentType.CurrentReport, "006", "schema.xsd", []),
+            "BAD.TST",
+            []);
+
+        var findings = EmployerInterface006ClearinghousePreflight.Validate(generated, preparedAt);
+
+        Assert.Contains(findings, x => x.FedbkaCode == 1);
+    }
+
+    [Fact]
+    public void Clearinghouse_preflight_maps_wrong_root_to_fedbka_4()
+    {
+        var preparedAt = new DateTimeOffset(2026, 10, 4, 10, 30, 0, TimeSpan.FromHours(3));
+        var name = EmployerInterface006FileNaming.Build("123456789", 6, negative: false,
+            preparedAt, sequence: 1, testFile: true).PayloadFileName;
+        var xml = System.Text.Encoding.UTF8.GetBytes(
+            "<WrongRoot><TAARICH-BITZUA>20261004103000</TAARICH-BITZUA></WrongRoot>");
+        var generated = new EmployerInterfaceService.GeneratedDocument(
+            xml,
+            new EmployerInterfaceService.FileValidation(true, EmployerInterfaceDocumentType.CurrentReport, "006", "schema.xsd", []),
+            name,
+            []);
+
+        var findings = EmployerInterface006ClearinghousePreflight.Validate(generated, preparedAt);
+
+        Assert.Contains(findings, x => x.FedbkaCode == 4);
+    }
+
+    [Fact]
+    public void Clearinghouse_preflight_maps_future_file_date_to_fedbka_11()
+    {
+        var preparedAt = new DateTimeOffset(2026, 10, 4, 10, 30, 0, TimeSpan.FromHours(3));
+        var future = preparedAt.AddHours(2);
+        var name = EmployerInterface006FileNaming.Build("123456789", 6, negative: false,
+            future, sequence: 1, testFile: true).PayloadFileName;
+        var xml = System.Text.Encoding.UTF8.GetBytes(
+            "<MimshakMaasikim><KoteretKovetz><TAARICH-BITZUA>20261004123000</TAARICH-BITZUA></KoteretKovetz></MimshakMaasikim>");
+        var generated = new EmployerInterfaceService.GeneratedDocument(
+            xml,
+            new EmployerInterfaceService.FileValidation(true, EmployerInterfaceDocumentType.CurrentReport, "006", "schema.xsd", []),
+            name,
+            []);
+
+        var findings = EmployerInterface006ClearinghousePreflight.Validate(generated, preparedAt);
+
+        Assert.Contains(findings, x => x.FedbkaCode == 11);
+    }
+
+    [Fact]
+    public void Clearinghouse_preflight_maps_empty_payload_to_fedbka_2()
+    {
+        var generated = new EmployerInterfaceService.GeneratedDocument(
+            [],
+            new EmployerInterfaceService.FileValidation(false, EmployerInterfaceDocumentType.CurrentReport, "006", "schema.xsd", ["empty"]),
+            "006000123456789EMPONG000006202610041030000001.TST",
+            []);
+
+        var findings = EmployerInterface006ClearinghousePreflight.Validate(generated);
+
+        Assert.Contains(findings, x => x.FedbkaCode == 2);
+    }
 }
