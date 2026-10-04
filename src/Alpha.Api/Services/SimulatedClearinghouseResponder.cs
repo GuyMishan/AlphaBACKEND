@@ -110,6 +110,9 @@ public sealed class SimulatedClearinghouseResponder(
                 Directory.CreateDirectory(inbox);
 
                 var expanded = ExpandScenario(scenario);
+                var mixedOutcomes = scenario.Mode == "mixed"
+                    ? await BuildMixedOutcomesAsync(db, transmission.ReportId, ct)
+                    : null;
 
                 foreach (var item in expanded)
                 {
@@ -133,7 +136,8 @@ public sealed class SimulatedClearinghouseResponder(
                         item.FeedbackInterface,
                         item.Mode == "duplicate"
                             ? ClearinghouseInitialFeedbackCatalog.DuplicateFileDetail(fileName)
-                            : item.ErrorDetail);
+                            : item.ErrorDetail,
+                        item.Mode == "mixed" ? mixedOutcomes : null);
 
                     var stage = item.FeedbackInterface.ToLowerInvariant();
                     var suffix = item.ErrorCode.HasValue
@@ -166,7 +170,7 @@ public sealed class SimulatedClearinghouseResponder(
         var raw = value?.Trim().ToLowerInvariant() ?? string.Empty;
 
         if (raw == "all-errors") return new("all-errors");
-        if (raw is "success" or "error" or "partial" or "in-transit") return new(raw);
+        if (raw is "success" or "error" or "partial" or "in-transit" or "mixed") return new(raw);
 
         if (raw == "fedbka:accepted")
             return new("accepted", null, ClearinghouseInitialFeedbackCatalog.TechnicalInterface);
@@ -226,6 +230,55 @@ public sealed class SimulatedClearinghouseResponder(
             .ToArray();
     }
 
+
+    private static async Task<IReadOnlyList<SimulatedTransferOutcome>> BuildMixedOutcomesAsync(
+        IAlphaDbContext db,
+        Guid reportId,
+        CancellationToken ct)
+    {
+        var employeeIds = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => x.ReportId == reportId)
+            .Select(x => x.Id)
+            .ToArrayAsync(ct);
+        var products = await db.ManualReportProducts.AsNoTracking()
+            .Where(x => employeeIds.Contains(x.ReportEmployeeId))
+            .OrderBy(x => x.AllocationOrder)
+            .ThenBy(x => x.Id)
+            .ToListAsync(ct);
+        var productIds = products.Select(x => x.Id).ToArray();
+        var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .ToDictionaryAsync(x => x.ReportProductId, ct);
+
+        var transferIds = products
+            .Select(product =>
+                metadata.TryGetValue(product.Id, out var item)
+                && !string.IsNullOrWhiteSpace(item.InterfaceTransferIdentifier)
+                    ? item.InterfaceTransferIdentifier.Trim().ToUpperInvariant()
+                    : product.Id.ToString("D").ToUpperInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (transferIds.Length == 0)
+            return [];
+
+        var pattern = new (string Mode, int? ErrorCode)[]
+        {
+            ("success", null),
+            ("error", 53),
+            ("partial", 116),
+            ("in-transit", null)
+        };
+
+        return transferIds
+            .Select((transferId, index) =>
+            {
+                var outcome = pattern[index % pattern.Length];
+                return new SimulatedTransferOutcome(transferId, outcome.Mode, outcome.ErrorCode);
+            })
+            .ToArray();
+    }
 
     private static async Task WriteAtomicallyAsync(string targetPath, byte[] content, CancellationToken ct)
     {
