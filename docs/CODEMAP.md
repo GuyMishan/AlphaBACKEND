@@ -128,3 +128,5 @@ These sources outrank assumptions, old examples and UI behavior.
 - Drafts may be hard-deleted only while still purely internal/editable and before any transmission attempt, feedback or derived external history exists. Once external interaction exists, history remains immutable and changes are represented by a later business revision.
 - Regression coverage includes PostgreSQL integration testing of a new report revision containing unchanged + changed + removed + added products. The expected delta is verified end-to-end: negative contains Changed+Removed only, current contains Changed+Added only, operation codes are 6 / 2-or-3 / 1 as applicable, the workspace promotes to Revision 2, the old revision cannot be corrected again, and Revision 3 starts from Revision 2.
 
+
+- Employer Interface sender defaults now model ALPHA as a service bureau/intermediary: `SenderCode=6` and Annex VI `FileDirectionCode=006`. Direct-employer `003` remains supported only when explicitly configured for an employer-owned vault.
