@@ -121,3 +121,5 @@ Initial feedback is intentionally separate from summary feedback. `FEDBKA` is th
 - Do not change official workbook values merely to fit the current application model.
 - The application code and data model must conform to the official Version 006 specification, not the other way around.
 - When workbook and XSD constraints interact, preserve the workbook's business meaning while still emitting XML that satisfies the official XSD structure.
+
+Final validation performs a local FEDBKA-style preflight before a report can become transmittable. It checks the generated official file name, readable XML, the expected `MimshakMaasikim` root, the official V006 XSD result, and that the file/header timestamps are not future-dated or inconsistent. These findings are exposed as `FEDBKA_<code>` report-validation findings. This is deliberately described as a local preflight rather than proof of FEDBKA acceptance: clearing-house-side identity, authorization and previously-received-file state are remote facts and remain authoritative.
