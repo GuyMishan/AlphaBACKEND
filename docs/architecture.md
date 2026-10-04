@@ -81,6 +81,8 @@ Initial clearing-house acknowledgements are a separate lifecycle layer from empl
 
 Before transport is invoked, final report validation generates the outbound V006 package and runs a local FEDBKA-style technical preflight. Locally knowable file/format/hierarchy/date failures block transmission. Clearing-house-only facts such as sender authorization and remote duplicate history remain outside local validation and are resolved by the real FEDBKA acknowledgement.
 
+For local development, the simulated clearing-house adapter uses the repository-root `simulated-clearinghouse-vault/` as its persistent filesystem boundary. Runtime payload/feedback files are intentionally excluded from Git; the directory exists so developers can inspect outbox/inbox/processed/failed flow while the TEST simulator is enabled.
+
 ## Reporting correction revision model
 
 Submitted employer reports are business revisions, while Employer Interface 006 negative/current files created to move between revisions are technical transmission documents. A correction workspace is a full desired next-state snapshot. The delta planner compares it to the latest effective revision and emits only the Added/Changed/Removed rows required by Version 006. Technical documents never become the source of a later user correction; after successful transmission, the workspace itself is promoted to the next immutable business revision. This keeps lineage linear (Revision 1 -> Revision 2 -> Revision 3) while preserving every technical transmission as immutable evidence.
