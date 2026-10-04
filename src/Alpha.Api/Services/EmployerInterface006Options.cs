@@ -10,7 +10,7 @@ public sealed class EmployerInterface006Options
     // Sender identity must describe the entity that owns the vault / sends the file.
     // For a direct employer SenderCode=5 can fall back to the employer profile.
     // For an intermediary/service bureau configure all sender fields explicitly.
-    public int SenderCode { get; set; } = 5;
+    public int SenderCode { get; set; } = 6;
     public int SenderIdentifierType { get; set; } = 1;
     public string SenderIdentifier { get; set; } = string.Empty;
     public string SenderName { get; set; } = string.Empty;
@@ -22,7 +22,7 @@ public sealed class EmployerInterface006Options
 
     // Annex VI direction prefix. Direct employer -> clearinghouse = 003.
     // A service bureau/vault owner must configure its assigned/appropriate direction.
-    public int FileDirectionCode { get; set; } = 3;
+    public int FileDirectionCode { get; set; } = 6;
 
     // Explicit opt-in for local/test environments only. Production must use a real provider.
     public bool AllowMockTransmission { get; set; }
