@@ -155,4 +155,23 @@ public sealed class EmployerInterface006PreflightValidationTests
 
         Assert.Contains(findings, x => x.FedbkaCode == 2);
     }
+    [Fact]
+    public void Invalid_generated_document_without_package_should_not_be_treated_as_fedbka_input()
+    {
+        var generated = new EmployerInterfaceService.GeneratedDocument(
+            [],
+            new EmployerInterfaceService.FileValidation(
+                false,
+                EmployerInterfaceDocumentType.CurrentReport,
+                "006",
+                null,
+                ["Employer Interface sender identity is not configured."]),
+            null,
+            []);
+
+        Assert.Empty(generated.Bytes);
+        Assert.True(string.IsNullOrWhiteSpace(generated.PayloadFileName));
+        Assert.False(generated.Validation.IsValid);
+    }
+
 }
