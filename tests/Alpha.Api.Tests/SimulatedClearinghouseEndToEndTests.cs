@@ -184,6 +184,43 @@ public sealed class SimulatedClearinghouseEndToEndTests
             Assert.All(fixture.TransferCProducts, productId =>
                 Assert.All(byProduct[productId], code => Assert.Equal(116, code)));
 
+            Assert.All(rows.Where(x => fixture.TransferAProducts.Contains(x.ReportProductId)), row =>
+            {
+                Assert.Equal("אין שגיאה", row.ErrorDescription);
+                Assert.Equal(1, row.IntakeStatus);
+            });
+            Assert.All(rows.Where(x => fixture.TransferBProducts.Contains(x.ReportProductId)), row =>
+            {
+                Assert.Equal(EmployerInterfaceLineFeedbackParser.Description(53), row.ErrorDescription);
+                Assert.Equal(2, row.IntakeStatus);
+                Assert.NotNull(row.ErrorAmount);
+            });
+            Assert.All(rows.Where(x => fixture.TransferCProducts.Contains(x.ReportProductId)), row =>
+            {
+                Assert.Equal(EmployerInterfaceLineFeedbackParser.Description(116), row.ErrorDescription);
+                Assert.Equal(2, row.IntakeStatus);
+                Assert.NotNull(row.ErrorAmount);
+            });
+
+            Assert.Equal(
+                fixture.TransferAProducts.Sum(id => 600m + fixture.ProductIndex[id]),
+                transfers[fixture.TransferA].ReportedDepositAmount);
+            Assert.Equal(transfers[fixture.TransferA].ReportedDepositAmount, transfers[fixture.TransferA].AllocatedAmount);
+            Assert.Equal(0m, transfers[fixture.TransferA].InTransitAmount);
+
+            Assert.Equal(
+                fixture.TransferBProducts.Sum(id => 600m + fixture.ProductIndex[id]),
+                transfers[fixture.TransferB].ReportedDepositAmount);
+            Assert.Equal(0m, transfers[fixture.TransferB].ActualReceivedAmount);
+            Assert.Equal(0m, transfers[fixture.TransferB].AllocatedAmount);
+
+            Assert.Equal(
+                fixture.TransferCProducts.Sum(id => 600m + fixture.ProductIndex[id]),
+                transfers[fixture.TransferC].ReportedDepositAmount);
+            Assert.Equal(transfers[fixture.TransferC].ReportedDepositAmount, transfers[fixture.TransferC].ActualReceivedAmount);
+            Assert.True(transfers[fixture.TransferC].AllocatedAmount > 0m);
+            Assert.True(transfers[fixture.TransferC].InTransitAmount > 0m);
+
             var errorCount = rows.Count(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode));
             var state = ReportFeedbackStatusResolver.ResolveReportState(
                 ReportTransmissionStatus.Accepted,
@@ -304,6 +341,7 @@ public sealed class SimulatedClearinghouseEndToEndTests
         var aProducts = new List<Guid>();
         var bProducts = new List<Guid>();
         var cProducts = new List<Guid>();
+        var productIndex = new Dictionary<Guid, int>();
 
         void AddEmployee(
             int index,
@@ -332,6 +370,7 @@ public sealed class SimulatedClearinghouseEndToEndTests
 
             db.AddRange(person, employment, reportEmployee, product, contribution, metadata);
             bucket.Add(product.Id);
+            productIndex[product.Id] = index;
         }
 
         AddEmployee(1, "manufacturer-a", "1001", transferA, aProducts);
@@ -352,7 +391,8 @@ public sealed class SimulatedClearinghouseEndToEndTests
         return new MultiManufacturerFixture(
             organization, employer, report, transmission,
             transferA, transferB, transferC,
-            aProducts, bProducts, cProducts);
+            aProducts, bProducts, cProducts,
+            productIndex);
     }
 
     private static async Task<Fixture> CreateReportFixtureAsync(AlphaDbContext db, CancellationToken ct)
@@ -435,7 +475,8 @@ public sealed class SimulatedClearinghouseEndToEndTests
         string TransferC,
         IReadOnlyList<Guid> TransferAProducts,
         IReadOnlyList<Guid> TransferBProducts,
-        IReadOnlyList<Guid> TransferCProducts);
+        IReadOnlyList<Guid> TransferCProducts,
+        IReadOnlyDictionary<Guid, int> ProductIndex);
 
     private sealed record Fixture(
         Organization Organization,
