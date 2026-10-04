@@ -299,8 +299,16 @@ public static class ReportValidationEndpoints
 
         var generated = await exporter.ExportAsync(result.Report, ct);
 
-        foreach (var finding in EmployerInterface006ClearinghousePreflight.Validate(generated))
-            result.Issues.Add(new($"FEDBKA_{finding.FedbkaCode}", finding.Message, ValidationScope.Report));
+        // FEDBKA preflight validates a transmission package. If export failed before a
+        // payload/name was produced (for example, missing sender identity), report the
+        // exporter error only instead of fabricating filename/empty-file FEDBKA findings.
+        var hasTransmissionPackage = generated.Bytes is { Length: > 0 }
+            && !string.IsNullOrWhiteSpace(generated.PayloadFileName);
+        if (hasTransmissionPackage)
+        {
+            foreach (var finding in EmployerInterface006ClearinghousePreflight.Validate(generated))
+                result.Issues.Add(new($"FEDBKA_{finding.FedbkaCode}", finding.Message, ValidationScope.Report));
+        }
 
         if (generated.Validation.IsValid) return;
 
