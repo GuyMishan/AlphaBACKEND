@@ -45,6 +45,19 @@ public sealed class SimulatedClearinghouseVaultTests
         }
     }
 
+    [Theory]
+    [InlineData(null, "success")]
+    [InlineData("", "success")]
+    [InlineData("SUCCESS", "success")]
+    [InlineData("partial", "partial")]
+    [InlineData("error", "error")]
+    [InlineData("in-transit", "in-transit")]
+    [InlineData("unknown", "success")]
+    public void Scenario_normalization_is_safe(string? raw, string expected)
+    {
+        Assert.Equal(expected, SimulatedClearinghouseResponder.NormalizeScenario(raw));
+    }
+
     [Fact]
     public void Provider_is_not_configured_in_production_environment()
     {
