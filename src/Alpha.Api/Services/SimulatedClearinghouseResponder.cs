@@ -237,6 +237,70 @@ public sealed class SimulatedClearinghouseResponder(
     }
 }
 
+public sealed class SimulatedClearinghouseTechnicalFeedbackHandler(IAlphaDbContext db)
+{
+    public async Task<bool> HandleAsync(
+        Guid expectedEmployerId,
+        SimulatedVaultFeedbackInstruction instruction,
+        CancellationToken ct)
+    {
+        if (instruction.EmployerId != expectedEmployerId)
+            return false;
+
+        if (instruction.FeedbackInterface is not (
+            ClearinghouseInitialFeedbackCatalog.TechnicalInterface
+            or ClearinghouseInitialFeedbackCatalog.ContentInterface))
+            return false;
+
+        if (instruction.FeedbackInterface == ClearinghouseInitialFeedbackCatalog.ContentInterface
+            && !string.Equals(instruction.Scenario, "accepted", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (instruction.FeedbackInterface == ClearinghouseInitialFeedbackCatalog.TechnicalInterface
+            && instruction.ErrorCode.HasValue
+            && !ClearinghouseInitialFeedbackCatalog.IsStageAFileError(instruction.ErrorCode.Value))
+            return false;
+
+        var transmission = await db.ReportTransmissions
+            .SingleOrDefaultAsync(x => x.Id == instruction.TransmissionId
+                && x.ReportId == instruction.ReportId
+                && x.EmployerId == instruction.EmployerId
+                && x.OrganizationId == instruction.OrganizationId, ct);
+        if (transmission is null)
+            return false;
+
+        var report = await db.ManualReports
+            .SingleOrDefaultAsync(x => x.Id == instruction.ReportId
+                && x.EmployerId == instruction.EmployerId
+                && x.OrganizationId == instruction.OrganizationId, ct);
+        if (report is null)
+            return false;
+
+        var response = JsonSerializer.Serialize(instruction);
+        var rejected = instruction.FeedbackInterface == ClearinghouseInitialFeedbackCatalog.TechnicalInterface
+            && (instruction.ErrorCode.HasValue
+                || string.Equals(instruction.Scenario, "duplicate", StringComparison.OrdinalIgnoreCase));
+
+        if (rejected)
+        {
+            var code = instruction.ErrorCode ?? 1;
+            var detail = string.IsNullOrWhiteSpace(instruction.ErrorDetail)
+                ? ClearinghouseInitialFeedbackCatalog.StageADescription(code)
+                : instruction.ErrorDetail;
+            transmission.Complete(ReportTransmissionStatus.Rejected, transmission.ExternalId, response,
+                $"FEDBKA {code}: {detail}");
+            report.MarkTransmissionError($"המסלקה דחתה את הקובץ טכנית (FEDBKA {code}): {detail}");
+        }
+        else
+        {
+            transmission.Complete(ReportTransmissionStatus.Accepted, transmission.ExternalId, response, null);
+        }
+
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+}
+
 public sealed class SimulatedClearinghouseFeedbackIngestor(
     IAlphaDbContext db,
     IDataProtectionService protector)
