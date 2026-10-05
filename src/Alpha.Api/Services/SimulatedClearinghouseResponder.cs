@@ -121,12 +121,16 @@ public sealed class SimulatedClearinghouseResponder(
                 Directory.CreateDirectory(inbox);
 
                 var expanded = ExpandScenario(scenario);
-                var transferOutcomes = scenario.Mode is "mixed" or "stress"
-                    ? await BuildMixedOutcomesAsync(db, transmission.ReportId, ct)
-                    : null;
                 var contributionOutcomes = scenario.Mode == "stress"
                     ? await BuildStressContributionOutcomesAsync(db, transmission.ReportId, ct)
                     : null;
+                var transferOutcomes = scenario.Mode switch
+                {
+                    "mixed" => await BuildMixedOutcomesAsync(db, transmission.ReportId, ct),
+                    "stress" => await BuildStressTransferOutcomesAsync(
+                        db, transmission.ReportId, contributionOutcomes ?? [], ct),
+                    _ => null
+                };
 
                 foreach (var item in expanded)
                 {
@@ -291,6 +295,75 @@ public sealed class SimulatedClearinghouseResponder(
             {
                 var outcome = pattern[index % pattern.Length];
                 return new SimulatedTransferOutcome(transferId, outcome.Mode, outcome.ErrorCode);
+            })
+            .ToArray();
+    }
+
+    public static string ResolveStressTransferMode(IEnumerable<int> errorCodes)
+    {
+        var actionable = errorCodes
+            .Where(code => EmployerInterfaceLineFeedbackParser.IsOfficialErrorCode(code))
+            .Where(code => ReportFeedbackStatusResolver.IsActionableFeedbackError(code))
+            .Distinct()
+            .ToArray();
+
+        if (actionable.Length == 0) return "success";
+        if (actionable.Any(code =>
+                EmployerInterfaceLineFeedbackParser.ErrorScope(code)
+                == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money))
+            return "error";
+        return "partial";
+    }
+
+    private static async Task<IReadOnlyList<SimulatedTransferOutcome>> BuildStressTransferOutcomesAsync(
+        IAlphaDbContext db,
+        Guid reportId,
+        IReadOnlyList<SimulatedContributionOutcome> contributionOutcomes,
+        CancellationToken ct)
+    {
+        var employeeIds = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => x.ReportId == reportId)
+            .Select(x => x.Id)
+            .ToArrayAsync(ct);
+        var products = await db.ManualReportProducts.AsNoTracking()
+            .Where(x => employeeIds.Contains(x.ReportEmployeeId))
+            .ToListAsync(ct);
+        var productIds = products.Select(x => x.Id).ToArray();
+        var contributions = await db.ManualContributions.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .Select(x => new { x.Id, x.ReportProductId })
+            .ToListAsync(ct);
+        var productByContribution = contributions.ToDictionary(x => x.Id, x => x.ReportProductId);
+        var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .ToDictionaryAsync(x => x.ReportProductId, ct);
+
+        string TransferId(Guid productId)
+        {
+            if (metadata.TryGetValue(productId, out var item)
+                && !string.IsNullOrWhiteSpace(item.InterfaceTransferIdentifier))
+                return item.InterfaceTransferIdentifier.Trim().ToUpperInvariant();
+            return productId.ToString("D").ToUpperInvariant();
+        }
+
+        var codesByTransfer = contributionOutcomes
+            .Where(x => productByContribution.ContainsKey(x.ContributionId))
+            .GroupBy(x => TransferId(productByContribution[x.ContributionId]), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => x.ErrorCode).ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+
+        return products
+            .Select(product => TransferId(product.Id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .Select(transferId =>
+            {
+                var mode = codesByTransfer.TryGetValue(transferId, out var codes)
+                    ? ResolveStressTransferMode(codes)
+                    : "success";
+                return new SimulatedTransferOutcome(transferId, mode);
             })
             .ToArray();
     }
