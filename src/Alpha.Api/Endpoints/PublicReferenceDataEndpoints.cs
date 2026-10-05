@@ -102,7 +102,7 @@ public static class PublicReferenceDataEndpoints
                 ORDER BY city_name
                 LIMIT {limit}
                 """;
-            if (hasSearch) AddParameter(command, "search", normalizedSearch!);
+            if (hasSearch) AddParameter(command, "search", search!.Trim());
             if (command.Connection!.State != System.Data.ConnectionState.Open)
                 await command.Connection.OpenAsync(ct);
             await using var reader = await command.ExecuteReaderAsync(ct);
@@ -279,7 +279,7 @@ public static class PublicReferenceDataEndpoints
             """;
 
         AddParameter(command, "product_type", normalizedType);
-        if (hasSearch) AddParameter(command, "search", search!.Trim());
+        if (hasSearch) AddParameter(command, "search", normalizedSearch!);
 
         if (command.Connection!.State != System.Data.ConnectionState.Open)
             await command.Connection.OpenAsync(ct);
