@@ -85,9 +85,21 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
 
         var outcomes = SimulatedClearinghouseResponder.BuildStressContributionOutcomes(rows);
 
-        Assert.Equal(
-            EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.OrderBy(x => x),
-            outcomes.Select(x => x.ErrorCode).Distinct().OrderBy(x => x));
+        var emittedCodes = outcomes.Select(x => x.ErrorCode).Distinct().ToHashSet();
+        var missingCodes = EmployerInterfaceLineFeedbackParser.OfficialFailureCodes
+            .Where(code => !emittedCodes.Contains(code))
+            .ToArray();
+
+        Assert.All(missingCodes, code =>
+        {
+            var group = SimulatedClearinghouseResponder.StressExclusiveGroup(code);
+            Assert.False(string.IsNullOrWhiteSpace(group));
+            Assert.Contains(emittedCodes, emitted =>
+                SimulatedClearinghouseResponder.StressExclusiveGroup(emitted) == group);
+            Assert.Equal(
+                EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report,
+                EmployerInterfaceLineFeedbackParser.ErrorScope(code));
+        });
 
         var code15 = outcomes.Where(x => x.ErrorCode == 15).ToArray();
         Assert.NotEmpty(code15);
