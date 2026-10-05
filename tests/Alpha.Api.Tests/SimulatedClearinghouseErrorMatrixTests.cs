@@ -106,8 +106,8 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
         var code53 = outcomes.Where(x => x.ErrorCode == 53).ToArray();
         Assert.Single(code53);
 
-        var code28 = outcomes.Where(x => x.ErrorCode == 28).ToArray();
-        Assert.Equal(rows.Length, code28.Length);
+        var code27 = outcomes.Where(x => x.ErrorCode == 27).ToArray();
+        Assert.Equal(rows.Length, code27.Length);
     }
 
     [Theory]
