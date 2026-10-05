@@ -112,6 +112,20 @@ public static class EmployerInterfaceLineFeedbackParser
         return new(transfers, records);
     }
 
+    public static bool TryParseSummary(string xml, out ParsedFeedback parsed)
+    {
+        try
+        {
+            parsed = ParseSummary(xml);
+            return true;
+        }
+        catch (XmlException)
+        {
+            parsed = new([], []);
+            return false;
+        }
+    }
+
     public static IReadOnlyList<RecordStatus> Parse(string xml) => ParseSummary(xml).Records;
 
     public static IReadOnlyList<int> OfficialErrorCodes { get; } =
