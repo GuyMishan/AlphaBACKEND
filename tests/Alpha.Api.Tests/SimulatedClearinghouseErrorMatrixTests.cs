@@ -217,5 +217,27 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
         Assert.NotEqual(employee109, employee110);
     }
 
+    [Fact]
+    public void Stress_affidavit_family_is_globally_exclusive_within_one_report()
+    {
+        var employeeA = Guid.NewGuid();
+        var employeeB = Guid.NewGuid();
+        var productA = Guid.NewGuid();
+        var productB = Guid.NewGuid();
+        var rows = new[]
+        {
+            new SimulatedStressContribution(Guid.NewGuid(), productA, employeeA),
+            new SimulatedStressContribution(Guid.NewGuid(), productA, employeeA),
+            new SimulatedStressContribution(Guid.NewGuid(), productB, employeeB),
+            new SimulatedStressContribution(Guid.NewGuid(), productB, employeeB)
+        };
+
+        var outcomes = SimulatedClearinghouseResponder.BuildStressContributionOutcomes(rows);
+        var affidavitCodes = new HashSet<int> { 102, 103, 109, 110, 111, 112 };
+        var emitted = outcomes.Select(x => x.ErrorCode).Where(affidavitCodes.Contains).Distinct().ToArray();
+
+        Assert.Single(emitted);
+    }
+
 
 }
