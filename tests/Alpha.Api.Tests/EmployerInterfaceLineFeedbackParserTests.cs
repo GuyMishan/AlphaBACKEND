@@ -105,6 +105,18 @@ public sealed class EmployerInterfaceLineFeedbackParserTests
             });
     }
 
+    [Fact]
+    public void Try_parse_summary_rejects_simulated_json_without_throwing()
+    {
+        var ok = EmployerInterfaceLineFeedbackParser.TryParseSummary(
+            """{"scenario":"mixed","feedbackInterface":"EMPFED"}""",
+            out var parsed);
+
+        Assert.False(ok);
+        Assert.Empty(parsed.Transfers);
+        Assert.Empty(parsed.Records);
+    }
+
     [Theory]
     [InlineData(31, "התנועה המקורית תקינה ומותאמת (עבור דיווח מתקן)")]
     [InlineData(53, "אין התאמה בין אחוז הפרשה, סכום הפרשה ושכר")]
