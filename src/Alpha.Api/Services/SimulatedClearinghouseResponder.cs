@@ -514,6 +514,14 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
                 ? contribution.Id.ToString("D").ToUpperInvariant()
                 : contribution.InterfaceRecordIdentifier;
 
+            // Keep simulated feedback internally consistent with the selected official
+            // error. Code 53 specifically means the returned salary/rate/amount relationship
+            // does not reconcile, so returning the exact original values would make the UI
+            // show an error while every compared number still looks identical.
+            var simulatedContributionAmount = errorCode == 53
+                ? contribution.Amount + 1m
+                : contribution.Amount;
+
             db.EmployerInterfaceContributionFeedback.Add(new EmployerInterfaceContributionFeedback(
                 feedback.Id,
                 instruction.ReportId,
@@ -531,7 +539,7 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
                 product.SalaryMonth,
                 product.PolicyNumber,
                 contribution.Percentage,
-                contribution.Amount,
+                simulatedContributionAmount,
                 sourceFileName,
                 DateTimeOffset.UtcNow));
         }
