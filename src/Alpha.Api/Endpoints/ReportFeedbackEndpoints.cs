@@ -438,7 +438,14 @@ public static class ReportFeedbackEndpoints
             latestFeedback.TryGetValue(x.Product.Id, out var rows); treatments.TryGetValue(x.Product.Id, out var treatment);
             metadata.TryGetValue(x.Product.Id, out var productMetadata); totals.TryGetValue(x.Product.Id, out var total);
             var expected = total?.Count ?? 0; var received = rows?.Length ?? 0;
-            var hasError = rows?.Any(item => ReportFeedbackStatusResolver.IsActionableFeedbackError(item.ErrorCode)) == true;
+            var actionableErrors = (rows ?? [])
+                .Where(item => ReportFeedbackStatusResolver.IsActionableFeedbackError(item.ErrorCode))
+                .Select(item => string.IsNullOrWhiteSpace(item.ErrorDescription)
+                    ? $"קוד שגיאה {item.ErrorCode}"
+                    : item.ErrorDescription.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            var hasError = actionableErrors.Length > 0;
             var feedbackState = received == 0 ? "pending" : hasError ? "attention" : received < expected ? "partial" : "completed";
             var transferKey = !string.IsNullOrWhiteSpace(productMetadata?.InterfaceTransferIdentifier)
                 ? productMetadata.InterfaceTransferIdentifier : x.Product.Id.ToString("D").ToUpperInvariant();
@@ -457,6 +464,7 @@ public static class ReportFeedbackEndpoints
                 x.Product.FundName, x.Product.FundCompanyName, x.Product.PolicyNumber, x.Product.SalaryMonth,
                 totalAmount, hasFeedback = received > 0 || transfer is not null, feedbackStatus = feedbackState,
                 feedbackLabel = feedbackState switch { "completed" => "נקלט", "attention" => "דורש טיפול", "partial" => "משוב חלקי", _ => "ממתין למשוב" },
+                feedbackErrors = actionableErrors,
                 moneyStatus = moneyState,
                 moneyStatusLabel = moneyState switch { "allocated" => "שויך במלואו", "in-transit" => "כספים במעבר", "received-partial" => "נקלט חלקית", "unresolved" => "טרם שויך", _ => "אין משוב כספי" },
                 treatmentStatus = treatment?.StatusCode ?? "",
