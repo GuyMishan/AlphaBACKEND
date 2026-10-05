@@ -147,3 +147,5 @@ These sources outrank assumptions, old examples and UI behavior.
 - Stress feedback keeps mutually exclusive manufacturer states apart. Missing-vs-invalid affidavits, under-vs-over payment pairs, refund lifecycle stages, cancellation blockers, and correction-pairing opposites are assigned to different products/employees/contributions when possible. Mutually exclusive report-wide states are not forced into the same report; single-report stress favors logical consistency over emitting every incompatible code simultaneously.
 
 - Affidavit-related stress codes 102/103/109/110/111/112 are treated as one report-wide mutually exclusive scenario family. A single stress report emits at most one of these states so missing/invalid employee, employer, or collective-agreement affidavits are tested in separate realistic reports instead of being stacked together.
+
+- `/api/reference-data/pension-editor-options` returns the static option sets needed by the pension-products editor (product/status/allocation options, receipt/section-14 options, and salary layers) in one response to avoid one database query per select instance.
