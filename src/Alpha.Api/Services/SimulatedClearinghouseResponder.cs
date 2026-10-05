@@ -19,6 +19,11 @@ public sealed record SimulatedContributionOutcome(
     int ErrorCode,
     int Sequence = 0);
 
+public sealed record SimulatedStressContribution(
+    Guid ContributionId,
+    Guid ProductId,
+    Guid EmployeeId);
+
 public sealed record SimulatedVaultFeedbackInstruction(
     Guid ReportId,
     Guid TransmissionId,
@@ -291,15 +296,64 @@ public sealed class SimulatedClearinghouseResponder(
     }
 
     public static IReadOnlyList<SimulatedContributionOutcome> BuildStressContributionOutcomes(
-        IReadOnlyList<Guid> contributionIds)
+        IReadOnlyList<SimulatedStressContribution> rows)
     {
-        if (contributionIds.Count == 0) return [];
+        if (rows.Count == 0) return [];
 
-        var codes = EmployerInterfaceLineFeedbackParser.OfficialFailureCodes;
-        var count = Math.Min(contributionIds.Count, codes.Count);
-        return Enumerable.Range(0, count)
-            .Select(index => new SimulatedContributionOutcome(contributionIds[index], codes[index]))
+        var orderedRows = rows
+            .OrderBy(x => x.EmployeeId)
+            .ThenBy(x => x.ProductId)
+            .ThenBy(x => x.ContributionId)
             .ToArray();
+        var products = orderedRows.GroupBy(x => x.ProductId).Select(x => x.ToArray()).ToArray();
+        var employees = orderedRows.GroupBy(x => x.EmployeeId).Select(x => x.ToArray()).ToArray();
+        var outcomes = new List<SimulatedContributionOutcome>();
+        var contributionIndex = 0;
+        var productIndex = 0;
+        var employeeIndex = 0;
+        var sequenceByContribution = new Dictionary<Guid, int>();
+
+        void AddOutcome(Guid contributionId, int code)
+        {
+            sequenceByContribution.TryGetValue(contributionId, out var sequence);
+            outcomes.Add(new SimulatedContributionOutcome(contributionId, code, sequence));
+            sequenceByContribution[contributionId] = sequence + 1;
+        }
+
+        foreach (var code in EmployerInterfaceLineFeedbackParser.OfficialFailureCodes)
+        {
+            var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(code);
+            switch (scope)
+            {
+                case EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit:
+                case EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money:
+                {
+                    var target = products[productIndex % products.Length];
+                    productIndex++;
+                    foreach (var row in target) AddOutcome(row.ContributionId, code);
+                    break;
+                }
+                case EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee:
+                {
+                    var target = employees[employeeIndex % employees.Length];
+                    employeeIndex++;
+                    foreach (var row in target) AddOutcome(row.ContributionId, code);
+                    break;
+                }
+                case EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report:
+                    foreach (var row in orderedRows) AddOutcome(row.ContributionId, code);
+                    break;
+                default:
+                {
+                    var target = orderedRows[contributionIndex % orderedRows.Length];
+                    contributionIndex++;
+                    AddOutcome(target.ContributionId, code);
+                    break;
+                }
+            }
+        }
+
+        return outcomes;
     }
 
     private static async Task<IReadOnlyList<SimulatedContributionOutcome>> BuildStressContributionOutcomesAsync(
@@ -307,24 +361,31 @@ public sealed class SimulatedClearinghouseResponder(
         Guid reportId,
         CancellationToken ct)
     {
-        var employeeIds = await db.ManualReportEmployees.AsNoTracking()
+        var employees = await db.ManualReportEmployees.AsNoTracking()
             .Where(x => x.ReportId == reportId)
-            .Select(x => x.Id)
+            .Select(x => new { x.Id })
             .ToArrayAsync(ct);
-        var productIds = await db.ManualReportProducts.AsNoTracking()
+        var employeeIds = employees.Select(x => x.Id).ToArray();
+        var products = await db.ManualReportProducts.AsNoTracking()
             .Where(x => employeeIds.Contains(x.ReportEmployeeId))
-            .Select(x => x.Id)
+            .Select(x => new { x.Id, x.ReportEmployeeId })
             .ToArrayAsync(ct);
-        var contributionIds = (await db.ManualContributions.AsNoTracking()
+        var productIds = products.Select(x => x.Id).ToArray();
+        var employeeByProduct = products.ToDictionary(x => x.Id, x => x.ReportEmployeeId);
+
+        var rows = (await db.ManualContributions.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId))
             .OrderBy(x => x.ReportProductId)
             .ThenBy(x => x.Id)
             .ToListAsync(ct))
             .Where(ReportFeedbackStatusResolver.IsEffectiveContribution)
-            .Select(x => x.Id)
+            .Select(x => new SimulatedStressContribution(
+                x.Id,
+                x.ReportProductId,
+                employeeByProduct[x.ReportProductId]))
             .ToArray();
 
-        return BuildStressContributionOutcomes(contributionIds);
+        return BuildStressContributionOutcomes(rows);
     }
 
     private static async Task WriteAtomicallyAsync(string targetPath, byte[] content, CancellationToken ct)
