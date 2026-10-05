@@ -445,13 +445,28 @@ public static class ReportFeedbackEndpoints
             latestFeedback.TryGetValue(x.Product.Id, out var rows); treatments.TryGetValue(x.Product.Id, out var treatment);
             metadata.TryGetValue(x.Product.Id, out var productMetadata); totals.TryGetValue(x.Product.Id, out var total);
             var expected = total?.Count ?? 0; var received = rows?.Length ?? 0;
-            var actionableErrors = (rows ?? [])
+            var actionableFeedback = (rows ?? [])
                 .Where(item => ReportFeedbackStatusResolver.IsActionableFeedbackError(item.ErrorCode))
+                .ToArray();
+            var actionableErrors = actionableFeedback
                 .Select(item => string.IsNullOrWhiteSpace(item.ErrorDescription)
                     ? $"קוד שגיאה {item.ErrorCode}"
                     : item.ErrorDescription.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
+            var errorSummary = actionableFeedback
+                .Where(item => item.ErrorCode.HasValue)
+                .Select(item => new
+                {
+                    Code = item.ErrorCode!.Value,
+                    Scope = EmployerInterfaceLineFeedbackParser.ErrorScope(item.ErrorCode)
+                })
+                .Distinct()
+                .GroupBy(item => item.Scope)
+                .ToDictionary(
+                    group => group.Key.ToString().ToLowerInvariant(),
+                    group => group.Count(),
+                    StringComparer.Ordinal);
             var hasError = actionableErrors.Length > 0;
             var feedbackState = received == 0 ? "pending" : hasError ? "attention" : received < expected ? "partial" : "completed";
             var transferKey = !string.IsNullOrWhiteSpace(productMetadata?.InterfaceTransferIdentifier)
@@ -472,6 +487,14 @@ public static class ReportFeedbackEndpoints
                 totalAmount, hasFeedback = received > 0 || transfer is not null, feedbackStatus = feedbackState,
                 feedbackLabel = feedbackState switch { "completed" => "נקלט", "attention" => "דורש טיפול", "partial" => "משוב חלקי", _ => "ממתין למשוב" },
                 feedbackErrors = actionableErrors,
+                feedbackErrorSummary = new
+                {
+                    deposit = errorSummary.GetValueOrDefault("deposit"),
+                    employee = errorSummary.GetValueOrDefault("employee"),
+                    money = errorSummary.GetValueOrDefault("money"),
+                    report = errorSummary.GetValueOrDefault("report"),
+                    contribution = errorSummary.GetValueOrDefault("contribution")
+                },
                 moneyStatus = moneyState,
                 moneyStatusLabel = moneyState switch { "allocated" => "שויך במלואו", "in-transit" => "כספים במעבר", "received-partial" => "נקלט חלקית", "unresolved" => "טרם שויך", _ => "אין משוב כספי" },
                 treatmentStatus = treatment?.StatusCode ?? "",
