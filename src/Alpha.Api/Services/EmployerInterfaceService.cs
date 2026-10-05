@@ -227,7 +227,20 @@ public sealed class EmployerInterfaceService(IAlphaDbContext db, EmployerInterfa
             var existingContributionKeys = existingContributionValues.ToHashSet(StringComparer.Ordinal);
 
             var decodedXml = protector.Unprotect(feedback.RawXml, $"employer-interface-feedback:{feedback.PayloadHash}");
-            var parsed = EmployerInterfaceLineFeedbackParser.ParseSummary(decodedXml);
+            EmployerInterfaceLineFeedbackParser.ParsedFeedback parsed;
+            try
+            {
+                parsed = EmployerInterfaceLineFeedbackParser.ParseSummary(decodedXml);
+            }
+            catch (System.Xml.XmlException)
+            {
+                // Simulated clearing-house feedback is persisted as protected JSON so it can
+                // use the same feedback entities without pretending to be an official XML
+                // document. Historical malformed/non-XML payloads must never make startup
+                // normalization fatal; they already have their normalized rows (if any) and
+                // can safely be skipped here.
+                continue;
+            }
 
             foreach (var transfer in parsed.Transfers.Where(x => !string.IsNullOrWhiteSpace(x.TransferIdentifier)))
             {
