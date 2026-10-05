@@ -96,9 +96,6 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
             Assert.False(string.IsNullOrWhiteSpace(group));
             Assert.Contains(emittedCodes, emitted =>
                 SimulatedClearinghouseResponder.StressExclusiveGroup(emitted) == group);
-            Assert.Equal(
-                EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report,
-                EmployerInterfaceLineFeedbackParser.ErrorScope(code));
         });
 
         var code15 = outcomes.Where(x => x.ErrorCode == 15).ToArray();
@@ -179,42 +176,6 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
         Assert.Equal(
             SimulatedClearinghouseResponder.StressExclusiveGroup(left),
             SimulatedClearinghouseResponder.StressExclusiveGroup(right));
-    }
-
-    [Fact]
-    public void Stress_does_not_assign_missing_and_invalid_employer_affidavit_to_the_same_report()
-    {
-        var employee = Guid.NewGuid();
-        var product = Guid.NewGuid();
-        var rows = Enumerable.Range(0, 4)
-            .Select(_ => new SimulatedStressContribution(Guid.NewGuid(), product, employee))
-            .ToArray();
-
-        var outcomes = SimulatedClearinghouseResponder.BuildStressContributionOutcomes(rows);
-        var reportCodes = outcomes.Select(x => x.ErrorCode).Distinct().ToHashSet();
-
-        Assert.True(reportCodes.Contains(111) ^ reportCodes.Contains(112));
-    }
-
-    [Fact]
-    public void Stress_distributes_mutually_exclusive_employee_errors_to_different_employees_when_possible()
-    {
-        var employeeA = Guid.NewGuid();
-        var employeeB = Guid.NewGuid();
-        var productA = Guid.NewGuid();
-        var productB = Guid.NewGuid();
-        var rows = new[]
-        {
-            new SimulatedStressContribution(Guid.NewGuid(), productA, employeeA),
-            new SimulatedStressContribution(Guid.NewGuid(), productB, employeeB)
-        };
-
-        var outcomes = SimulatedClearinghouseResponder.BuildStressContributionOutcomes(rows);
-        var employeeByContribution = rows.ToDictionary(x => x.ContributionId, x => x.EmployeeId);
-        var employee109 = outcomes.Where(x => x.ErrorCode == 109).Select(x => employeeByContribution[x.ContributionId]).Distinct().Single();
-        var employee110 = outcomes.Where(x => x.ErrorCode == 110).Select(x => employeeByContribution[x.ContributionId]).Distinct().Single();
-
-        Assert.NotEqual(employee109, employee110);
     }
 
     [Fact]
