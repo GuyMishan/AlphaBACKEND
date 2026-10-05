@@ -55,6 +55,48 @@ public static class PublicReferenceDataEndpoints
             return Results.Ok(result);
         });
 
+        group.MapGet("/employer-interface-006/options-bundle", async (string categories, AlphaDbContext db, CancellationToken ct) =>
+        {
+            var requested = categories
+                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Select(value => value.ToLowerInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .Take(25)
+                .ToArray();
+            if (requested.Length == 0)
+                return Results.BadRequest(new { error = "categories is required." });
+
+            var result = new Dictionary<string, List<object>>(StringComparer.Ordinal);
+            foreach (var category in requested)
+                result[category] = [];
+
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = """
+                SELECT category, code, name, scope
+                FROM reference_data.employer_interface_006_options
+                WHERE is_active = true
+                  AND category = ANY(@categories)
+                ORDER BY category, CASE WHEN scope = 'all' THEN 0 ELSE 1 END, scope, sort_order, code
+                """;
+            AddParameter(command, "categories", requested);
+            if (command.Connection!.State != System.Data.ConnectionState.Open)
+                await command.Connection.OpenAsync(ct);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var category = reader.GetString(0);
+                if (!result.TryGetValue(category, out var items)) continue;
+                items.Add(new
+                {
+                    code = reader.GetInt32(1),
+                    name = reader.GetString(2),
+                    scope = reader.GetString(3)
+                });
+            }
+
+            return Results.Ok(result);
+        });
+
         group.MapGet("/employer-interface-006/options", async (string category, string? scope, int? operationCode, AlphaDbContext db, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(category)) return Results.BadRequest(new { error = "category is required." });
