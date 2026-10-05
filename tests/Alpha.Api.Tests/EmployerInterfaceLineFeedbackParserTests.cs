@@ -122,7 +122,12 @@ public sealed class EmployerInterfaceLineFeedbackParserTests
     [InlineData(53, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
     [InlineData(4, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee)]
     [InlineData(45, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)]
-    [InlineData(28, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)]
+    [InlineData(27, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)]
+    [InlineData(50, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)]
+    [InlineData(62, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee)]
+    [InlineData(71, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(109, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee)]
+    [InlineData(111, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)]
     [InlineData(31, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Informational)]
     public void Error_scope_classifies_feedback_by_business_level(
         int code,
