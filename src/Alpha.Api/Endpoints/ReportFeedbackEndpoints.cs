@@ -578,6 +578,7 @@ public static class ReportFeedbackEndpoints
             manufacturerContributions = manufacturer.Select(x => new
             {
                 x.ContributionId, x.RecordIdentifier, x.Sequence, x.IntakeStatus, x.ErrorCode, x.ErrorDescription,
+                errorScope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode).ToString().ToLowerInvariant(),
                 x.ErrorAmount, x.ErrorDate, x.ContributionTypeCode, x.CalculatedSalary, x.SalaryMonth, x.PolicyNumber,
                 x.ContributionRate, x.ContributionAmount, x.SourceFileName, x.ReceivedAt
             }),
