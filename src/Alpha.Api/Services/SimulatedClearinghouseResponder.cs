@@ -14,6 +14,10 @@ public sealed record SimulatedTransferOutcome(
     string Mode,
     int? ErrorCode = null);
 
+public sealed record SimulatedContributionOutcome(
+    Guid ContributionId,
+    int ErrorCode);
+
 public sealed record SimulatedVaultFeedbackInstruction(
     Guid ReportId,
     Guid TransmissionId,
@@ -25,7 +29,8 @@ public sealed record SimulatedVaultFeedbackInstruction(
     int? ErrorCode = null,
     string FeedbackInterface = "EMPFED",
     string ErrorDetail = "",
-    IReadOnlyList<SimulatedTransferOutcome>? TransferOutcomes = null);
+    IReadOnlyList<SimulatedTransferOutcome>? TransferOutcomes = null,
+    IReadOnlyList<SimulatedContributionOutcome>? ContributionOutcomes = null);
 
 public sealed record SimulatedClearinghouseScenario(
     string Mode,
@@ -110,8 +115,11 @@ public sealed class SimulatedClearinghouseResponder(
                 Directory.CreateDirectory(inbox);
 
                 var expanded = ExpandScenario(scenario);
-                var mixedOutcomes = scenario.Mode == "mixed"
+                var transferOutcomes = scenario.Mode is "mixed" or "stress"
                     ? await BuildMixedOutcomesAsync(db, transmission.ReportId, ct)
+                    : null;
+                var contributionOutcomes = scenario.Mode == "stress"
+                    ? await BuildStressContributionOutcomesAsync(db, transmission.ReportId, ct)
                     : null;
 
                 foreach (var item in expanded)
@@ -137,7 +145,8 @@ public sealed class SimulatedClearinghouseResponder(
                         item.Mode == "duplicate"
                             ? ClearinghouseInitialFeedbackCatalog.DuplicateFileDetail(fileName)
                             : item.ErrorDetail,
-                        item.Mode == "mixed" ? mixedOutcomes : null);
+                        item.Mode is "mixed" or "stress" ? transferOutcomes : null,
+                        item.Mode == "stress" ? contributionOutcomes : null);
 
                     var stage = item.FeedbackInterface.ToLowerInvariant();
                     var suffix = item.ErrorCode.HasValue
@@ -170,7 +179,7 @@ public sealed class SimulatedClearinghouseResponder(
         var raw = value?.Trim().ToLowerInvariant() ?? string.Empty;
 
         if (raw == "all-errors") return new("all-errors");
-        if (raw is "success" or "error" or "partial" or "in-transit" or "mixed") return new(raw);
+        if (raw is "success" or "error" or "partial" or "in-transit" or "mixed" or "stress") return new(raw);
 
         if (raw == "fedbka:accepted")
             return new("accepted", null, ClearinghouseInitialFeedbackCatalog.TechnicalInterface);
@@ -277,6 +286,43 @@ public sealed class SimulatedClearinghouseResponder(
                 var outcome = pattern[index % pattern.Length];
                 return new SimulatedTransferOutcome(transferId, outcome.Mode, outcome.ErrorCode);
             })
+            .ToArray();
+    }
+
+    public static IReadOnlyList<int> BuildStressErrorSequence(int contributionCount)
+    {
+        if (contributionCount <= 0) return [];
+        var codes = EmployerInterfaceLineFeedbackParser.OfficialFailureCodes;
+        return Enumerable.Range(0, contributionCount)
+            .Select(index => codes[index % codes.Count])
+            .ToArray();
+    }
+
+    private static async Task<IReadOnlyList<SimulatedContributionOutcome>> BuildStressContributionOutcomesAsync(
+        IAlphaDbContext db,
+        Guid reportId,
+        CancellationToken ct)
+    {
+        var employeeIds = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => x.ReportId == reportId)
+            .Select(x => x.Id)
+            .ToArrayAsync(ct);
+        var productIds = await db.ManualReportProducts.AsNoTracking()
+            .Where(x => employeeIds.Contains(x.ReportEmployeeId))
+            .Select(x => x.Id)
+            .ToArrayAsync(ct);
+        var contributions = await db.ManualContributions.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .OrderBy(x => x.ReportProductId)
+            .ThenBy(x => x.Id)
+            .ToListAsync(ct);
+        var effective = contributions
+            .Where(ReportFeedbackStatusResolver.IsEffectiveContribution)
+            .ToArray();
+        var codes = BuildStressErrorSequence(effective.Length);
+
+        return effective
+            .Select((contribution, index) => new SimulatedContributionOutcome(contribution.Id, codes[index]))
             .ToArray();
     }
 
@@ -438,6 +484,10 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
                 x => x.TransferIdentifier.Trim().ToUpperInvariant(),
                 x => x,
                 StringComparer.OrdinalIgnoreCase);
+        var outcomeByContribution = (instruction.ContributionOutcomes ?? [])
+            .Where(x => EmployerInterfaceLineFeedbackParser.IsOfficialErrorCode(x.ErrorCode) && x.ErrorCode != 1)
+            .GroupBy(x => x.ContributionId)
+            .ToDictionary(x => x.Key, x => x.First().ErrorCode);
 
         foreach (var group in products.GroupBy(product =>
         {
@@ -503,12 +553,14 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
                 ? SimulatedClearinghouseResponder.ParseScenario(
                     contributionOutcome.ErrorCode.HasValue ? $"{contributionOutcome.Mode}:{contributionOutcome.ErrorCode.Value}" : contributionOutcome.Mode)
                 : parsedScenario;
-            var errorCode = contributionScenario.Mode switch
-            {
-                "error" => contributionScenario.ErrorCode ?? selectedErrorCode ?? 53,
-                "partial" => contributionScenario.ErrorCode ?? selectedErrorCode ?? 53,
-                _ => 1
-            };
+            var errorCode = outcomeByContribution.TryGetValue(contribution.Id, out var contributionErrorCode)
+                ? contributionErrorCode
+                : contributionScenario.Mode switch
+                {
+                    "error" => contributionScenario.ErrorCode ?? selectedErrorCode ?? 53,
+                    "partial" => contributionScenario.ErrorCode ?? selectedErrorCode ?? 53,
+                    _ => 1
+                };
             var intakeStatus = errorCode == 1 ? 1 : 2;
             var recordId = string.IsNullOrWhiteSpace(contribution.InterfaceRecordIdentifier)
                 ? contribution.Id.ToString("D").ToUpperInvariant()
