@@ -202,6 +202,89 @@ public static class PublicReferenceDataEndpoints
             return Results.Ok(result);
         });
 
+        group.MapGet("/pension-editor-options", async (AlphaDbContext db, CancellationToken ct) =>
+        {
+            var referenceCategories = new[]
+            {
+                "product-active-status",
+                "pension-product-type",
+                "salary-allocation-type"
+            };
+            var interfaceCategories = new[]
+            {
+                "receipt-type",
+                "section14-code"
+            };
+
+            var referenceOptions = new Dictionary<string, List<object>>(StringComparer.Ordinal);
+            foreach (var category in referenceCategories)
+                referenceOptions[category] = [];
+
+            var interfaceOptions = new Dictionary<string, List<object>>(StringComparer.Ordinal);
+            foreach (var category in interfaceCategories)
+                interfaceOptions[category] = [];
+
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = """
+                SELECT category, value, label, scope
+                FROM reference_data.select_options
+                WHERE is_active = true
+                  AND scope = 'all'
+                  AND category = ANY(@reference_categories)
+                ORDER BY category, sort_order, value;
+
+                SELECT category, code, name, scope
+                FROM reference_data.employer_interface_006_options
+                WHERE is_active = true
+                  AND scope = 'all'
+                  AND category = ANY(@interface_categories)
+                ORDER BY category, sort_order, code;
+
+                SELECT code, name
+                FROM reference_data.salary_layers
+                WHERE is_active = true
+                ORDER BY sort_order, code;
+                """;
+            AddParameter(command, "reference_categories", referenceCategories);
+            AddParameter(command, "interface_categories", interfaceCategories);
+
+            if (command.Connection!.State != System.Data.ConnectionState.Open)
+                await command.Connection.OpenAsync(ct);
+
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var category = reader.GetString(0);
+                if (!referenceOptions.TryGetValue(category, out var items)) continue;
+                items.Add(new
+                {
+                    value = reader.GetString(1),
+                    label = reader.GetString(2),
+                    scope = reader.GetString(3)
+                });
+            }
+
+            await reader.NextResultAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var category = reader.GetString(0);
+                if (!interfaceOptions.TryGetValue(category, out var items)) continue;
+                items.Add(new
+                {
+                    code = reader.GetInt32(1),
+                    name = reader.GetString(2),
+                    scope = reader.GetString(3)
+                });
+            }
+
+            var salaryLayers = new List<object>();
+            await reader.NextResultAsync(ct);
+            while (await reader.ReadAsync(ct))
+                salaryLayers.Add(new { code = reader.GetInt32(0), name = reader.GetString(1) });
+
+            return Results.Ok(new { referenceOptions, interfaceOptions, salaryLayers });
+        });
+
         group.MapGet("/pension-funds", async (int productType, string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
         {
             var normalizedType = await NormalizeProductTypeAsync(productType.ToString(), db, ct);
