@@ -65,17 +65,49 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
     }
 
     [Fact]
-    public void Stress_scenario_distributes_every_official_failure_code_across_available_contributions()
+    public void Stress_scenario_covers_every_official_failure_code_and_repeats_scoped_errors_correctly()
     {
-        var contributionIds = Enumerable.Range(0, 120).Select(_ => Guid.NewGuid()).ToArray();
-        var outcomes = SimulatedClearinghouseResponder.BuildStressContributionOutcomes(contributionIds);
+        var employeeA = Guid.NewGuid();
+        var employeeB = Guid.NewGuid();
+        var productA = Guid.NewGuid();
+        var productB = Guid.NewGuid();
+        var productC = Guid.NewGuid();
+        var rows = new[]
+        {
+            new SimulatedStressContribution(Guid.NewGuid(), productA, employeeA),
+            new SimulatedStressContribution(Guid.NewGuid(), productA, employeeA),
+            new SimulatedStressContribution(Guid.NewGuid(), productA, employeeA),
+            new SimulatedStressContribution(Guid.NewGuid(), productB, employeeA),
+            new SimulatedStressContribution(Guid.NewGuid(), productB, employeeA),
+            new SimulatedStressContribution(Guid.NewGuid(), productC, employeeB),
+            new SimulatedStressContribution(Guid.NewGuid(), productC, employeeB),
+        };
 
-        Assert.Equal(EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.Count, outcomes.Count);
+        var outcomes = SimulatedClearinghouseResponder.BuildStressContributionOutcomes(rows);
+
         Assert.Equal(
             EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.OrderBy(x => x),
-            outcomes.Select(x => x.ErrorCode).OrderBy(x => x));
-        Assert.All(outcomes, outcome => Assert.Contains(outcome.ContributionId, contributionIds));
-        Assert.Equal(outcomes.Count, outcomes.Select(x => x.ContributionId).Distinct().Count());
+            outcomes.Select(x => x.ErrorCode).Distinct().OrderBy(x => x));
+
+        var code15 = outcomes.Where(x => x.ErrorCode == 15).ToArray();
+        Assert.NotEmpty(code15);
+        var productFor15 = rows.Single(x => x.ContributionId == code15[0].ContributionId).ProductId;
+        Assert.Equal(
+            rows.Where(x => x.ProductId == productFor15).Select(x => x.ContributionId).OrderBy(x => x),
+            code15.Select(x => x.ContributionId).OrderBy(x => x));
+
+        var code4 = outcomes.Where(x => x.ErrorCode == 4).ToArray();
+        Assert.NotEmpty(code4);
+        var employeeFor4 = rows.Single(x => x.ContributionId == code4[0].ContributionId).EmployeeId;
+        Assert.Equal(
+            rows.Where(x => x.EmployeeId == employeeFor4).Select(x => x.ContributionId).OrderBy(x => x),
+            code4.Select(x => x.ContributionId).OrderBy(x => x));
+
+        var code53 = outcomes.Where(x => x.ErrorCode == 53).ToArray();
+        Assert.Single(code53);
+
+        var code28 = outcomes.Where(x => x.ErrorCode == 28).ToArray();
+        Assert.Equal(rows.Length, code28.Length);
     }
 
     [Theory]
