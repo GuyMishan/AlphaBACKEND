@@ -132,13 +132,25 @@ public sealed class EmployerInterfaceLineFeedbackParserTests
     }
 
     [Fact]
-    public void Every_official_failure_code_has_a_non_informational_scope()
+    public void Every_official_error_code_has_an_explicit_business_scope()
     {
         Assert.All(
-            EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.Where(code => code != 31),
-            code => Assert.NotEqual(
-                EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Informational,
-                EmployerInterfaceLineFeedbackParser.ErrorScope(code)));
+            EmployerInterfaceLineFeedbackParser.OfficialErrorCodes,
+            code => Assert.True(
+                EmployerInterfaceLineFeedbackParser.HasExplicitErrorScope(code),
+                $"Official error code {code} is missing an explicit business scope."));
+    }
+
+    [Fact]
+    public void Only_success_and_corrective_match_are_informational()
+    {
+        var informational = EmployerInterfaceLineFeedbackParser.OfficialErrorCodes
+            .Where(code => EmployerInterfaceLineFeedbackParser.ErrorScope(code)
+                == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Informational)
+            .OrderBy(code => code)
+            .ToArray();
+
+        Assert.Equal(new[] { 1, 31 }, informational);
     }
 
     [Theory]
