@@ -420,8 +420,15 @@ public static class ReportFeedbackEndpoints
         var feedback = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId) && activeFeedbackIdsForReport.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt).ToListAsync(ct);
-        var latestFeedback = feedback.GroupBy(x => x.ContributionId).Select(g => g.First())
-            .GroupBy(x => x.ReportProductId).ToDictionary(g => g.Key, g => g.ToArray());
+        var latestFeedback = feedback
+            .GroupBy(x => x.ContributionId)
+            .SelectMany(group =>
+            {
+                var latest = group.First();
+                return group.Where(x => x.FeedbackId == latest.FeedbackId);
+            })
+            .GroupBy(x => x.ReportProductId)
+            .ToDictionary(g => g.Key, g => g.ToArray());
         var treatments = await db.ReportProductTreatments.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId))
