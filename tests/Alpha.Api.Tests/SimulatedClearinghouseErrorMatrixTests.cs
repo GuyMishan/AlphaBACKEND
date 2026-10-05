@@ -148,4 +148,62 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AlphaBackend.slnx"))) dir = dir.Parent;
         return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
     }
+    [Theory]
+    [InlineData(111, 112)]
+    [InlineData(109, 110)]
+    [InlineData(102, 103)]
+    [InlineData(105, 106)]
+    [InlineData(107, 108)]
+    [InlineData(113, 114)]
+    [InlineData(6, 7)]
+    [InlineData(81, 82)]
+    [InlineData(83, 84)]
+    [InlineData(84, 85)]
+    [InlineData(94, 95)]
+    [InlineData(95, 96)]
+    [InlineData(100, 101)]
+    public void Stress_exclusive_codes_share_the_same_exclusion_group(int left, int right)
+    {
+        Assert.Equal(
+            SimulatedClearinghouseResponder.StressExclusiveGroup(left),
+            SimulatedClearinghouseResponder.StressExclusiveGroup(right));
+    }
+
+    [Fact]
+    public void Stress_does_not_assign_missing_and_invalid_employer_affidavit_to_the_same_report()
+    {
+        var employee = Guid.NewGuid();
+        var product = Guid.NewGuid();
+        var rows = Enumerable.Range(0, 4)
+            .Select(_ => new SimulatedStressContribution(Guid.NewGuid(), product, employee))
+            .ToArray();
+
+        var outcomes = SimulatedClearinghouseResponder.BuildStressContributionOutcomes(rows);
+        var reportCodes = outcomes.Select(x => x.ErrorCode).Distinct().ToHashSet();
+
+        Assert.True(reportCodes.Contains(111) ^ reportCodes.Contains(112));
+    }
+
+    [Fact]
+    public void Stress_distributes_mutually_exclusive_employee_errors_to_different_employees_when_possible()
+    {
+        var employeeA = Guid.NewGuid();
+        var employeeB = Guid.NewGuid();
+        var productA = Guid.NewGuid();
+        var productB = Guid.NewGuid();
+        var rows = new[]
+        {
+            new SimulatedStressContribution(Guid.NewGuid(), productA, employeeA),
+            new SimulatedStressContribution(Guid.NewGuid(), productB, employeeB)
+        };
+
+        var outcomes = SimulatedClearinghouseResponder.BuildStressContributionOutcomes(rows);
+        var employeeByContribution = rows.ToDictionary(x => x.ContributionId, x => x.EmployeeId);
+        var employee109 = outcomes.Where(x => x.ErrorCode == 109).Select(x => employeeByContribution[x.ContributionId]).Distinct().Single();
+        var employee110 = outcomes.Where(x => x.ErrorCode == 110).Select(x => employeeByContribution[x.ContributionId]).Distinct().Single();
+
+        Assert.NotEqual(employee109, employee110);
+    }
+
+
 }
