@@ -461,7 +461,7 @@ public static class ReportFeedbackEndpoints
             {
                 id = x.Product.Id, reportEmployeeId = x.Employee.Id, x.Employee.EmploymentId,
                 employeeName = x.Employee.FirstName + " " + x.Employee.LastName,
-                x.Product.FundName, x.Product.FundCompanyName, x.Product.PolicyNumber, x.Product.SalaryMonth,
+                x.Product.ProductType, x.Product.FundName, x.Product.FundCompanyName, x.Product.PolicyNumber, x.Product.SalaryMonth,
                 totalAmount, hasFeedback = received > 0 || transfer is not null, feedbackStatus = feedbackState,
                 feedbackLabel = feedbackState switch { "completed" => "נקלט", "attention" => "דורש טיפול", "partial" => "משוב חלקי", _ => "ממתין למשוב" },
                 feedbackErrors = actionableErrors,
