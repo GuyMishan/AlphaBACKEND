@@ -141,6 +141,46 @@ public static class EmployerInterfaceLineFeedbackParser
 
     public static bool IsOfficialErrorCode(int code) => OfficialErrorCodes.Contains(code);
 
+    public enum FeedbackErrorScope
+    {
+        Contribution,
+        Deposit,
+        Employee,
+        Money,
+        Report,
+        Informational
+    }
+
+    private static readonly HashSet<int> ContributionLevelErrorCodes =
+    [
+        6, 7, 16, 17, 20, 21, 23, 53, 59, 63, 64, 71, 72, 74, 75, 81, 82, 99, 104, 105, 106, 107, 108, 113, 114, 115
+    ];
+
+    private static readonly HashSet<int> EmployeeLevelErrorCodes =
+    [
+        4, 11, 33, 34, 47, 48, 49, 78, 80, 86
+    ];
+
+    private static readonly HashSet<int> MoneyLevelErrorCodes =
+    [
+        13, 29, 30, 45, 51, 56, 66, 69, 70, 79, 83, 84, 85, 87, 88, 89, 90, 92, 93, 94, 95, 96, 97
+    ];
+
+    private static readonly HashSet<int> ReportLevelErrorCodes =
+    [
+        18, 19, 27, 28, 32, 43, 44, 50, 62, 98, 100, 101
+    ];
+
+    public static FeedbackErrorScope ErrorScope(int? code)
+    {
+        if (code is null or 1 or 31) return FeedbackErrorScope.Informational;
+        if (ContributionLevelErrorCodes.Contains(code.Value)) return FeedbackErrorScope.Contribution;
+        if (EmployeeLevelErrorCodes.Contains(code.Value)) return FeedbackErrorScope.Employee;
+        if (MoneyLevelErrorCodes.Contains(code.Value)) return FeedbackErrorScope.Money;
+        if (ReportLevelErrorCodes.Contains(code.Value)) return FeedbackErrorScope.Report;
+        return FeedbackErrorScope.Deposit;
+    }
+
     public static string Description(int? code) => code switch
     {
         1 => "אין שגיאה",
