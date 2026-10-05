@@ -65,17 +65,17 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
     }
 
     [Fact]
-    public void Stress_scenario_covers_every_official_failure_code_once_before_repeating()
+    public void Stress_scenario_distributes_every_official_failure_code_across_available_contributions()
     {
-        var failureCount = EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.Count;
-        var sequence = SimulatedClearinghouseResponder.BuildStressErrorSequence(failureCount + 7);
+        var contributionIds = Enumerable.Range(0, 43).Select(_ => Guid.NewGuid()).ToArray();
+        var outcomes = SimulatedClearinghouseResponder.BuildStressContributionOutcomes(contributionIds);
 
+        Assert.Equal(EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.Count, outcomes.Count);
         Assert.Equal(
-            EmployerInterfaceLineFeedbackParser.OfficialFailureCodes,
-            sequence.Take(failureCount).ToArray());
-        Assert.Equal(
-            EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.Take(7),
-            sequence.Skip(failureCount).Take(7));
+            EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.OrderBy(x => x),
+            outcomes.Select(x => x.ErrorCode).OrderBy(x => x));
+        Assert.All(outcomes, outcome => Assert.Contains(outcome.ContributionId, contributionIds));
+        Assert.True(outcomes.GroupBy(x => x.ContributionId).Max(group => group.Count()) >= 2);
     }
 
     [Theory]
