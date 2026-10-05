@@ -378,11 +378,11 @@ public sealed class SimulatedClearinghouseResponder(
             [83] = "proactive-refund-stage", [84] = "proactive-refund-stage", [85] = "proactive-refund-stage",
             [94] = "cancel-blocker", [95] = "cancel-blocker", [96] = "cancel-blocker",
             [100] = "correction-pairing", [101] = "correction-pairing",
-            [102] = "collective-employer-affidavit", [103] = "collective-employer-affidavit",
+            [102] = "affidavit-state", [103] = "affidavit-state",
             [105] = "employer-benefits-balance", [106] = "employer-benefits-balance",
             [107] = "employee-benefits-balance", [108] = "employee-benefits-balance",
-            [109] = "employee-affidavit", [110] = "employee-affidavit",
-            [111] = "employer-affidavit", [112] = "employer-affidavit",
+            [109] = "affidavit-state", [110] = "affidavit-state",
+            [111] = "affidavit-state", [112] = "affidavit-state",
             [113] = "employer-severance-balance", [114] = "employer-severance-balance"
         };
 
@@ -419,7 +419,8 @@ public sealed class SimulatedClearinghouseResponder(
         {
             var group = StressExclusiveGroup(code);
             if (group is null) return true;
-            var key = (group, target);
+            var effectiveTarget = group == "affidavit-state" ? "report" : target;
+            var key = (group, effectiveTarget);
             if (!exclusiveAssignments.TryGetValue(key, out var existing))
             {
                 exclusiveAssignments[key] = code;
