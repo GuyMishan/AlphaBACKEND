@@ -111,6 +111,20 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
     }
 
     [Theory]
+    [InlineData(new int[] { }, "success")]
+    [InlineData(new int[] { 31 }, "success")]
+    [InlineData(new int[] { 53 }, "partial")]
+    [InlineData(new int[] { 15, 53 }, "partial")]
+    [InlineData(new int[] { 45 }, "error")]
+    [InlineData(new int[] { 53, 45 }, "error")]
+    public void Stress_transfer_mode_is_not_fully_allocated_when_actionable_errors_exist(
+        int[] codes,
+        string expected)
+    {
+        Assert.Equal(expected, SimulatedClearinghouseResponder.ResolveStressTransferMode(codes));
+    }
+
+    [Theory]
     [InlineData("success", "success", null)]
     [InlineData("partial", "partial", null)]
     [InlineData("error", "error", null)]
