@@ -118,6 +118,30 @@ public sealed class EmployerInterfaceLineFeedbackParserTests
     }
 
     [Theory]
+    [InlineData(15, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(53, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
+    [InlineData(4, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee)]
+    [InlineData(45, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)]
+    [InlineData(28, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)]
+    [InlineData(31, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Informational)]
+    public void Error_scope_classifies_feedback_by_business_level(
+        int code,
+        EmployerInterfaceLineFeedbackParser.FeedbackErrorScope expected)
+    {
+        Assert.Equal(expected, EmployerInterfaceLineFeedbackParser.ErrorScope(code));
+    }
+
+    [Fact]
+    public void Every_official_failure_code_has_a_non_informational_scope()
+    {
+        Assert.All(
+            EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.Where(code => code != 31),
+            code => Assert.NotEqual(
+                EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Informational,
+                EmployerInterfaceLineFeedbackParser.ErrorScope(code)));
+    }
+
+    [Theory]
     [InlineData(31, "התנועה המקורית תקינה ומותאמת (עבור דיווח מתקן)")]
     [InlineData(53, "אין התאמה בין אחוז הפרשה, סכום הפרשה ושכר")]
     [InlineData(116, "הפקדה לקרן שאינה תואמת את מנגנון החלוקה בהתאם לספרת הביקורת בת.ז. של העמית")]
