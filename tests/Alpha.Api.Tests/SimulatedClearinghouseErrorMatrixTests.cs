@@ -64,11 +64,26 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
         Assert.Equal("EMPFED", scenario.FeedbackInterface);
     }
 
+    [Fact]
+    public void Stress_scenario_covers_every_official_failure_code_once_before_repeating()
+    {
+        var failureCount = EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.Count;
+        var sequence = SimulatedClearinghouseResponder.BuildStressErrorSequence(failureCount + 7);
+
+        Assert.Equal(
+            EmployerInterfaceLineFeedbackParser.OfficialFailureCodes,
+            sequence.Take(failureCount).ToArray());
+        Assert.Equal(
+            EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.Take(7),
+            sequence.Skip(failureCount).Take(7));
+    }
+
     [Theory]
     [InlineData("success", "success", null)]
     [InlineData("partial", "partial", null)]
     [InlineData("error", "error", null)]
     [InlineData("in-transit", "in-transit", null)]
+    [InlineData("stress", "stress", null)]
     [InlineData("error:53", "error", 53)]
     [InlineData("partial:116", "partial", 116)]
     [InlineData("error:999", "success", null)]
