@@ -151,35 +151,121 @@ public static class EmployerInterfaceLineFeedbackParser
         Informational
     }
 
-    private static readonly HashSet<int> ContributionLevelErrorCodes =
-    [
-        6, 7, 16, 17, 20, 21, 23, 53, 59, 63, 64, 71, 72, 74, 75, 81, 82, 99, 104, 105, 106, 107, 108, 113, 114, 115
-    ];
-
-    private static readonly HashSet<int> EmployeeLevelErrorCodes =
-    [
-        4, 11, 33, 34, 47, 48, 49, 78, 80, 86
-    ];
-
-    private static readonly HashSet<int> MoneyLevelErrorCodes =
-    [
-        13, 29, 30, 45, 51, 56, 66, 69, 70, 79, 83, 84, 85, 87, 88, 89, 90, 92, 93, 94, 95, 96, 97
-    ];
-
-    private static readonly HashSet<int> ReportLevelErrorCodes =
-    [
-        18, 19, 27, 28, 32, 43, 44, 50, 62, 98, 100, 101
-    ];
+    private static readonly IReadOnlyDictionary<int, FeedbackErrorScope> ErrorScopes =
+        new Dictionary<int, FeedbackErrorScope>
+        {
+            [1] = FeedbackErrorScope.Informational,
+            [2] = FeedbackErrorScope.Deposit,
+            [3] = FeedbackErrorScope.Deposit,
+            [4] = FeedbackErrorScope.Employee,
+            [5] = FeedbackErrorScope.Deposit,
+            [6] = FeedbackErrorScope.Contribution,
+            [7] = FeedbackErrorScope.Contribution,
+            [11] = FeedbackErrorScope.Employee,
+            [13] = FeedbackErrorScope.Money,
+            [15] = FeedbackErrorScope.Deposit,
+            [16] = FeedbackErrorScope.Contribution,
+            [17] = FeedbackErrorScope.Contribution,
+            [18] = FeedbackErrorScope.Report,
+            [19] = FeedbackErrorScope.Employee,
+            [20] = FeedbackErrorScope.Contribution,
+            [21] = FeedbackErrorScope.Contribution,
+            [23] = FeedbackErrorScope.Contribution,
+            [24] = FeedbackErrorScope.Deposit,
+            [25] = FeedbackErrorScope.Deposit,
+            [26] = FeedbackErrorScope.Deposit,
+            [27] = FeedbackErrorScope.Report,
+            [28] = FeedbackErrorScope.Deposit,
+            [29] = FeedbackErrorScope.Money,
+            [30] = FeedbackErrorScope.Money,
+            [31] = FeedbackErrorScope.Informational,
+            [32] = FeedbackErrorScope.Deposit,
+            [33] = FeedbackErrorScope.Employee,
+            [34] = FeedbackErrorScope.Employee,
+            [39] = FeedbackErrorScope.Deposit,
+            [42] = FeedbackErrorScope.Deposit,
+            [43] = FeedbackErrorScope.Deposit,
+            [44] = FeedbackErrorScope.Employee,
+            [45] = FeedbackErrorScope.Money,
+            [46] = FeedbackErrorScope.Deposit,
+            [47] = FeedbackErrorScope.Employee,
+            [48] = FeedbackErrorScope.Employee,
+            [49] = FeedbackErrorScope.Employee,
+            [50] = FeedbackErrorScope.Money,
+            [51] = FeedbackErrorScope.Money,
+            [52] = FeedbackErrorScope.Deposit,
+            [53] = FeedbackErrorScope.Contribution,
+            [54] = FeedbackErrorScope.Deposit,
+            [55] = FeedbackErrorScope.Deposit,
+            [56] = FeedbackErrorScope.Money,
+            [57] = FeedbackErrorScope.Deposit,
+            [58] = FeedbackErrorScope.Deposit,
+            [59] = FeedbackErrorScope.Contribution,
+            [61] = FeedbackErrorScope.Deposit,
+            [62] = FeedbackErrorScope.Employee,
+            [63] = FeedbackErrorScope.Contribution,
+            [64] = FeedbackErrorScope.Contribution,
+            [66] = FeedbackErrorScope.Money,
+            [67] = FeedbackErrorScope.Deposit,
+            [68] = FeedbackErrorScope.Deposit,
+            [69] = FeedbackErrorScope.Money,
+            [70] = FeedbackErrorScope.Money,
+            [71] = FeedbackErrorScope.Deposit,
+            [72] = FeedbackErrorScope.Deposit,
+            [73] = FeedbackErrorScope.Deposit,
+            [74] = FeedbackErrorScope.Contribution,
+            [75] = FeedbackErrorScope.Deposit,
+            [77] = FeedbackErrorScope.Deposit,
+            [78] = FeedbackErrorScope.Employee,
+            [79] = FeedbackErrorScope.Money,
+            [80] = FeedbackErrorScope.Employee,
+            [81] = FeedbackErrorScope.Contribution,
+            [82] = FeedbackErrorScope.Contribution,
+            [83] = FeedbackErrorScope.Money,
+            [84] = FeedbackErrorScope.Money,
+            [85] = FeedbackErrorScope.Money,
+            [86] = FeedbackErrorScope.Employee,
+            [87] = FeedbackErrorScope.Money,
+            [88] = FeedbackErrorScope.Money,
+            [89] = FeedbackErrorScope.Money,
+            [90] = FeedbackErrorScope.Money,
+            [91] = FeedbackErrorScope.Deposit,
+            [92] = FeedbackErrorScope.Money,
+            [93] = FeedbackErrorScope.Money,
+            [94] = FeedbackErrorScope.Money,
+            [95] = FeedbackErrorScope.Money,
+            [96] = FeedbackErrorScope.Money,
+            [97] = FeedbackErrorScope.Money,
+            [98] = FeedbackErrorScope.Deposit,
+            [99] = FeedbackErrorScope.Money,
+            [100] = FeedbackErrorScope.Report,
+            [101] = FeedbackErrorScope.Report,
+            [102] = FeedbackErrorScope.Report,
+            [103] = FeedbackErrorScope.Report,
+            [104] = FeedbackErrorScope.Contribution,
+            [105] = FeedbackErrorScope.Contribution,
+            [106] = FeedbackErrorScope.Contribution,
+            [107] = FeedbackErrorScope.Contribution,
+            [108] = FeedbackErrorScope.Contribution,
+            [109] = FeedbackErrorScope.Employee,
+            [110] = FeedbackErrorScope.Employee,
+            [111] = FeedbackErrorScope.Report,
+            [112] = FeedbackErrorScope.Report,
+            [113] = FeedbackErrorScope.Contribution,
+            [114] = FeedbackErrorScope.Contribution,
+            [115] = FeedbackErrorScope.Deposit,
+            [116] = FeedbackErrorScope.Deposit
+        };
 
     public static FeedbackErrorScope ErrorScope(int? code)
     {
-        if (code is null or 1 or 31) return FeedbackErrorScope.Informational;
-        if (ContributionLevelErrorCodes.Contains(code.Value)) return FeedbackErrorScope.Contribution;
-        if (EmployeeLevelErrorCodes.Contains(code.Value)) return FeedbackErrorScope.Employee;
-        if (MoneyLevelErrorCodes.Contains(code.Value)) return FeedbackErrorScope.Money;
-        if (ReportLevelErrorCodes.Contains(code.Value)) return FeedbackErrorScope.Report;
-        return FeedbackErrorScope.Deposit;
+        if (!code.HasValue) return FeedbackErrorScope.Informational;
+        return ErrorScopes.TryGetValue(code.Value, out var scope)
+            ? scope
+            : FeedbackErrorScope.Report;
     }
+
+    public static bool HasExplicitErrorScope(int code) => ErrorScopes.ContainsKey(code);
 
     public static string Description(int? code) => code switch
     {
