@@ -368,6 +368,27 @@ public sealed class SimulatedClearinghouseResponder(
             .ToArray();
     }
 
+    private static readonly IReadOnlyDictionary<int, string> StressExclusiveGroupByCode =
+        new Dictionary<int, string>
+        {
+            [5] = "policy-inactive-renewability", [77] = "policy-inactive-renewability",
+            [6] = "employer-insurance-balance", [7] = "employer-insurance-balance",
+            [69] = "refund-affidavit", [70] = "refund-affidavit",
+            [81] = "employee-insurance-balance", [82] = "employee-insurance-balance",
+            [83] = "proactive-refund-stage", [84] = "proactive-refund-stage", [85] = "proactive-refund-stage",
+            [94] = "cancel-blocker", [95] = "cancel-blocker", [96] = "cancel-blocker",
+            [100] = "correction-pairing", [101] = "correction-pairing",
+            [102] = "collective-employer-affidavit", [103] = "collective-employer-affidavit",
+            [105] = "employer-benefits-balance", [106] = "employer-benefits-balance",
+            [107] = "employee-benefits-balance", [108] = "employee-benefits-balance",
+            [109] = "employee-affidavit", [110] = "employee-affidavit",
+            [111] = "employer-affidavit", [112] = "employer-affidavit",
+            [113] = "employer-severance-balance", [114] = "employer-severance-balance"
+        };
+
+    public static string? StressExclusiveGroup(int errorCode) =>
+        StressExclusiveGroupByCode.GetValueOrDefault(errorCode);
+
     public static IReadOnlyList<SimulatedContributionOutcome> BuildStressContributionOutcomes(
         IReadOnlyList<SimulatedStressContribution> rows)
     {
@@ -385,12 +406,26 @@ public sealed class SimulatedClearinghouseResponder(
         var productIndex = 0;
         var employeeIndex = 0;
         var sequenceByContribution = new Dictionary<Guid, int>();
+        var exclusiveAssignments = new Dictionary<(string Group, string Target), int>();
 
         void AddOutcome(Guid contributionId, int code)
         {
             sequenceByContribution.TryGetValue(contributionId, out var sequence);
             outcomes.Add(new SimulatedContributionOutcome(contributionId, code, sequence));
             sequenceByContribution[contributionId] = sequence + 1;
+        }
+
+        bool CanAssign(int code, string target)
+        {
+            var group = StressExclusiveGroup(code);
+            if (group is null) return true;
+            var key = (group, target);
+            if (!exclusiveAssignments.TryGetValue(key, out var existing))
+            {
+                exclusiveAssignments[key] = code;
+                return true;
+            }
+            return existing == code;
         }
 
         foreach (var code in EmployerInterfaceLineFeedbackParser.OfficialFailureCodes)
@@ -401,26 +436,47 @@ public sealed class SimulatedClearinghouseResponder(
                 case EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit:
                 case EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money:
                 {
-                    var target = products[productIndex % products.Length];
-                    productIndex++;
-                    foreach (var row in target) AddOutcome(row.ContributionId, code);
+                    for (var attempt = 0; attempt < products.Length; attempt++)
+                    {
+                        var target = products[productIndex % products.Length];
+                        productIndex++;
+                        var targetKey = $"product:{target[0].ProductId:D}";
+                        if (!CanAssign(code, targetKey)) continue;
+                        foreach (var row in target) AddOutcome(row.ContributionId, code);
+                        break;
+                    }
                     break;
                 }
                 case EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee:
                 {
-                    var target = employees[employeeIndex % employees.Length];
-                    employeeIndex++;
-                    foreach (var row in target) AddOutcome(row.ContributionId, code);
+                    for (var attempt = 0; attempt < employees.Length; attempt++)
+                    {
+                        var target = employees[employeeIndex % employees.Length];
+                        employeeIndex++;
+                        var targetKey = $"employee:{target[0].EmployeeId:D}";
+                        if (!CanAssign(code, targetKey)) continue;
+                        foreach (var row in target) AddOutcome(row.ContributionId, code);
+                        break;
+                    }
                     break;
                 }
                 case EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report:
+                {
+                    if (!CanAssign(code, "report")) break;
                     foreach (var row in orderedRows) AddOutcome(row.ContributionId, code);
                     break;
+                }
                 default:
                 {
-                    var target = orderedRows[contributionIndex % orderedRows.Length];
-                    contributionIndex++;
-                    AddOutcome(target.ContributionId, code);
+                    for (var attempt = 0; attempt < orderedRows.Length; attempt++)
+                    {
+                        var target = orderedRows[contributionIndex % orderedRows.Length];
+                        contributionIndex++;
+                        var targetKey = $"contribution:{target.ContributionId:D}";
+                        if (!CanAssign(code, targetKey)) continue;
+                        AddOutcome(target.ContributionId, code);
+                        break;
+                    }
                     break;
                 }
             }
