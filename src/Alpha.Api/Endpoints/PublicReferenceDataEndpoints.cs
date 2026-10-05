@@ -102,7 +102,7 @@ public static class PublicReferenceDataEndpoints
                 ORDER BY city_name
                 LIMIT {limit}
                 """;
-            if (hasSearch) AddParameter(command, "search", search!.Trim());
+            if (hasSearch) AddParameter(command, "search", normalizedSearch!);
             if (command.Connection!.State != System.Data.ConnectionState.Open)
                 await command.Connection.OpenAsync(ct);
             await using var reader = await command.ExecuteReaderAsync(ct);
@@ -247,11 +247,22 @@ public static class PublicReferenceDataEndpoints
         };
     }
 
+    public static string? NormalizePensionProductSearch(string? search)
+    {
+        if (string.IsNullOrWhiteSpace(search)) return null;
+        var trimmed = search.Trim();
+        var parts = trimmed.Split('·', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2 && parts[0].All(char.IsDigit))
+            return parts[0];
+        return trimmed;
+    }
+
     private static async Task<IResult> QueryPensionProductsAsync(string normalizedType, string? search, int? take,
         AlphaDbContext db, CancellationToken ct)
     {
         var limit = Math.Clamp(take ?? 30, 1, 100);
-        var hasSearch = !string.IsNullOrWhiteSpace(search);
+        var normalizedSearch = NormalizePensionProductSearch(search);
+        var hasSearch = !string.IsNullOrWhiteSpace(normalizedSearch);
         var result = new List<object>();
 
         await using var command = db.Database.GetDbConnection().CreateCommand();
