@@ -295,11 +295,10 @@ public sealed class SimulatedClearinghouseResponder(
     {
         if (contributionIds.Count == 0) return [];
 
-        return EmployerInterfaceLineFeedbackParser.OfficialFailureCodes
-            .Select((code, index) => new SimulatedContributionOutcome(
-                contributionIds[index % contributionIds.Count],
-                code,
-                index / contributionIds.Count))
+        var codes = EmployerInterfaceLineFeedbackParser.OfficialFailureCodes;
+        var count = Math.Min(contributionIds.Count, codes.Count);
+        return Enumerable.Range(0, count)
+            .Select(index => new SimulatedContributionOutcome(contributionIds[index], codes[index]))
             .ToArray();
     }
 
