@@ -149,3 +149,5 @@ These sources outrank assumptions, old examples and UI behavior.
 - Affidavit-related stress codes 102/103/109/110/111/112 are treated as one report-wide mutually exclusive scenario family. A single stress report emits at most one of these states so missing/invalid employee, employer, or collective-agreement affidavits are tested in separate realistic reports instead of being stacked together.
 
 - `/api/reference-data/pension-editor-options` returns the static option sets needed by the pension-products editor (product/status/allocation options, receipt/section-14 options, and salary layers) in one response to avoid one database query per select instance.
+
+- `/api/reference-data/employer-interface-006/options-bundle?categories=...` returns multiple Employer Interface option categories in one response (including all stored scopes). UI parents use it to hold static select options in component-local state and avoid one API/DB request per select instance.
