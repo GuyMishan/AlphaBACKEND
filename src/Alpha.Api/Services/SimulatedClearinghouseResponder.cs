@@ -16,7 +16,8 @@ public sealed record SimulatedTransferOutcome(
 
 public sealed record SimulatedContributionOutcome(
     Guid ContributionId,
-    int ErrorCode);
+    int ErrorCode,
+    int Sequence = 0);
 
 public sealed record SimulatedVaultFeedbackInstruction(
     Guid ReportId,
@@ -289,12 +290,16 @@ public sealed class SimulatedClearinghouseResponder(
             .ToArray();
     }
 
-    public static IReadOnlyList<int> BuildStressErrorSequence(int contributionCount)
+    public static IReadOnlyList<SimulatedContributionOutcome> BuildStressContributionOutcomes(
+        IReadOnlyList<Guid> contributionIds)
     {
-        if (contributionCount <= 0) return [];
-        var codes = EmployerInterfaceLineFeedbackParser.OfficialFailureCodes;
-        return Enumerable.Range(0, contributionCount)
-            .Select(index => codes[index % codes.Count])
+        if (contributionIds.Count == 0) return [];
+
+        return EmployerInterfaceLineFeedbackParser.OfficialFailureCodes
+            .Select((code, index) => new SimulatedContributionOutcome(
+                contributionIds[index % contributionIds.Count],
+                code,
+                index / contributionIds.Count))
             .ToArray();
     }
 
@@ -311,19 +316,16 @@ public sealed class SimulatedClearinghouseResponder(
             .Where(x => employeeIds.Contains(x.ReportEmployeeId))
             .Select(x => x.Id)
             .ToArrayAsync(ct);
-        var contributions = await db.ManualContributions.AsNoTracking()
+        var contributionIds = (await db.ManualContributions.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId))
             .OrderBy(x => x.ReportProductId)
             .ThenBy(x => x.Id)
-            .ToListAsync(ct);
-        var effective = contributions
+            .ToListAsync(ct))
             .Where(ReportFeedbackStatusResolver.IsEffectiveContribution)
+            .Select(x => x.Id)
             .ToArray();
-        var codes = BuildStressErrorSequence(effective.Length);
 
-        return effective
-            .Select((contribution, index) => new SimulatedContributionOutcome(contribution.Id, codes[index]))
-            .ToArray();
+        return BuildStressContributionOutcomes(contributionIds);
     }
 
     private static async Task WriteAtomicallyAsync(string targetPath, byte[] content, CancellationToken ct)
@@ -484,10 +486,12 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
                 x => x.TransferIdentifier.Trim().ToUpperInvariant(),
                 x => x,
                 StringComparer.OrdinalIgnoreCase);
-        var outcomeByContribution = (instruction.ContributionOutcomes ?? [])
+        var outcomesByContribution = (instruction.ContributionOutcomes ?? [])
             .Where(x => EmployerInterfaceLineFeedbackParser.IsOfficialErrorCode(x.ErrorCode) && x.ErrorCode != 1)
             .GroupBy(x => x.ContributionId)
-            .ToDictionary(x => x.Key, x => x.First().ErrorCode);
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(x => x.Sequence).ThenBy(x => x.ErrorCode).ToArray());
 
         foreach (var group in products.GroupBy(product =>
         {
@@ -553,47 +557,52 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
                 ? SimulatedClearinghouseResponder.ParseScenario(
                     contributionOutcome.ErrorCode.HasValue ? $"{contributionOutcome.Mode}:{contributionOutcome.ErrorCode.Value}" : contributionOutcome.Mode)
                 : parsedScenario;
-            var errorCode = outcomeByContribution.TryGetValue(contribution.Id, out var contributionErrorCode)
-                ? contributionErrorCode
-                : contributionScenario.Mode switch
-                {
-                    "error" => contributionScenario.ErrorCode ?? selectedErrorCode ?? 53,
-                    "partial" => contributionScenario.ErrorCode ?? selectedErrorCode ?? 53,
-                    _ => 1
-                };
-            var intakeStatus = errorCode == 1 ? 1 : 2;
-            var recordId = string.IsNullOrWhiteSpace(contribution.InterfaceRecordIdentifier)
-                ? contribution.Id.ToString("D").ToUpperInvariant()
-                : contribution.InterfaceRecordIdentifier;
+            var fallbackErrorCode = contributionScenario.Mode switch
+            {
+                "error" => contributionScenario.ErrorCode ?? selectedErrorCode ?? 53,
+                "partial" => contributionScenario.ErrorCode ?? selectedErrorCode ?? 53,
+                _ => 1
+            };
+            var contributionOutcomes = outcomesByContribution.TryGetValue(contribution.Id, out var stressOutcomes)
+                ? stressOutcomes
+                : [new SimulatedContributionOutcome(contribution.Id, fallbackErrorCode, 0)];
 
-            // Keep simulated feedback internally consistent with the selected official
-            // error. Code 53 specifically means the returned salary/rate/amount relationship
-            // does not reconcile, so returning the exact original values would make the UI
-            // show an error while every compared number still looks identical.
-            var simulatedContributionAmount = errorCode == 53
-                ? contribution.Amount + 1m
-                : contribution.Amount;
+            foreach (var outcome in contributionOutcomes)
+            {
+                var errorCode = outcome.ErrorCode;
+                var intakeStatus = errorCode == 1 ? 1 : 2;
+                var recordId = string.IsNullOrWhiteSpace(contribution.InterfaceRecordIdentifier)
+                    ? contribution.Id.ToString("D").ToUpperInvariant()
+                    : contribution.InterfaceRecordIdentifier;
 
-            db.EmployerInterfaceContributionFeedback.Add(new EmployerInterfaceContributionFeedback(
-                feedback.Id,
-                instruction.ReportId,
-                contribution.ReportProductId,
-                contribution.Id,
-                recordId,
-                0,
-                intakeStatus,
-                errorCode,
-                EmployerInterfaceLineFeedbackParser.Description(errorCode),
-                errorCode == 1 ? null : contribution.Amount,
-                errorCode == 1 ? null : DateOnly.FromDateTime(DateTime.UtcNow),
-                null,
-                product.Salary,
-                product.SalaryMonth,
-                product.PolicyNumber,
-                contribution.Percentage,
-                simulatedContributionAmount,
-                sourceFileName,
-                DateTimeOffset.UtcNow));
+                // Only error 53 is a direct salary/rate/amount reconciliation error.
+                // Make that mismatch visible while keeping other catalog errors numerically
+                // unchanged so the UI can distinguish data gaps from non-numeric manufacturer errors.
+                var simulatedContributionAmount = errorCode == 53
+                    ? contribution.Amount + 1m
+                    : contribution.Amount;
+
+                db.EmployerInterfaceContributionFeedback.Add(new EmployerInterfaceContributionFeedback(
+                    feedback.Id,
+                    instruction.ReportId,
+                    contribution.ReportProductId,
+                    contribution.Id,
+                    recordId,
+                    outcome.Sequence,
+                    intakeStatus,
+                    errorCode,
+                    EmployerInterfaceLineFeedbackParser.Description(errorCode),
+                    errorCode == 1 ? null : contribution.Amount,
+                    errorCode == 1 ? null : DateOnly.FromDateTime(DateTime.UtcNow),
+                    null,
+                    product.Salary,
+                    product.SalaryMonth,
+                    product.PolicyNumber,
+                    contribution.Percentage,
+                    simulatedContributionAmount,
+                    sourceFileName,
+                    DateTimeOffset.UtcNow));
+            }
         }
 
         await db.SaveChangesAsync(ct);
