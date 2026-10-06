@@ -356,7 +356,7 @@ public static class ManualReportEndpoints
             productCount = productCounts.GetValueOrDefault(x.Id),
             validationStatus = productCounts.GetValueOrDefault(x.Id) > 0 && x.MonthlySalary > 0 ? "ready" : "missing-products"
         });
-        return Results.Ok(new { items, hasMore, contributionLimits });
+        return Results.Ok(new { items, hasMore });
     }
 
     private static async Task<IResult> GetDepositsAsync(Guid organizationId, Guid employerId, Guid reportId,
