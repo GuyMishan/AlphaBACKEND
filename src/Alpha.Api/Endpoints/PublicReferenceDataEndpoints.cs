@@ -323,6 +323,7 @@ public static class PublicReferenceDataEndpoints
             await reader.NextResultAsync(ct);
             while (await reader.ReadAsync(ct))
                 salaryLayers.Add(new { code = reader.GetInt32(0), name = reader.GetString(1) });
+            await reader.DisposeAsync();
 
             var contributionLimits = await db.ContributionPercentageLimits.AsNoTracking()
                 .OrderBy(x => x.Year).ThenBy(x => x.ProductType).ThenBy(x => x.Party).ThenBy(x => x.Component)
