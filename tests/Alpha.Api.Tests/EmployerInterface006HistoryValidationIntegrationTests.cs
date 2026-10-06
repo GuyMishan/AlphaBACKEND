@@ -185,6 +185,40 @@ public sealed class EmployerInterface006HistoryValidationIntegrationTests
     }
 
     [Fact]
+    public async Task Correction_workspace_is_not_treated_as_historical_duplicate_of_its_source()
+    {
+        await WithDatabase(async (db, ct) =>
+        {
+            var graph = await CreateBaseGraphAsync(db, ct);
+            var source = Report(graph.Organization.Id, graph.Employer.Id);
+            var sourceEmployee = ReportEmployee(source.Id, graph, "123456782");
+            var sourceProduct = Product(sourceEmployee.Id, "P-CORR");
+            var sourceContribution = Contribution(sourceProduct.Id);
+            source.MarkReadyForValidation();
+            source.MarkValidated();
+            source.MarkTransmissionStarted();
+            source.MarkSent();
+
+            var workspace = new ManualReport(graph.Organization.Id, graph.Employer.Id,
+                new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 9), ManualReportKind.Differences, source.Id);
+            workspace.MarkCorrectionWorkspace(source.Id, 2);
+            var workspaceEmployee = ReportEmployee(workspace.Id, graph, "123456782");
+            var workspaceProduct = Product(workspaceEmployee.Id, "P-CORR");
+            workspaceProduct.SetSourceVersion(sourceProduct.Id);
+            var workspaceContribution = Contribution(workspaceProduct.Id);
+
+            db.AddRange(source, sourceEmployee, sourceProduct, sourceContribution,
+                workspace, workspaceEmployee, workspaceProduct, workspaceContribution);
+            await db.SaveChangesAsync(ct);
+
+            var codes = await InvokeHistoryValidationAsync(workspace, [workspaceEmployee], [workspaceProduct],
+                [workspaceContribution], db, ct);
+            Assert.DoesNotContain("SUG_SHGIHA_28", codes);
+            Assert.DoesNotContain("SUG_SHGIHA_43", codes);
+        });
+    }
+
+    [Fact]
     public async Task Current_operation_2_without_matching_sent_negative_is_error_100()
     {
         await WithDatabase(async (db, ct) =>
