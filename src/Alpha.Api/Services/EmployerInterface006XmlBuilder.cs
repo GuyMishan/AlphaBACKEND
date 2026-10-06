@@ -757,9 +757,9 @@ public static class EmployerInterface006XmlBuilder
 
     private static string MapContributionCode(ManualContribution c) => (c.Party, c.Component) switch
     {
-        // Alpha's component numbers are party-relative in the editor:
-        // employee component 1 = תג 45 / regular employee benefits (official code 2),
-        // employee component 2 = תג 47 (official code 4).
+        // Alpha uses the shared ContributionComponent enum for both parties.
+        // Employee Benefits (component 2) maps to regular employee benefits (official code 2).
+        // Employee Severance (component 1) is the internal slot used for תגמולים 47 (official code 4).
         (ContributionParty.Employer, ContributionComponent.Severance) => "1",
         (ContributionParty.Employee, ContributionComponent.Benefits) => "2",
         (ContributionParty.Employer, ContributionComponent.Benefits) => "3",

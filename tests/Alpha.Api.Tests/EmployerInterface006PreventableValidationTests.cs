@@ -15,6 +15,33 @@ public sealed class EmployerInterface006PreventableValidationTests
     ];
 
     [Fact]
+    public void Rejects_duplicate_regular_employee_benefits_rows()
+    {
+        var product = Product(1000m,
+            [new(ContributionComponent.Benefits, 60m, 6m, 0m)],
+            [
+                new(ContributionComponent.Benefits, 30m, 3m, 0m),
+                new(ContributionComponent.Benefits, 30m, 3m, 0m)
+            ]);
+        var errors = ApiInputValidation.Products([product], Limits, false);
+        Assert.Contains(errors, x => x.Contains("כל רכיב הפקדה יכול להופיע פעם אחת"));
+    }
+
+    [Fact]
+    public void Allows_multiple_employee_code_4_rows_without_confusing_them_with_regular_benefits()
+    {
+        var product = Product(1000m,
+            [new(ContributionComponent.Benefits, 60m, 6m, 0m)],
+            [
+                new(ContributionComponent.Benefits, 60m, 6m, 0m),
+                new(ContributionComponent.Severance, 10m, 1m, 0m),
+                new(ContributionComponent.Severance, 20m, 2m, 0m)
+            ]);
+        var errors = ApiInputValidation.Products([product], Limits, false);
+        Assert.DoesNotContain(errors, x => x.Contains("כל רכיב הפקדה יכול להופיע פעם אחת"));
+    }
+
+    [Fact]
     public void Rejects_employee_benefits_without_employer_benefits_error_16()
     {
         var errors = Validate(

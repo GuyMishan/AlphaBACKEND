@@ -176,9 +176,9 @@ public static class ApiInputValidation
         IReadOnlyCollection<ContributionPercentageLimit> limits, bool enforcePolicyPercentageLimits)
     {
         if (items.GroupBy(x => x.Component).Any(g => g.Count() > 1
-            && !(party == ContributionParty.Employee && g.Key == ContributionComponent.Benefits)))
+            && !(party == ContributionParty.Employee && g.Key == ContributionComponent.Severance)))
         {
-            errors.Add(prefix + "כל רכיב הפקדה יכול להופיע פעם אחת בלבד לכל צד, למעט תגמולים 47 (קוד 4).");
+            errors.Add(prefix + "כל רכיב הפקדה יכול להופיע פעם אחת בלבד לכל צד, למעט תגמולים 47 (SUG-HAFRASHA קוד 4).");
             return;
         }
 
