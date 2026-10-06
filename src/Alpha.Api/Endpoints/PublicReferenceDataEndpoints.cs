@@ -324,7 +324,19 @@ public static class PublicReferenceDataEndpoints
             while (await reader.ReadAsync(ct))
                 salaryLayers.Add(new { code = reader.GetInt32(0), name = reader.GetString(1) });
 
-            return Results.Ok(new { referenceOptions, interfaceOptions, salaryLayers });
+            var contributionLimits = await db.ContributionPercentageLimits.AsNoTracking()
+                .OrderBy(x => x.Year).ThenBy(x => x.ProductType).ThenBy(x => x.Party).ThenBy(x => x.Component)
+                .Select(x => new
+                {
+                    year = x.Year,
+                    productType = (int)x.ProductType,
+                    party = (int)x.Party,
+                    component = (int)x.Component,
+                    maxPercentage = x.MaxPercentage
+                })
+                .ToListAsync(ct);
+
+            return Results.Ok(new { referenceOptions, interfaceOptions, salaryLayers, contributionLimits });
         });
 
         group.MapGet("/pension-funds", async (int productType, string? search, int? take, AlphaDbContext db, CancellationToken ct) =>
