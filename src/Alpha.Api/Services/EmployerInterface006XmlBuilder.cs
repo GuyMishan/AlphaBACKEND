@@ -711,13 +711,15 @@ public static class EmployerInterface006XmlBuilder
         && product.FundClassification.Contains("ותיק", StringComparison.Ordinal);
 
     private static readonly HashSet<int> NoContributionEmployeeStatuses = [3, 4, 5, 8, 9, 10, 11, 12, 17];
+    internal static bool SuppressesCurrentContributions(int? employeeStatus) =>
+        employeeStatus.HasValue && NoContributionEmployeeStatuses.Contains(employeeStatus.Value);
 
     private static List<ManualContribution> EffectiveContributions(BuildContext c, ManualReportProduct product, bool negative)
     {
         var items = c.Contributions.Where(x => x.ReportProductId == product.Id).ToList();
         if (negative) return items;
         var metadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id);
-        if (metadata?.EmployeeStatus is int status && NoContributionEmployeeStatuses.Contains(status))
+        if (SuppressesCurrentContributions(metadata?.EmployeeStatus))
             return [];
         // The editor and legacy reports can contain unselected component placeholders.
         // A completely empty component is not an actual V006 contribution row. Retain

@@ -207,10 +207,10 @@ public static class ApiInputValidation
             if (item.Amount > salary)
                 errors.Add(prefix + $"סכום {ComponentName(item.Component)} של {side} לא יכול להיות גבוה מהשכר המדווח.");
 
-            if (item.Amount > 0 && item.Percentage > 0 && salary > 0)
+            if (salary > 0 && (item.Amount > 0 || item.Percentage > 0))
             {
                 var expected = Math.Round(salary * item.Percentage / 100m, 2, MidpointRounding.AwayFromZero);
-                if (Math.Abs(item.Amount - expected) > 0.02m)
+                if (item.Amount <= 0 || item.Percentage <= 0 || Math.Abs(item.Amount - expected) > 0.02m)
                     errors.Add(prefix + $"קוד שגיאה 53: סכום {ComponentName(item.Component)} של {side} ({item.Amount:0.00}) אינו תואם לשכר {salary:0.00} כפול {item.Percentage:0.####}% (צפוי {expected:0.00}).");
             }
         }

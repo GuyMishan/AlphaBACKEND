@@ -129,6 +129,9 @@ public static class ReportValidationEndpoints
 
         var contributions = await db.ManualContributions.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var productMetadataById = await db.EmployerInterfaceReportProductData.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .ToDictionaryAsync(x => x.ReportProductId, ct);
         var years = products.Select(x => x.SalaryMonth.Year).Distinct().ToArray();
         var limits = await db.ContributionPercentageLimits.AsNoTracking()
             .Where(x => years.Contains(x.Year)).ToListAsync(ct);
@@ -209,7 +212,15 @@ public static class ReportValidationEndpoints
                     issues.Add(new("FUND_REQUIRED", $"למוצר {ProductLabel(product)} של {employeeName} לא נבחרה קופה.", ValidationScope.Product, employee.Id, product.Id));
             }
 
-            var inputs = employeeProducts.Select(product => new ManualProductInput(
+            var inputs = employeeProducts.Select(product =>
+            {
+                productMetadataById.TryGetValue(product.Id, out var productMetadata);
+                var suppressContributions = report.ReportKind != ManualReportKind.Negative
+                    && EmployerInterface006XmlBuilder.SuppressesCurrentContributions(productMetadata?.EmployeeStatus);
+                var effectiveContributions = suppressContributions
+                    ? []
+                    : contributions.Where(x => x.ReportProductId == product.Id).ToArray();
+                return new ManualProductInput(
                 product.ProductType,
                 product.PolicyNumber,
                 product.SalaryMonth,
@@ -227,11 +238,12 @@ public static class ReportValidationEndpoints
                 product.SalaryAllocationType,
                 product.SalaryAllocationValue,
                 product.AllocationOrder,
-                contributions.Where(x => x.ReportProductId == product.Id && x.Party == ContributionParty.Employer)
+                effectiveContributions.Where(x => x.Party == ContributionParty.Employer)
                     .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray(),
-                contributions.Where(x => x.ReportProductId == product.Id && x.Party == ContributionParty.Employee)
+                effectiveContributions.Where(x => x.Party == ContributionParty.Employee)
                     .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray()
-            )).ToArray();
+            );
+            }).ToArray();
 
             foreach (var error in ApiInputValidation.Products(inputs, limits, enforcePolicyPercentageLimits: true))
                 issues.Add(new("PRODUCT_VALIDATION", $"{employeeName}: {error}", ValidationScope.Contribution, employee.Id));
@@ -244,8 +256,7 @@ public static class ReportValidationEndpoints
         {
             var payments = await db.ManualReportPayments.AsNoTracking()
                 .Where(x => productIds.Contains(x.ReportProductId)).ToDictionaryAsync(x => x.ReportProductId, ct);
-            var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
-                .Where(x => productIds.Contains(x.ReportProductId)).ToDictionaryAsync(x => x.ReportProductId, ct);
+            var metadata = productMetadataById;
             var employeeById = employees.ToDictionary(x => x.Id);
             foreach (var product in products)
             {
@@ -561,12 +572,20 @@ public static class ReportValidationEndpoints
         string fundExternalKey, string fundCode, ManualReportProduct current)
     {
         if (productType != current.ProductType) return false;
-        if (!string.IsNullOrWhiteSpace(policyNumber) && !string.IsNullOrWhiteSpace(current.PolicyNumber))
-            return string.Equals(policyNumber.Trim(), current.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase);
-        if (!string.IsNullOrWhiteSpace(fundExternalKey) && !string.IsNullOrWhiteSpace(current.FundExternalKey))
-            return string.Equals(fundExternalKey.Trim(), current.FundExternalKey.Trim(), StringComparison.OrdinalIgnoreCase);
-        return !string.IsNullOrWhiteSpace(fundCode) && !string.IsNullOrWhiteSpace(current.FundCode)
-            && string.Equals(fundCode.Trim(), current.FundCode.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        var leftPolicy = policyNumber?.Trim() ?? string.Empty;
+        var rightPolicy = current.PolicyNumber?.Trim() ?? string.Empty;
+        if (leftPolicy.Length > 0 || rightPolicy.Length > 0)
+        {
+            if (leftPolicy.Length == 0 || rightPolicy.Length == 0
+                || !string.Equals(leftPolicy, rightPolicy, StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        var leftFund = !string.IsNullOrWhiteSpace(fundExternalKey) ? fundExternalKey.Trim() : fundCode?.Trim() ?? string.Empty;
+        var rightFund = !string.IsNullOrWhiteSpace(current.FundExternalKey) ? current.FundExternalKey.Trim() : current.FundCode?.Trim() ?? string.Empty;
+        return leftFund.Length > 0 && rightFund.Length > 0
+            && string.Equals(leftFund, rightFund, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task AppendEmployerInterfacePreflightAsync(
