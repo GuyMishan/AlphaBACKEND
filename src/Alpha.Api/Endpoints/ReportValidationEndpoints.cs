@@ -331,6 +331,40 @@ public static class ReportValidationEndpoints
             }).ToListAsync(ct) : [];
 
         var employeeById = employees.ToDictionary(x => x.Id);
+
+        foreach (var productGroup in products.GroupBy(x => x.ReportEmployeeId))
+        {
+            var currentProducts = productGroup.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToArray();
+            for (var i = 0; i < currentProducts.Length; i++)
+            {
+                for (var j = i + 1; j < currentProducts.Length; j++)
+                {
+                    var left = currentProducts[i];
+                    var right = currentProducts[j];
+                    if (left.SalaryMonth.Year != right.SalaryMonth.Year
+                        || left.SalaryMonth.Month != right.SalaryMonth.Month
+                        || !SameProductIdentity(left.ProductType, left.PolicyNumber, left.FundExternalKey, left.FundCode, right))
+                        continue;
+
+                    var employee = employeeById[right.ReportEmployeeId];
+                    issues.Add(new("SUG_SHGIHA_28",
+                        $"קוד שגיאה 28: אותו חודש שכר {right.SalaryMonth:MM/yyyy} מופיע יותר מפעם אחת באותו דיווח עבור {employee.FirstName} {employee.LastName} והמוצר {ProductLabel(right)}.",
+                        ValidationScope.Product, employee.Id, right.Id));
+
+                    var leftRows = contributions.Where(x => x.ReportProductId == left.Id)
+                        .Select(x => (x.Party, x.Component, x.Amount, x.Percentage, x.ExemptPayments))
+                        .OrderBy(x => x.Party).ThenBy(x => x.Component).ThenBy(x => x.Amount).ToArray();
+                    var rightRows = contributions.Where(x => x.ReportProductId == right.Id)
+                        .Select(x => (x.Party, x.Component, x.Amount, x.Percentage, x.ExemptPayments))
+                        .OrderBy(x => x.Party).ThenBy(x => x.Component).ThenBy(x => x.Amount).ToArray();
+                    if (leftRows.SequenceEqual(rightRows))
+                        issues.Add(new("SUG_SHGIHA_43",
+                            $"קוד שגיאה 43: נמצאה תנועה זהה יותר מפעם אחת באותו דיווח עבור {employee.FirstName} {employee.LastName} והמוצר {ProductLabel(right)}.",
+                            ValidationScope.Contribution, employee.Id, right.Id));
+                }
+            }
+        }
+
         foreach (var product in products)
         {
             var employee = employeeById[product.ReportEmployeeId];
