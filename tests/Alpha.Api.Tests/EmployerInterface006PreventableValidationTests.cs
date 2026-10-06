@@ -69,6 +69,25 @@ public sealed class EmployerInterface006PreventableValidationTests
     }
 
     [Fact]
+    public void Rejects_future_salary_month_error_27()
+    {
+        var product = new ManualProductInput(PensionProductType.PensionFund, "P1", new DateOnly(2200, 1, 1), 1000m,
+            "1", "1", false, null, 3, "fund", "111", "Fund", "Company", "",
+            SalaryAllocationType.Fixed, 1000m, 0,
+            [new(ContributionComponent.Benefits, 60m, 6m, 0m)],
+            [new(ContributionComponent.Benefits, 60m, 6m, 0m)]);
+        var errors = ApiInputValidation.Products([product], Limits, false);
+        Assert.Contains(errors, x => x.Contains("קוד שגיאה 27"));
+    }
+
+    [Fact]
+    public void Rejects_invalid_israeli_id_checksum_error_62_rule()
+    {
+        Assert.False(ApiInputValidation.IsIsraeliId("123456789"));
+        Assert.True(ApiInputValidation.IsIsraeliId("123456782"));
+    }
+
+    [Fact]
     public void Rejects_salary_amount_rate_mismatch_error_53()
     {
         var errors = Validate(
