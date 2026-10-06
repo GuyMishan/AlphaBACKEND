@@ -605,6 +605,9 @@ public static class ManualReportEndpoints
             .OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToListAsync(ct);
         var productIds = products.Select(x => x.Id).ToArray();
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var productMetadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .ToDictionaryAsync(x => x.ReportProductId, ct);
         return Results.Ok(new
         {
             employee.Id, employee.EmploymentId, employee.PersonId, NationalId = protector.Unprotect(employee.NationalId, $"report-employee-national-id:{employee.Id}"), employee.FirstName, employee.LastName, employee.EmployeeNumber, employee.MonthlySalary,
@@ -614,6 +617,7 @@ public static class ManualReportEndpoints
                 p.Id, workspaceReportProductId = p.Id, p.SourceReportProductId, p.IsCorrectionChanged, p.CorrectionOperationCode, p.ProductType, p.PolicyNumber, p.FundExternalKey, p.FundCode, p.FundName, p.FundCompanyName, p.FundClassification,
                 p.SalaryMonth, p.Salary, p.SalaryAllocationType, p.SalaryAllocationValue, p.AllocationOrder,
                 p.ReportingType, p.SalaryLayer, p.Section14, p.Section14Code, p.Section14StartDate,
+                depositStatus = productMetadata.TryGetValue(p.Id, out var metadata) ? metadata.DepositStatus : 1,
                 employerContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employer).OrderBy(c => c.Component),
                 employeeContributions = contributions.Where(c => c.ReportProductId == p.Id && c.Party == ContributionParty.Employee).OrderBy(c => c.Component)
             })
@@ -926,7 +930,8 @@ public sealed record ManualProductInput(PensionProductType ProductType, string P
     string? FundExternalKey, string? FundCode, string? FundName, string? FundCompanyName, string? FundClassification,
     SalaryAllocationType? SalaryAllocationType, decimal? SalaryAllocationValue, int? AllocationOrder,
     IReadOnlyCollection<ManualContributionInput> EmployerContributions, IReadOnlyCollection<ManualContributionInput> EmployeeContributions,
-    Guid? SourceReportProductId = null, Guid? WorkspaceReportProductId = null);
+    Guid? SourceReportProductId = null, Guid? WorkspaceReportProductId = null,
+    int? DepositStatus = null, bool IsNegativeReport = false);
 public sealed record ManualContributionInput(ContributionComponent Component, decimal Amount, decimal Percentage, decimal ExemptPayments);
 public sealed record SaveManualReportPaymentRequest(string ProviderName, string ProviderAccount, string PaymentMethod,
     DateOnly? ValueDate, string ReferenceNumber, string EmployerBankName, string EmployerBankCode,
