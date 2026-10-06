@@ -53,6 +53,28 @@ public sealed class EmployerInterface006HistoryValidationIntegrationTests
     }
 
     [Fact]
+    public async Task Same_fund_and_month_twice_in_one_report_is_errors_28_and_43_even_without_policy_number()
+    {
+        await WithDatabase(async (db, ct) =>
+        {
+            var graph = await CreateBaseGraphAsync(db, ct);
+            var report = Report(graph.Organization.Id, graph.Employer.Id);
+            var employee = ReportEmployee(report.Id, graph, "123456782");
+            var first = Product(employee.Id, "", "same-fund");
+            var second = Product(employee.Id, "", "same-fund");
+            var firstContribution = Contribution(first.Id);
+            var secondContribution = Contribution(second.Id);
+            db.AddRange(report, employee, first, second, firstContribution, secondContribution);
+            await db.SaveChangesAsync(ct);
+
+            var codes = await InvokeHistoryValidationAsync(report, [employee], [first, second],
+                [firstContribution, secondContribution], db, ct);
+            Assert.Contains("SUG_SHGIHA_28", codes);
+            Assert.Contains("SUG_SHGIHA_43", codes);
+        });
+    }
+
+    [Fact]
     public async Task Current_operation_2_without_matching_sent_negative_is_error_100()
     {
         await WithDatabase(async (db, ct) =>
@@ -159,9 +181,9 @@ public sealed class EmployerInterface006HistoryValidationIntegrationTests
         new(reportId, graph.Organization.Id, graph.Employer.Id, graph.Employment.Id, graph.Person.Id,
             identifier, "Audit", "Employee", "E-1", 1000m);
 
-    private static ManualReportProduct Product(Guid employeeId, string policy) =>
+    private static ManualReportProduct Product(Guid employeeId, string policy, string externalKey = "fund-key") =>
         new(employeeId, PensionProductType.PensionFund, policy, new DateOnly(2026, 9, 1), 1000m,
-            "1", "1", false, null, "fund-key", "111", "Fund", "Company",
+            "1", "1", false, null, externalKey, "111", "Fund", "Company",
             SalaryAllocationType.Fixed, 1000m, 0, 3, "חדשה");
 
     private static ManualContribution Contribution(Guid productId) =>
