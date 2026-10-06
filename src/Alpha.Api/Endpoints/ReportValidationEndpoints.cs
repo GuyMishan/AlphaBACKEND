@@ -305,7 +305,7 @@ public static class ReportValidationEndpoints
             ManualReportStatus.Sent, ManualReportStatus.Completed
         };
 
-        var employmentIds = employees.Select(x => x.EmploymentId).Distinct().ToArray();
+        var personIds = employees.Select(x => x.PersonId).Distinct().ToArray();
         var checkOrdinaryDuplicateHistory = !report.IsTechnicalCorrectionDocument && !report.ExternalSourceReference;
         var historicalRows = checkOrdinaryDuplicateHistory ? await (
             from historicalReport in db.ManualReports.AsNoTracking()
@@ -317,11 +317,11 @@ public static class ReportValidationEndpoints
                 && historicalReport.OrganizationId == report.OrganizationId
                 && historicalReport.EmployerId == report.EmployerId
                 && immutableStatuses.Contains(historicalReport.Status)
-                && employmentIds.Contains(historicalEmployee.EmploymentId)
+                && personIds.Contains(historicalEmployee.PersonId)
                 && !historicalReport.IsTechnicalCorrectionDocument
             select new
             {
-                historicalEmployee.EmploymentId,
+                historicalEmployee.PersonId,
                 historicalProduct.Id,
                 historicalProduct.ProductType,
                 historicalProduct.PolicyNumber,
@@ -335,7 +335,7 @@ public static class ReportValidationEndpoints
         {
             var employee = employeeById[product.ReportEmployeeId];
             var duplicates = historicalRows.Where(x =>
-                x.EmploymentId == employee.EmploymentId
+                x.PersonId == employee.PersonId
                 && x.SalaryMonth.Year == product.SalaryMonth.Year
                 && x.SalaryMonth.Month == product.SalaryMonth.Month
                 && SameProductIdentity(x.ProductType, x.PolicyNumber, x.FundExternalKey, x.FundCode, product)).ToArray();
