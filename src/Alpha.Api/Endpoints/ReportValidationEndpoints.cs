@@ -343,7 +343,7 @@ public static class ReportValidationEndpoints
 
         var employeeById = employees.ToDictionary(x => x.Id);
 
-        foreach (var productGroup in products.GroupBy(x => x.ReportEmployeeId))
+        foreach (var productGroup in products.GroupBy(x => employeeById[x.ReportEmployeeId].PersonId))
         {
             var currentProducts = productGroup.OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToArray();
             for (var i = 0; i < currentProducts.Length; i++)
