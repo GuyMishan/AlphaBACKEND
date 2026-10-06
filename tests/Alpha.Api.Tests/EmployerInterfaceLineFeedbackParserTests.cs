@@ -136,6 +136,28 @@ public sealed class EmployerInterfaceLineFeedbackParserTests
         Assert.Equal(expected, EmployerInterfaceLineFeedbackParser.ErrorScope(code));
     }
 
+    [Theory]
+    [InlineData(16, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
+    [InlineData(17, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
+    [InlineData(23, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
+    [InlineData(27, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)]
+    [InlineData(28, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(43, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(50, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)]
+    [InlineData(53, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
+    [InlineData(62, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee)]
+    [InlineData(71, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(72, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(75, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(100, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)]
+    [InlineData(101, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)]
+    public void Preventable_codes_keep_their_post_send_business_scope(
+        int code,
+        EmployerInterfaceLineFeedbackParser.FeedbackErrorScope expected)
+    {
+        Assert.Equal(expected, EmployerInterfaceLineFeedbackParser.ErrorScope(code));
+    }
+
     [Fact]
     public void Every_official_error_code_has_an_explicit_business_scope()
     {
