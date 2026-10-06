@@ -77,6 +77,35 @@ public sealed class EmployerInterface006HistoryValidationIntegrationTests
     }
 
     [Fact]
+    public async Task Same_person_via_two_employments_in_one_report_is_still_duplicate_28_and_43()
+    {
+        await WithDatabase(async (db, ct) =>
+        {
+            var graph = await CreateBaseGraphAsync(db, ct);
+            var secondEmployment = new Employment(graph.Organization.Id, graph.Employer.Id, graph.Person.Id,
+                new DateOnly(2026, 1, 1), "E-2", 1000m);
+            db.Add(secondEmployment);
+            await db.SaveChangesAsync(ct);
+
+            var report = Report(graph.Organization.Id, graph.Employer.Id);
+            var firstEmployee = ReportEmployee(report.Id, graph, "123456782");
+            var secondEmployee = new ManualReportEmployee(report.Id, graph.Organization.Id, graph.Employer.Id,
+                secondEmployment.Id, graph.Person.Id, "123456782", "Audit", "Employee", "E-2", 1000m);
+            var first = Product(firstEmployee.Id, "POLICY-SAME", "same-fund", "111");
+            var second = Product(secondEmployee.Id, "POLICY-SAME", "same-fund", "111");
+            var firstContribution = Contribution(first.Id);
+            var secondContribution = Contribution(second.Id);
+            db.AddRange(report, firstEmployee, secondEmployee, first, second, firstContribution, secondContribution);
+            await db.SaveChangesAsync(ct);
+
+            var codes = await InvokeHistoryValidationAsync(report, [firstEmployee, secondEmployee], [first, second],
+                [firstContribution, secondContribution], db, ct);
+            Assert.Contains("SUG_SHGIHA_28", codes);
+            Assert.Contains("SUG_SHGIHA_43", codes);
+        });
+    }
+
+    [Fact]
     public async Task Different_policies_in_same_fund_and_month_are_not_false_duplicates()
     {
         await WithDatabase(async (db, ct) =>
