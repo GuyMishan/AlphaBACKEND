@@ -849,7 +849,10 @@ public static class EmployerInterface006XmlBuilder
     private static string FundIdentifier(BuildContext c, ManualReportProduct product) =>
         c.InterfaceFundCodes.TryGetValue(product.Id, out var code) ? code : Digits(product.FundCode);
 
-    private static string Money(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
+    internal static decimal RoundMoneyForWire(decimal value) =>
+        decimal.Round(value, 2, MidpointRounding.AwayFromZero);
+    private static string Money(decimal value) =>
+        RoundMoneyForWire(value).ToString("0.00", CultureInfo.InvariantCulture);
     private static string UpperGuid(Guid value) => value.ToString("D").ToUpperInvariant();
     private static string BuildFileNumber(DateTimeOffset now, string senderId, int sequence)
     {

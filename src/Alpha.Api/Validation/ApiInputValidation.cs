@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Alpha.Api.Contracts;
 using Alpha.Api.Endpoints;
+using Alpha.Api.Services;
 using Alpha.Domain.Reporting;
 using Alpha.Domain.Employees;
 
@@ -103,6 +104,8 @@ public static class ApiInputValidation
             if (product.PolicyNumber?.Trim().Length > 20) errors.Add(prefix + "מספר פוליסה/חשבון יכול להכיל עד 20 תווים לפי ממשק מעסיקים 006.");
             if (product.Salary < 0) errors.Add(prefix + "השכר לא יכול להיות שלילי.");
             if (product.Salary > 10_000_000) errors.Add(prefix + "השכר חורג מהטווח המותר.");
+            if (decimal.Round(product.Salary, 2, MidpointRounding.AwayFromZero) != product.Salary)
+                errors.Add(prefix + "השכר המדווח יכול להכיל עד 2 ספרות אחרי הנקודה לפי ממשק 006.");
             var israelNow = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTimeOffset.UtcNow, "Asia/Jerusalem");
             var today = DateOnly.FromDateTime(israelNow.DateTime);
             var currentSalaryMonth = new DateOnly(today.Year, today.Month, 1);
@@ -187,6 +190,12 @@ public static class ApiInputValidation
             var side = party == ContributionParty.Employer ? "מעסיק" : "עובד";
             if (item.Amount < 0 || item.Percentage < 0)
                 errors.Add(prefix + $"ערכי הפקדת {side} לא יכולים להיות שליליים.");
+            if (decimal.Round(item.Percentage, 2, MidpointRounding.AwayFromZero) != item.Percentage)
+                errors.Add(prefix + $"אחוז {ComponentName(item.Component)} של {side} יכול להכיל עד 2 ספרות אחרי הנקודה לפי ממשק 006.");
+            if (EmployerInterface006XmlBuilder.RoundMoneyForWire(item.Amount) != item.Amount)
+                errors.Add(prefix + $"סכום {ComponentName(item.Component)} של {side} יכול להכיל עד 2 ספרות אחרי הנקודה לפי ממשק 006.");
+            if (EmployerInterface006XmlBuilder.RoundMoneyForWire(item.ExemptPayments) != item.ExemptPayments)
+                errors.Add(prefix + $"תשלומים פטורים של {side} יכולים להכיל עד 2 ספרות אחרי הנקודה לפי ממשק 006.");
 
             if (enforcePolicyPercentageLimits)
             {
@@ -209,9 +218,11 @@ public static class ApiInputValidation
 
             if (salary > 0 && (item.Amount > 0 || item.Percentage > 0))
             {
-                var expected = Math.Round(salary * item.Percentage / 100m, 2, MidpointRounding.AwayFromZero);
-                if (item.Amount <= 0 || item.Percentage <= 0 || Math.Abs(item.Amount - expected) > 0.02m)
-                    errors.Add(prefix + $"קוד שגיאה 53: סכום {ComponentName(item.Component)} של {side} ({item.Amount:0.00}) אינו תואם לשכר {salary:0.00} כפול {item.Percentage:0.####}% (צפוי {expected:0.00}).");
+                var expected = EmployerInterface006XmlBuilder.RoundMoneyForWire(
+                    EmployerInterface006XmlBuilder.RoundMoneyForWire(salary) * item.Percentage / 100m);
+                var emittedAmount = EmployerInterface006XmlBuilder.RoundMoneyForWire(item.Amount);
+                if (item.Amount <= 0 || item.Percentage <= 0 || emittedAmount != expected)
+                    errors.Add(prefix + $"קוד שגיאה 53: סכום {ComponentName(item.Component)} של {side} ({emittedAmount:0.00}) אינו תואם לשכר {EmployerInterface006XmlBuilder.RoundMoneyForWire(salary):0.00} כפול {item.Percentage:0.##}% (צפוי {expected:0.00}).");
             }
         }
     }
