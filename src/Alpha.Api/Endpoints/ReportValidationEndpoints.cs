@@ -241,12 +241,31 @@ public static class ReportValidationEndpoints
                 effectiveContributions.Where(x => x.Party == ContributionParty.Employer)
                     .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray(),
                 effectiveContributions.Where(x => x.Party == ContributionParty.Employee)
-                    .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray()
+                    .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray(),
+                DepositStatus: productMetadata?.DepositStatus ?? (report.ReportKind == ManualReportKind.Current ? 1 : null),
+                IsNegativeReport: report.ReportKind == ManualReportKind.Negative
             );
             }).ToArray();
 
             foreach (var error in ApiInputValidation.Products(inputs, limits, enforcePolicyPercentageLimits: true))
                 issues.Add(new("PRODUCT_VALIDATION", $"{employeeName}: {error}", ValidationScope.Contribution, employee.Id));
+
+            if (report.ReportKind == ManualReportKind.Current)
+            {
+                foreach (var product in employeeProducts)
+                {
+                    productMetadataById.TryGetValue(product.Id, out var productMetadata);
+                    var depositStatus = productMetadata?.DepositStatus ?? 1;
+                    if (depositStatus != 1 || product.ReportingType?.Trim() != "1" || product.Salary > 0)
+                        continue;
+                    var hasEmittedContribution = !EmployerInterface006XmlBuilder.SuppressesCurrentContributions(productMetadata?.EmployeeStatus)
+                        && contributions.Any(x => x.ReportProductId == product.Id && x.Amount > 0);
+                    if (hasEmittedContribution)
+                        issues.Add(new("SUG_SHGIHA_75",
+                            $"קוד שגיאה 75: במעמד הפקדת שכיר ובתקבול שוטף חובה לדווח שכר עבור {employeeName}, {ProductLabel(product)}.",
+                            ValidationScope.Contribution, employee.Id, product.Id));
+                }
+            }
         }
 
         if (stage == ValidationStage.Final && products.Count > 0)
