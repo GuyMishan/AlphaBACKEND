@@ -181,7 +181,8 @@ public static class ApiInputValidation
 
     private static void ValidateContributions(List<string> errors, string prefix, int year, PensionProductType productType,
         ContributionParty party, decimal salary, IReadOnlyCollection<ManualContributionInput> items,
-        IReadOnlyCollection<ContributionPercentageLimit> limits, bool enforcePolicyPercentageLimits)
+        IReadOnlyCollection<ContributionPercentageLimit> limits, bool enforcePolicyPercentageLimits,
+        bool enforceSalaryBasedRules)
     {
         if (items.GroupBy(x => x.Component).Any(g => g.Count() > 1
             && !(party == ContributionParty.Employee && g.Key == ContributionComponent.Severance)))
