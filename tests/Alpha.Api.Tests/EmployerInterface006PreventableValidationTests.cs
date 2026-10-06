@@ -60,6 +60,19 @@ public sealed class EmployerInterface006PreventableValidationTests
     }
 
     [Fact]
+    public void Rejects_combined_employer_benefits_and_disability_above_7_5_error_72()
+    {
+        var errors = Validate(
+            employer:
+            [
+                new(ContributionComponent.Benefits, 70m, 7m, 0m),
+                new(ContributionComponent.Disability, 10m, 1m, 0m)
+            ],
+            employee: [new(ContributionComponent.Benefits, 70m, 7m, 0m)]);
+        Assert.Contains(errors, x => x.Contains("קוד שגיאה 72"));
+    }
+
+    [Fact]
     public void Rejects_missing_salary_for_routine_salaried_deposit_error_75()
     {
         var product = Product(0m,
