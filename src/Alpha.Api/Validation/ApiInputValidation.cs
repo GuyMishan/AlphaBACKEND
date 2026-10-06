@@ -103,7 +103,10 @@ public static class ApiInputValidation
             if (product.PolicyNumber?.Trim().Length > 20) errors.Add(prefix + "מספר פוליסה/חשבון יכול להכיל עד 20 תווים לפי ממשק מעסיקים 006.");
             if (product.Salary < 0) errors.Add(prefix + "השכר לא יכול להיות שלילי.");
             if (product.Salary > 10_000_000) errors.Add(prefix + "השכר חורג מהטווח המותר.");
-            if (product.SalaryMonth.Year < 2000 || product.SalaryMonth > DateOnly.FromDateTime(DateTime.UtcNow.AddYears(1))) errors.Add(prefix + "חודש השכר אינו תקין.");
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var currentSalaryMonth = new DateOnly(today.Year, today.Month, 1);
+            if (product.SalaryMonth.Year < 2000 || product.SalaryMonth > currentSalaryMonth)
+                errors.Add(prefix + "קוד שגיאה 27: לא ניתן לדווח הפקדה בגין חודש שכר עתידי.");
             if (string.IsNullOrWhiteSpace(product.ReportingType)) errors.Add(prefix + "סוג דיווח הוא שדה חובה.");
             if (string.IsNullOrWhiteSpace(product.SalaryLayer)) errors.Add(prefix + "רובד שכר הוא שדה חובה.");
             var section14Code = product.Section14Code ?? (product.Section14
@@ -122,6 +125,7 @@ public static class ApiInputValidation
                 product.Salary, product.EmployerContributions, limits, enforcePolicyPercentageLimits);
             ValidateContributions(errors, prefix, product.SalaryMonth.Year, product.ProductType, ContributionParty.Employee,
                 product.Salary, product.EmployeeContributions, limits, enforcePolicyPercentageLimits);
+            ValidateEmployerInterfaceContributionRelationships(errors, prefix, product);
         }
         return errors;
     }
@@ -201,7 +205,44 @@ public static class ApiInputValidation
                 errors.Add(prefix + $"תשלומים פטורים של {side} לא יכולים להיות גבוהים מסכום ההפקדה.");
             if (item.Amount > salary)
                 errors.Add(prefix + $"סכום {ComponentName(item.Component)} של {side} לא יכול להיות גבוה מהשכר המדווח.");
+
+            if (item.Amount > 0 && item.Percentage > 0 && salary > 0)
+            {
+                var expected = Math.Round(salary * item.Percentage / 100m, 2, MidpointRounding.AwayFromZero);
+                if (Math.Abs(item.Amount - expected) > 0.02m)
+                    errors.Add(prefix + $"קוד שגיאה 53: סכום {ComponentName(item.Component)} של {side} ({item.Amount:0.00}) אינו תואם לשכר {salary:0.00} כפול {item.Percentage:0.####}% (צפוי {expected:0.00}).");
+            }
         }
+    }
+
+    private static void ValidateEmployerInterfaceContributionRelationships(List<string> errors, string prefix, ManualProductInput product)
+    {
+        static decimal SumAmount(IEnumerable<ManualContributionInput> items, ContributionComponent component) =>
+            items.Where(x => x.Component == component).Sum(x => x.Amount);
+        static decimal SumPercentage(IEnumerable<ManualContributionInput> items, ContributionComponent component) =>
+            items.Where(x => x.Component == component && x.Amount > 0).Sum(x => x.Percentage);
+
+        var employeeBenefitsAmount = SumAmount(product.EmployeeContributions, ContributionComponent.Benefits);
+        var employerBenefitsAmount = SumAmount(product.EmployerContributions, ContributionComponent.Benefits);
+        var employerSeveranceAmount = SumAmount(product.EmployerContributions, ContributionComponent.Severance);
+
+        if (employeeBenefitsAmount > 0 && employerBenefitsAmount <= 0)
+            errors.Add(prefix + "קוד שגיאה 16: לא ניתן להפקיד תגמולי עובד ללא תגמולי מעסיק.");
+        if (employerBenefitsAmount > 0 && employeeBenefitsAmount <= 0)
+            errors.Add(prefix + "קוד שגיאה 17: לא ניתן להפקיד תגמולי מעסיק ללא תגמולי עובד.");
+        if (employerSeveranceAmount > 0 && (employeeBenefitsAmount <= 0 || employerBenefitsAmount <= 0))
+            errors.Add(prefix + "קוד שגיאה 23: לא ניתן להפקיד פיצויים ללא תגמולי עובד ותגמולי מעסיק.");
+
+        var employeeBenefitsRate = SumPercentage(product.EmployeeContributions, ContributionComponent.Benefits);
+        var employerBenefitsRate = SumPercentage(product.EmployerContributions, ContributionComponent.Benefits);
+        if (employeeBenefitsRate > 0 && employerBenefitsRate > 0
+            && employeeBenefitsRate <= 5m && employerBenefitsRate <= 5m
+            && Math.Abs(employeeBenefitsRate - employerBenefitsRate) > 0.0001m)
+            errors.Add(prefix + $"קוד שגיאה 71: כאשר תגמולי העובד והמעסיק הם עד 5% מהשכר, האחוזים חייבים להיות זהים ({employeeBenefitsRate:0.####}% מול {employerBenefitsRate:0.####}%).");
+
+        var hasPositiveContribution = product.EmployerContributions.Concat(product.EmployeeContributions).Any(x => x.Amount > 0);
+        if (hasPositiveContribution && product.ReportingType?.Trim() == "1" && product.Salary <= 0)
+            errors.Add(prefix + "קוד שגיאה 75: בהפקדת שכיר שוטפת חובה לדווח שכר גדול מאפס שממנו הועברו התשלומים.");
     }
 
     private static string ProductName(PensionProductType productType) => productType switch

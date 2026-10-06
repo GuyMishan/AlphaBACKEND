@@ -186,6 +186,8 @@ public static class ReportValidationEndpoints
 
             if (string.IsNullOrWhiteSpace(employee.NationalId))
                 issues.Add(new("NATIONAL_ID_REQUIRED", $"לעובד {employeeName} חסרה תעודת זהות.", ValidationScope.Employee, employee.Id));
+            if (employee.InterfaceIdentifierType == 1 && !ApiInputValidation.IsIsraeliId(employee.InterfaceIdentifier))
+                issues.Add(new("SUG_SHGIHA_62", $"קוד שגיאה 62: תעודת הזהות של {employeeName} אינה עוברת בדיקת ספרת ביקורת.", ValidationScope.Employee, employee.Id));
             if (employeeProducts.Count == 0)
             {
                 issues.Add(new("PENSION_PRODUCT_REQUIRED", $"לעובד {employeeName} אין מוצר פנסיוני בדיווח.", ValidationScope.Product, employee.Id));
@@ -226,9 +228,12 @@ public static class ReportValidationEndpoints
                     .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray()
             )).ToArray();
 
-            foreach (var error in ApiInputValidation.Products(inputs, limits, enforcePolicyPercentageLimits: false))
+            foreach (var error in ApiInputValidation.Products(inputs, limits, enforcePolicyPercentageLimits: true))
                 issues.Add(new("PRODUCT_VALIDATION", $"{employeeName}: {error}", ValidationScope.Contribution, employee.Id));
         }
+
+        if (stage == ValidationStage.Final && products.Count > 0)
+            await AppendPreventableHistoryAndCorrectionIssuesAsync(report, employees, products, contributions, db, issues, ct);
 
         if ((stage is ValidationStage.Deposits or ValidationStage.Final) && products.Count > 0)
         {
@@ -278,6 +283,162 @@ public static class ReportValidationEndpoints
         }
 
         return new ValidationContext(report, employees, products, productsByEmployee, issues);
+    }
+
+    private static async Task AppendPreventableHistoryAndCorrectionIssuesAsync(
+        ManualReport report,
+        IReadOnlyCollection<ManualReportEmployee> employees,
+        IReadOnlyCollection<ManualReportProduct> products,
+        IReadOnlyCollection<ManualContribution> contributions,
+        IAlphaDbContext db,
+        List<ValidationIssue> issues,
+        CancellationToken ct)
+    {
+        var immutableStatuses = new[]
+        {
+            ManualReportStatus.Submitted, ManualReportStatus.Processing,
+            ManualReportStatus.Sent, ManualReportStatus.Completed
+        };
+
+        var employmentIds = employees.Select(x => x.EmploymentId).Distinct().ToArray();
+        var historicalRows = await (
+            from historicalReport in db.ManualReports.AsNoTracking()
+            join historicalEmployee in db.ManualReportEmployees.AsNoTracking()
+                on historicalReport.Id equals historicalEmployee.ReportId
+            join historicalProduct in db.ManualReportProducts.AsNoTracking()
+                on historicalEmployee.Id equals historicalProduct.ReportEmployeeId
+            where historicalReport.Id != report.Id
+                && historicalReport.OrganizationId == report.OrganizationId
+                && historicalReport.EmployerId == report.EmployerId
+                && immutableStatuses.Contains(historicalReport.Status)
+                && employmentIds.Contains(historicalEmployee.EmploymentId)
+                && !historicalReport.IsTechnicalCorrectionDocument
+            select new
+            {
+                historicalEmployee.EmploymentId,
+                historicalProduct.Id,
+                historicalProduct.ProductType,
+                historicalProduct.PolicyNumber,
+                historicalProduct.FundExternalKey,
+                historicalProduct.FundCode,
+                historicalProduct.SalaryMonth
+            }).ToListAsync(ct);
+
+        var employeeById = employees.ToDictionary(x => x.Id);
+        foreach (var product in products)
+        {
+            var employee = employeeById[product.ReportEmployeeId];
+            var duplicates = historicalRows.Where(x =>
+                x.EmploymentId == employee.EmploymentId
+                && x.SalaryMonth.Year == product.SalaryMonth.Year
+                && x.SalaryMonth.Month == product.SalaryMonth.Month
+                && SameProductIdentity(x.ProductType, x.PolicyNumber, x.FundExternalKey, x.FundCode, product)).ToArray();
+            if (duplicates.Length > 0)
+            {
+                issues.Add(new("SUG_SHGIHA_28",
+                    $"קוד שגיאה 28: חודש השכר {product.SalaryMonth:MM/yyyy} כבר דווח בעבר עבור {employee.FirstName} {employee.LastName} והמוצר {ProductLabel(product)}. אם זו התאמה לדיווח קודם יש להשתמש במסלול דיווח מתקן.",
+                    ValidationScope.Product, employee.Id, product.Id));
+
+                var currentContributions = contributions.Where(x => x.ReportProductId == product.Id)
+                    .Select(x => (x.Party, x.Component, x.Amount, x.Percentage, x.ExemptPayments))
+                    .OrderBy(x => x.Party).ThenBy(x => x.Component).ToArray();
+                var historicalProductIds = duplicates.Select(x => x.Id).ToArray();
+                var historicalContributions = await db.ManualContributions.AsNoTracking()
+                    .Where(x => historicalProductIds.Contains(x.ReportProductId)).ToListAsync(ct);
+                if (duplicates.Any(d =>
+                    historicalContributions.Where(x => x.ReportProductId == d.Id)
+                        .Select(x => (x.Party, x.Component, x.Amount, x.Percentage, x.ExemptPayments))
+                        .OrderBy(x => x.Party).ThenBy(x => x.Component)
+                        .SequenceEqual(currentContributions)))
+                {
+                    issues.Add(new("SUG_SHGIHA_43",
+                        $"קוד שגיאה 43: נמצאה תנועה זהה שכבר נשלחה עבור {employee.FirstName} {employee.LastName} והמוצר {ProductLabel(product)}.",
+                        ValidationScope.Contribution, employee.Id, product.Id));
+                }
+            }
+        }
+
+        var productIds = products.Select(x => x.Id).ToArray();
+        var currentMetadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var explicitTransferIds = currentMetadata
+            .Where(x => !string.IsNullOrWhiteSpace(x.InterfaceTransferIdentifier))
+            .Select(x => x.InterfaceTransferIdentifier.Trim().ToUpperInvariant()).Distinct().ToArray();
+        if (explicitTransferIds.Length > 0)
+        {
+            var historicalTransferIds = await (
+                from metadata in db.EmployerInterfaceReportProductData.AsNoTracking()
+                join historicalProduct in db.ManualReportProducts.AsNoTracking()
+                    on metadata.ReportProductId equals historicalProduct.Id
+                join historicalEmployee in db.ManualReportEmployees.AsNoTracking()
+                    on historicalProduct.ReportEmployeeId equals historicalEmployee.Id
+                join historicalReport in db.ManualReports.AsNoTracking()
+                    on historicalEmployee.ReportId equals historicalReport.Id
+                where historicalReport.Id != report.Id
+                    && historicalReport.OrganizationId == report.OrganizationId
+                    && historicalReport.EmployerId == report.EmployerId
+                    && immutableStatuses.Contains(historicalReport.Status)
+                    && !string.IsNullOrEmpty(metadata.InterfaceTransferIdentifier)
+                select metadata.InterfaceTransferIdentifier
+            ).ToListAsync(ct);
+
+            var reused = explicitTransferIds.FirstOrDefault(x =>
+                historicalTransferIds.Any(h => string.Equals(h, x, StringComparison.OrdinalIgnoreCase)));
+            if (reused is not null)
+                issues.Add(new("SUG_SHGIHA_50",
+                    $"קוד שגיאה 50: מספר זיהוי העברת הכספים {reused} כבר שימש בדיווח קודם. יש להפיק מזהה העברה חדש.",
+                    ValidationScope.Payment));
+        }
+
+        var operationByProduct = currentMetadata.ToDictionary(x => x.ReportProductId, x => x.OperationCode);
+        if (report.ReportKind == ManualReportKind.Current
+            && operationByProduct.Values.Any(x => x is 2 or 3))
+        {
+            var source = report.SourceReportId.HasValue
+                ? await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == report.SourceReportId.Value, ct)
+                : null;
+            if (source?.ReportKind != ManualReportKind.Negative
+                || source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
+                issues.Add(new("SUG_SHGIHA_100",
+                    "קוד שגיאה 100: פעולת תיקון 2/3 בשוטף מחייבת דיווח שלילי מקדים בפעולה 6 שנשלח בהצלחה.",
+                    ValidationScope.Report));
+        }
+
+        if (report.ReportKind == ManualReportKind.Negative
+            && operationByProduct.Values.Any(x => x == 6)
+            && report.IsTechnicalCorrectionDocument
+            && report.CorrectionWorkspaceId.HasValue)
+        {
+            var workspaceId = report.CorrectionWorkspaceId.Value;
+            var workspaceEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
+                .Where(x => x.ReportId == workspaceId).Select(x => x.Id).ToArrayAsync(ct);
+            var workspaceHasChangedProduct = await db.ManualReportProducts.AsNoTracking()
+                .AnyAsync(x => workspaceEmployeeIds.Contains(x.ReportEmployeeId)
+                    && x.SourceReportProductId.HasValue && x.IsCorrectionChanged, ct);
+            if (workspaceHasChangedProduct)
+            {
+                var hasCurrentSibling = await db.ManualReports.AsNoTracking().AnyAsync(x =>
+                    x.CorrectionWorkspaceId == workspaceId
+                    && x.IsTechnicalCorrectionDocument
+                    && x.ReportKind == ManualReportKind.Current, ct);
+                if (!hasCurrentSibling)
+                    issues.Add(new("SUG_SHGIHA_101",
+                        "קוד שגיאה 101: פעולת ביטול 6 עבור שינוי מחייבת גם דיווח שוטף מתקן בפעולה 2/3.",
+                        ValidationScope.Report));
+            }
+        }
+    }
+
+    private static bool SameProductIdentity(PensionProductType productType, string policyNumber,
+        string fundExternalKey, string fundCode, ManualReportProduct current)
+    {
+        if (productType != current.ProductType) return false;
+        if (!string.IsNullOrWhiteSpace(policyNumber) && !string.IsNullOrWhiteSpace(current.PolicyNumber))
+            return string.Equals(policyNumber.Trim(), current.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(fundExternalKey) && !string.IsNullOrWhiteSpace(current.FundExternalKey))
+            return string.Equals(fundExternalKey.Trim(), current.FundExternalKey.Trim(), StringComparison.OrdinalIgnoreCase);
+        return !string.IsNullOrWhiteSpace(fundCode) && !string.IsNullOrWhiteSpace(current.FundCode)
+            && string.Equals(fundCode.Trim(), current.FundCode.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task AppendEmployerInterfacePreflightAsync(

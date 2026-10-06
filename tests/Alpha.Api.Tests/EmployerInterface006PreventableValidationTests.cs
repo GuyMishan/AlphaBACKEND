@@ -1,0 +1,83 @@
+using Alpha.Api.Endpoints;
+using Alpha.Api.Validation;
+using Alpha.Domain.Reporting;
+using Xunit;
+
+namespace Alpha.Api.Tests;
+
+public sealed class EmployerInterface006PreventableValidationTests
+{
+    private static readonly ContributionPercentageLimit[] Limits =
+    [
+        new(2026, PensionProductType.PensionFund, ContributionParty.Employer, ContributionComponent.Severance, 8.33m),
+        new(2026, PensionProductType.PensionFund, ContributionParty.Employer, ContributionComponent.Benefits, 7.5m),
+        new(2026, PensionProductType.PensionFund, ContributionParty.Employee, ContributionComponent.Benefits, 7m)
+    ];
+
+    [Fact]
+    public void Rejects_employee_benefits_without_employer_benefits_error_16()
+    {
+        var errors = Validate(
+            employer: [],
+            employee: [new(ContributionComponent.Benefits, 60m, 6m, 0m)]);
+        Assert.Contains(errors, x => x.Contains("קוד שגיאה 16"));
+    }
+
+    [Fact]
+    public void Rejects_employer_benefits_without_employee_benefits_error_17()
+    {
+        var errors = Validate(
+            employer: [new(ContributionComponent.Benefits, 65m, 6.5m, 0m)],
+            employee: []);
+        Assert.Contains(errors, x => x.Contains("קוד שגיאה 17"));
+    }
+
+    [Fact]
+    public void Rejects_severance_without_both_benefits_error_23()
+    {
+        var errors = Validate(
+            employer: [new(ContributionComponent.Severance, 83.3m, 8.33m, 0m)],
+            employee: []);
+        Assert.Contains(errors, x => x.Contains("קוד שגיאה 23"));
+    }
+
+    [Fact]
+    public void Rejects_salary_amount_rate_mismatch_error_53()
+    {
+        var errors = Validate(
+            employer: [new(ContributionComponent.Benefits, 50m, 6.5m, 0m)],
+            employee: [new(ContributionComponent.Benefits, 60m, 6m, 0m)]);
+        Assert.Contains(errors, x => x.Contains("קוד שגיאה 53"));
+    }
+
+    [Fact]
+    public void Rejects_unequal_employee_and_employer_rates_up_to_five_error_71()
+    {
+        var errors = Validate(
+            employer: [new(ContributionComponent.Benefits, 40m, 4m, 0m)],
+            employee: [new(ContributionComponent.Benefits, 50m, 5m, 0m)]);
+        Assert.Contains(errors, x => x.Contains("קוד שגיאה 71"));
+    }
+
+    [Fact]
+    public void Rejects_missing_salary_for_routine_salaried_deposit_error_75()
+    {
+        var product = Product(0m,
+            [new(ContributionComponent.Benefits, 60m, 6m, 0m)],
+            [new(ContributionComponent.Benefits, 60m, 6m, 0m)]);
+        var errors = ApiInputValidation.Products([product], Limits, false);
+        Assert.Contains(errors, x => x.Contains("קוד שגיאה 75"));
+    }
+
+    private static IReadOnlyList<string> Validate(
+        IReadOnlyCollection<ManualContributionInput> employer,
+        IReadOnlyCollection<ManualContributionInput> employee)
+        => ApiInputValidation.Products([Product(1000m, employer, employee)], Limits, false);
+
+    private static ManualProductInput Product(decimal salary,
+        IReadOnlyCollection<ManualContributionInput> employer,
+        IReadOnlyCollection<ManualContributionInput> employee)
+        => new(PensionProductType.PensionFund, "P1", new DateOnly(2026, 9, 1), salary,
+            "1", "1", false, null, 3, "fund", "111", "Fund", "Company", "",
+            SalaryAllocationType.Fixed, salary, 0, employer, employee);
+}
