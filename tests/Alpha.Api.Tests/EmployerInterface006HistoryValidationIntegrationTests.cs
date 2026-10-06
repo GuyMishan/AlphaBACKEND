@@ -239,6 +239,28 @@ public sealed class EmployerInterface006HistoryValidationIntegrationTests
     }
 
     [Fact]
+    public async Task Imported_external_current_correction_is_not_false_blocked_as_error_100()
+    {
+        await WithDatabase(async (db, ct) =>
+        {
+            var graph = await CreateBaseGraphAsync(db, ct);
+            var report = new ManualReport(graph.Organization.Id, graph.Employer.Id,
+                new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 9),
+                ManualReportKind.Current, sourceReportId: null, externalSourceReference: true);
+            var employee = ReportEmployee(report.Id, graph, "123456782");
+            var product = Product(employee.Id, "P-EXT");
+            var contribution = Contribution(product.Id);
+            var metadata = Metadata(product.Id, 2, Guid.NewGuid().ToString("D").ToUpperInvariant());
+
+            db.AddRange(report, employee, product, contribution, metadata);
+            await db.SaveChangesAsync(ct);
+
+            var codes = await InvokeHistoryValidationAsync(report, [employee], [product], [contribution], db, ct);
+            Assert.DoesNotContain("SUG_SHGIHA_100", codes);
+        });
+    }
+
+    [Fact]
     public async Task Technical_negative_change_without_current_pair_is_error_101_but_removed_product_is_not()
     {
         await WithDatabase(async (db, ct) =>
