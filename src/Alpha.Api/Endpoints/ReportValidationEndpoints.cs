@@ -242,7 +242,11 @@ public static class ReportValidationEndpoints
                     .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray(),
                 effectiveContributions.Where(x => x.Party == ContributionParty.Employee)
                     .Select(x => new ManualContributionInput(x.Component, x.Amount, x.Percentage, x.ExemptPayments)).ToArray(),
-                DepositStatus: productMetadata?.DepositStatus ?? (report.ReportKind == ManualReportKind.Current ? 1 : null),
+                // Deposit-status-dependent Regulation 19 rules are intentionally deferred from the
+                // Employees step: users choose/confirm the official deposit status in Deposits.
+                DepositStatus: stage == ValidationStage.Employees
+                    ? 2
+                    : productMetadata?.DepositStatus ?? (report.ReportKind == ManualReportKind.Current ? 1 : null),
                 IsNegativeReport: report.ReportKind == ManualReportKind.Negative
             );
             }).ToArray();
@@ -250,7 +254,7 @@ public static class ReportValidationEndpoints
             foreach (var error in ApiInputValidation.Products(inputs, limits, enforcePolicyPercentageLimits: true))
                 issues.Add(new("PRODUCT_VALIDATION", $"{employeeName}: {error}", ValidationScope.Contribution, employee.Id));
 
-            if (report.ReportKind == ManualReportKind.Current)
+            if (report.ReportKind == ManualReportKind.Current && stage is ValidationStage.Deposits or ValidationStage.Final)
             {
                 foreach (var product in employeeProducts)
                 {
