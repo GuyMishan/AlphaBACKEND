@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Reflection;
 using Alpha.Api.Endpoints;
+using Alpha.Api.Security;
 using Alpha.Application.Abstractions;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
@@ -8,6 +9,7 @@ using Alpha.Domain.Organizations;
 using Alpha.Domain.Reporting;
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Xunit;
 
@@ -71,6 +73,85 @@ public sealed class EmployerInterface006HistoryValidationIntegrationTests
                 [firstContribution, secondContribution], db, ct);
             Assert.Contains("SUG_SHGIHA_28", codes);
             Assert.Contains("SUG_SHGIHA_43", codes);
+        });
+    }
+
+    [Fact]
+    public async Task Different_policies_in_same_fund_and_month_are_not_false_duplicates()
+    {
+        await WithDatabase(async (db, ct) =>
+        {
+            var graph = await CreateBaseGraphAsync(db, ct);
+            var report = Report(graph.Organization.Id, graph.Employer.Id);
+            var employee = ReportEmployee(report.Id, graph, "123456782");
+            var first = Product(employee.Id, "POLICY-A", "same-fund", "111");
+            var second = Product(employee.Id, "POLICY-B", "same-fund", "111");
+            var firstContribution = Contribution(first.Id);
+            var secondContribution = Contribution(second.Id);
+            db.AddRange(report, employee, first, second, firstContribution, secondContribution);
+            await db.SaveChangesAsync(ct);
+
+            var codes = await InvokeHistoryValidationAsync(report, [employee], [first, second],
+                [firstContribution, secondContribution], db, ct);
+            Assert.DoesNotContain("SUG_SHGIHA_28", codes);
+            Assert.DoesNotContain("SUG_SHGIHA_43", codes);
+        });
+    }
+
+    [Fact]
+    public async Task Same_policy_number_in_different_funds_is_not_false_duplicate()
+    {
+        await WithDatabase(async (db, ct) =>
+        {
+            var graph = await CreateBaseGraphAsync(db, ct);
+            var report = Report(graph.Organization.Id, graph.Employer.Id);
+            var employee = ReportEmployee(report.Id, graph, "123456782");
+            var first = Product(employee.Id, "POLICY-X", "fund-a", "111");
+            var second = Product(employee.Id, "POLICY-X", "fund-b", "222");
+            var firstContribution = Contribution(first.Id);
+            var secondContribution = Contribution(second.Id);
+            db.AddRange(report, employee, first, second, firstContribution, secondContribution);
+            await db.SaveChangesAsync(ct);
+
+            var codes = await InvokeHistoryValidationAsync(report, [employee], [first, second],
+                [firstContribution, secondContribution], db, ct);
+            Assert.DoesNotContain("SUG_SHGIHA_28", codes);
+            Assert.DoesNotContain("SUG_SHGIHA_43", codes);
+        });
+    }
+
+    [Fact]
+    public async Task Current_status_that_suppresses_contributions_does_not_validate_stale_rows_that_will_not_be_emitted()
+    {
+        await WithDatabase(async (db, ct) =>
+        {
+            var graph = await CreateBaseGraphAsync(db, ct);
+            var protector = CreateProtector();
+            var report = Report(graph.Organization.Id, graph.Employer.Id);
+            var employee = ReportEmployee(report.Id, graph, "123456782");
+            employee.SetInterfaceSnapshot(1, "123456782", new DateOnly(1990, 1, 1), 1,
+                "employee@example.test", "0507654321", "Rehovot", "Herzl", "10", "", "7610001", "",
+                graph.Employment.StartDate);
+            employee.SetProtectedIdentifiers(
+                protector.Protect("123456782", $"report-employee-national-id:{employee.Id}"),
+                protector.LookupHash("123456782", "report-employee-national-id-lookup"),
+                protector.Protect("123456782", $"report-employee-interface-id:{employee.Id}"));
+
+            var product = Product(employee.Id, "P-STATUS");
+            var staleContribution = new ManualContribution(product.Id, ContributionParty.Employee,
+                ContributionComponent.Benefits, 60m, 0m, 0m);
+            var metadata = new EmployerInterfaceReportProductData(product.Id);
+            metadata.Update(1, 1, 3, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1);
+
+            db.AddRange(report, employee, product, staleContribution, metadata);
+            await db.SaveChangesAsync(ct);
+
+            var issues = await InvokeFullValidationAsync(report, db, protector, "Employees", ct);
+            Assert.DoesNotContain(issues, issue => issue.Message.Contains("קוד שגיאה 16", StringComparison.Ordinal));
+            Assert.DoesNotContain(issues, issue => issue.Message.Contains("קוד שגיאה 53", StringComparison.Ordinal));
+            Assert.DoesNotContain(issues, issue => issue.Message.Contains("קוד שגיאה 71", StringComparison.Ordinal));
+            Assert.DoesNotContain(issues, issue => issue.Message.Contains("קוד שגיאה 72", StringComparison.Ordinal));
+            Assert.DoesNotContain(issues, issue => issue.Message.Contains("קוד שגיאה 75", StringComparison.Ordinal));
         });
     }
 
@@ -143,6 +224,33 @@ public sealed class EmployerInterface006HistoryValidationIntegrationTests
         });
     }
 
+    private static async Task<(string Code, string Message)[]> InvokeFullValidationAsync(
+        ManualReport report, IAlphaDbContext db, IDataProtectionService protector, string stageName, CancellationToken ct)
+    {
+        var endpointType = typeof(ReportValidationEndpoints);
+        var stageType = endpointType.GetNestedType("ValidationStage", BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Validation stage type not found.");
+        var stage = Enum.Parse(stageType, stageName);
+        var method = endpointType.GetMethod("ValidateReportAsync", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("ValidateReportAsync not found.");
+        var task = (Task?)method.Invoke(null,
+            [report.OrganizationId, report.EmployerId, report.Id, stage, db, protector, false, ct])
+            ?? throw new InvalidOperationException("Validation invocation failed.");
+        await task;
+
+        var result = task.GetType().GetProperty("Result")?.GetValue(task)
+            ?? throw new InvalidOperationException("Validation result missing.");
+        var issues = result.GetType().GetProperty("Issues")?.GetValue(result) as IEnumerable
+            ?? throw new InvalidOperationException("Validation issues missing.");
+        return issues.Cast<object>().Select(issue =>
+        {
+            var type = issue.GetType();
+            return (
+                (string)(type.GetProperty("Code")?.GetValue(issue) ?? string.Empty),
+                (string)(type.GetProperty("Message")?.GetValue(issue) ?? string.Empty));
+        }).ToArray();
+    }
+
     private static async Task<string[]> InvokeHistoryValidationAsync(
         ManualReport report,
         IReadOnlyCollection<ManualReportEmployee> employees,
@@ -181,9 +289,9 @@ public sealed class EmployerInterface006HistoryValidationIntegrationTests
         new(reportId, graph.Organization.Id, graph.Employer.Id, graph.Employment.Id, graph.Person.Id,
             identifier, "Audit", "Employee", "E-1", 1000m);
 
-    private static ManualReportProduct Product(Guid employeeId, string policy, string externalKey = "fund-key") =>
+    private static ManualReportProduct Product(Guid employeeId, string policy, string externalKey = "fund-key", string fundCode = "111") =>
         new(employeeId, PensionProductType.PensionFund, policy, new DateOnly(2026, 9, 1), 1000m,
-            "1", "1", false, null, externalKey, "111", "Fund", "Company",
+            "1", "1", false, null, externalKey, fundCode, "Fund", "Company",
             SalaryAllocationType.Fixed, 1000m, 0, 3, "חדשה");
 
     private static ManualContribution Contribution(Guid productId) =>
@@ -196,6 +304,15 @@ public sealed class EmployerInterface006HistoryValidationIntegrationTests
             operationCode == 6 ? null : 1, 1, 1);
         metadata.SetInterfaceTransferIdentifier(transferId);
         return metadata;
+    }
+
+    private static IDataProtectionService CreateProtector()
+    {
+        var key = Convert.ToBase64String(Enumerable.Range(1, 32).Select(x => (byte)x).ToArray());
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Security:DataProtectionKey"] = key })
+            .Build();
+        return new AesDataProtectionService(configuration);
     }
 
     private static async Task<BaseGraph> CreateBaseGraphAsync(AlphaDbContext db, CancellationToken ct)
