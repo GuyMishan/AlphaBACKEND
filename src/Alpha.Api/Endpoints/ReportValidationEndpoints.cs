@@ -582,8 +582,8 @@ public static class ReportValidationEndpoints
                 return false;
         }
 
-        var leftFund = !string.IsNullOrWhiteSpace(fundExternalKey) ? fundExternalKey.Trim() : fundCode?.Trim() ?? string.Empty;
-        var rightFund = !string.IsNullOrWhiteSpace(current.FundExternalKey) ? current.FundExternalKey.Trim() : current.FundCode?.Trim() ?? string.Empty;
+        var leftFund = !string.IsNullOrWhiteSpace(fundCode) ? fundCode.Trim() : fundExternalKey?.Trim() ?? string.Empty;
+        var rightFund = !string.IsNullOrWhiteSpace(current.FundCode) ? current.FundCode.Trim() : current.FundExternalKey?.Trim() ?? string.Empty;
         return leftFund.Length > 0 && rightFund.Length > 0
             && string.Equals(leftFund, rightFund, StringComparison.OrdinalIgnoreCase);
     }
