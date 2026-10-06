@@ -236,6 +236,9 @@ public static class ApiInputValidation
 
         var employeeBenefitsRate = SumPercentage(product.EmployeeContributions, ContributionComponent.Benefits);
         var employerBenefitsRate = SumPercentage(product.EmployerContributions, ContributionComponent.Benefits);
+        var employerDisabilityRate = SumPercentage(product.EmployerContributions, ContributionComponent.Disability);
+        if (employerBenefitsRate + employerDisabilityRate > 7.5m + 0.0001m)
+            errors.Add(prefix + $"קוד שגיאה 72: תגמולי מעסיק ואכ״ע יחד לא יכולים לעבור 7.5% מהשכר ({employerBenefitsRate + employerDisabilityRate:0.####}%).");
         if (employeeBenefitsRate > 0 && employerBenefitsRate > 0
             && employeeBenefitsRate <= 5m && employerBenefitsRate <= 5m
             && Math.Abs(employeeBenefitsRate - employerBenefitsRate) > 0.0001m)
