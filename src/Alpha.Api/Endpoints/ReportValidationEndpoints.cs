@@ -306,7 +306,8 @@ public static class ReportValidationEndpoints
         };
 
         var employmentIds = employees.Select(x => x.EmploymentId).Distinct().ToArray();
-        var historicalRows = await (
+        var checkOrdinaryDuplicateHistory = !report.IsTechnicalCorrectionDocument && !report.ExternalSourceReference;
+        var historicalRows = checkOrdinaryDuplicateHistory ? await (
             from historicalReport in db.ManualReports.AsNoTracking()
             join historicalEmployee in db.ManualReportEmployees.AsNoTracking()
                 on historicalReport.Id equals historicalEmployee.ReportId
@@ -327,7 +328,7 @@ public static class ReportValidationEndpoints
                 historicalProduct.FundExternalKey,
                 historicalProduct.FundCode,
                 historicalProduct.SalaryMonth
-            }).ToListAsync(ct);
+            }).ToListAsync(ct) : [];
 
         var employeeById = employees.ToDictionary(x => x.Id);
         foreach (var product in products)
