@@ -60,8 +60,10 @@ public static class ReportFeedbackEndpoints
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/report-feedback")
             .RequireAuthorization().WithTags("Report feedback");
         group.MapGet("/", ListAsync);
+        group.MapGet("/employer-context", EmployerContextAsync);
         group.MapGet("/treatment-statuses", TreatmentStatusOptionsAsync);
         group.MapGet("/{reportId:guid}", DetailsAsync);
+        group.MapGet("/{reportId:guid}/context", ReportContextAsync);
         group.MapGet("/{reportId:guid}/deposits", DepositListAsync);
         group.MapGet("/{reportId:guid}/deposits/{reportProductId:guid}", DepositDetailsAsync);
         group.MapPut("/{reportId:guid}/deposits/{reportProductId:guid}/treatment", UpdateTreatmentAsync);
@@ -634,6 +636,175 @@ public static class ReportFeedbackEndpoints
             canCreateCorrection = ReportFeedbackStatusResolver.CanCreateCorrection(
                 canCreateReport, report.IsEditable, report.Status, report.ReportKind,
                 metadata is not null, metadata?.OperationCode == 6)
+        });
+    }
+
+
+    private static object FeedbackIssue(EmployerInterfaceContributionFeedback row) => new
+    {
+        code = row.ErrorCode ?? 0,
+        description = string.IsNullOrWhiteSpace(row.ErrorDescription)
+            ? EmployerInterfaceLineFeedbackParser.Description(row.ErrorCode)
+            : row.ErrorDescription,
+        scope = EmployerInterfaceLineFeedbackParser.ErrorScope(row.ErrorCode).ToString().ToLowerInvariant(),
+        row.ReportId,
+        row.ReportProductId,
+        row.ContributionId,
+        row.ReceivedAt
+    };
+
+    private static async Task<IReadOnlyList<EmployerInterfaceContributionFeedback>> ActiveActionableFeedbackAsync(
+        IReadOnlyCollection<Guid> reportIds, IAlphaDbContext db, CancellationToken ct)
+    {
+        if (reportIds.Count == 0) return Array.Empty<EmployerInterfaceContributionFeedback>();
+        var activeFeedbackIds = new HashSet<Guid>();
+        foreach (var reportId in reportIds)
+            activeFeedbackIds.UnionWith(await ActiveFeedbackIdsAsync(reportId, db, ct));
+
+        if (activeFeedbackIds.Count == 0) return Array.Empty<EmployerInterfaceContributionFeedback>();
+
+        var rows = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+            .Where(x => reportIds.Contains(x.ReportId) && activeFeedbackIds.Contains(x.FeedbackId))
+            .OrderByDescending(x => x.ReceivedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(x => x.ContributionId)
+            .SelectMany(group =>
+            {
+                var latest = group.First();
+                return group.Where(x => x.FeedbackId == latest.FeedbackId).OrderBy(x => x.Sequence);
+            })
+            .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
+            .ToArray();
+    }
+
+    private static async Task<IResult> EmployerContextAsync(
+        Guid organizationId, Guid employerId, IAlphaDbContext db,
+        OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+
+        var employer = await db.Employers.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
+        if (employer is null) return Results.NotFound();
+
+        var reportIds = await db.ManualReports.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
+                && !x.IsCorrectionWorkspace && !x.IsTechnicalCorrectionDocument)
+            .Select(x => x.Id)
+            .ToListAsync(ct);
+
+        var rows = await ActiveActionableFeedbackAsync(reportIds, db, ct);
+        var issues = rows
+            .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
+                == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)
+            .GroupBy(x => new { x.ErrorCode, x.ErrorDescription, x.ReportId })
+            .Select(g => FeedbackIssue(g.First()))
+            .ToArray();
+
+        return Results.Ok(new
+        {
+            employer = new
+            {
+                employer.Id,
+                employer.LegalName,
+                employer.RegistrationNumber,
+                employer.WithholdingFileNumber,
+                status = employer.Status.ToString(),
+                contactName = string.Join(" ", new[] { employer.ContactFirstName, employer.ContactLastName }
+                    .Where(x => !string.IsNullOrWhiteSpace(x))),
+                employer.ContactPhone,
+                employer.ContactEmail,
+                employer.ContactMobile
+            },
+            issues
+        });
+    }
+
+    private static async Task<IResult> ReportContextAsync(
+        Guid organizationId, Guid employerId, Guid reportId, IAlphaDbContext db,
+        OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+
+        var report = await db.ManualReports.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId
+                && x.EmployerId == employerId && !x.IsCorrectionWorkspace && !x.IsTechnicalCorrectionDocument, ct);
+        if (report is null) return Results.NotFound();
+
+        var employer = await db.Employers.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
+        if (employer is null) return Results.NotFound();
+
+        var rows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
+        var scopedIssues = rows
+            .Where(x =>
+            {
+                var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
+                return scope is EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report
+                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money;
+            })
+            .GroupBy(x => new { x.ErrorCode, x.ErrorDescription, Scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode) })
+            .Select(g => FeedbackIssue(g.First()))
+            .ToList<object>();
+
+        var latestTransmission = await db.ReportTransmissions.AsNoTracking()
+            .Where(x => x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId)
+            .OrderByDescending(x => x.AttemptNumber)
+            .FirstOrDefaultAsync(ct);
+
+        if (!string.IsNullOrWhiteSpace(report.ValidationError))
+            scopedIssues.Insert(0, new
+            {
+                code = 0,
+                description = report.ValidationError,
+                scope = "report",
+                ReportId = report.Id,
+                ReportProductId = (Guid?)null,
+                ContributionId = (Guid?)null,
+                ReceivedAt = report.UpdatedAt
+            });
+        if (latestTransmission is not null && !string.IsNullOrWhiteSpace(latestTransmission.ErrorMessage))
+            scopedIssues.Insert(0, new
+            {
+                code = 0,
+                description = latestTransmission.ErrorMessage,
+                scope = "report",
+                ReportId = report.Id,
+                ReportProductId = (Guid?)null,
+                ContributionId = (Guid?)null,
+                ReceivedAt = latestTransmission.UpdatedAt
+            });
+
+        var employeeCount = await db.ManualReportEmployees.AsNoTracking().CountAsync(x => x.ReportId == reportId, ct);
+        var productIds = await (from product in db.ManualReportProducts.AsNoTracking()
+                                join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                                where employee.ReportId == reportId
+                                select product.Id).ToArrayAsync(ct);
+        var totalAmount = productIds.Length == 0
+            ? 0m
+            : await db.ManualContributions.AsNoTracking()
+                .Where(x => productIds.Contains(x.ReportProductId))
+                .SumAsync(x => x.Amount, ct);
+
+        return Results.Ok(new
+        {
+            employer = new { employer.Id, employer.LegalName },
+            report = new
+            {
+                report.Id,
+                report.ReportingMonth,
+                report.SalaryPaymentDate,
+                report.ReportKind,
+                report.Status,
+                employeeCount,
+                totalAmount,
+                report.CreatedAt,
+                report.UpdatedAt
+            },
+            issues = scopedIssues
         });
     }
 
