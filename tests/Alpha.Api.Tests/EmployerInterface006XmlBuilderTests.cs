@@ -251,6 +251,72 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Current_report_rejects_same_transfer_identifier_across_distinct_transfer_groups_error_50()
+    {
+        var fixture = CreateFixture(false, operationCode: 1, paymentMethodCode: 1);
+        var sharedTransferId = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        fixture.Context.ProductMetadata[0].SetInterfaceTransferIdentifier(sharedTransferId);
+
+        var correctedProduct = new ManualReportProduct(fixture.Context.Employees[0].Id, PensionProductType.PensionFund, "456",
+            new DateOnly(2026, 9, 1), 500m, "1", "1", false, null,
+            fundCode: fixture.Product.FundCode, fundName: "Test Fund");
+        var correctedContribution = new ManualContribution(correctedProduct.Id, ContributionParty.Employee,
+            ContributionComponent.Benefits, 50m, 10m, 0m);
+        var correctedPayment = new ManualReportPayment(correctedProduct.Id);
+        correctedPayment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), null,
+            "REF-1", "Test Bank", "10", "123", "123456", "");
+        var correctedMetadata = new EmployerInterfaceReportProductData(correctedProduct.Id);
+        correctedMetadata.Update(2, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1,
+            previousReferenceExceptionCode: 1);
+        correctedMetadata.SetInterfaceTransferIdentifier(sharedTransferId);
+
+        var context = fixture.Context with
+        {
+            Products = [.. fixture.Context.Products, correctedProduct],
+            Contributions = [.. fixture.Context.Contributions, correctedContribution],
+            Payments = [.. fixture.Context.Payments, correctedPayment],
+            ProductMetadata = [.. fixture.Context.ProductMetadata, correctedMetadata]
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("קוד שגיאה 50", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_report_rejects_conflicting_transfer_identifiers_inside_one_transfer_group_error_50()
+    {
+        var fixture = CreateFixture(false);
+        fixture.Context.ProductMetadata[0].SetInterfaceTransferIdentifier(Guid.NewGuid().ToString("D"));
+
+        var secondProduct = new ManualReportProduct(fixture.Context.Employees[0].Id, PensionProductType.PensionFund, "456",
+            new DateOnly(2026, 9, 1), 500m, "1", "1", false, null,
+            fundCode: fixture.Product.FundCode, fundName: "Test Fund");
+        var secondContribution = new ManualContribution(secondProduct.Id, ContributionParty.Employee,
+            ContributionComponent.Benefits, 50m, 10m, 0m);
+        var secondPayment = new ManualReportPayment(secondProduct.Id);
+        secondPayment.Update("Test Fund", "10 - 123 - 987654", "", new DateOnly(2026, 9, 16), "REF-1",
+            "Test Bank", "10", "123", "123456", "");
+        var secondMetadata = new EmployerInterfaceReportProductData(secondProduct.Id);
+        secondMetadata.Update(1, 1, 1, new DateOnly(2026, 9, 1), null, null, 2, null, 1, 1, 1);
+        secondMetadata.SetInterfaceTransferIdentifier(Guid.NewGuid().ToString("D"));
+
+        var context = fixture.Context with
+        {
+            Products = [.. fixture.Context.Products, secondProduct],
+            Contributions = [.. fixture.Context.Contributions, secondContribution],
+            Payments = [.. fixture.Context.Payments, secondPayment],
+            ProductMetadata = [.. fixture.Context.ProductMetadata, secondMetadata]
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildCurrent(context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("קוד שגיאה 50", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Current_report_splits_same_fund_when_new_and_corrected_operations_are_mixed()
     {
         var fixture = CreateFixture(false, operationCode: 1, paymentMethodCode: 1);
