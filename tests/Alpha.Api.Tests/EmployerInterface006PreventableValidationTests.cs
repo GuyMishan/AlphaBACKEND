@@ -108,6 +108,39 @@ public sealed class EmployerInterface006PreventableValidationTests
     }
 
     [Fact]
+    public void Wire_rounding_half_cent_matches_error_53_validation()
+    {
+        var product = Product(100.50m,
+            [new(ContributionComponent.Benefits, 1.01m, 1m, 0m)],
+            [new(ContributionComponent.Benefits, 1.01m, 1m, 0m)]);
+        var errors = ApiInputValidation.Products([product], Limits, false);
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 53"));
+    }
+
+    [Theory]
+    [InlineData("6.123")]
+    [InlineData("6.999")]
+    public void Rejects_percentage_precision_beyond_official_xsd(string raw)
+    {
+        var percentage = decimal.Parse(raw, System.Globalization.CultureInfo.InvariantCulture);
+        var product = Product(1000m,
+            [new(ContributionComponent.Benefits, 60m, percentage, 0m)],
+            [new(ContributionComponent.Benefits, 60m, 6m, 0m)]);
+        var errors = ApiInputValidation.Products([product], Limits, false);
+        Assert.Contains(errors, x => x.Contains("עד 2 ספרות אחרי הנקודה"));
+    }
+
+    [Fact]
+    public void Rejects_money_precision_beyond_official_xsd()
+    {
+        var product = Product(1000m,
+            [new(ContributionComponent.Benefits, 60.001m, 6m, 0m)],
+            [new(ContributionComponent.Benefits, 60m, 6m, 0m)]);
+        var errors = ApiInputValidation.Products([product], Limits, false);
+        Assert.Contains(errors, x => x.Contains("עד 2 ספרות אחרי הנקודה"));
+    }
+
+    [Fact]
     public void Rejects_unequal_employee_and_employer_rates_up_to_five_error_71()
     {
         var errors = Validate(
