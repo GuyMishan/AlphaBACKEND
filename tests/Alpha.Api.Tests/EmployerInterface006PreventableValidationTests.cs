@@ -96,6 +96,17 @@ public sealed class EmployerInterface006PreventableValidationTests
         Assert.Contains(errors, x => x.Contains("קוד שגיאה 53"));
     }
 
+    [Theory]
+    [InlineData(0, 6)]
+    [InlineData(60, 0)]
+    public void Rejects_partially_populated_salary_rate_amount_as_error_53(decimal amount, decimal percentage)
+    {
+        var errors = Validate(
+            employer: [new(ContributionComponent.Benefits, 60m, 6m, 0m)],
+            employee: [new(ContributionComponent.Benefits, amount, percentage, 0m)]);
+        Assert.Contains(errors, x => x.Contains("קוד שגיאה 53"));
+    }
+
     [Fact]
     public void Rejects_unequal_employee_and_employer_rates_up_to_five_error_71()
     {
