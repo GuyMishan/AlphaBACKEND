@@ -163,13 +163,57 @@ public sealed class EmployerInterface006PreventableValidationTests
     }
 
     [Fact]
-    public void Rejects_missing_salary_for_routine_salaried_deposit_error_75()
+    public void Self_employed_deposit_does_not_apply_employee_employer_regulation_19_rules()
     {
         var product = Product(0m,
-            [new(ContributionComponent.Benefits, 60m, 6m, 0m)],
-            [new(ContributionComponent.Benefits, 60m, 6m, 0m)]);
+            employer: [],
+            employee: [new(ContributionComponent.Benefits, 60m, 6m, 0m)],
+            depositStatus: 2);
+        var errors = ApiInputValidation.Products([product], Limits, true);
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 16"));
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 17"));
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 53"));
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 71"));
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 72"));
+    }
+
+    [Fact]
+    public void Controlling_shareholder_keeps_employee_employer_regulation_19_rules()
+    {
+        var product = Product(1000m,
+            employer: [],
+            employee: [new(ContributionComponent.Benefits, 60m, 6m, 0m)],
+            depositStatus: 3);
         var errors = ApiInputValidation.Products([product], Limits, false);
-        Assert.Contains(errors, x => x.Contains("קוד שגיאה 75"));
+        Assert.Contains(errors, x => x.Contains("קוד שגיאה 16"));
+    }
+
+    [Fact]
+    public void Provident_fund_severance_only_is_not_falsely_blocked_as_error_23()
+    {
+        var product = Product(1000m,
+            employer: [new(ContributionComponent.Severance, 83.30m, 8.33m, 0m)],
+            employee: [],
+            productType: PensionProductType.ProvidentFund);
+        var errors = ApiInputValidation.Products([product], Limits, false);
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 23"));
+    }
+
+    [Fact]
+    public void Negative_cancellation_does_not_reapply_current_contribution_business_errors()
+    {
+        var product = new ManualProductInput(PensionProductType.PensionFund, "P1", new DateOnly(2200, 1, 1), 0m,
+            "1", "1", false, null, 3, "fund", "111", "Fund", "Company", "",
+            SalaryAllocationType.Fixed, 0m, 0,
+            [],
+            [new(ContributionComponent.Benefits, 60m, 0m, 0m)],
+            DepositStatus: 1, IsNegativeReport: true);
+        var errors = ApiInputValidation.Products([product], Limits, true);
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 16"));
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 27"));
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 53"));
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 71"));
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 72"));
     }
 
     private static IReadOnlyList<string> Validate(
@@ -179,8 +223,11 @@ public sealed class EmployerInterface006PreventableValidationTests
 
     private static ManualProductInput Product(decimal salary,
         IReadOnlyCollection<ManualContributionInput> employer,
-        IReadOnlyCollection<ManualContributionInput> employee)
-        => new(PensionProductType.PensionFund, "P1", new DateOnly(2026, 9, 1), salary,
+        IReadOnlyCollection<ManualContributionInput> employee,
+        int? depositStatus = null,
+        PensionProductType productType = PensionProductType.PensionFund)
+        => new(productType, "P1", new DateOnly(2026, 9, 1), salary,
             "1", "1", false, null, 3, "fund", "111", "Fund", "Company", "",
-            SalaryAllocationType.Fixed, salary, 0, employer, employee);
+            SalaryAllocationType.Fixed, salary, 0, employer, employee,
+            DepositStatus: depositStatus);
 }
