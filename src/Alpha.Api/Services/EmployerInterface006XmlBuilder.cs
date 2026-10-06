@@ -545,6 +545,33 @@ public static class EmployerInterface006XmlBuilder
             if (negative && contributions.Any(x => x.Amount <= 0)) issues.Add($"{label}: negative contribution amounts must be greater than zero.");
         }
 
+        var transferIdentifiers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in c.Products.GroupBy(x => TransferGroupKey(c, x), StringComparer.Ordinal))
+        {
+            var groupProducts = group.ToList();
+            var explicitIds = groupProducts
+                .Select(product => c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == product.Id)?.InterfaceTransferIdentifier)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value!.Trim().ToUpperInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (explicitIds.Length > 1)
+            {
+                issues.Add($"קוד שגיאה 50: מוצרים שמיוצאים באותה קבוצת העברה מכילים MISPAR-ZIHUI שונים. יש להשתמש במזהה העברה יחיד לקבוצה.");
+                continue;
+            }
+
+            var firstProduct = groupProducts[0];
+            var firstMetadata = c.ProductMetadata.FirstOrDefault(x => x.ReportProductId == firstProduct.Id);
+            if (firstMetadata is null) continue;
+            var emittedIdentifier = explicitIds.Length == 1
+                ? explicitIds[0]
+                : CurrentTransferIdentifier(firstMetadata, firstProduct.Id);
+            if (!transferIdentifiers.TryAdd(emittedIdentifier, group.Key))
+                issues.Add($"קוד שגיאה 50: MISPAR-ZIHUI {emittedIdentifier} משמש יותר מקבוצת העברה אחת באותו קובץ.");
+        }
+
         if (!negative)
         {
             foreach (var employee in c.Employees)
