@@ -200,6 +200,18 @@ public sealed class EmployerInterface006PreventableValidationTests
     }
 
     [Fact]
+    public void Exempt_only_current_adjustment_shape_does_not_false_trigger_53_or_72()
+    {
+        var product = Product(1000m,
+            employer: [new(ContributionComponent.Benefits, 0m, 0m, -300m)],
+            employee: [],
+            depositStatus: 1);
+        var errors = ApiInputValidation.Products([product], Limits, true);
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 53"));
+        Assert.DoesNotContain(errors, x => x.Contains("קוד שגיאה 72"));
+    }
+
+    [Fact]
     public void Negative_cancellation_does_not_reapply_current_contribution_business_errors()
     {
         var product = new ManualProductInput(PensionProductType.PensionFund, "P1", new DateOnly(2200, 1, 1), 0m,
