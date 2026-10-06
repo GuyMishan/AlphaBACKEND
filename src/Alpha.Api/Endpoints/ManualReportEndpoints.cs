@@ -356,7 +356,7 @@ public static class ManualReportEndpoints
             productCount = productCounts.GetValueOrDefault(x.Id),
             validationStatus = productCounts.GetValueOrDefault(x.Id) > 0 && x.MonthlySalary > 0 ? "ready" : "missing-products"
         });
-        return Results.Ok(new { items, hasMore });
+        return Results.Ok(new { items, hasMore, contributionLimits });
     }
 
     private static async Task<IResult> GetDepositsAsync(Guid organizationId, Guid employerId, Guid reportId,
@@ -391,11 +391,26 @@ public static class ManualReportEndpoints
         var hasMore = page.Count > take;
         if (hasMore) page.RemoveAt(page.Count - 1);
         var productIds = page.Select(x => x.Product.Id).ToArray();
-        var totals = await db.ManualContributions.AsNoTracking()
+        var contributionRows = await db.ManualContributions.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId))
+            .OrderBy(x => x.ReportProductId).ThenBy(x => x.Party).ThenBy(x => x.Component)
+            .ToListAsync(ct);
+        var totals = contributionRows
             .GroupBy(x => x.ReportProductId)
-            .Select(g => new { Id = g.Key, Amount = g.Sum(x => x.Amount) })
-            .ToDictionaryAsync(x => x.Id, x => x.Amount, ct);
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+        var salaryYears = page.Select(x => x.Product.SalaryMonth.Year).Distinct().ToArray();
+        var contributionLimits = await db.ContributionPercentageLimits.AsNoTracking()
+            .Where(x => salaryYears.Contains(x.Year))
+            .OrderBy(x => x.Year).ThenBy(x => x.ProductType).ThenBy(x => x.Party).ThenBy(x => x.Component)
+            .Select(x => new
+            {
+                year = x.Year,
+                productType = (int)x.ProductType,
+                party = (int)x.Party,
+                component = (int)x.Component,
+                maxPercentage = x.MaxPercentage
+            })
+            .ToListAsync(ct);
         var payments = await db.ManualReportPayments.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
@@ -475,6 +490,10 @@ public static class ManualReportEndpoints
                 x.Product.SalaryLayer,
                 x.Product.Section14,
                 x.Product.Section14StartDate,
+                employerContributions = contributionRows.Where(c => c.ReportProductId == x.Product.Id && c.Party == ContributionParty.Employer)
+                    .Select(c => new { component = (int)c.Component, c.Amount, c.Percentage, c.ExemptPayments }).ToArray(),
+                employeeContributions = contributionRows.Where(c => c.ReportProductId == x.Product.Id && c.Party == ContributionParty.Employee)
+                    .Select(c => new { component = (int)c.Component, c.Amount, c.Percentage, c.ExemptPayments }).ToArray(),
                 totalDeposit = totals.GetValueOrDefault(x.Product.Id),
                 providerName = payment?.ProviderName ?? string.Empty,
                 providerAccount = !string.IsNullOrWhiteSpace(payment?.ProviderAccount) ? payment.ProviderAccount : referenceAccounts.GetValueOrDefault(x.Product.FundExternalKey) ?? string.Empty,
