@@ -317,7 +317,10 @@ public static class ReportValidationEndpoints
         };
 
         var personIds = employees.Select(x => x.PersonId).Distinct().ToArray();
-        var checkOrdinaryDuplicateHistory = !report.IsTechnicalCorrectionDocument && !report.ExternalSourceReference;
+        var checkOrdinaryDuplicateHistory = report.ReportKind == ManualReportKind.Current
+            && !report.IsCorrectionWorkspace
+            && !report.IsTechnicalCorrectionDocument
+            && !report.ExternalSourceReference;
         var historicalRows = checkOrdinaryDuplicateHistory ? await (
             from historicalReport in db.ManualReports.AsNoTracking()
             join historicalEmployee in db.ManualReportEmployees.AsNoTracking()
