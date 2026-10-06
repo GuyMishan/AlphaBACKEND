@@ -75,6 +75,45 @@ public sealed class EmployerInterface006OfficialWorkbookTests
     }
 
     [Fact]
+    public void Official_clearinghouse_error_workbook_contains_all_preventable_error_contracts()
+    {
+        using var workbook = OpenErrorCodeWorkbook();
+        var expected = new Dictionary<int, string>
+        {
+            [16] = "תגמולי עובד ללא רכיב תגמולי מעסיק",
+            [17] = "תגמולי מעסיק ללא רכיב תגמולי עובד",
+            [23] = "פיצויים ללא תגמולי עובד ומעסיק",
+            [27] = "חודש שכר עתידי",
+            [28] = "חודש שכר דווח כפול",
+            [43] = "דווחה תנועה כפולה",
+            [50] = "דיווח כפול על מספר זיהוי של פרטי העברת כספים",
+            [53] = "אין התאמה בין אחוז הפרשה, סכום הפרשה ושכר",
+            [62] = "ספרת ביקורת שגויה",
+            [71] = "תגמולי עובד ותגמולי מעסיק עד 5% מהשכר נדרשים להיות זהים",
+            [72] = "לא ניתן להפקיד מעבר לתקרת הפקדה המוגדרת בתקנה 19",
+            [75] = "במעמד הפקדת שכיר - שוטף חובה לדווח על השכר",
+            [100] = "קוד 2 או קוד 3",
+            [101] = "קוד 6",
+        };
+
+        foreach (var (code, descriptionFragment) in expected)
+        {
+            var rows = workbook.FindRowsWithExactCell(code.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Assert.NotEmpty(rows);
+            Assert.Contains(rows, row => row.Contains(descriptionFragment, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var code100 = string.Join(" || ", workbook.FindRowsWithExactCell("100"));
+        Assert.Contains("קוד 6", code100, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("פעולות מתקנות", code100, StringComparison.OrdinalIgnoreCase);
+
+        var code101 = string.Join(" || ", workbook.FindRowsWithExactCell("101"));
+        Assert.Contains("קוד 2", code101, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("קוד 3", code101, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("פעולות", code101, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Alpha_operation_payment_matrix_remains_the_v6_matrix()
     {
         Assert.Equal([1, 3, 5, 6, 7, 9], EmployerInterface006WorkbookRules.AllowedPaymentMethods(1));
@@ -89,6 +128,13 @@ public sealed class EmployerInterface006OfficialWorkbookTests
     {
         var root = FindRepoRoot();
         return new WorkbookReader(Path.Combine(root, "docs", "specifications", "employer-interface", "006", "Employer interface V 6.xlsx"));
+    }
+
+    private static WorkbookReader OpenErrorCodeWorkbook()
+    {
+        var root = FindRepoRoot();
+        return new WorkbookReader(Path.Combine(root, "docs", "specifications", "mislaka",
+            "מעסיקים-גרסה-6.0-טבלאות-קודי-שגיאה-סופי.xlsx"));
     }
 
     private static void AssertRowContains(WorkbookReader workbook, string sheetName, string xmlElement, params string[] expected)
@@ -143,6 +189,20 @@ public sealed class EmployerInterface006OfficialWorkbookTests
                 .Where(row => row.Any(cell => string.Equals(cell.Trim(), xmlElement, StringComparison.OrdinalIgnoreCase)))
                 .Select(row => string.Join(" | ", row))
                 .FirstOrDefault() ?? string.Empty;
+        }
+
+        public IReadOnlyList<string> FindRowsWithExactCell(string value)
+        {
+            var result = new List<string>();
+            foreach (var target in _sheetTargets.Values.Distinct(StringComparer.Ordinal))
+            {
+                var entry = _zip.GetEntry(target)
+                    ?? throw new InvalidOperationException($"Workbook entry {target} was not found.");
+                result.AddRange(ReadRows(entry, _shared)
+                    .Where(row => row.Any(cell => string.Equals(cell.Trim(), value, StringComparison.Ordinal)))
+                    .Select(row => string.Join(" | ", row)));
+            }
+            return result;
         }
 
         public void Dispose() => _zip.Dispose();
