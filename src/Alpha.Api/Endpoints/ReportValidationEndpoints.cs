@@ -1,3 +1,4 @@
+using Alpha.Api.Security;
 using Alpha.Api.Services;
 using Alpha.Api.Validation;
 using Alpha.Application.Abstractions;
@@ -34,11 +35,11 @@ public static class ReportValidationEndpoints
 
     private static async Task<IResult> PreviewValidationAsync(Guid organizationId, Guid employerId, Guid reportId,
         string? stage, IAlphaDbContext db, OrganizationAccessService access,
-        EmployerInterface006ExportService employerInterfaceExporter, CancellationToken ct)
+        EmployerInterface006ExportService employerInterfaceExporter, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var normalizedStage = NormalizeStage(stage);
-        var result = await ValidateReportAsync(organizationId, employerId, reportId, normalizedStage, db, false, ct);
+        var result = await ValidateReportAsync(organizationId, employerId, reportId, normalizedStage, db, protector, false, ct);
         if (result is null) return Results.NotFound();
         await AppendEmployerInterfacePreflightAsync(result, normalizedStage, employerInterfaceExporter, ct);
         return Results.Ok(ToResponse(result));
@@ -46,13 +47,13 @@ public static class ReportValidationEndpoints
 
     private static async Task<IResult> CommitValidationAsync(Guid organizationId, Guid employerId, Guid reportId,
         string? stage, IAlphaDbContext db, OrganizationAccessService access,
-        EmployerInterface006ExportService employerInterfaceExporter, CancellationToken ct)
+        EmployerInterface006ExportService employerInterfaceExporter, IDataProtectionService protector, CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var normalizedStage = NormalizeStage(stage);
         if (normalizedStage == ValidationStage.Final)
             await CorrectionWorkflowService.SyncCurrentCorrectionReferencesAsync(reportId, db, ct);
-        var result = await ValidateReportAsync(organizationId, employerId, reportId, normalizedStage, db, true, ct);
+        var result = await ValidateReportAsync(organizationId, employerId, reportId, normalizedStage, db, protector, true, ct);
         if (result is null) return Results.NotFound();
         await AppendEmployerInterfacePreflightAsync(result, normalizedStage, employerInterfaceExporter, ct);
 
@@ -105,7 +106,7 @@ public static class ReportValidationEndpoints
     }
 
     private static async Task<ValidationContext?> ValidateReportAsync(Guid organizationId, Guid employerId, Guid reportId,
-        ValidationStage stage, IAlphaDbContext db, bool tracked, CancellationToken ct)
+        ValidationStage stage, IAlphaDbContext db, IDataProtectionService protector, bool tracked, CancellationToken ct)
     {
         var reportQuery = db.ManualReports.Where(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId);
         var report = tracked
@@ -186,8 +187,12 @@ public static class ReportValidationEndpoints
 
             if (string.IsNullOrWhiteSpace(employee.NationalId))
                 issues.Add(new("NATIONAL_ID_REQUIRED", $"לעובד {employeeName} חסרה תעודת זהות.", ValidationScope.Employee, employee.Id));
-            if (employee.InterfaceIdentifierType == 1 && !ApiInputValidation.IsIsraeliId(employee.InterfaceIdentifier))
-                issues.Add(new("SUG_SHGIHA_62", $"קוד שגיאה 62: תעודת הזהות של {employeeName} אינה עוברת בדיקת ספרת ביקורת.", ValidationScope.Employee, employee.Id));
+            if (employee.InterfaceIdentifierType == 1)
+            {
+                var interfaceIdentifier = protector.Unprotect(employee.InterfaceIdentifier, $"report-employee-interface-id:{employee.Id}");
+                if (!ApiInputValidation.IsIsraeliId(interfaceIdentifier))
+                    issues.Add(new("SUG_SHGIHA_62", $"קוד שגיאה 62: תעודת הזהות של {employeeName} אינה עוברת בדיקת ספרת ביקורת.", ValidationScope.Employee, employee.Id));
+            }
             if (employeeProducts.Count == 0)
             {
                 issues.Add(new("PENSION_PRODUCT_REQUIRED", $"לעובד {employeeName} אין מוצר פנסיוני בדיווח.", ValidationScope.Product, employee.Id));
@@ -397,8 +402,9 @@ public static class ReportValidationEndpoints
             var source = report.SourceReportId.HasValue
                 ? await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == report.SourceReportId.Value, ct)
                 : null;
-            if (source?.ReportKind != ManualReportKind.Negative
-                || source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
+            if (!report.ExternalSourceReference
+                && (source?.ReportKind != ManualReportKind.Negative
+                    || source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed)))
                 issues.Add(new("SUG_SHGIHA_100",
                     "קוד שגיאה 100: פעולת תיקון 2/3 בשוטף מחייבת דיווח שלילי מקדים בפעולה 6 שנשלח בהצלחה.",
                     ValidationScope.Report));

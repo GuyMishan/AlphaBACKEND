@@ -103,7 +103,8 @@ public static class ApiInputValidation
             if (product.PolicyNumber?.Trim().Length > 20) errors.Add(prefix + "מספר פוליסה/חשבון יכול להכיל עד 20 תווים לפי ממשק מעסיקים 006.");
             if (product.Salary < 0) errors.Add(prefix + "השכר לא יכול להיות שלילי.");
             if (product.Salary > 10_000_000) errors.Add(prefix + "השכר חורג מהטווח המותר.");
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var israelNow = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTimeOffset.UtcNow, "Asia/Jerusalem");
+            var today = DateOnly.FromDateTime(israelNow.DateTime);
             var currentSalaryMonth = new DateOnly(today.Year, today.Month, 1);
             if (product.SalaryMonth.Year < 2000 || product.SalaryMonth > currentSalaryMonth)
                 errors.Add(prefix + "קוד שגיאה 27: לא ניתן לדווח הפקדה בגין חודש שכר עתידי.");
