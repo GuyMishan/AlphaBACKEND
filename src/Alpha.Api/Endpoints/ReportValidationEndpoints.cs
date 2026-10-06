@@ -403,11 +403,62 @@ public static class ReportValidationEndpoints
             var source = report.SourceReportId.HasValue
                 ? await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == report.SourceReportId.Value, ct)
                 : null;
-            if (!report.ExternalSourceReference
-                && (source?.ReportKind != ManualReportKind.Negative
-                    || source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed)))
+            var missingMatchingNegative = false;
+
+            if (!report.ExternalSourceReference)
+            {
+                if (source?.ReportKind != ManualReportKind.Negative
+                    || source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
+                {
+                    missingMatchingNegative = true;
+                }
+                else
+                {
+                    var sourceEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
+                        .Where(x => x.ReportId == source.Id).Select(x => x.Id).ToArrayAsync(ct);
+                    var sourceProducts = await db.ManualReportProducts.AsNoTracking()
+                        .Where(x => sourceEmployeeIds.Contains(x.ReportEmployeeId)).ToListAsync(ct);
+                    var sourceProductIds = sourceProducts.Select(x => x.Id).ToArray();
+                    var sourceOps = await db.EmployerInterfaceReportProductData.AsNoTracking()
+                        .Where(x => sourceProductIds.Contains(x.ReportProductId))
+                        .ToDictionaryAsync(x => x.ReportProductId, x => x.OperationCode, ct);
+
+                    var currentCorrectionProducts = products
+                        .Where(x => operationByProduct.GetValueOrDefault(x.Id) is 2 or 3)
+                        .ToArray();
+                    var workspaceIds = currentCorrectionProducts
+                        .Where(x => x.SourceReportProductId.HasValue)
+                        .Select(x => x.SourceReportProductId!.Value).Distinct().ToArray();
+                    var workspaceProducts = await db.ManualReportProducts.AsNoTracking()
+                        .Where(x => workspaceIds.Contains(x.Id))
+                        .ToDictionaryAsync(x => x.Id, ct);
+
+                    foreach (var currentProduct in currentCorrectionProducts)
+                    {
+                        if (!currentProduct.SourceReportProductId.HasValue
+                            || !workspaceProducts.TryGetValue(currentProduct.SourceReportProductId.Value, out var workspaceProduct)
+                            || !workspaceProduct.SourceReportProductId.HasValue)
+                        {
+                            missingMatchingNegative = true;
+                            break;
+                        }
+
+                        var originalProductId = workspaceProduct.SourceReportProductId.Value;
+                        var hasPair = sourceProducts.Any(negativeProduct =>
+                            negativeProduct.SourceReportProductId == originalProductId
+                            && sourceOps.GetValueOrDefault(negativeProduct.Id) == 6);
+                        if (!hasPair)
+                        {
+                            missingMatchingNegative = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (missingMatchingNegative)
                 issues.Add(new("SUG_SHGIHA_100",
-                    "קוד שגיאה 100: פעולת תיקון 2/3 בשוטף מחייבת דיווח שלילי מקדים בפעולה 6 שנשלח בהצלחה.",
+                    "קוד שגיאה 100: לכל פעולת תיקון 2/3 בשוטף חייבת להיות פעולת 6 תואמת בדיווח השלילי שנשלח, לפי lineage של אותו מוצר.",
                     ValidationScope.Report));
         }
 
@@ -419,18 +470,54 @@ public static class ReportValidationEndpoints
             var workspaceId = report.CorrectionWorkspaceId.Value;
             var workspaceEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
                 .Where(x => x.ReportId == workspaceId).Select(x => x.Id).ToArrayAsync(ct);
-            var workspaceHasChangedProduct = await db.ManualReportProducts.AsNoTracking()
-                .AnyAsync(x => workspaceEmployeeIds.Contains(x.ReportEmployeeId)
-                    && x.SourceReportProductId.HasValue && x.IsCorrectionChanged, ct);
-            if (workspaceHasChangedProduct)
+            var workspaceProducts = await db.ManualReportProducts.AsNoTracking()
+                .Where(x => workspaceEmployeeIds.Contains(x.ReportEmployeeId)
+                    && x.SourceReportProductId.HasValue)
+                .ToListAsync(ct);
+
+            var negativeProductsRequiringCurrent = products
+                .Where(x => operationByProduct.GetValueOrDefault(x.Id) == 6
+                    && x.SourceReportProductId.HasValue
+                    && workspaceProducts.Any(w => w.SourceReportProductId == x.SourceReportProductId))
+                .ToArray();
+
+            if (negativeProductsRequiringCurrent.Length > 0)
             {
-                var hasCurrentSibling = await db.ManualReports.AsNoTracking().AnyAsync(x =>
+                var currentSibling = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x =>
                     x.CorrectionWorkspaceId == workspaceId
                     && x.IsTechnicalCorrectionDocument
                     && x.ReportKind == ManualReportKind.Current, ct);
-                if (!hasCurrentSibling)
+
+                var hasAllPairs = currentSibling is not null;
+                if (currentSibling is not null)
+                {
+                    var currentEmployeeIds = await db.ManualReportEmployees.AsNoTracking()
+                        .Where(x => x.ReportId == currentSibling.Id).Select(x => x.Id).ToArrayAsync(ct);
+                    var currentProducts = await db.ManualReportProducts.AsNoTracking()
+                        .Where(x => currentEmployeeIds.Contains(x.ReportEmployeeId)).ToListAsync(ct);
+                    var currentProductIds = currentProducts.Select(x => x.Id).ToArray();
+                    var currentOps = await db.EmployerInterfaceReportProductData.AsNoTracking()
+                        .Where(x => currentProductIds.Contains(x.ReportProductId))
+                        .ToDictionaryAsync(x => x.ReportProductId, x => x.OperationCode, ct);
+
+                    foreach (var negativeProduct in negativeProductsRequiringCurrent)
+                    {
+                        var workspaceProduct = workspaceProducts.First(w =>
+                            w.SourceReportProductId == negativeProduct.SourceReportProductId);
+                        var hasPair = currentProducts.Any(currentProduct =>
+                            currentProduct.SourceReportProductId == workspaceProduct.Id
+                            && currentOps.GetValueOrDefault(currentProduct.Id) is 2 or 3);
+                        if (!hasPair)
+                        {
+                            hasAllPairs = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (!hasAllPairs)
                     issues.Add(new("SUG_SHGIHA_101",
-                        "קוד שגיאה 101: פעולת ביטול 6 עבור שינוי מחייבת גם דיווח שוטף מתקן בפעולה 2/3.",
+                        "קוד שגיאה 101: לכל פעולת 6 שמבטלת תנועה לצורך שינוי חייבת להיות פעולת 2/3 תואמת בדיווח השוטף, לפי lineage של אותו מוצר.",
                         ValidationScope.Report));
             }
         }
