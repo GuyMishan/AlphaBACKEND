@@ -700,8 +700,8 @@ public static class ReportFeedbackEndpoints
         var issues = rows
             .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
                 == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)
-            .GroupBy(x => new { x.ErrorCode, x.ErrorDescription, x.ReportId })
-            .Select(g => FeedbackIssue(g.First()))
+            .GroupBy(x => new { x.ErrorCode, x.ErrorDescription })
+            .Select(g => FeedbackIssue(g.OrderByDescending(x => x.ReceivedAt).First()))
             .ToArray();
 
         return Results.Ok(new
