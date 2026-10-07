@@ -178,7 +178,7 @@ public static class ReportFeedbackEndpoints
             .Where(x => candidateIds.Contains(x.ReportId) && activeFeedbackIds.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt)
             .ThenByDescending(x => x.CreatedAt)
-            .Select(x => new { x.ReportId, x.ReportProductId, x.ContributionId, x.FeedbackId, x.ErrorCode, x.ReceivedAt, x.CreatedAt })
+            .Select(x => new { x.ReportId, x.ReportProductId, x.ContributionId, x.FeedbackId, x.Sequence, x.ErrorCode, x.ReceivedAt, x.CreatedAt })
             .ToListAsync(ct);
         var latestContributionFeedback = contributionFeedbackRows
             .GroupBy(x => x.ContributionId)
