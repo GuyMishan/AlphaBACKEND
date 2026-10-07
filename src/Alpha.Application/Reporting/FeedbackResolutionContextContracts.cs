@@ -144,11 +144,21 @@ public static class FeedbackResolutionWireProjection
         var edit = WireName(FeedbackResolutionType.Edit);
         var correctionWorkspace = WireName(FeedbackCorrectionBehavior.CorrectionWorkspace);
         var prepareCorrection = WireName(FeedbackResolutionAction.PrepareCorrection);
+        var resolverSpecificAction = requestedResolver switch
+        {
+            var value when value == WireName(FeedbackResolverType.Contribution) => WireName(FeedbackResolutionAction.EditContribution),
+            var value when value == WireName(FeedbackResolverType.ProductPolicy) => WireName(FeedbackResolutionAction.EditProduct),
+            var value when value == WireName(FeedbackResolverType.EmploymentStatus) => WireName(FeedbackResolutionAction.EditEmployment),
+            var value when value == WireName(FeedbackResolverType.Payment) => WireName(FeedbackResolutionAction.EditPayment),
+            var value when value == WireName(FeedbackResolverType.Documents) => WireName(FeedbackResolutionAction.UploadDocument),
+            _ => prepareCorrection
+        };
 
         return group.Problems.All(problem =>
             string.Equals(problem.ResolutionType, edit, StringComparison.Ordinal)
             && string.Equals(problem.CorrectionBehavior, correctionWorkspace, StringComparison.Ordinal)
-            && problem.AvailableActions.Contains(prepareCorrection, StringComparer.Ordinal));
+            && (problem.AvailableActions.Contains(prepareCorrection, StringComparer.Ordinal)
+                || problem.AvailableActions.Contains(resolverSpecificAction, StringComparer.Ordinal)));
     }
 
     public static string BuildResolutionGroupKey(
