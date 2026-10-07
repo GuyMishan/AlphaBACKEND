@@ -999,7 +999,7 @@ public static class ReportFeedbackEndpoints
         CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
-        if (request.ProblemIds.Count == 0 || string.IsNullOrWhiteSpace(request.GroupKey))
+        if (request.ProblemIds is null || request.ProblemIds.Count == 0 || string.IsNullOrWhiteSpace(request.GroupKey))
             return Results.BadRequest(new { error = "external_case_targets_required" });
 
         var rows = (await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct)).ToArray();
@@ -1296,6 +1296,19 @@ public static class ReportFeedbackEndpoints
         using var memory = new MemoryStream();
         await input.CopyToAsync(memory, ct);
         var bytes = memory.ToArray();
+        var validSignature = ext switch
+        {
+            ".pdf" => bytes.Length >= 5 && bytes.AsSpan().StartsWith("%PDF-"u8),
+            ".png" => bytes.Length >= 8
+                && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47
+                && bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A,
+            ".jpg" or ".jpeg" => bytes.Length >= 3
+                && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,
+            _ => false
+        };
+        if (!validSignature)
+            return Results.BadRequest(new { error = "case_attachment_signature_invalid" });
+
         await using var scanStream = new MemoryStream(bytes, writable: false);
         var scan = await scanner.ScanAsync(scanStream, file.FileName, ct);
         if (scan.Verdict == MalwareScanVerdict.Unavailable)
