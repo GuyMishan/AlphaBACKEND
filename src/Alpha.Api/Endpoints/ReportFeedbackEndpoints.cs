@@ -620,7 +620,8 @@ public static class ReportFeedbackEndpoints
         if (rows.Count == 0)
             return new FeedbackResolutionContextResponse(
                 contextType, employerId, requestedReportId, requestedReportProductId, canResolve,
-                Array.Empty<int>(), Array.Empty<FeedbackResolutionProblemDto>());
+                Array.Empty<int>(), Array.Empty<FeedbackResolutionProblemDto>(),
+                Array.Empty<FeedbackResolutionGroupDto>());
 
         var unsupportedCodes = rows
             .Where(x => x.ErrorCode.HasValue && !FeedbackResolutionPlaybookCatalog.TryGet(x.ErrorCode.Value, out _))
@@ -751,9 +752,11 @@ public static class ReportFeedbackEndpoints
                 ReceivedAt: row.ReceivedAt));
         }
 
+        var groups = FeedbackResolutionWireProjection.BuildGroups(problems);
+
         return new FeedbackResolutionContextResponse(
             contextType, employerId, requestedReportId, requestedReportProductId,
-            canResolve && unsupportedCodes.Length == 0, unsupportedCodes, problems);
+            canResolve && unsupportedCodes.Length == 0, unsupportedCodes, problems, groups);
     }
 
     private static IReadOnlyDictionary<string, string?> ReportedValues(

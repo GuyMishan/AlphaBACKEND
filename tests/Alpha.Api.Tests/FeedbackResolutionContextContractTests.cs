@@ -95,6 +95,56 @@ public sealed class FeedbackResolutionContextContractTests
         Assert.NotEqual(first, second);
     }
 
+
+    [Fact]
+    public void Resolution_queue_groups_problems_by_resolver_qualified_group_key_in_first_seen_order()
+    {
+        static FeedbackResolutionProblemDto Problem(string id, string groupKey, string resolver, int code) =>
+            new(
+                ProblemId: id,
+                Code: code,
+                Description: $"error-{code}",
+                Scope: "employee",
+                ResolutionType: "decision",
+                Family: "identity",
+                ResolverType: resolver,
+                GroupStrategy: "perEmployee",
+                GroupKey: groupKey,
+                CorrectionBehavior: "dynamic",
+                AvailableActions: new[] { "review" },
+                CanEscalateExternally: false,
+                FeedbackId: Guid.NewGuid(),
+                ReportId: Guid.NewGuid(),
+                ReportProductId: Guid.NewGuid(),
+                ContributionId: Guid.NewGuid(),
+                ReportEmployeeId: Guid.NewGuid(),
+                EmploymentId: Guid.NewGuid(),
+                PersonId: Guid.NewGuid(),
+                EmployeeName: "Employee",
+                ProductName: "Product",
+                FundCompanyName: "Fund",
+                PolicyNumber: "P-1",
+                ReportedValues: new Dictionary<string, string?>(),
+                CurrentValues: new Dictionary<string, string?>(),
+                FeedbackValues: new Dictionary<string, string?>(),
+                ReceivedAt: DateTimeOffset.UtcNow);
+
+        var groups = FeedbackResolutionWireProjection.BuildGroups(new[]
+        {
+            Problem("a", "employee:one", "employee", 4),
+            Problem("b", "employee:one", "employee", 11),
+            Problem("c", "employmentStatus:employee:one", "employmentStatus", 33),
+            Problem("d", "employee:two", "employee", 62)
+        });
+
+        Assert.Equal(3, groups.Count);
+        Assert.Equal(new[] { "employee:one", "employmentStatus:employee:one", "employee:two" },
+            groups.Select(group => group.GroupKey).ToArray());
+        Assert.Equal(new[] { 4, 11 }, groups[0].Problems.Select(problem => problem.Code).ToArray());
+        Assert.Equal("employee", groups[0].ResolverType);
+        Assert.Equal("employmentStatus", groups[1].ResolverType);
+    }
+
     [Fact]
     public void Every_actionable_playbook_projects_to_a_non_empty_wire_contract()
     {

@@ -7,6 +7,13 @@ public sealed record FeedbackResolutionContextResponse(
     Guid? ReportProductId,
     bool CanResolve,
     IReadOnlyList<int> UnsupportedCodes,
+    IReadOnlyList<FeedbackResolutionProblemDto> Problems,
+    IReadOnlyList<FeedbackResolutionGroupDto> Groups);
+
+public sealed record FeedbackResolutionGroupDto(
+    string GroupKey,
+    string ResolverType,
+    string GroupStrategy,
     IReadOnlyList<FeedbackResolutionProblemDto> Problems);
 
 public sealed record FeedbackResolutionProblemDto(
@@ -78,6 +85,17 @@ public static class FeedbackResolutionWireProjection
             _ => $"error:{feedbackId:N}:{Id(contributionId)}:{sequence}:{code}"
         };
     }
+    public static IReadOnlyList<FeedbackResolutionGroupDto> BuildGroups(
+        IReadOnlyList<FeedbackResolutionProblemDto> problems) =>
+        problems
+            .GroupBy(problem => problem.GroupKey, StringComparer.Ordinal)
+            .Select(group => new FeedbackResolutionGroupDto(
+                group.Key,
+                group.First().ResolverType,
+                group.First().GroupStrategy,
+                group.ToArray()))
+            .ToArray();
+
     public static string BuildResolutionGroupKey(
         FeedbackResolutionPlaybook playbook,
         Guid employerId,
