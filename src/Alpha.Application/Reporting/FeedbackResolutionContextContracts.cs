@@ -46,10 +46,10 @@ public sealed record FeedbackResolutionProblemDto(
     IReadOnlyDictionary<string, string?> ReportedValues,
     IReadOnlyDictionary<string, string?> CurrentValues,
     IReadOnlyDictionary<string, string?> FeedbackValues,
-    string? LatestDecision,
-    string LatestDecisionNote,
-    DateTimeOffset? LatestDecisionAt,
-    DateTimeOffset ReceivedAt);
+    DateTimeOffset ReceivedAt,
+    string? LatestDecision = null,
+    string LatestDecisionNote = "",
+    DateTimeOffset? LatestDecisionAt = null);
 
 public static class FeedbackResolutionWireProjection
 {
