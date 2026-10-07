@@ -346,6 +346,47 @@ public sealed class FeedbackResolutionContextContractTests
     }
 
     [Fact]
+    public void Decision_employee_group_can_execute_with_report_permission_without_employee_edit_permission()
+    {
+        var problem = new FeedbackResolutionProblemDto(
+            ProblemId: "decision-employee",
+            Code: 4,
+            Description: "identity",
+            Scope: "employee",
+            ResolutionType: "decision",
+            Family: "identity",
+            ResolverType: "employee",
+            GroupStrategy: "perEmployee",
+            GroupKey: "employee:one",
+            CorrectionBehavior: "dynamic",
+            AvailableActions: new[] { "review", "prepareCorrection", "openExternalCase" },
+            CanEscalateExternally: true,
+            FeedbackId: Guid.NewGuid(),
+            ReportId: Guid.NewGuid(),
+            ReportProductId: Guid.NewGuid(),
+            ContributionId: Guid.NewGuid(),
+            ReportEmployeeId: Guid.NewGuid(),
+            EmploymentId: Guid.NewGuid(),
+            PersonId: Guid.NewGuid(),
+            EmployeeName: "Employee",
+            ProductName: "Product",
+            FundCompanyName: "Fund",
+            PolicyNumber: "P-1",
+            ReportedValues: new Dictionary<string, string?>(),
+            CurrentValues: new Dictionary<string, string?>(),
+            FeedbackValues: new Dictionary<string, string?>(),
+            ReceivedAt: DateTimeOffset.UtcNow);
+
+        var groups = FeedbackResolutionWireProjection.BuildGroups(
+            new[] { problem },
+            canCreateReport: true,
+            canEditEmployee: false);
+
+        Assert.Single(groups);
+        Assert.True(groups[0].CanExecute);
+    }
+
+    [Fact]
     public void Every_actionable_playbook_projects_to_a_non_empty_wire_contract()
     {
         foreach (var playbook in FeedbackResolutionPlaybookCatalog.All.Where(x =>
