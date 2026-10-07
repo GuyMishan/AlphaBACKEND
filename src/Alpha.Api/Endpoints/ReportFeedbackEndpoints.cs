@@ -184,6 +184,16 @@ public static class ReportFeedbackEndpoints
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ReportProductId).Distinct().Count());
+        var reportIssueCounts = latestContributionFeedback
+            .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
+            .Where(x =>
+            {
+                var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
+                return scope is EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report
+                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money;
+            })
+            .GroupBy(x => x.ReportId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorCode).Distinct().Count());
 
         var completedRevisionIds = await db.ManualReports.AsNoTracking()
             .Where(x => candidateIds.Contains(x.Id) && x.IsRevisionSnapshot
@@ -308,7 +318,7 @@ public static class ReportFeedbackEndpoints
                 report.Id, employerName, report.ReportingMonth, report.SalaryPaymentDate, report.ReportKind, report.Status,
                 revisionRootReportId = rootId, report.RevisionNumber, report.IsRevisionSnapshot,
                 feedbackStatus = State(report.Id), hasFeedback = officialCounts.GetValueOrDefault(report.Id) > 0,
-                issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id),
+                issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id), reportIssueCount = reportIssueCounts.GetValueOrDefault(report.Id),
                 employeeCount = employeeCounts.GetValueOrDefault(report.Id), totalAmount = total, payoffRate,
                 allocatedAmount = cash?.Allocated, actualReceivedAmount = cash?.Received, inTransitAmount = cash?.InTransit,
                 canEdit = canCreateReport && report.IsEditable,
