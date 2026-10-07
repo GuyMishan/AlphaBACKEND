@@ -150,7 +150,8 @@ public static class FeedbackResolutionWireProjection
             WireName(FeedbackResolverType.EmploymentStatus),
             WireName(FeedbackResolverType.Payment),
             WireName(FeedbackResolverType.Documents),
-            WireName(FeedbackResolverType.ReportCorrection)
+            WireName(FeedbackResolverType.ReportCorrection),
+            WireName(FeedbackResolverType.Refund)
         };
         if (!correctionResolvers.Contains(requestedResolver)
             || !string.Equals(group.ResolverType, requestedResolver, StringComparison.Ordinal)
@@ -167,6 +168,7 @@ public static class FeedbackResolutionWireProjection
             var value when value == WireName(FeedbackResolverType.EmploymentStatus) => WireName(FeedbackResolutionAction.EditEmployment),
             var value when value == WireName(FeedbackResolverType.Payment) => WireName(FeedbackResolutionAction.EditPayment),
             var value when value == WireName(FeedbackResolverType.Documents) => WireName(FeedbackResolutionAction.UploadDocument),
+            var value when value == WireName(FeedbackResolverType.Refund) => WireName(FeedbackResolutionAction.PrepareNegative),
             _ => prepareCorrection
         };
 
