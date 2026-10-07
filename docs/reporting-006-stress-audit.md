@@ -200,3 +200,8 @@ dotnet test --solution AlphaBackend.slnx --no-build --configuration Release
 ```
 
 GitHub `backend-ci` runs the same Release restore/build/test sequence. Do not mark a change verified until its workflow succeeds.
+
+
+## Feedback resolution Stage 9
+
+The feedback-resolution audit now cross-checks the simulator `all-errors` expansion against the complete actionable playbook catalog. Resolution invariants include per-ProblemId persistence, unsupported/stale fail-closed behavior, durable correction-workspace links across refresh, server-side employee/deposit/workspace revalidation, a non-zero correction delta requirement, correction lineage for negative/current technical documents, durable external/reconciliation cases, and actual previous-movement selection for codes 97/98. A newer clearing-house feedback file produces new ProblemIds and therefore cannot be hidden by a historic resolution.
