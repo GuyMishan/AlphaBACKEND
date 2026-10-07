@@ -96,6 +96,25 @@ public sealed class FeedbackResolutionContextContractTests
     }
 
 
+
+    [Fact]
+    public void Resolution_context_exposes_employee_edit_permission_separately_from_report_resolution_permission()
+    {
+        var response = new FeedbackResolutionContextResponse(
+            ContextType: "deposit",
+            EmployerId: Guid.NewGuid(),
+            ReportId: Guid.NewGuid(),
+            ReportProductId: Guid.NewGuid(),
+            CanResolve: true,
+            CanEditEmployee: false,
+            UnsupportedCodes: Array.Empty<int>(),
+            Problems: Array.Empty<FeedbackResolutionProblemDto>(),
+            Groups: Array.Empty<FeedbackResolutionGroupDto>());
+
+        Assert.True(response.CanResolve);
+        Assert.False(response.CanEditEmployee);
+    }
+
     [Fact]
     public void Resolution_queue_groups_problems_by_resolver_qualified_group_key_in_first_seen_order()
     {

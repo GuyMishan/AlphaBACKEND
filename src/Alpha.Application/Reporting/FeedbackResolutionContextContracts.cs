@@ -6,6 +6,7 @@ public sealed record FeedbackResolutionContextResponse(
     Guid? ReportId,
     Guid? ReportProductId,
     bool CanResolve,
+    bool CanEditEmployee,
     IReadOnlyList<int> UnsupportedCodes,
     IReadOnlyList<FeedbackResolutionProblemDto> Problems,
     IReadOnlyList<FeedbackResolutionGroupDto> Groups);
