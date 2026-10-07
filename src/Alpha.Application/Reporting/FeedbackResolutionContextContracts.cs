@@ -125,6 +125,40 @@ public static class FeedbackResolutionWireProjection
                 && problem.AvailableActions.Contains(editEmployee, StringComparer.Ordinal));
     }
 
+    public static bool CanPrepareInternalCorrection(
+        FeedbackResolutionGroupDto group,
+        string requestedResolver)
+    {
+        var supportedResolvers = new HashSet<string>(StringComparer.Ordinal)
+        {
+            WireName(FeedbackResolverType.Contribution),
+            WireName(FeedbackResolverType.ProductPolicy),
+            WireName(FeedbackResolverType.EmploymentStatus),
+            WireName(FeedbackResolverType.Payment),
+            WireName(FeedbackResolverType.Documents),
+            WireName(FeedbackResolverType.ReportCorrection)
+        };
+        if (!supportedResolvers.Contains(requestedResolver)
+            || !string.Equals(group.ResolverType, requestedResolver, StringComparison.Ordinal)
+            || group.Problems.Count == 0)
+            return false;
+
+        var prepareCorrection = WireName(FeedbackResolutionAction.PrepareCorrection);
+        var resolverSpecificAction = requestedResolver switch
+        {
+            var value when value == WireName(FeedbackResolverType.Contribution) => WireName(FeedbackResolutionAction.EditContribution),
+            var value when value == WireName(FeedbackResolverType.ProductPolicy) => WireName(FeedbackResolutionAction.EditProduct),
+            var value when value == WireName(FeedbackResolverType.EmploymentStatus) => WireName(FeedbackResolutionAction.EditEmployment),
+            var value when value == WireName(FeedbackResolverType.Payment) => WireName(FeedbackResolutionAction.EditPayment),
+            var value when value == WireName(FeedbackResolverType.Documents) => WireName(FeedbackResolutionAction.UploadDocument),
+            _ => prepareCorrection
+        };
+
+        return group.Problems.All(problem =>
+            problem.AvailableActions.Contains(prepareCorrection, StringComparer.Ordinal)
+            || problem.AvailableActions.Contains(resolverSpecificAction, StringComparer.Ordinal));
+    }
+
     public static string BuildResolutionGroupKey(
         FeedbackResolutionPlaybook playbook,
         Guid employerId,

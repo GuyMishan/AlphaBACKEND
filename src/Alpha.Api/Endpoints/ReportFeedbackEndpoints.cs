@@ -74,6 +74,7 @@ public static class ReportFeedbackEndpoints
         group.MapGet("/{reportId:guid}/deposits/{reportProductId:guid}", DepositDetailsAsync);
         group.MapGet("/{reportId:guid}/deposits/{reportProductId:guid}/resolution-context", DepositResolutionContextAsync);
         group.MapPost("/{reportId:guid}/deposits/{reportProductId:guid}/resolution-actions/employee/validate", ValidateEmployeeResolutionActionAsync);
+        group.MapPost("/{reportId:guid}/resolution-actions/internal/prepare", PrepareInternalResolutionActionAsync);
         group.MapPut("/{reportId:guid}/deposits/{reportProductId:guid}/treatment", UpdateTreatmentAsync);
         group.MapGet("/{reportId:guid}/exports/{exportType}", ExportAsync);
         return endpoints;
@@ -656,6 +657,111 @@ public static class ReportFeedbackEndpoints
             return Results.BadRequest(new { error = "resolution_action_not_allowed" });
 
         return Results.Ok(new { resolutionGroup.GroupKey, request.EmploymentId });
+    }
+
+    private static async Task<IResult> PrepareInternalResolutionActionAsync(
+        Guid organizationId,
+        Guid employerId,
+        Guid reportId,
+        InternalResolutionActionRequest request,
+        IAlphaDbContext db,
+        OrganizationAccessService access,
+        IDataProtectionService protector,
+        ICurrentUser currentUser,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+
+        var sourceExists = await db.ManualReports.AsNoTracking().AnyAsync(report =>
+            report.Id == reportId
+            && report.OrganizationId == organizationId
+            && report.EmployerId == employerId
+            && !report.IsCorrectionWorkspace
+            && !report.IsTechnicalCorrectionDocument, ct);
+        if (!sourceExists) return Results.NotFound();
+
+        var rows = (await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct)).ToArray();
+        var context = await BuildResolutionContextAsync(
+            "report", organizationId, employerId, reportId, request.ReportProductId,
+            canCreateReport: true, canEditEmployee: false, rows, db, protector, ct);
+
+        if (context.UnsupportedCodes.Count > 0)
+            return Results.Conflict(new { error = "resolution_context_unsupported" });
+
+        var resolutionGroup = context.Groups.SingleOrDefault(group =>
+            string.Equals(group.GroupKey, request.GroupKey, StringComparison.Ordinal));
+        if (resolutionGroup is null)
+            return Results.Conflict(new { error = "resolution_group_stale" });
+
+        if (!FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
+                resolutionGroup, request.ResolverType))
+            return Results.BadRequest(new { error = "resolution_action_not_allowed" });
+
+        var groupProductIds = resolutionGroup.Problems
+            .Where(problem => problem.ReportProductId.HasValue)
+            .Select(problem => problem.ReportProductId!.Value)
+            .Distinct()
+            .ToArray();
+
+        Guid? sourceProductId = null;
+        if (request.ReportProductId.HasValue)
+        {
+            if (groupProductIds.Length > 0 && !groupProductIds.Contains(request.ReportProductId.Value))
+                return Results.BadRequest(new { error = "resolution_target_mismatch" });
+            sourceProductId = request.ReportProductId.Value;
+        }
+        else if (groupProductIds.Length == 1)
+        {
+            sourceProductId = groupProductIds[0];
+        }
+        else if (groupProductIds.Length > 1)
+        {
+            return Results.BadRequest(new { error = "resolution_target_ambiguous" });
+        }
+
+        CorrectionWorkflowService.WorkspaceResult? workspace;
+        try
+        {
+            workspace = await CorrectionWorkflowService.EnsureWorkspaceAsync(
+                organizationId, employerId, reportId, sourceProductId, db, protector, ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Results.Conflict(new { error = "correction_workspace_conflict" });
+        }
+
+        if (workspace is null)
+            return Results.Conflict(new { error = "correction_workspace_source_invalid" });
+
+        db.AuditEvents.Add(new AuditEvent(
+            currentUser.UserId,
+            "feedback-resolution.correction-workspace-prepared",
+            nameof(ManualReport),
+            workspace.ReportId,
+            organizationId,
+            employerId,
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                sourceReportId = reportId,
+                sourceReportProductId = sourceProductId,
+                request.GroupKey,
+                request.ResolverType,
+                workspace.Created,
+                workspace.PendingChanges
+            }),
+            http.TraceIdentifier));
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new
+        {
+            workspaceReportId = workspace.ReportId,
+            workspaceReportProductId = workspace.ReportProductId,
+            workspace.Created,
+            workspace.PendingChanges,
+            resolutionGroup.GroupKey,
+            resolutionGroup.ResolverType
+        });
     }
 
     private static async Task<FeedbackResolutionContextResponse> BuildResolutionContextAsync(
@@ -1648,5 +1754,9 @@ public static class ReportFeedbackEndpoints
     }
 
     public sealed record EmployeeResolutionActionRequest(string GroupKey, Guid EmploymentId);
+    public sealed record InternalResolutionActionRequest(
+        string GroupKey,
+        string ResolverType,
+        Guid? ReportProductId);
     public sealed record UpdateTreatmentRequest(string StatusCode, string? Note, DateTimeOffset? ExpectedUpdatedAt);
 }

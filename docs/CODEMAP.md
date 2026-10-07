@@ -151,3 +151,6 @@ These sources outrank assumptions, old examples and UI behavior.
 - `/api/reference-data/pension-editor-options` returns the static option sets needed by the pension-products editor (product/status/allocation options, receipt/section-14 options, and salary layers) in one response to avoid one database query per select instance.
 
 - `/api/reference-data/employer-interface-006/options-bundle?categories=...` returns multiple Employer Interface option categories in one response (including all stored scopes). UI parents use it to hold static select options in component-local state and avoid one API/DB request per select instance.
+
+
+- Stage 6 internal-correction resolvers (`contribution`, `productPolicy`, `employmentStatus`, `payment`, `documents`, `reportCorrection`) reuse the formal correction-workspace flow. A dedicated resolution action re-loads active feedback server-side, validates the exact `groupKey`, resolver and required playbook action, derives an unambiguous source product when applicable, and only then creates or reuses the immutable-source correction workspace. The submitted source report is never edited in place.

@@ -178,6 +178,55 @@ public sealed class FeedbackResolutionContextContractTests
                 ReceivedAt: DateTimeOffset.UtcNow);
     }
 
+    [Theory]
+    [InlineData("contribution", "editContribution")]
+    [InlineData("productPolicy", "editProduct")]
+    [InlineData("employmentStatus", "editEmployment")]
+    [InlineData("payment", "editPayment")]
+    [InlineData("documents", "uploadDocument")]
+    [InlineData("reportCorrection", "prepareCorrection")]
+    public void Internal_correction_resolvers_require_their_playbook_action(
+        string resolver,
+        string action)
+    {
+        var problem = new FeedbackResolutionProblemDto(
+            ProblemId: "p1",
+            Code: 53,
+            Description: "test",
+            Scope: "contribution",
+            ResolutionType: "edit",
+            Family: "contribution",
+            ResolverType: resolver,
+            GroupStrategy: "perContribution",
+            GroupKey: $"{resolver}:target",
+            CorrectionBehavior: "correctionWorkspace",
+            AvailableActions: new[] { action },
+            CanEscalateExternally: false,
+            FeedbackId: Guid.NewGuid(),
+            ReportId: Guid.NewGuid(),
+            ReportProductId: Guid.NewGuid(),
+            ContributionId: Guid.NewGuid(),
+            ReportEmployeeId: Guid.NewGuid(),
+            EmploymentId: Guid.NewGuid(),
+            PersonId: Guid.NewGuid(),
+            EmployeeName: "Employee",
+            ProductName: "Product",
+            FundCompanyName: "Fund",
+            PolicyNumber: "P-1",
+            ReportedValues: new Dictionary<string, string?>(),
+            CurrentValues: new Dictionary<string, string?>(),
+            FeedbackValues: new Dictionary<string, string?>(),
+            ReceivedAt: DateTimeOffset.UtcNow);
+        var group = new FeedbackResolutionGroupDto(
+            problem.GroupKey, resolver, problem.GroupStrategy, true, new[] { problem });
+
+        Assert.True(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(group, resolver));
+        Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(group, "employee"));
+        Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
+            group with { Problems = new[] { problem with { AvailableActions = new[] { "review" } } } },
+            resolver));
+    }
+
     [Fact]
     public void Resolution_queue_groups_problems_by_resolver_qualified_group_key_in_first_seen_order()
     {

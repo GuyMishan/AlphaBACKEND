@@ -97,3 +97,8 @@ The report-feedback API exposes three read-only resolution contexts: employer sc
 ## Reporting correction revision model
 
 Submitted employer reports are business revisions, while Employer Interface 006 negative/current files created to move between revisions are technical transmission documents. A correction workspace is a full desired next-state snapshot. The delta planner compares it to the latest effective revision and emits only the Added/Changed/Removed rows required by Version 006. Technical documents never become the source of a later user correction; after successful transmission, the workspace itself is promoted to the next immutable business revision. This keeps lineage linear (Revision 1 -> Revision 2 -> Revision 3) while preserving every technical transmission as immutable evidence.
+
+
+### Feedback resolution internal correction resolvers
+
+Stage 6 routes contribution, product/policy, employment-status, payment, document and report-correction groups through the existing correction-workspace boundary. The browser cannot directly create a correction workspace from a resolver name: `ReportFeedbackEndpoints` rebuilds the active feedback context, verifies the exact resolver-qualified group and the resolver-specific playbook action, derives the source product where the group is product-scoped, and then delegates to `CorrectionWorkflowService.EnsureWorkspaceAsync`. This preserves submitted-report immutability and keeps negative/current materialization centralized in the correction workflow.
