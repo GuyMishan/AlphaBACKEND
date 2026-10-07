@@ -16,13 +16,24 @@ public sealed class FeedbackResolutionStage9ContractTests
             .OrderBy(code => code)
             .ToArray();
 
+        Assert.Equal(
+            EmployerInterfaceLineFeedbackParser.OfficialFailureCodes.OrderBy(code => code),
+            simulated);
+
+        var informational = FeedbackResolutionPlaybookCatalog.All
+            .Where(item => item.ResolutionType == FeedbackResolutionType.Informational)
+            .Select(item => item.Code)
+            .ToHashSet();
+        var simulatedActionable = simulated
+            .Where(code => !informational.Contains(code))
+            .ToArray();
         var actionable = FeedbackResolutionPlaybookCatalog.All
             .Where(item => item.ResolutionType != FeedbackResolutionType.Informational)
             .Select(item => item.Code)
             .OrderBy(code => code)
             .ToArray();
 
-        Assert.Equal(actionable, simulated);
+        Assert.Equal(actionable, simulatedActionable);
     }
 
     [Fact]
