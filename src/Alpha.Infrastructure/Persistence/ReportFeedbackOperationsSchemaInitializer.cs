@@ -150,6 +150,29 @@ public static class ReportFeedbackOperationsSchemaInitializer
                 CONSTRAINT "FK_feedback_resolution_document_report" FOREIGN KEY ("ReportId") REFERENCES reporting.manual_reports("Id") ON DELETE RESTRICT
             );
             CREATE INDEX IF NOT EXISTS "IX_feedback_resolution_document_Problem_CreatedAt" ON reporting.feedback_resolution_documents ("ProblemId", "CreatedAt");
+            CREATE TABLE IF NOT EXISTS reporting.feedback_problem_decisions (
+                "Id" uuid PRIMARY KEY,
+                "ProblemId" varchar(180) NOT NULL,
+                "FeedbackId" uuid NOT NULL,
+                "ReportId" uuid NOT NULL,
+                "ReportProductId" uuid NULL,
+                "ContributionId" uuid NULL,
+                "ErrorCode" integer NOT NULL,
+                "Outcome" varchar(40) NOT NULL,
+                "Note" text NOT NULL DEFAULT '',
+                "DecidedByUserId" uuid NOT NULL,
+                "DecidedAt" timestamptz NOT NULL,
+                "CreatedAt" timestamptz NOT NULL,
+                "UpdatedAt" timestamptz NOT NULL,
+                CONSTRAINT "FK_feedback_problem_decision_feedback" FOREIGN KEY ("FeedbackId")
+                    REFERENCES reporting.employer_interface_feedback("Id") ON DELETE CASCADE,
+                CONSTRAINT "FK_feedback_problem_decision_report" FOREIGN KEY ("ReportId")
+                    REFERENCES reporting.manual_reports("Id") ON DELETE RESTRICT
+            );
+            CREATE INDEX IF NOT EXISTS "IX_feedback_problem_decision_Problem_DecidedAt"
+                ON reporting.feedback_problem_decisions ("ProblemId", "DecidedAt");
+            CREATE INDEX IF NOT EXISTS "IX_feedback_problem_decision_Report_DecidedAt"
+                ON reporting.feedback_problem_decisions ("ReportId", "DecidedAt");
             """);
     }
 }

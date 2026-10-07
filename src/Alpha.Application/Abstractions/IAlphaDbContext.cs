@@ -53,6 +53,7 @@ public interface IAlphaDbContext
     DbSet<ReportProductTreatmentHistory> ReportProductTreatmentHistory { get; }
     DbSet<FeedbackProblemResolution> FeedbackProblemResolutions { get; }
     DbSet<FeedbackResolutionDocument> FeedbackResolutionDocuments { get; }
+    DbSet<FeedbackProblemDecision> FeedbackProblemDecisions { get; }
     DbSet<ContributionPercentageLimit> ContributionPercentageLimits { get; }
     DbSet<AuditEvent> AuditEvents { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

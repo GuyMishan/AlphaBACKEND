@@ -205,3 +205,50 @@ public sealed class FeedbackResolutionDocument : Entity
     public string Sha256 { get; private set; } = string.Empty;
     public Guid UploadedByUserId { get; private set; }
 }
+
+
+public sealed class FeedbackProblemDecision : Entity
+{
+    private FeedbackProblemDecision() { }
+
+    public FeedbackProblemDecision(
+        string problemId,
+        Guid feedbackId,
+        Guid reportId,
+        Guid? reportProductId,
+        Guid? contributionId,
+        int errorCode,
+        string outcome,
+        string? note,
+        Guid decidedByUserId)
+    {
+        if (string.IsNullOrWhiteSpace(problemId) || problemId.Trim().Length > 180)
+            throw new ArgumentException("Problem ID is required.", nameof(problemId));
+        if (string.IsNullOrWhiteSpace(outcome) || outcome.Trim().Length > 40)
+            throw new ArgumentException("Decision outcome is required.", nameof(outcome));
+        if ((note?.Length ?? 0) > 4000)
+            throw new ArgumentOutOfRangeException(nameof(note), "Decision note is limited to 4000 characters.");
+
+        ProblemId = problemId.Trim();
+        FeedbackId = feedbackId;
+        ReportId = reportId;
+        ReportProductId = reportProductId;
+        ContributionId = contributionId;
+        ErrorCode = errorCode;
+        Outcome = outcome.Trim();
+        Note = note?.Trim() ?? string.Empty;
+        DecidedByUserId = decidedByUserId;
+        DecidedAt = DateTimeOffset.UtcNow;
+    }
+
+    public string ProblemId { get; private set; } = string.Empty;
+    public Guid FeedbackId { get; private set; }
+    public Guid ReportId { get; private set; }
+    public Guid? ReportProductId { get; private set; }
+    public Guid? ContributionId { get; private set; }
+    public int ErrorCode { get; private set; }
+    public string Outcome { get; private set; } = string.Empty;
+    public string Note { get; private set; } = string.Empty;
+    public Guid DecidedByUserId { get; private set; }
+    public DateTimeOffset DecidedAt { get; private set; }
+}

@@ -101,3 +101,20 @@ public sealed class FeedbackResolutionDocumentConfiguration : IEntityTypeConfigu
         b.ToTable("feedback_resolution_documents", "reporting"); b.HasKey(x => x.Id); b.Property(x => x.ProblemId).HasMaxLength(180).IsRequired(); b.Property(x => x.OriginalFileName).HasMaxLength(260).IsRequired(); b.Property(x => x.ContentType).HasMaxLength(100).IsRequired(); b.Property(x => x.Content).HasColumnType("bytea").IsRequired(); b.Property(x => x.Sha256).HasMaxLength(64).IsRequired(); b.HasIndex(x => new { x.ProblemId, x.CreatedAt }); b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+
+public sealed class FeedbackProblemDecisionConfiguration : IEntityTypeConfiguration<FeedbackProblemDecision>
+{
+    public void Configure(EntityTypeBuilder<FeedbackProblemDecision> b)
+    {
+        b.ToTable("feedback_problem_decisions", "reporting");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.ProblemId).HasMaxLength(180).IsRequired();
+        b.Property(x => x.Outcome).HasMaxLength(40).IsRequired();
+        b.Property(x => x.Note).HasColumnType("text");
+        b.HasIndex(x => new { x.ProblemId, x.DecidedAt });
+        b.HasIndex(x => new { x.ReportId, x.DecidedAt });
+        b.HasOne<EmployerInterfaceFeedback>().WithMany().HasForeignKey(x => x.FeedbackId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
