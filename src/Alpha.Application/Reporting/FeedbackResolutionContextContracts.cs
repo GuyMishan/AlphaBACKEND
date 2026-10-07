@@ -140,7 +140,9 @@ public static class FeedbackResolutionWireProjection
         };
         if (!supportedResolvers.Contains(requestedResolver)
             || !string.Equals(group.ResolverType, requestedResolver, StringComparison.Ordinal)
-            || group.Problems.Count == 0)
+            || group.Problems.Count == 0
+            || group.Problems.Any(problem =>
+                !string.Equals(problem.ResolutionType, WireName(FeedbackResolutionType.Edit), StringComparison.Ordinal)))
             return false;
 
         var prepareCorrection = WireName(FeedbackResolutionAction.PrepareCorrection);
