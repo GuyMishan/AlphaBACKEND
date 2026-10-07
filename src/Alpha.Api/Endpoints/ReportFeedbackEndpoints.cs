@@ -167,11 +167,15 @@ public static class ReportFeedbackEndpoints
             .Where(x => candidateIds.Contains(x.ReportId) && activeFeedbackIds.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt)
             .ThenByDescending(x => x.CreatedAt)
-            .Select(x => new { x.ReportId, x.ReportProductId, x.ContributionId, x.ErrorCode, x.ReceivedAt, x.CreatedAt })
+            .Select(x => new { x.ReportId, x.ReportProductId, x.ContributionId, x.FeedbackId, x.ErrorCode, x.ReceivedAt, x.CreatedAt })
             .ToListAsync(ct);
         var latestContributionFeedback = contributionFeedbackRows
             .GroupBy(x => x.ContributionId)
-            .Select(g => g.First())
+            .SelectMany(g =>
+            {
+                var latest = g.First();
+                return g.Where(x => x.FeedbackId == latest.FeedbackId);
+            })
             .ToArray();
         var feedbackContributionCounts = latestContributionFeedback
             .GroupBy(x => x.ReportId)
@@ -186,12 +190,8 @@ public static class ReportFeedbackEndpoints
             .ToDictionary(g => g.Key, g => g.Select(x => x.ReportProductId).Distinct().Count());
         var reportIssueCounts = latestContributionFeedback
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
-            .Where(x =>
-            {
-                var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
-                return scope is EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report
-                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money;
-            })
+            .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
+                == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorCode).Distinct().Count());
 
@@ -318,7 +318,10 @@ public static class ReportFeedbackEndpoints
                 report.Id, employerName, report.ReportingMonth, report.SalaryPaymentDate, report.ReportKind, report.Status,
                 revisionRootReportId = rootId, report.RevisionNumber, report.IsRevisionSnapshot,
                 feedbackStatus = State(report.Id), hasFeedback = officialCounts.GetValueOrDefault(report.Id) > 0,
-                issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id), reportIssueCount = reportIssueCounts.GetValueOrDefault(report.Id),
+                issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id),
+                reportIssueCount = reportIssueCounts.GetValueOrDefault(report.Id)
+                    + (string.IsNullOrWhiteSpace(report.ValidationError) ? 0 : 1)
+                    + (tx is null || string.IsNullOrWhiteSpace(tx.ErrorMessage) ? 0 : 1),
                 employeeCount = employeeCounts.GetValueOrDefault(report.Id), totalAmount = total, payoffRate,
                 allocatedAmount = cash?.Allocated, actualReceivedAmount = cash?.Received, inTransitAmount = cash?.InTransit,
                 canEdit = canCreateReport && report.IsEditable,
@@ -753,8 +756,7 @@ public static class ReportFeedbackEndpoints
             .Where(x =>
             {
                 var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
-                return scope is EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report
-                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money;
+                return scope == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report;
             })
             .GroupBy(x => new { x.ErrorCode, x.ErrorDescription, Scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode) })
             .Select(g => FeedbackIssue(g.First()))
