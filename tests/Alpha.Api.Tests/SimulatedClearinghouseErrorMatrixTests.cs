@@ -116,7 +116,11 @@ public sealed class SimulatedClearinghouseErrorMatrixTests
         Assert.Single(code53);
 
         var code27 = outcomes.Where(x => x.ErrorCode == 27).ToArray();
-        Assert.Equal(rows.Length, code27.Length);
+        Assert.NotEmpty(code27);
+        var productFor27 = rows.Single(x => x.ContributionId == code27[0].ContributionId).ProductId;
+        Assert.Equal(
+            rows.Where(x => x.ProductId == productFor27).Select(x => x.ContributionId).OrderBy(x => x),
+            code27.Select(x => x.ContributionId).OrderBy(x => x));
     }
 
     [Theory]
