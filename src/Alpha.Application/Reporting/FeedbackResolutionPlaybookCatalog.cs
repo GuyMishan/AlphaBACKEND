@@ -125,7 +125,8 @@ public static class FeedbackResolutionPlaybookCatalog
         FeedbackCorrectionBehavior correction,
         FeedbackResolutionAction actions,
         bool canEscalateExternally = false) =>
-        new(code, type, family, resolver, ScopeFor(code), group, correction, actions, canEscalateExternally);
+        new(code, type, family, resolver, ScopeFor(code), group, correction, actions,
+            canEscalateExternally || type == FeedbackResolutionType.External);
 
     public static IReadOnlyList<FeedbackResolutionPlaybook> All { get; } =
     [
