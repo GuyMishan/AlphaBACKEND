@@ -1518,14 +1518,16 @@ public static class ReportFeedbackEndpoints
             && !x.IsCorrectionWorkspace && !x.IsTechnicalCorrectionDocument, ct);
         if (!sourceExists) return Results.NotFound();
 
+        ManualReport? validationTarget = null;
         if (request.ValidatedReportId.HasValue)
         {
-            var validTarget = await db.ManualReports.AsNoTracking().AnyAsync(x =>
+            validationTarget = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x =>
                 x.Id == request.ValidatedReportId.Value
                 && x.OrganizationId == organizationId
                 && x.EmployerId == employerId
                 && (x.Id == reportId || (x.IsCorrectionWorkspace && x.SourceReportId == reportId)), ct);
-            if (!validTarget) return Results.BadRequest(new { error = "resolution_validation_target_invalid" });
+            if (validationTarget is null)
+                return Results.BadRequest(new { error = "resolution_validation_target_invalid" });
         }
 
         if (request.Source is "deposit-save" or "workspace-validation")
@@ -1550,6 +1552,14 @@ public static class ReportFeedbackEndpoints
                     validationCodes = validation.Codes,
                     validationErrors = validation.Errors
                 });
+
+            if (validationTarget?.IsCorrectionWorkspace == true)
+            {
+                var pendingChanges = await CorrectionWorkflowService.PendingChangeCountAsync(
+                    validationTarget.Id, db, protector, ct);
+                if (pendingChanges <= 0)
+                    return Results.Conflict(new { error = "resolution_no_correction_change" });
+            }
         }
 
         var activeRows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
@@ -1564,6 +1574,33 @@ public static class ReportFeedbackEndpoints
         var requested = request.ProblemIds.Distinct(StringComparer.Ordinal).ToArray();
         if (requested.Any(problemId => !byProblemId.ContainsKey(problemId)))
             return Results.Conflict(new { error = "resolution_problem_stale" });
+
+        if (request.Source == "employee-save")
+        {
+            var employeeContext = await BuildResolutionContextAsync(
+                "report", organizationId, employerId, reportId, null,
+                canCreate, canEditEmployee, activeRows, db, protector, ct);
+            var employeeProblems = employeeContext.Problems
+                .Where(problem => requested.Contains(problem.ProblemId))
+                .ToDictionary(problem => problem.ProblemId, StringComparer.Ordinal);
+
+            foreach (var problemId in requested)
+            {
+                if (!employeeProblems.TryGetValue(problemId, out var problem))
+                    return Results.Conflict(new { error = "resolution_problem_stale" });
+
+                var keys = problem.ReportedValues.Keys
+                    .Concat(problem.CurrentValues.Keys)
+                    .Distinct(StringComparer.Ordinal);
+                var changed = keys.Any(key =>
+                    !string.Equals(
+                        problem.ReportedValues.GetValueOrDefault(key) ?? string.Empty,
+                        problem.CurrentValues.GetValueOrDefault(key) ?? string.Empty,
+                        StringComparison.Ordinal));
+                if (!changed)
+                    return Results.Conflict(new { error = "resolution_employee_not_changed" });
+            }
+        }
 
         var latestDecisionByProblem = await db.FeedbackProblemDecisions.AsNoTracking()
             .Where(decision => requested.Contains(decision.ProblemId))
@@ -1583,6 +1620,29 @@ public static class ReportFeedbackEndpoints
                 .ToListAsync(ct);
             if (linkedProblemIds.Distinct(StringComparer.Ordinal).Count() != requested.Length)
                 return Results.Conflict(new { error = "resolution_correction_link_missing" });
+        }
+
+        if (request.Source == "deposit-save" && validationTarget?.IsCorrectionWorkspace == true)
+        {
+            var existingLinks = await db.FeedbackCorrectionResolutionLinks.AsNoTracking()
+                .Where(link => requested.Contains(link.ProblemId))
+                .Select(link => link.ProblemId)
+                .ToListAsync(ct);
+            var existingLinkSet = existingLinks.ToHashSet(StringComparer.Ordinal);
+            foreach (var problemId in requested)
+            {
+                if (existingLinkSet.Contains(problemId)) continue;
+                var row = byProblemId[problemId];
+                if (!FeedbackResolutionPlaybookCatalog.TryGet(row.ErrorCode!.Value, out var playbook))
+                    return Results.Conflict(new { error = "resolution_context_unsupported" });
+                db.FeedbackCorrectionResolutionLinks.Add(new FeedbackCorrectionResolutionLink(
+                    problemId,
+                    reportId,
+                    validationTarget.Id,
+                    row.ReportProductId,
+                    FeedbackResolutionWireProjection.WireName(playbook.Resolver),
+                    currentUser.UserId));
+            }
         }
 
         foreach (var problemId in requested)
