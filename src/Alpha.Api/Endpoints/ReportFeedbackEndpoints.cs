@@ -689,10 +689,13 @@ public static class ReportFeedbackEndpoints
             var liveProduct = FindCurrentProduct(product, reportEmployee.EmploymentId, currentProducts);
             EmployeePensionContribution? liveContribution = null;
             if (liveProduct is not null && contribution is not null)
-                liveContribution = currentContributions.FirstOrDefault(x =>
+            {
+                var matching = currentContributions.Where(x =>
                     x.EmployeePensionProductId == liveProduct.Id
                     && x.Party == contribution.Party
-                    && x.Component == contribution.Component);
+                    && x.Component == contribution.Component).ToArray();
+                liveContribution = matching.Length == 1 ? matching[0] : null;
+            }
 
             metadata.TryGetValue(row.ReportProductId, out var productMetadata);
             payments.TryGetValue(row.ReportProductId, out var payment);
@@ -703,7 +706,7 @@ public static class ReportFeedbackEndpoints
                 x.ReportId == row.ReportId
                 && string.Equals(x.TransferIdentifier, transferIdentifier, StringComparison.OrdinalIgnoreCase));
 
-            var reportedValues = ReportedValues(playbook.Resolver, report, reportEmployee, product, contribution, payment, protector);
+            var reportedValues = ReportedValues(playbook.Resolver, report, reportEmployee, product, contribution, productMetadata, payment, protector);
             var currentValues = CurrentValues(playbook.Resolver, employment, person, liveProduct, liveContribution, protector);
             var feedbackValues = FeedbackValues(row, transfer);
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
@@ -786,6 +789,7 @@ public static class ReportFeedbackEndpoints
         ManualReportEmployee employee,
         ManualReportProduct product,
         ManualContribution? contribution,
+        EmployerInterfaceReportProductData? metadata,
         ManualReportPayment? payment,
         IDataProtectionService protector)
     {
@@ -805,7 +809,17 @@ public static class ReportFeedbackEndpoints
             Add("email", protector.Unprotect(employee.EmailSnapshot, $"report-employee-email:{employee.Id}"));
             Add("mobile", protector.Unprotect(employee.MobileSnapshot, $"report-employee-mobile:{employee.Id}"));
             Add("employmentStartDate", employee.EmploymentStartDateSnapshot);
+            Add("city", employee.CitySnapshot);
+            Add("street", employee.StreetSnapshot);
+            Add("houseNumber", employee.HouseNumberSnapshot);
+            Add("apartment", employee.ApartmentSnapshot);
+            Add("postalCode", employee.PostalCodeSnapshot);
+            Add("postOfficeBox", employee.PostOfficeBoxSnapshot);
             Add("monthlySalary", employee.MonthlySalary);
+            Add("employeeStatus", metadata?.EmployeeStatus);
+            Add("statusStartDate", metadata?.StatusStartDate);
+            Add("employmentPercentage", metadata?.EmploymentPercentage);
+            Add("workDaysInMonth", metadata?.WorkDaysInMonth);
         }
 
         if (resolver is FeedbackResolverType.ProductPolicy or FeedbackResolverType.Contribution
@@ -839,6 +853,11 @@ public static class ReportFeedbackEndpoints
             Add("referenceNumber", payment?.ReferenceNumber);
             Add("valueDate", payment?.ValueDate);
             Add("actualDepositAmount", payment?.ActualDepositAmount);
+            Add("paymentMethodCode", metadata?.PaymentMethodCode);
+            Add("employerAccountType", metadata?.EmployerAccountType);
+            Add("receiverAccountType", metadata?.ReceiverAccountType);
+            Add("interfaceTransferIdentifier", metadata?.InterfaceTransferIdentifier);
+            Add("clearingIdentifier", metadata?.ClearingIdentifier);
             Add("employerBankCode", payment?.EmployerBankCode);
             Add("employerBranch", payment?.EmployerBranch);
             Add("employerAccount", payment is null ? null : protector.Unprotect(
@@ -852,6 +871,8 @@ public static class ReportFeedbackEndpoints
             Add("salaryPaymentDate", report.SalaryPaymentDate);
             Add("policyNumber", product.PolicyNumber);
             Add("salaryMonth", product.SalaryMonth);
+            Add("operationCode", metadata?.OperationCode);
+            Add("depositStatus", metadata?.DepositStatus);
             Add("recordIdentifier", contribution?.InterfaceRecordIdentifier);
             Add("previousRecordIdentifier", contribution?.PreviousRecordIdentifier);
         }

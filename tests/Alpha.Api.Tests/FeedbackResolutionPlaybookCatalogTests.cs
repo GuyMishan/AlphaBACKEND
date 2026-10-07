@@ -96,4 +96,16 @@ public sealed class FeedbackResolutionPlaybookCatalogTests
         Assert.False(FeedbackResolutionPlaybookCatalog.TryGet(999, out _));
         Assert.Throws<ArgumentOutOfRangeException>(() => FeedbackResolutionPlaybookCatalog.Get(999));
     }
+    [Theory]
+    [InlineData(102, FeedbackResolutionGroupStrategy.PerReport)]
+    [InlineData(103, FeedbackResolutionGroupStrategy.PerReport)]
+    [InlineData(109, FeedbackResolutionGroupStrategy.PerEmployee)]
+    [InlineData(110, FeedbackResolutionGroupStrategy.PerEmployee)]
+    [InlineData(111, FeedbackResolutionGroupStrategy.PerReport)]
+    [InlineData(112, FeedbackResolutionGroupStrategy.PerReport)]
+    public void Document_playbooks_group_by_their_business_owner(int code, FeedbackResolutionGroupStrategy expected)
+    {
+        Assert.Equal(expected, FeedbackResolutionPlaybookCatalog.Get(code).GroupStrategy);
+    }
+
 }
