@@ -225,6 +225,9 @@ public sealed class FeedbackResolutionContextContractTests
         Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
             group with { Problems = new[] { problem with { AvailableActions = new[] { "review" } } } },
             resolver));
+        Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
+            group with { Problems = new[] { problem with { ResolutionType = "decision" } } },
+            resolver));
     }
 
     [Fact]
