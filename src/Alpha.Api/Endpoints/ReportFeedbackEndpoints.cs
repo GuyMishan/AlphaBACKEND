@@ -753,10 +753,20 @@ public static class ReportFeedbackEndpoints
             http.TraceIdentifier));
         await db.SaveChangesAsync(ct);
 
+        Guid? workspaceReportEmployeeId = null;
+        if (workspace.ReportProductId.HasValue)
+        {
+            workspaceReportEmployeeId = await db.ManualReportProducts.AsNoTracking()
+                .Where(product => product.Id == workspace.ReportProductId.Value)
+                .Select(product => (Guid?)product.ReportEmployeeId)
+                .SingleOrDefaultAsync(ct);
+        }
+
         return Results.Ok(new
         {
             workspaceReportId = workspace.ReportId,
             workspaceReportProductId = workspace.ReportProductId,
+            workspaceReportEmployeeId,
             workspace.Created,
             workspace.PendingChanges,
             resolutionGroup.GroupKey,

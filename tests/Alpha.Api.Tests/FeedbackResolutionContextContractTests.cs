@@ -228,6 +228,54 @@ public sealed class FeedbackResolutionContextContractTests
         Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
             group with { Problems = new[] { problem with { ResolutionType = "decision" } } },
             resolver));
+        Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
+            group with { Problems = new[] { problem with { CorrectionBehavior = "revalidateOnly" } } },
+            resolver));
+        Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
+            group with { Problems = new[] { problem with { CorrectionBehavior = "externalFollowUp" } } },
+            resolver));
+    }
+
+    [Theory]
+    [InlineData("payment", "editPayment", "revalidateOnly")]
+    [InlineData("documents", "uploadDocument", "externalFollowUp")]
+    public void Non_correction_behaviors_cannot_open_a_correction_workspace(
+        string resolver,
+        string action,
+        string correctionBehavior)
+    {
+        var problem = new FeedbackResolutionProblemDto(
+            ProblemId: "p1",
+            Code: 50,
+            Description: "test",
+            Scope: "deposit",
+            ResolutionType: "edit",
+            Family: "payment",
+            ResolverType: resolver,
+            GroupStrategy: "perTransfer",
+            GroupKey: $"{resolver}:target",
+            CorrectionBehavior: correctionBehavior,
+            AvailableActions: new[] { action },
+            CanEscalateExternally: false,
+            FeedbackId: Guid.NewGuid(),
+            ReportId: Guid.NewGuid(),
+            ReportProductId: Guid.NewGuid(),
+            ContributionId: Guid.NewGuid(),
+            ReportEmployeeId: Guid.NewGuid(),
+            EmploymentId: Guid.NewGuid(),
+            PersonId: Guid.NewGuid(),
+            EmployeeName: "Employee",
+            ProductName: "Product",
+            FundCompanyName: "Fund",
+            PolicyNumber: "P-1",
+            ReportedValues: new Dictionary<string, string?>(),
+            CurrentValues: new Dictionary<string, string?>(),
+            FeedbackValues: new Dictionary<string, string?>(),
+            ReceivedAt: DateTimeOffset.UtcNow);
+        var group = new FeedbackResolutionGroupDto(
+            problem.GroupKey, resolver, problem.GroupStrategy, true, new[] { problem });
+
+        Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(group, resolver));
     }
 
     [Fact]

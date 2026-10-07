@@ -102,3 +102,5 @@ Submitted employer reports are business revisions, while Employer Interface 006 
 ### Feedback resolution internal correction resolvers
 
 Stage 6 routes contribution, product/policy, employment-status, payment, document and report-correction groups through the existing correction-workspace boundary. The browser cannot directly create a correction workspace from a resolver name: `ReportFeedbackEndpoints` rebuilds the active feedback context, verifies the exact resolver-qualified group and the resolver-specific playbook action, derives the source product where the group is product-scoped, and then delegates to `CorrectionWorkflowService.EnsureWorkspaceAsync`. This preserves submitted-report immutability and keeps negative/current materialization centralized in the correction workflow.
+
+The correction-workspace resolution action is behavior-gated, not resolver-name-gated: only `Edit + CorrectionWorkspace + PrepareCorrection` playbook groups may create/reuse a correction workspace. Revalidation-only, dynamic and external-follow-up groups remain in their own resolver paths and fail closed if a browser attempts to use the correction-workspace action.

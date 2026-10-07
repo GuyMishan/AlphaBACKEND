@@ -154,3 +154,5 @@ These sources outrank assumptions, old examples and UI behavior.
 
 
 - Stage 6 internal-correction resolvers (`contribution`, `productPolicy`, `employmentStatus`, `payment`, `documents`, `reportCorrection`) reuse the formal correction-workspace flow. A dedicated resolution action re-loads active feedback server-side, validates the exact `groupKey`, resolver and required playbook action, derives an unambiguous source product when applicable, and only then creates or reuses the immutable-source correction workspace. The submitted source report is never edited in place.
+
+- Resolution audit hardening: correction-workspace preparation now requires every group member to be an `Edit` problem whose playbook `correctionBehavior` is exactly `correctionWorkspace` and whose actions include `prepareCorrection`. `payment` (`revalidateOnly`/`dynamic`) and `documents` (`externalFollowUp`) therefore cannot be forced through the correction-workspace endpoint. Product-targeted preparation also returns the mapped workspace report-employee ID so the frontend can focus the exact employee without N+1 probing.

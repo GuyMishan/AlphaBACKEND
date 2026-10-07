@@ -129,36 +129,26 @@ public static class FeedbackResolutionWireProjection
         FeedbackResolutionGroupDto group,
         string requestedResolver)
     {
-        var supportedResolvers = new HashSet<string>(StringComparer.Ordinal)
+        var correctionResolvers = new HashSet<string>(StringComparer.Ordinal)
         {
             WireName(FeedbackResolverType.Contribution),
             WireName(FeedbackResolverType.ProductPolicy),
             WireName(FeedbackResolverType.EmploymentStatus),
-            WireName(FeedbackResolverType.Payment),
-            WireName(FeedbackResolverType.Documents),
             WireName(FeedbackResolverType.ReportCorrection)
         };
-        if (!supportedResolvers.Contains(requestedResolver)
+        if (!correctionResolvers.Contains(requestedResolver)
             || !string.Equals(group.ResolverType, requestedResolver, StringComparison.Ordinal)
-            || group.Problems.Count == 0
-            || group.Problems.Any(problem =>
-                !string.Equals(problem.ResolutionType, WireName(FeedbackResolutionType.Edit), StringComparison.Ordinal)))
+            || group.Problems.Count == 0)
             return false;
 
+        var edit = WireName(FeedbackResolutionType.Edit);
+        var correctionWorkspace = WireName(FeedbackCorrectionBehavior.CorrectionWorkspace);
         var prepareCorrection = WireName(FeedbackResolutionAction.PrepareCorrection);
-        var resolverSpecificAction = requestedResolver switch
-        {
-            var value when value == WireName(FeedbackResolverType.Contribution) => WireName(FeedbackResolutionAction.EditContribution),
-            var value when value == WireName(FeedbackResolverType.ProductPolicy) => WireName(FeedbackResolutionAction.EditProduct),
-            var value when value == WireName(FeedbackResolverType.EmploymentStatus) => WireName(FeedbackResolutionAction.EditEmployment),
-            var value when value == WireName(FeedbackResolverType.Payment) => WireName(FeedbackResolutionAction.EditPayment),
-            var value when value == WireName(FeedbackResolverType.Documents) => WireName(FeedbackResolutionAction.UploadDocument),
-            _ => prepareCorrection
-        };
 
         return group.Problems.All(problem =>
-            problem.AvailableActions.Contains(prepareCorrection, StringComparer.Ordinal)
-            || problem.AvailableActions.Contains(resolverSpecificAction, StringComparer.Ordinal));
+            string.Equals(problem.ResolutionType, edit, StringComparison.Ordinal)
+            && string.Equals(problem.CorrectionBehavior, correctionWorkspace, StringComparison.Ordinal)
+            && problem.AvailableActions.Contains(prepareCorrection, StringComparer.Ordinal));
     }
 
     public static string BuildResolutionGroupKey(
