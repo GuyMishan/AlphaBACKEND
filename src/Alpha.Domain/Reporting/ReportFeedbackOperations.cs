@@ -161,3 +161,47 @@ public sealed class ReportProductTreatmentHistory : Entity
     public string Note { get; private set; } = string.Empty;
     public Guid UpdatedByUserId { get; private set; }
 }
+
+
+public sealed class FeedbackProblemResolution : Entity
+{
+    private FeedbackProblemResolution() { }
+
+    public FeedbackProblemResolution(string problemId, Guid feedbackId, Guid reportId, Guid? reportProductId, Guid? contributionId, int errorCode, string resolutionSource, Guid resolvedByUserId)
+    {
+        if (string.IsNullOrWhiteSpace(problemId) || problemId.Trim().Length > 180) throw new ArgumentException("Problem ID is required.", nameof(problemId));
+        if (string.IsNullOrWhiteSpace(resolutionSource) || resolutionSource.Trim().Length > 80) throw new ArgumentException("Resolution source is required.", nameof(resolutionSource));
+        ProblemId = problemId.Trim(); FeedbackId = feedbackId; ReportId = reportId; ReportProductId = reportProductId; ContributionId = contributionId; ErrorCode = errorCode; ResolutionSource = resolutionSource.Trim(); ResolvedByUserId = resolvedByUserId; ResolvedAt = DateTimeOffset.UtcNow;
+    }
+
+    public string ProblemId { get; private set; } = string.Empty;
+    public Guid FeedbackId { get; private set; }
+    public Guid ReportId { get; private set; }
+    public Guid? ReportProductId { get; private set; }
+    public Guid? ContributionId { get; private set; }
+    public int ErrorCode { get; private set; }
+    public string ResolutionSource { get; private set; } = string.Empty;
+    public Guid ResolvedByUserId { get; private set; }
+    public DateTimeOffset ResolvedAt { get; private set; }
+}
+
+public sealed class FeedbackResolutionDocument : Entity
+{
+    private FeedbackResolutionDocument() { }
+
+    public FeedbackResolutionDocument(string problemId, Guid reportId, Guid? reportProductId, string originalFileName, string contentType, byte[] content, long sizeBytes, string sha256, Guid uploadedByUserId)
+    {
+        ProblemId = string.IsNullOrWhiteSpace(problemId) ? throw new ArgumentException("Problem ID is required.", nameof(problemId)) : problemId.Trim();
+        ReportId = reportId; ReportProductId = reportProductId; OriginalFileName = Path.GetFileName(originalFileName); ContentType = contentType; Content = content; SizeBytes = sizeBytes; Sha256 = sha256; UploadedByUserId = uploadedByUserId;
+    }
+
+    public string ProblemId { get; private set; } = string.Empty;
+    public Guid ReportId { get; private set; }
+    public Guid? ReportProductId { get; private set; }
+    public string OriginalFileName { get; private set; } = string.Empty;
+    public string ContentType { get; private set; } = string.Empty;
+    public byte[] Content { get; private set; } = Array.Empty<byte>();
+    public long SizeBytes { get; private set; }
+    public string Sha256 { get; private set; } = string.Empty;
+    public Guid UploadedByUserId { get; private set; }
+}

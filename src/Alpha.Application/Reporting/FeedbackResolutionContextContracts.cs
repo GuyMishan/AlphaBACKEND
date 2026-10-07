@@ -59,6 +59,9 @@ public static class FeedbackResolutionWireProjection
             .Select(WireName)
             .ToArray();
 
+    public static string BuildProblemId(Guid feedbackId, Guid contributionId, int sequence, int code) =>
+        $"{feedbackId:N}:{contributionId:N}:{sequence}:{code}";
+
     public static string BuildGroupKey(
         FeedbackResolutionGroupStrategy strategy,
         Guid employerId,

@@ -84,3 +84,20 @@ public sealed class ReportProductTreatmentHistoryConfiguration : IEntityTypeConf
         b.HasOne<ManualReportProduct>().WithMany().HasForeignKey(x => x.ReportProductId).OnDelete(DeleteBehavior.Cascade);
     }
 }
+
+
+public sealed class FeedbackProblemResolutionConfiguration : IEntityTypeConfiguration<FeedbackProblemResolution>
+{
+    public void Configure(EntityTypeBuilder<FeedbackProblemResolution> b)
+    {
+        b.ToTable("feedback_problem_resolutions", "reporting"); b.HasKey(x => x.Id); b.Property(x => x.ProblemId).HasMaxLength(180).IsRequired(); b.Property(x => x.ResolutionSource).HasMaxLength(80).IsRequired(); b.HasIndex(x => x.ProblemId).IsUnique(); b.HasIndex(x => new { x.ReportId, x.ErrorCode }); b.HasOne<EmployerInterfaceFeedback>().WithMany().HasForeignKey(x => x.FeedbackId).OnDelete(DeleteBehavior.Cascade); b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class FeedbackResolutionDocumentConfiguration : IEntityTypeConfiguration<FeedbackResolutionDocument>
+{
+    public void Configure(EntityTypeBuilder<FeedbackResolutionDocument> b)
+    {
+        b.ToTable("feedback_resolution_documents", "reporting"); b.HasKey(x => x.Id); b.Property(x => x.ProblemId).HasMaxLength(180).IsRequired(); b.Property(x => x.OriginalFileName).HasMaxLength(260).IsRequired(); b.Property(x => x.ContentType).HasMaxLength(100).IsRequired(); b.Property(x => x.Content).HasColumnType("bytea").IsRequired(); b.Property(x => x.Sha256).HasMaxLength(64).IsRequired(); b.HasIndex(x => new { x.ProblemId, x.CreatedAt }); b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
