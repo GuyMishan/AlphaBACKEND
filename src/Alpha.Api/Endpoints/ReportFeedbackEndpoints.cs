@@ -729,11 +729,21 @@ public static class ReportFeedbackEndpoints
         if (resolutionGroup is null)
             return Results.Conflict(new { error = "resolution_group_stale" });
 
+        var selectedProblems = request.ProblemIds is { Count: > 0 }
+            ? resolutionGroup.Problems
+                .Where(problem => request.ProblemIds.Contains(problem.ProblemId, StringComparer.Ordinal))
+                .ToArray()
+            : resolutionGroup.Problems.ToArray();
+        if (request.ProblemIds is { Count: > 0 }
+            && selectedProblems.Length != request.ProblemIds.Distinct(StringComparer.Ordinal).Count())
+            return Results.BadRequest(new { error = "resolution_problem_mismatch" });
+
+        var selectedGroup = resolutionGroup with { Problems = selectedProblems };
         if (!FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
-                resolutionGroup, request.ResolverType))
+                selectedGroup, request.ResolverType))
             return Results.BadRequest(new { error = "resolution_action_not_allowed" });
 
-        var groupProductIds = resolutionGroup.Problems
+        var groupProductIds = selectedGroup.Problems
             .Where(problem => problem.ReportProductId.HasValue)
             .Select(problem => problem.ReportProductId!.Value)
             .Distinct()
@@ -2198,7 +2208,8 @@ public static class ReportFeedbackEndpoints
     public sealed record InternalResolutionActionRequest(
         string GroupKey,
         string ResolverType,
-        Guid? ReportProductId);
+        Guid? ReportProductId,
+        IReadOnlyList<string>? ProblemIds);
     public sealed record ResolveProblemsRequest(
         IReadOnlyList<string> ProblemIds,
         string Source,
