@@ -828,7 +828,8 @@ public static class ReportFeedbackEndpoints
 
             var sourceAllowed = request.Source switch
             {
-                "employee-save" => playbook.Resolver == FeedbackResolverType.Employee
+                "employee-save" => playbook.ResolutionType == FeedbackResolutionType.Edit
+                    && playbook.Resolver == FeedbackResolverType.Employee
                     && playbook.Actions.HasFlag(FeedbackResolutionAction.EditEmployee),
                 "deposit-save" => playbook.Resolver is FeedbackResolverType.Payment
                     or FeedbackResolverType.Contribution
