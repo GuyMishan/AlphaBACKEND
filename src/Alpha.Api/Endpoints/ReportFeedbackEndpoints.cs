@@ -906,6 +906,10 @@ public static class ReportFeedbackEndpoints
         var outcome = request.Outcome?.Trim().ToLowerInvariant() ?? string.Empty;
         if (outcome == "external")
             return Results.BadRequest(new { error = "external_case_required" });
+        if (outcome == "reconcile")
+            return Results.BadRequest(new { error = "reconciliation_case_required" });
+        if (outcome == "link-original")
+            return Results.BadRequest(new { error = "original_movement_link_required" });
         var needsCreateReport = outcome is "confirm" or "correction" or "reconcile" or "link-original";
         if (needsCreateReport && !canCreateReport)
             return Results.Forbid();
@@ -2126,6 +2130,7 @@ public static class ReportFeedbackEndpoints
         IMalwareScanner scanner,
         IDataProtectionService protector,
         IConfiguration configuration,
+        HttpContext http,
         CancellationToken ct)
     {
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
@@ -2179,6 +2184,21 @@ public static class ReportFeedbackEndpoints
         db.FeedbackProblemResolutions.Add(new FeedbackProblemResolution(
             problemId, row.FeedbackId, row.ReportId, row.ReportProductId, row.ContributionId,
             row.ErrorCode.Value, "document-upload", currentUser.UserId));
+        db.AuditEvents.Add(new AuditEvent(
+            currentUser.UserId,
+            "feedback-resolution.problem-resolved",
+            nameof(EmployerInterfaceContributionFeedback),
+            row.Id,
+            organizationId,
+            employerId,
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                problemId,
+                row.ErrorCode,
+                source = "document-upload",
+                documentId = document.Id
+            }),
+            http.TraceIdentifier));
 
         try
         {
