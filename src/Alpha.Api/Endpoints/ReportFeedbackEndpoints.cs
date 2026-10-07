@@ -831,10 +831,11 @@ public static class ReportFeedbackEndpoints
                 "employee-save" => playbook.ResolutionType == FeedbackResolutionType.Edit
                     && playbook.Resolver == FeedbackResolverType.Employee
                     && playbook.Actions.HasFlag(FeedbackResolutionAction.EditEmployee),
-                "deposit-save" => playbook.Resolver is FeedbackResolverType.Payment
-                    or FeedbackResolverType.Contribution
-                    or FeedbackResolverType.EmploymentStatus
-                    or FeedbackResolverType.ProductPolicy,
+                "deposit-save" => playbook.ResolutionType == FeedbackResolutionType.Edit
+                    && playbook.Resolver is FeedbackResolverType.Payment
+                        or FeedbackResolverType.Contribution
+                        or FeedbackResolverType.EmploymentStatus
+                        or FeedbackResolverType.ProductPolicy,
                 "workspace-validation" => playbook.ResolutionType == FeedbackResolutionType.Edit
                     && playbook.CorrectionBehavior == FeedbackCorrectionBehavior.CorrectionWorkspace,
                 _ => false
