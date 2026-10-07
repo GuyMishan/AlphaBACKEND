@@ -1,9 +1,12 @@
+using System.Globalization;
 using System.Text.Json;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
+using Alpha.Application.Reporting;
 using Alpha.Api.Security;
 using Alpha.Api.Services;
 using Alpha.Domain.Auditing;
+using Alpha.Domain.Employees;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
 
@@ -61,11 +64,14 @@ public static class ReportFeedbackEndpoints
             .RequireAuthorization().WithTags("Report feedback");
         group.MapGet("/", ListAsync);
         group.MapGet("/employer-context", EmployerContextAsync);
+        group.MapGet("/resolution-context", EmployerResolutionContextAsync);
         group.MapGet("/treatment-statuses", TreatmentStatusOptionsAsync);
         group.MapGet("/{reportId:guid}", DetailsAsync);
         group.MapGet("/{reportId:guid}/context", ReportContextAsync);
+        group.MapGet("/{reportId:guid}/resolution-context", ReportResolutionContextAsync);
         group.MapGet("/{reportId:guid}/deposits", DepositListAsync);
         group.MapGet("/{reportId:guid}/deposits/{reportProductId:guid}", DepositDetailsAsync);
+        group.MapGet("/{reportId:guid}/deposits/{reportProductId:guid}/resolution-context", DepositResolutionContextAsync);
         group.MapPut("/{reportId:guid}/deposits/{reportProductId:guid}/treatment", UpdateTreatmentAsync);
         group.MapGet("/{reportId:guid}/exports/{exportType}", ExportAsync);
         return endpoints;
@@ -526,6 +532,456 @@ public static class ReportFeedbackEndpoints
         });
         return Results.Ok(new { items, hasMore, manufacturers });
     }
+
+    private static async Task<IResult> EmployerResolutionContextAsync(
+        Guid organizationId, Guid employerId, IAlphaDbContext db,
+        OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
+            return Results.NotFound();
+
+        var reportIds = await db.ManualReports.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
+                && !x.IsCorrectionWorkspace && !x.IsTechnicalCorrectionDocument)
+            .Select(x => x.Id)
+            .ToListAsync(ct);
+        var rows = (await ActiveActionableFeedbackAsync(reportIds, db, ct))
+            .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
+                == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)
+            .ToArray();
+        var canResolve = await access.CanCreateReportAsync(organizationId, employerId, ct);
+
+        return Results.Ok(await BuildResolutionContextAsync(
+            "employer", organizationId, employerId, null, null, canResolve, rows, db, protector, ct));
+    }
+
+    private static async Task<IResult> ReportResolutionContextAsync(
+        Guid organizationId, Guid employerId, Guid reportId, IAlphaDbContext db,
+        OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var exists = await db.ManualReports.AsNoTracking().AnyAsync(x =>
+            x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId
+            && !x.IsCorrectionWorkspace && !x.IsTechnicalCorrectionDocument, ct);
+        if (!exists) return Results.NotFound();
+
+        var rows = (await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct))
+            .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
+                == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)
+            .ToArray();
+        var canResolve = await access.CanCreateReportAsync(organizationId, employerId, ct);
+
+        return Results.Ok(await BuildResolutionContextAsync(
+            "report", organizationId, employerId, reportId, null, canResolve, rows, db, protector, ct));
+    }
+
+    private static async Task<IResult> DepositResolutionContextAsync(
+        Guid organizationId, Guid employerId, Guid reportId, Guid reportProductId, IAlphaDbContext db,
+        OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var belongs = await (from product in db.ManualReportProducts.AsNoTracking()
+                             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                             where product.Id == reportProductId && employee.ReportId == reportId
+                                 && employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                             select product.Id).AnyAsync(ct);
+        if (!belongs) return Results.NotFound();
+
+        var rows = (await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct))
+            .Where(x => x.ReportProductId == reportProductId)
+            .Where(x =>
+            {
+                var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
+                return scope is EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee
+                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit
+                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution;
+            })
+            .ToArray();
+        var canResolve = await access.CanCreateReportAsync(organizationId, employerId, ct);
+
+        return Results.Ok(await BuildResolutionContextAsync(
+            "deposit", organizationId, employerId, reportId, reportProductId, canResolve, rows, db, protector, ct));
+    }
+
+    private static async Task<FeedbackResolutionContextResponse> BuildResolutionContextAsync(
+        string contextType,
+        Guid organizationId,
+        Guid employerId,
+        Guid? requestedReportId,
+        Guid? requestedReportProductId,
+        bool canResolve,
+        IReadOnlyCollection<EmployerInterfaceContributionFeedback> rows,
+        IAlphaDbContext db,
+        IDataProtectionService protector,
+        CancellationToken ct)
+    {
+        if (rows.Count == 0)
+            return new FeedbackResolutionContextResponse(
+                contextType, employerId, requestedReportId, requestedReportProductId, canResolve,
+                Array.Empty<FeedbackResolutionProblemDto>());
+
+        var reportIds = rows.Select(x => x.ReportId).Distinct().ToArray();
+        var productIds = rows.Select(x => x.ReportProductId).Distinct().ToArray();
+        var contributionIds = rows.Select(x => x.ContributionId).Distinct().ToArray();
+        var feedbackIds = rows.Select(x => x.FeedbackId).Distinct().ToArray();
+
+        var reports = await db.ManualReports.AsNoTracking()
+            .Where(x => reportIds.Contains(x.Id) && x.OrganizationId == organizationId && x.EmployerId == employerId)
+            .ToDictionaryAsync(x => x.Id, ct);
+        var products = await db.ManualReportProducts.AsNoTracking()
+            .Where(x => productIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, ct);
+        var reportEmployeeIds = products.Values.Select(x => x.ReportEmployeeId).Distinct().ToArray();
+        var reportEmployees = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => reportEmployeeIds.Contains(x.Id)
+                && x.OrganizationId == organizationId && x.EmployerId == employerId)
+            .ToDictionaryAsync(x => x.Id, ct);
+        var contributions = await db.ManualContributions.AsNoTracking()
+            .Where(x => contributionIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, ct);
+        var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .ToDictionaryAsync(x => x.ReportProductId, ct);
+        var payments = await db.ManualReportPayments.AsNoTracking()
+            .Where(x => productIds.Contains(x.ReportProductId))
+            .ToDictionaryAsync(x => x.ReportProductId, ct);
+
+        var employmentIds = reportEmployees.Values.Select(x => x.EmploymentId).Distinct().ToArray();
+        var employments = await db.Employments.AsNoTracking()
+            .Where(x => employmentIds.Contains(x.Id) && x.OrganizationId == organizationId && x.EmployerId == employerId)
+            .ToDictionaryAsync(x => x.Id, ct);
+        var personIds = employments.Values.Select(x => x.PersonId).Distinct().ToArray();
+        var people = await db.People.AsNoTracking()
+            .Where(x => personIds.Contains(x.Id) && x.OrganizationId == organizationId)
+            .ToDictionaryAsync(x => x.Id, ct);
+
+        var currentProducts = await db.EmployeePensionProducts.AsNoTracking()
+            .Where(x => employmentIds.Contains(x.EmploymentId))
+            .ToListAsync(ct);
+        var currentProductIds = currentProducts.Select(x => x.Id).ToArray();
+        var currentContributions = currentProductIds.Length == 0
+            ? Array.Empty<EmployeePensionContribution>()
+            : await db.EmployeePensionContributions.AsNoTracking()
+                .Where(x => currentProductIds.Contains(x.EmployeePensionProductId))
+                .ToArrayAsync(ct);
+
+        var transferRows = await db.EmployerInterfaceTransferFeedback.AsNoTracking()
+            .Where(x => reportIds.Contains(x.ReportId) && feedbackIds.Contains(x.FeedbackId))
+            .OrderByDescending(x => x.ReceivedAt)
+            .ToListAsync(ct);
+
+        var problems = new List<FeedbackResolutionProblemDto>(rows.Count);
+        foreach (var row in rows.OrderByDescending(x => x.ReceivedAt).ThenBy(x => x.Sequence))
+        {
+            if (!row.ErrorCode.HasValue || !FeedbackResolutionPlaybookCatalog.TryGet(row.ErrorCode.Value, out var playbook))
+                continue;
+            if (!products.TryGetValue(row.ReportProductId, out var product)
+                || !reportEmployees.TryGetValue(product.ReportEmployeeId, out var reportEmployee)
+                || !reports.TryGetValue(row.ReportId, out var report))
+                continue;
+
+            contributions.TryGetValue(row.ContributionId, out var contribution);
+            employments.TryGetValue(reportEmployee.EmploymentId, out var employment);
+            Person? person = null;
+            if (employment is not null) people.TryGetValue(employment.PersonId, out person);
+
+            var liveProduct = FindCurrentProduct(product, reportEmployee.EmploymentId, currentProducts);
+            EmployeePensionContribution? liveContribution = null;
+            if (liveProduct is not null && contribution is not null)
+                liveContribution = currentContributions.FirstOrDefault(x =>
+                    x.EmployeePensionProductId == liveProduct.Id
+                    && x.Party == contribution.Party
+                    && x.Component == contribution.Component);
+
+            metadata.TryGetValue(row.ReportProductId, out var productMetadata);
+            payments.TryGetValue(row.ReportProductId, out var payment);
+            var transferIdentifier = !string.IsNullOrWhiteSpace(productMetadata?.InterfaceTransferIdentifier)
+                ? productMetadata.InterfaceTransferIdentifier
+                : row.ReportProductId.ToString("D").ToUpperInvariant();
+            var transfer = transferRows.FirstOrDefault(x =>
+                x.ReportId == row.ReportId
+                && string.Equals(x.TransferIdentifier, transferIdentifier, StringComparison.OrdinalIgnoreCase));
+
+            var reportedValues = ReportedValues(playbook.Resolver, report, reportEmployee, product, contribution, payment, protector);
+            var currentValues = CurrentValues(playbook.Resolver, employment, person, liveProduct, liveContribution, protector);
+            var feedbackValues = FeedbackValues(row, transfer);
+            var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
+            var groupKey = FeedbackResolutionWireProjection.BuildGroupKey(
+                playbook.GroupStrategy, employerId, row.ReportId, row.ReportProductId, row.ContributionId,
+                reportEmployee.EmploymentId, transferIdentifier, previousRecordIdentifier, playbook.Code, row.FeedbackId, row.Sequence);
+
+            problems.Add(new FeedbackResolutionProblemDto(
+                ProblemId: $"{row.FeedbackId:N}:{row.ContributionId:N}:{row.Sequence}:{playbook.Code}",
+                Code: playbook.Code,
+                Description: string.IsNullOrWhiteSpace(row.ErrorDescription)
+                    ? EmployerInterfaceLineFeedbackParser.Description(row.ErrorCode)
+                    : row.ErrorDescription,
+                Scope: FeedbackResolutionWireProjection.WireName(playbook.Scope),
+                ResolutionType: FeedbackResolutionWireProjection.WireName(playbook.ResolutionType),
+                Family: FeedbackResolutionWireProjection.WireName(playbook.Family),
+                ResolverType: FeedbackResolutionWireProjection.WireName(playbook.Resolver),
+                GroupStrategy: FeedbackResolutionWireProjection.WireName(playbook.GroupStrategy),
+                GroupKey: groupKey,
+                CorrectionBehavior: FeedbackResolutionWireProjection.WireName(playbook.CorrectionBehavior),
+                AvailableActions: FeedbackResolutionWireProjection.ActionNames(playbook.Actions),
+                CanEscalateExternally: playbook.CanEscalateExternally,
+                FeedbackId: row.FeedbackId,
+                ReportId: row.ReportId,
+                ReportProductId: row.ReportProductId,
+                ContributionId: row.ContributionId,
+                ReportEmployeeId: reportEmployee.Id,
+                EmploymentId: reportEmployee.EmploymentId,
+                PersonId: reportEmployee.PersonId,
+                EmployeeName: $"{reportEmployee.FirstName} {reportEmployee.LastName}".Trim(),
+                ProductName: product.FundName,
+                FundCompanyName: product.FundCompanyName,
+                PolicyNumber: product.PolicyNumber,
+                ReportedValues: reportedValues,
+                CurrentValues: currentValues,
+                FeedbackValues: feedbackValues,
+                ReceivedAt: row.ReceivedAt));
+        }
+
+        return new FeedbackResolutionContextResponse(
+            contextType, employerId, requestedReportId, requestedReportProductId, canResolve, problems);
+    }
+
+    private static EmployeePensionProduct? FindCurrentProduct(
+        ManualReportProduct reported,
+        Guid employmentId,
+        IReadOnlyCollection<EmployeePensionProduct> currentProducts)
+    {
+        var candidates = currentProducts.Where(x => x.EmploymentId == employmentId).ToArray();
+        if (candidates.Length == 0) return null;
+
+        if (!string.IsNullOrWhiteSpace(reported.PolicyNumber))
+        {
+            var byPolicy = candidates.Where(x =>
+                string.Equals(x.PolicyNumber, reported.PolicyNumber, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (byPolicy.Length == 1) return byPolicy[0];
+        }
+
+        if (!string.IsNullOrWhiteSpace(reported.FundExternalKey))
+        {
+            var byExternalKey = candidates.Where(x =>
+                string.Equals(x.FundExternalKey, reported.FundExternalKey, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (byExternalKey.Length == 1) return byExternalKey[0];
+        }
+
+        if (!string.IsNullOrWhiteSpace(reported.FundCode))
+        {
+            var byFundCode = candidates.Where(x =>
+                string.Equals(x.FundCode, reported.FundCode, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (byFundCode.Length == 1) return byFundCode[0];
+        }
+
+        var byType = candidates.Where(x => x.ProductType == reported.ProductType).ToArray();
+        return byType.Length == 1 ? byType[0] : null;
+    }
+
+    private static IReadOnlyDictionary<string, string?> ReportedValues(
+        FeedbackResolverType resolver,
+        ManualReport report,
+        ManualReportEmployee employee,
+        ManualReportProduct product,
+        ManualContribution? contribution,
+        ManualReportPayment? payment,
+        IDataProtectionService protector)
+    {
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal);
+        void Add(string key, object? value) => values[key] = ResolutionValue(value);
+
+        if (resolver is FeedbackResolverType.Employee or FeedbackResolverType.EmploymentStatus
+            or FeedbackResolverType.ProductPolicy or FeedbackResolverType.Contribution
+            or FeedbackResolverType.Split or FeedbackResolverType.ExternalCase)
+        {
+            Add("employeeName", $"{employee.FirstName} {employee.LastName}".Trim());
+            Add("identifierType", employee.InterfaceIdentifierType);
+            Add("identifier", protector.Unprotect(employee.InterfaceIdentifier, $"report-employee-interface-id:{employee.Id}"));
+            Add("employeeNumber", employee.EmployeeNumber);
+            Add("birthDate", employee.BirthDateSnapshot);
+            Add("gender", employee.GenderSnapshot);
+            Add("email", protector.Unprotect(employee.EmailSnapshot, $"report-employee-email:{employee.Id}"));
+            Add("mobile", protector.Unprotect(employee.MobileSnapshot, $"report-employee-mobile:{employee.Id}"));
+            Add("employmentStartDate", employee.EmploymentStartDateSnapshot);
+            Add("monthlySalary", employee.MonthlySalary);
+        }
+
+        if (resolver is FeedbackResolverType.ProductPolicy or FeedbackResolverType.Contribution
+            or FeedbackResolverType.Split or FeedbackResolverType.Refund or FeedbackResolverType.ExternalCase
+            or FeedbackResolverType.Documents)
+        {
+            Add("productType", (int)product.ProductType);
+            Add("policyNumber", product.PolicyNumber);
+            Add("fundCode", product.FundCode);
+            Add("fundName", product.FundName);
+            Add("fundCompanyName", product.FundCompanyName);
+            Add("salaryMonth", product.SalaryMonth);
+            Add("salary", product.Salary);
+            Add("reportingType", product.ReportingType);
+            Add("section14Code", product.Section14Code);
+        }
+
+        if (resolver is FeedbackResolverType.Contribution or FeedbackResolverType.Refund)
+        {
+            Add("contributionAmount", contribution?.Amount);
+            Add("contributionPercentage", contribution?.Percentage);
+            Add("exemptPayments", contribution?.ExemptPayments);
+            Add("recordIdentifier", contribution?.InterfaceRecordIdentifier);
+            Add("previousRecordIdentifier", contribution?.PreviousRecordIdentifier);
+        }
+
+        if (resolver is FeedbackResolverType.Payment or FeedbackResolverType.Refund)
+        {
+            Add("paymentMethod", payment?.PaymentMethod);
+            Add("providerAccount", payment?.ProviderAccount);
+            Add("referenceNumber", payment?.ReferenceNumber);
+            Add("valueDate", payment?.ValueDate);
+            Add("actualDepositAmount", payment?.ActualDepositAmount);
+            Add("employerBankCode", payment?.EmployerBankCode);
+            Add("employerBranch", payment?.EmployerBranch);
+            Add("employerAccount", payment is null ? null : protector.Unprotect(
+                payment.EmployerAccount, $"report-payment-account:{payment.ReportProductId}"));
+        }
+
+        if (resolver is FeedbackResolverType.ReportCorrection or FeedbackResolverType.ConditionalField)
+        {
+            Add("reportingMonth", report.ReportingMonth);
+            Add("reportKind", (int)report.ReportKind);
+            Add("salaryPaymentDate", report.SalaryPaymentDate);
+            Add("policyNumber", product.PolicyNumber);
+            Add("salaryMonth", product.SalaryMonth);
+            Add("recordIdentifier", contribution?.InterfaceRecordIdentifier);
+            Add("previousRecordIdentifier", contribution?.PreviousRecordIdentifier);
+        }
+
+        return values;
+    }
+
+    private static IReadOnlyDictionary<string, string?> CurrentValues(
+        FeedbackResolverType resolver,
+        Employment? employment,
+        Person? person,
+        EmployeePensionProduct? product,
+        EmployeePensionContribution? contribution,
+        IDataProtectionService protector)
+    {
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal);
+        void Add(string key, object? value) => values[key] = ResolutionValue(value);
+
+        if (resolver is FeedbackResolverType.Employee or FeedbackResolverType.EmploymentStatus)
+        {
+            Add("entityFound", employment is not null && person is not null);
+            if (employment is not null && person is not null)
+            {
+                Add("employeeName", $"{person.FirstName} {person.LastName}".Trim());
+                Add("identifierType", (int)person.IdentifierType);
+                Add("identifier", person.NationalIdEncrypted is null ? null
+                    : protector.Unprotect(person.NationalIdEncrypted, "person-national-id"));
+                Add("employeeNumber", employment.EmployeeNumber);
+                Add("birthDate", person.BirthDate);
+                Add("gender", person.Gender.HasValue ? (int)person.Gender.Value : null);
+                Add("email", person.Email);
+                Add("mobile", person.Mobile);
+                Add("city", person.City);
+                Add("street", person.Street);
+                Add("houseNumber", person.HouseNumber);
+                Add("apartment", person.Apartment);
+                Add("postalCode", person.PostalCode);
+                Add("postOfficeBox", person.PostOfficeBox);
+                Add("employmentStartDate", employment.StartDate);
+                Add("employmentStatus", (int)employment.Status);
+                Add("monthlySalary", employment.MonthlySalary);
+            }
+        }
+
+        if (resolver is FeedbackResolverType.ProductPolicy or FeedbackResolverType.Contribution
+            or FeedbackResolverType.Split or FeedbackResolverType.ExternalCase)
+        {
+            Add("entityFound", product is not null);
+            if (product is not null)
+            {
+                Add("productType", (int)product.ProductType);
+                Add("policyNumber", product.PolicyNumber);
+                Add("fundCode", product.FundCode);
+                Add("fundName", product.FundName);
+                Add("fundCompanyName", product.FundCompanyName);
+                Add("salary", product.Salary);
+                Add("reportingType", product.ReportingType);
+                Add("section14Code", product.Section14Code);
+                Add("isActive", product.IsActive);
+                Add("effectiveFrom", product.EffectiveFrom);
+                Add("effectiveTo", product.EffectiveTo);
+            }
+        }
+
+        if (resolver == FeedbackResolverType.Contribution)
+        {
+            Add("contributionFound", contribution is not null);
+            if (contribution is not null)
+            {
+                Add("contributionAmount", contribution.Amount);
+                Add("contributionPercentage", contribution.Percentage);
+                Add("exemptPayments", contribution.ExemptPayments);
+            }
+        }
+
+        return values;
+    }
+
+    private static IReadOnlyDictionary<string, string?> FeedbackValues(
+        EmployerInterfaceContributionFeedback row,
+        EmployerInterfaceTransferFeedback? transfer)
+    {
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal);
+        void Add(string key, object? value) => values[key] = ResolutionValue(value);
+
+        Add("intakeStatus", row.IntakeStatus);
+        Add("errorAmount", row.ErrorAmount);
+        Add("errorDate", row.ErrorDate);
+        Add("contributionTypeCode", row.ContributionTypeCode);
+        Add("calculatedSalary", row.CalculatedSalary);
+        Add("salaryMonth", row.SalaryMonth);
+        Add("policyNumber", row.PolicyNumber);
+        Add("contributionRate", row.ContributionRate);
+        Add("contributionAmount", row.ContributionAmount);
+        Add("recordIdentifier", row.RecordIdentifier);
+        Add("sourceFileName", row.SourceFileName);
+
+        if (transfer is not null)
+        {
+            Add("reportedDepositAmount", transfer.ReportedDepositAmount);
+            Add("actualReceivedAmount", transfer.ActualReceivedAmount);
+            Add("allocatedAmount", transfer.AllocatedAmount);
+            Add("inTransitAmount", transfer.InTransitAmount);
+            Add("proactiveRefundAmount", transfer.ProactiveRefundAmount);
+            Add("employerAccountRefundAmount", transfer.EmployerAccountRefundAmount);
+            Add("moneyTreatmentStatus", transfer.MoneyTreatmentStatus);
+            Add("statusDetail", transfer.StatusDetail);
+            Add("paymentReference", transfer.PaymentReference);
+            Add("transferValueDate", transfer.ValueDate);
+            Add("trustAccountValueDate", transfer.TrustAccountValueDate);
+            Add("clearingIdentifier", transfer.ClearingIdentifier);
+        }
+
+        return values;
+    }
+
+    private static string? ResolutionValue(object? value) => value switch
+    {
+        null => null,
+        string text => text,
+        DateOnly date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        DateTimeOffset timestamp => timestamp.ToString("O", CultureInfo.InvariantCulture),
+        decimal number => number.ToString(CultureInfo.InvariantCulture),
+        double number => number.ToString(CultureInfo.InvariantCulture),
+        float number => number.ToString(CultureInfo.InvariantCulture),
+        bool boolean => boolean ? "true" : "false",
+        Enum enumValue => Convert.ToInt32(enumValue, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
+        IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString()
+    };
 
     private static async Task<IResult> DepositDetailsAsync(
         Guid organizationId, Guid employerId, Guid reportId, Guid reportProductId,

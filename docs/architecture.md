@@ -91,6 +91,9 @@ The catalog is intentionally declarative. It does not edit submitted reports, cr
 
 Informational codes are retained in the catalog for complete official-code coverage but are not actionable resolution steps. Resolution grouping is a product concern (employee, employee+product, contribution, report, transfer, document requirement or original movement) and must not change the provenance or scope of the underlying feedback evidence.
 
+The report-feedback API exposes three read-only resolution contexts: employer scope, report scope and deposit scope. Each response contains actionable problems only and projects the playbook routing metadata together with stable entity references, a future queue grouping key, and three distinct value bags: `reportedValues` from the immutable report snapshot, `currentValues` from authorized live employer/employee/pension-master data when a deterministic match exists, and `feedbackValues` from normalized clearing-house/manufacturer feedback. A missing or ambiguous live product match is represented as missing current data rather than guessed. The context endpoints do not edit data, create correction reports, send external messages, or mark feedback resolved.
+
+
 ## Reporting correction revision model
 
 Submitted employer reports are business revisions, while Employer Interface 006 negative/current files created to move between revisions are technical transmission documents. A correction workspace is a full desired next-state snapshot. The delta planner compares it to the latest effective revision and emits only the Added/Changed/Removed rows required by Version 006. Technical documents never become the source of a later user correction; after successful transmission, the workspace itself is promoted to the next immutable business revision. This keeps lineage linear (Revision 1 -> Revision 2 -> Revision 3) while preserving every technical transmission as immutable evidence.
