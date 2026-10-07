@@ -83,6 +83,14 @@ Before transport is invoked, final report validation generates the outbound V006
 
 For local development, the simulated clearing-house adapter uses the repository-root `simulated-clearinghouse-vault/` as its persistent filesystem boundary. Runtime payload/feedback files are intentionally excluded from Git; the directory exists so developers can inspect outbox/inbox/processed/failed flow while the TEST simulator is enabled.
 
+## Feedback resolution playbooks
+
+Post-feedback resolution is modeled separately from immutable clearing-house evidence and manual treatment history. `Alpha.Application/Reporting/FeedbackResolutionPlaybookCatalog.cs` assigns every official Employer Interface 006 summary-feedback code a product routing contract: resolution type, business family, resolver type, business scope, grouping strategy, correction behavior and allowed actions.
+
+The catalog is intentionally declarative. It does not edit submitted reports, create correction documents, send external messages or close feedback. Future resolution orchestration must consume the catalog, load current/report-time context, and may refine a decision dynamically (for example, an identity mismatch may remain an internal edit when ALPHA is wrong or escalate externally when ALPHA's current value already matches the submitted value). Unknown codes fail closed instead of receiving a guessed resolver.
+
+Informational codes are retained in the catalog for complete official-code coverage but are not actionable resolution steps. Resolution grouping is a product concern (employee, employee+product, contribution, report, transfer, document requirement or original movement) and must not change the provenance or scope of the underlying feedback evidence.
+
 ## Reporting correction revision model
 
 Submitted employer reports are business revisions, while Employer Interface 006 negative/current files created to move between revisions are technical transmission documents. A correction workspace is a full desired next-state snapshot. The delta planner compares it to the latest effective revision and emits only the Added/Changed/Removed rows required by Version 006. Technical documents never become the source of a later user correction; after successful transmission, the workspace itself is promoted to the next immutable business revision. This keeps lineage linear (Revision 1 -> Revision 2 -> Revision 3) while preserving every technical transmission as immutable evidence.
