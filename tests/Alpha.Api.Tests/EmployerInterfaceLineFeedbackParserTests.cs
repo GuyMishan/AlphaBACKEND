@@ -122,7 +122,7 @@ public sealed class EmployerInterfaceLineFeedbackParserTests
     [InlineData(53, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
     [InlineData(4, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee)]
     [InlineData(45, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)]
-    [InlineData(27, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)]
+    [InlineData(27, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
     [InlineData(50, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)]
     [InlineData(62, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee)]
     [InlineData(71, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
@@ -140,7 +140,7 @@ public sealed class EmployerInterfaceLineFeedbackParserTests
     [InlineData(16, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
     [InlineData(17, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
     [InlineData(23, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
-    [InlineData(27, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)]
+    [InlineData(27, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
     [InlineData(28, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
     [InlineData(43, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
     [InlineData(50, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)]
@@ -156,6 +156,47 @@ public sealed class EmployerInterfaceLineFeedbackParserTests
         EmployerInterfaceLineFeedbackParser.FeedbackErrorScope expected)
     {
         Assert.Equal(expected, EmployerInterfaceLineFeedbackParser.ErrorScope(code));
+    }
+
+    [Theory]
+    [InlineData(13, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(29, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(30, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(51, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(66, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(69, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(70, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(87, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(88, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(89, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(90, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(92, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(93, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(94, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(95, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(96, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(97, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit)]
+    [InlineData(99, EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution)]
+    public void Refund_and_policy_errors_stay_with_the_deposit_not_the_employer(
+        int code,
+        EmployerInterfaceLineFeedbackParser.FeedbackErrorScope expected)
+    {
+        Assert.Equal(expected, EmployerInterfaceLineFeedbackParser.ErrorScope(code));
+    }
+
+    [Theory]
+    [InlineData(45)]
+    [InlineData(50)]
+    [InlineData(56)]
+    [InlineData(79)]
+    [InlineData(83)]
+    [InlineData(84)]
+    [InlineData(85)]
+    public void Employer_money_scope_is_reserved_for_employer_level_transfer_issues(int code)
+    {
+        Assert.Equal(
+            EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money,
+            EmployerInterfaceLineFeedbackParser.ErrorScope(code));
     }
 
     [Fact]
