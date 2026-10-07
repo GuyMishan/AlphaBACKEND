@@ -620,7 +620,14 @@ public static class ReportFeedbackEndpoints
         if (rows.Count == 0)
             return new FeedbackResolutionContextResponse(
                 contextType, employerId, requestedReportId, requestedReportProductId, canResolve,
-                Array.Empty<FeedbackResolutionProblemDto>());
+                Array.Empty<int>(), Array.Empty<FeedbackResolutionProblemDto>());
+
+        var unsupportedCodes = rows
+            .Where(x => x.ErrorCode.HasValue && !FeedbackResolutionPlaybookCatalog.TryGet(x.ErrorCode.Value, out _))
+            .Select(x => x.ErrorCode!.Value)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToArray();
 
         var reportIds = rows.Select(x => x.ReportId).Distinct().ToArray();
         var productIds = rows.Select(x => x.ReportProductId).Distinct().ToArray();
@@ -745,7 +752,8 @@ public static class ReportFeedbackEndpoints
         }
 
         return new FeedbackResolutionContextResponse(
-            contextType, employerId, requestedReportId, requestedReportProductId, canResolve, problems);
+            contextType, employerId, requestedReportId, requestedReportProductId,
+            canResolve && unsupportedCodes.Length == 0, unsupportedCodes, problems);
     }
 
     private static IReadOnlyDictionary<string, string?> ReportedValues(

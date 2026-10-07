@@ -6,6 +6,7 @@ public sealed record FeedbackResolutionContextResponse(
     Guid? ReportId,
     Guid? ReportProductId,
     bool CanResolve,
+    IReadOnlyList<int> UnsupportedCodes,
     IReadOnlyList<FeedbackResolutionProblemDto> Problems);
 
 public sealed record FeedbackResolutionProblemDto(
