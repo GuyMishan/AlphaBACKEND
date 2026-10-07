@@ -62,6 +62,7 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<FeedbackExternalCaseProblem> FeedbackExternalCaseProblems => Set<FeedbackExternalCaseProblem>();
     public DbSet<FeedbackExternalCaseEvent> FeedbackExternalCaseEvents => Set<FeedbackExternalCaseEvent>();
     public DbSet<FeedbackExternalCaseAttachment> FeedbackExternalCaseAttachments => Set<FeedbackExternalCaseAttachment>();
+    public DbSet<FeedbackCorrectionResolutionLink> FeedbackCorrectionResolutionLinks => Set<FeedbackCorrectionResolutionLink>();
     public DbSet<ContributionPercentageLimit> ContributionPercentageLimits => Set<ContributionPercentageLimit>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 

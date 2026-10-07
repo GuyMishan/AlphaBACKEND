@@ -238,6 +238,23 @@ public static class ReportFeedbackOperationsSchemaInitializer
             );
             CREATE INDEX IF NOT EXISTS "IX_feedback_external_case_attachment_Case_CreatedAt"
                 ON reporting.feedback_external_case_attachments ("CaseId", "CreatedAt");
+
+
+            CREATE TABLE IF NOT EXISTS reporting.feedback_correction_resolution_links (
+                "Id" uuid PRIMARY KEY,
+                "ProblemId" varchar(180) NOT NULL,
+                "SourceReportId" uuid NOT NULL REFERENCES reporting.manual_reports("Id") ON DELETE RESTRICT,
+                "WorkspaceReportId" uuid NOT NULL REFERENCES reporting.manual_reports("Id") ON DELETE CASCADE,
+                "SourceReportProductId" uuid NULL,
+                "ResolverType" varchar(60) NOT NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "CreatedAt" timestamptz NOT NULL,
+                "UpdatedAt" timestamptz NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "UX_feedback_correction_resolution_link_Problem"
+                ON reporting.feedback_correction_resolution_links ("ProblemId");
+            CREATE INDEX IF NOT EXISTS "IX_feedback_correction_resolution_link_Workspace_CreatedAt"
+                ON reporting.feedback_correction_resolution_links ("WorkspaceReportId", "CreatedAt");
             """);
     }
 }

@@ -58,6 +58,7 @@ public interface IAlphaDbContext
     DbSet<FeedbackExternalCaseProblem> FeedbackExternalCaseProblems { get; }
     DbSet<FeedbackExternalCaseEvent> FeedbackExternalCaseEvents { get; }
     DbSet<FeedbackExternalCaseAttachment> FeedbackExternalCaseAttachments { get; }
+    DbSet<FeedbackCorrectionResolutionLink> FeedbackCorrectionResolutionLinks { get; }
     DbSet<ContributionPercentageLimit> ContributionPercentageLimits { get; }
     DbSet<AuditEvent> AuditEvents { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

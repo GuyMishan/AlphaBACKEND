@@ -386,3 +386,36 @@ public sealed class FeedbackExternalCaseAttachment : Entity
     public string Sha256 { get; private set; } = string.Empty;
     public Guid UploadedByUserId { get; private set; }
 }
+
+
+public sealed class FeedbackCorrectionResolutionLink : Entity
+{
+    private FeedbackCorrectionResolutionLink() { }
+
+    public FeedbackCorrectionResolutionLink(
+        string problemId,
+        Guid sourceReportId,
+        Guid workspaceReportId,
+        Guid? sourceReportProductId,
+        string resolverType,
+        Guid createdByUserId)
+    {
+        if (string.IsNullOrWhiteSpace(problemId) || problemId.Trim().Length > 180)
+            throw new ArgumentException("Problem ID is required.", nameof(problemId));
+        if (string.IsNullOrWhiteSpace(resolverType) || resolverType.Trim().Length > 60)
+            throw new ArgumentException("Resolver type is required.", nameof(resolverType));
+        ProblemId = problemId.Trim();
+        SourceReportId = sourceReportId;
+        WorkspaceReportId = workspaceReportId;
+        SourceReportProductId = sourceReportProductId;
+        ResolverType = resolverType.Trim();
+        CreatedByUserId = createdByUserId;
+    }
+
+    public string ProblemId { get; private set; } = string.Empty;
+    public Guid SourceReportId { get; private set; }
+    public Guid WorkspaceReportId { get; private set; }
+    public Guid? SourceReportProductId { get; private set; }
+    public string ResolverType { get; private set; } = string.Empty;
+    public Guid CreatedByUserId { get; private set; }
+}

@@ -175,3 +175,19 @@ public sealed class FeedbackExternalCaseAttachmentConfiguration : IEntityTypeCon
         b.HasOne<FeedbackExternalCase>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
     }
 }
+
+
+public sealed class FeedbackCorrectionResolutionLinkConfiguration : IEntityTypeConfiguration<FeedbackCorrectionResolutionLink>
+{
+    public void Configure(EntityTypeBuilder<FeedbackCorrectionResolutionLink> b)
+    {
+        b.ToTable("feedback_correction_resolution_links", "reporting");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.ProblemId).HasMaxLength(180).IsRequired();
+        b.Property(x => x.ResolverType).HasMaxLength(60).IsRequired();
+        b.HasIndex(x => x.ProblemId).IsUnique();
+        b.HasIndex(x => new { x.WorkspaceReportId, x.CreatedAt });
+        b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.SourceReportId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.WorkspaceReportId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
