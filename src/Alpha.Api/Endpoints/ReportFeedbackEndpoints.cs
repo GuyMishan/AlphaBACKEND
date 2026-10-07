@@ -82,6 +82,7 @@ public static class ReportFeedbackEndpoints
         group.MapPost("/external-cases/{caseId:guid}/events", AddExternalCaseEventAsync);
         group.MapPut("/external-cases/{caseId:guid}/assignment", AssignExternalCaseAsync);
         group.MapPut("/external-cases/{caseId:guid}/status", UpdateExternalCaseStatusAsync);
+        group.MapPut("/external-cases/{caseId:guid}/template", UpdateExternalCaseTemplateAsync);
         group.MapPost("/external-cases/{caseId:guid}/attachments", UploadExternalCaseAttachmentAsync)
             .DisableAntiforgery()
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(11 * 1024 * 1024));
@@ -1228,6 +1229,36 @@ public static class ReportFeedbackEndpoints
             employerId,
             System.Text.Json.JsonSerializer.Serialize(new { status = normalized }),
             http.TraceIdentifier));
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(await ExternalCaseResponseAsync(caseId, organizationId, employerId, db, ct));
+    }
+
+    private static async Task<IResult> UpdateExternalCaseTemplateAsync(
+        Guid organizationId,
+        Guid employerId,
+        Guid caseId,
+        ExternalCaseTemplateRequest request,
+        IAlphaDbContext db,
+        OrganizationAccessService access,
+        ICurrentUser currentUser,
+        CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var externalCase = await db.FeedbackExternalCases.SingleOrDefaultAsync(item =>
+            item.Id == caseId && item.OrganizationId == organizationId && item.EmployerId == employerId, ct);
+        if (externalCase is null) return Results.NotFound();
+
+        try
+        {
+            externalCase.UpdateTemplate(request.Destination, request.Subject, request.MessageTemplate);
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { error = "external_case_template_invalid" });
+        }
+
+        db.FeedbackExternalCaseEvents.Add(new FeedbackExternalCaseEvent(
+            caseId, "template-updated", "תבנית הפנייה עודכנה.", currentUser.UserId));
         await db.SaveChangesAsync(ct);
         return Results.Ok(await ExternalCaseResponseAsync(caseId, organizationId, employerId, db, ct));
     }
@@ -2715,5 +2746,9 @@ public static class ReportFeedbackEndpoints
     public sealed record ExternalCaseEventRequest(string Note);
     public sealed record ExternalCaseAssignmentRequest(bool AssignToMe);
     public sealed record ExternalCaseStatusRequest(string Status, string? Note);
+    public sealed record ExternalCaseTemplateRequest(
+        string Destination,
+        string Subject,
+        string MessageTemplate);
     public sealed record UpdateTreatmentRequest(string StatusCode, string? Note, DateTimeOffset? ExpectedUpdatedAt);
 }
