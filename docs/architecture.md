@@ -108,3 +108,10 @@ The correction-workspace resolution action is behavior-gated, not resolver-name-
 ### Per-problem feedback resolution state
 
 Resolution state is operational metadata separate from immutable clearing-house feedback. Each normalized actionable row has a deterministic problem ID and may receive its own persisted resolution record with resolver source, user and timestamp. Resolver groups are navigation only: resolving one problem never resolves sibling errors implicitly. The server re-loads the active feedback row before accepting a resolution, validates that the action source is allowed by its playbook, and excludes only that exact persisted problem from later resolution contexts. Document-resolution evidence is PDF-only, malware-scanned and encrypted at rest.
+
+
+### Decision/review resolution flow
+
+Stage 7 treats a decision as its own append-only operational fact, separate from both immutable clearing-house feedback and terminal resolution. Each Decision problem is re-authorized and re-derived server-side before a choice is accepted. Allowed outcomes are derived from the committed playbook actions: confirmation, correction preparation, external escalation, financial reconciliation, or linking an original movement. The browser cannot submit an arbitrary outcome.
+
+`confirm` is terminal only for playbooks that explicitly expose `Confirm`, and closes only that `ProblemId`. Choosing `correction` creates/reuses the existing focused correction workspace and records the choice, but the problem remains active until that exact problem passes the relevant workspace validation; the closing endpoint verifies that the latest persisted decision is still `correction`. External/reconcile/link-original choices are persisted as pending handoffs with a required operator note and remain active until their dedicated resolver is implemented/completed. Decision history is append-only in `reporting.feedback_problem_decisions`, and every accepted decision also emits an audit event.
