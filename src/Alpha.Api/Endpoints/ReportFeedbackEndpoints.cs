@@ -1071,10 +1071,10 @@ public static class ReportFeedbackEndpoints
             if (string.Equals(problem.ResolutionType, "decision", StringComparison.Ordinal)
                 && !string.Equals(problem.LatestDecision, "external", StringComparison.Ordinal))
             {
-                var row = activeById[problem.ProblemId];
+                var decisionRow = activeById[problem.ProblemId];
                 db.FeedbackProblemDecisions.Add(new FeedbackProblemDecision(
-                    problem.ProblemId, row.FeedbackId, row.ReportId, row.ReportProductId,
-                    row.ContributionId, row.ErrorCode!.Value, "external", request.Note, currentUser.UserId));
+                    problem.ProblemId, decisionRow.FeedbackId, decisionRow.ReportId, decisionRow.ReportProductId,
+                    decisionRow.ContributionId, decisionRow.ErrorCode!.Value, "external", request.Note, currentUser.UserId));
             }
         }
 

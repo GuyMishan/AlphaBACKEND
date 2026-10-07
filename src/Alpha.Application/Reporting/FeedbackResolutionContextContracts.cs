@@ -49,7 +49,10 @@ public sealed record FeedbackResolutionProblemDto(
     DateTimeOffset ReceivedAt,
     string? LatestDecision = null,
     string LatestDecisionNote = "",
-    DateTimeOffset? LatestDecisionAt = null);
+    DateTimeOffset? LatestDecisionAt = null,
+    Guid? ExternalCaseId = null,
+    string ExternalCaseStatus = "",
+    string ExternalCaseAssigneeName = "");
 
 public static class FeedbackResolutionWireProjection
 {
