@@ -75,6 +75,8 @@ public static class ReportFeedbackEndpoints
         group.MapGet("/{reportId:guid}/deposits/{reportProductId:guid}/resolution-context", DepositResolutionContextAsync);
         group.MapPost("/{reportId:guid}/deposits/{reportProductId:guid}/resolution-actions/employee/validate", ValidateEmployeeResolutionActionAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/internal/prepare", PrepareInternalResolutionActionAsync);
+        group.MapPost("/{reportId:guid}/resolution-actions/problems/resolve", ResolveProblemsAsync);
+        group.MapPost("/{reportId:guid}/resolution-actions/documents/{problemId}", UploadResolutionDocumentAsync).DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(11 * 1024 * 1024));
         group.MapPut("/{reportId:guid}/deposits/{reportProductId:guid}/treatment", UpdateTreatmentAsync);
         group.MapGet("/{reportId:guid}/exports/{exportType}", ExportAsync);
         return endpoints;
@@ -774,6 +776,172 @@ public static class ReportFeedbackEndpoints
         });
     }
 
+    private static async Task<IResult> ResolveProblemsAsync(
+        Guid organizationId,
+        Guid employerId,
+        Guid reportId,
+        ResolveProblemsRequest request,
+        IAlphaDbContext db,
+        OrganizationAccessService access,
+        ICurrentUser currentUser,
+        CancellationToken ct)
+    {
+        if (request.ProblemIds.Count == 0) return Results.BadRequest(new { error = "problem_ids_required" });
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var canCreate = await access.CanCreateReportAsync(organizationId, employerId, ct);
+        var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
+        if (!canCreate && !canEditEmployee) return Results.Forbid();
+
+        var sourceExists = await db.ManualReports.AsNoTracking().AnyAsync(x =>
+            x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId
+            && !x.IsCorrectionWorkspace && !x.IsTechnicalCorrectionDocument, ct);
+        if (!sourceExists) return Results.NotFound();
+
+        if (request.ValidatedReportId.HasValue)
+        {
+            var validTarget = await db.ManualReports.AsNoTracking().AnyAsync(x =>
+                x.Id == request.ValidatedReportId.Value
+                && x.OrganizationId == organizationId
+                && x.EmployerId == employerId
+                && (x.Id == reportId || (x.IsCorrectionWorkspace && x.SourceReportId == reportId)), ct);
+            if (!validTarget) return Results.BadRequest(new { error = "resolution_validation_target_invalid" });
+        }
+
+        var activeRows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
+        var byProblemId = activeRows
+            .Where(x => x.ErrorCode.HasValue)
+            .ToDictionary(
+                x => FeedbackResolutionWireProjection.BuildProblemId(
+                    x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value),
+                x => x,
+                StringComparer.Ordinal);
+
+        var requested = request.ProblemIds.Distinct(StringComparer.Ordinal).ToArray();
+        if (requested.Any(problemId => !byProblemId.ContainsKey(problemId)))
+            return Results.Conflict(new { error = "resolution_problem_stale" });
+
+        foreach (var problemId in requested)
+        {
+            var row = byProblemId[problemId];
+            if (!FeedbackResolutionPlaybookCatalog.TryGet(row.ErrorCode!.Value, out var playbook))
+                return Results.Conflict(new { error = "resolution_context_unsupported" });
+
+            var sourceAllowed = request.Source switch
+            {
+                "employee-save" => playbook.Resolver == FeedbackResolverType.Employee
+                    && playbook.Actions.HasFlag(FeedbackResolutionAction.EditEmployee),
+                "deposit-save" => playbook.Resolver is FeedbackResolverType.Payment
+                    or FeedbackResolverType.Contribution
+                    or FeedbackResolverType.EmploymentStatus
+                    or FeedbackResolverType.ProductPolicy,
+                "workspace-validation" => playbook.ResolutionType == FeedbackResolutionType.Edit
+                    && playbook.CorrectionBehavior == FeedbackCorrectionBehavior.CorrectionWorkspace,
+                _ => false
+            };
+            if (!sourceAllowed) return Results.BadRequest(new { error = "resolution_source_not_allowed" });
+
+            db.FeedbackProblemResolutions.Add(new FeedbackProblemResolution(
+                problemId, row.FeedbackId, row.ReportId, row.ReportProductId, row.ContributionId,
+                row.ErrorCode.Value, request.Source, currentUser.UserId));
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Results.Conflict(new { error = "resolution_problem_already_resolved" });
+        }
+
+        return Results.Ok(new { resolvedProblemIds = requested });
+    }
+
+    private static async Task<IResult> UploadResolutionDocumentAsync(
+        Guid organizationId,
+        Guid employerId,
+        Guid reportId,
+        string problemId,
+        HttpRequest request,
+        IAlphaDbContext db,
+        OrganizationAccessService access,
+        ICurrentUser currentUser,
+        IMalwareScanner scanner,
+        IDataProtectionService protector,
+        IConfiguration configuration,
+        CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var reportExists = await db.ManualReports.AsNoTracking().AnyAsync(x =>
+            x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId
+            && !x.IsCorrectionWorkspace && !x.IsTechnicalCorrectionDocument, ct);
+        if (!reportExists) return Results.NotFound();
+
+        var activeRows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
+        var row = activeRows.FirstOrDefault(x => x.ErrorCode.HasValue
+            && string.Equals(
+                FeedbackResolutionWireProjection.BuildProblemId(
+                    x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode.Value),
+                problemId,
+                StringComparison.Ordinal));
+        if (row is null) return Results.Conflict(new { error = "resolution_problem_stale" });
+        if (!FeedbackResolutionPlaybookCatalog.TryGet(row.ErrorCode!.Value, out var playbook)
+            || playbook.Resolver != FeedbackResolverType.Documents
+            || !playbook.Actions.HasFlag(FeedbackResolutionAction.UploadDocument))
+            return Results.BadRequest(new { error = "resolution_action_not_allowed" });
+
+        if (!request.HasFormContentType) return Results.BadRequest(new { error = "multipart/form-data required" });
+        var file = (await request.ReadFormAsync(ct)).Files.GetFile("file");
+        var maxBytes = Math.Min(10L * 1024 * 1024,
+            configuration.GetValue<long?>("Security:MalwareScanner:MaxFileBytes") ?? 10L * 1024 * 1024);
+        if (file is null || file.Length == 0 || file.Length > maxBytes)
+            return Results.BadRequest(new { error = $"File must be 1 byte to {maxBytes} bytes." });
+        if (!file.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            return Results.BadRequest(new { error = "PDF only." });
+
+        await using var input = file.OpenReadStream();
+        using var memory = new MemoryStream();
+        await input.CopyToAsync(memory, ct);
+        var bytes = memory.ToArray();
+        if (bytes.Length < 5 || !bytes.AsSpan().StartsWith("%PDF-"u8))
+            return Results.BadRequest(new { error = "The uploaded file is not a valid PDF file." });
+
+        await using var scanStream = new MemoryStream(bytes, writable: false);
+        var scan = await scanner.ScanAsync(scanStream, file.FileName, ct);
+        if (scan.Verdict == MalwareScanVerdict.Unavailable)
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        if (scan.Verdict == MalwareScanVerdict.Infected)
+            return Results.BadRequest(new { error = "The uploaded file failed the security scan." });
+
+        var encrypted = protector.ProtectBytes(bytes, $"feedback-resolution-document:{problemId}");
+        var document = new FeedbackResolutionDocument(
+            problemId, reportId, row.ReportProductId, file.FileName, "application/pdf", encrypted,
+            bytes.LongLength, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant(),
+            currentUser.UserId);
+        db.FeedbackResolutionDocuments.Add(document);
+        db.FeedbackProblemResolutions.Add(new FeedbackProblemResolution(
+            problemId, row.FeedbackId, row.ReportId, row.ReportProductId, row.ContributionId,
+            row.ErrorCode.Value, "document-upload", currentUser.UserId));
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Results.Conflict(new { error = "resolution_problem_already_resolved" });
+        }
+
+        return Results.Ok(new
+        {
+            document.Id,
+            document.OriginalFileName,
+            document.SizeBytes,
+            document.Sha256,
+            resolvedProblemId = problemId
+        });
+    }
+
     private static async Task<FeedbackResolutionContextResponse> BuildResolutionContextAsync(
         string contextType,
         Guid organizationId,
@@ -892,7 +1060,7 @@ public static class ReportFeedbackEndpoints
                 reportEmployee.EmploymentId, transferIdentifier, previousRecordIdentifier, row.FeedbackId, row.Sequence);
 
             problems.Add(new FeedbackResolutionProblemDto(
-                ProblemId: $"{row.FeedbackId:N}:{row.ContributionId:N}:{row.Sequence}:{playbook.Code}",
+                ProblemId: FeedbackResolutionWireProjection.BuildProblemId(row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code),
                 Code: playbook.Code,
                 Description: string.IsNullOrWhiteSpace(row.ErrorDescription)
                     ? EmployerInterfaceLineFeedbackParser.Description(row.ErrorCode)
@@ -1322,7 +1490,7 @@ public static class ReportFeedbackEndpoints
             .ThenByDescending(x => x.CreatedAt)
             .ToListAsync(ct);
 
-        return rows
+        var latestRows = rows
             .GroupBy(x => x.ContributionId)
             .SelectMany(group =>
             {
@@ -1330,6 +1498,24 @@ public static class ReportFeedbackEndpoints
                 return group.Where(x => x.FeedbackId == latest.FeedbackId).OrderBy(x => x.Sequence);
             })
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
+            .ToArray();
+
+        var problemIds = latestRows
+            .Where(x => x.ErrorCode.HasValue)
+            .Select(x => FeedbackResolutionWireProjection.BuildProblemId(
+                x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value))
+            .ToArray();
+        if (problemIds.Length == 0) return latestRows;
+
+        var resolved = await db.FeedbackProblemResolutions.AsNoTracking()
+            .Where(x => problemIds.Contains(x.ProblemId))
+            .Select(x => x.ProblemId)
+            .ToHashSetAsync(ct);
+
+        return latestRows
+            .Where(x => !x.ErrorCode.HasValue
+                || !resolved.Contains(FeedbackResolutionWireProjection.BuildProblemId(
+                    x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode.Value)))
             .ToArray();
     }
 
@@ -1768,5 +1954,9 @@ public static class ReportFeedbackEndpoints
         string GroupKey,
         string ResolverType,
         Guid? ReportProductId);
+    public sealed record ResolveProblemsRequest(
+        IReadOnlyList<string> ProblemIds,
+        string Source,
+        Guid? ValidatedReportId);
     public sealed record UpdateTreatmentRequest(string StatusCode, string? Note, DateTimeOffset? ExpectedUpdatedAt);
 }
