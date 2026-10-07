@@ -1040,6 +1040,9 @@ public static class ReportFeedbackEndpoints
         if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.ProblemIds is null || request.ProblemIds.Count == 0 || string.IsNullOrWhiteSpace(request.GroupKey))
             return Results.BadRequest(new { error = "external_case_targets_required" });
+        var caseAction = string.Equals(request.Action, "reconcile", StringComparison.OrdinalIgnoreCase)
+            ? "reconcile"
+            : "external";
 
         var rows = (await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct)).ToArray();
         var context = await BuildResolutionContextAsync(
@@ -1054,7 +1057,8 @@ public static class ReportFeedbackEndpoints
             .ToArray();
         if (selected.Length != request.ProblemIds.Distinct(StringComparer.Ordinal).Count())
             return Results.BadRequest(new { error = "resolution_problem_mismatch" });
-        if (selected.Any(problem => !problem.AvailableActions.Contains("openExternalCase", StringComparer.Ordinal)))
+        var requiredAction = caseAction == "reconcile" ? "reconcile" : "openExternalCase";
+        if (selected.Any(problem => !problem.AvailableActions.Contains(requiredAction, StringComparer.Ordinal)))
             return Results.BadRequest(new { error = "external_case_not_allowed" });
 
         var caseKey = request.GroupKey.Trim();
@@ -1065,8 +1069,12 @@ public static class ReportFeedbackEndpoints
         if (externalCase is null)
         {
             var first = selected[0];
-            var destination = ExternalCaseDestination(first.Family);
-            var subject = $"ALPHA - בירור משוב מסלקה קוד {first.Code}";
+            var destination = caseAction == "reconcile"
+                ? "התאמת כספים / גבייה"
+                : ExternalCaseDestination(first.Family);
+            var subject = caseAction == "reconcile"
+                ? $"ALPHA - התאמת כספים למשוב קוד {first.Code}"
+                : $"ALPHA - בירור משוב מסלקה קוד {first.Code}";
             var template = BuildExternalCaseTemplate(first);
             externalCase = new FeedbackExternalCase(
                 organizationId, employerId, caseKey, destination, subject, template, currentUser.UserId);
@@ -1108,12 +1116,12 @@ public static class ReportFeedbackEndpoints
             }
 
             if (string.Equals(problem.ResolutionType, "decision", StringComparison.Ordinal)
-                && !string.Equals(problem.LatestDecision, "external", StringComparison.Ordinal))
+                && !string.Equals(problem.LatestDecision, caseAction, StringComparison.Ordinal))
             {
                 var decisionRow = activeById[problem.ProblemId];
                 db.FeedbackProblemDecisions.Add(new FeedbackProblemDecision(
                     problem.ProblemId, decisionRow.FeedbackId, decisionRow.ReportId, decisionRow.ReportProductId,
-                    decisionRow.ContributionId, decisionRow.ErrorCode!.Value, "external", request.Note, currentUser.UserId));
+                    decisionRow.ContributionId, decisionRow.ErrorCode!.Value, caseAction, request.Note, currentUser.UserId));
             }
         }
 
@@ -1132,7 +1140,8 @@ public static class ReportFeedbackEndpoints
                 externalCase.Id,
                 caseKey,
                 created,
-                problemIds = selected.Select(item => item.ProblemId).ToArray()
+                problemIds = selected.Select(item => item.ProblemId).ToArray(),
+                action = caseAction
             }),
             http.TraceIdentifier));
 
@@ -1250,7 +1259,8 @@ public static class ReportFeedbackEndpoints
                 if (resolvedSet.Contains(link.ProblemId)
                     || !activeByProblemId.TryGetValue(link.ProblemId, out var row)
                     || !FeedbackResolutionPlaybookCatalog.TryGet(row.ErrorCode!.Value, out var playbook)
-                    || !playbook.Actions.HasFlag(FeedbackResolutionAction.OpenExternalCase))
+                    || (!playbook.Actions.HasFlag(FeedbackResolutionAction.OpenExternalCase)
+                        && !playbook.Actions.HasFlag(FeedbackResolutionAction.Reconcile)))
                     continue;
 
                 db.FeedbackProblemResolutions.Add(new FeedbackProblemResolution(
@@ -3027,7 +3037,8 @@ public static class ReportFeedbackEndpoints
     public sealed record OpenExternalCaseRequest(
         string GroupKey,
         IReadOnlyList<string> ProblemIds,
-        string? Note);
+        string? Note,
+        string? Action = null);
     public sealed record ExternalCaseEventRequest(string Note);
     public sealed record ExternalCaseAssignmentRequest(bool AssignToMe);
     public sealed record ExternalCaseStatusRequest(string Status, string? Note);
