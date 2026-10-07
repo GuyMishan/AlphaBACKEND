@@ -16,6 +16,7 @@ public sealed record FeedbackResolutionGroupDto(
     string GroupKey,
     string ResolverType,
     string GroupStrategy,
+    bool CanExecute,
     IReadOnlyList<FeedbackResolutionProblemDto> Problems);
 
 public sealed record FeedbackResolutionProblemDto(
@@ -88,14 +89,27 @@ public static class FeedbackResolutionWireProjection
         };
     }
     public static IReadOnlyList<FeedbackResolutionGroupDto> BuildGroups(
-        IReadOnlyList<FeedbackResolutionProblemDto> problems) =>
+        IReadOnlyList<FeedbackResolutionProblemDto> problems,
+        bool canCreateReport = false,
+        bool canEditEmployee = false) =>
         problems
             .GroupBy(problem => problem.GroupKey, StringComparer.Ordinal)
-            .Select(group => new FeedbackResolutionGroupDto(
-                group.Key,
-                group.First().ResolverType,
-                group.First().GroupStrategy,
-                group.ToArray()))
+            .Select(group =>
+            {
+                var first = group.First();
+                var canExecute = string.Equals(
+                    first.ResolverType,
+                    WireName(FeedbackResolverType.Employee),
+                    StringComparison.Ordinal)
+                    ? canEditEmployee
+                    : canCreateReport;
+                return new FeedbackResolutionGroupDto(
+                    group.Key,
+                    first.ResolverType,
+                    first.GroupStrategy,
+                    canExecute,
+                    group.ToArray());
+            })
             .ToArray();
 
     public static bool CanExecuteEmployeeEdit(

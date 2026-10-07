@@ -674,7 +674,7 @@ public static class ReportFeedbackEndpoints
         if (rows.Count == 0)
             return new FeedbackResolutionContextResponse(
                 contextType, employerId, requestedReportId, requestedReportProductId,
-                canCreateReport || canEditEmployee, canCreateReport, canEditEmployee,
+                false, canCreateReport, canEditEmployee,
                 Array.Empty<int>(), Array.Empty<FeedbackResolutionProblemDto>(),
                 Array.Empty<FeedbackResolutionGroupDto>());
 
@@ -807,12 +807,13 @@ public static class ReportFeedbackEndpoints
                 ReceivedAt: row.ReceivedAt));
         }
 
-        var groups = FeedbackResolutionWireProjection.BuildGroups(problems);
+        var groups = FeedbackResolutionWireProjection.BuildGroups(
+            problems, canCreateReport, canEditEmployee);
+        var canResolve = unsupportedCodes.Length == 0 && groups.Any(group => group.CanExecute);
 
         return new FeedbackResolutionContextResponse(
             contextType, employerId, requestedReportId, requestedReportProductId,
-            (canCreateReport || canEditEmployee) && unsupportedCodes.Length == 0,
-            canCreateReport, canEditEmployee, unsupportedCodes, problems, groups);
+            canResolve, canCreateReport, canEditEmployee, unsupportedCodes, problems, groups);
     }
 
     private static IReadOnlyDictionary<string, string?> ReportedValues(

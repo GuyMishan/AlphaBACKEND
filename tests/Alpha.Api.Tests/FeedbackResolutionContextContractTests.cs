@@ -125,6 +125,7 @@ public sealed class FeedbackResolutionContextContractTests
             "employee:employee:one",
             "employee",
             "perEmployee",
+            true,
             new[]
             {
                 CreateProblem("a", employmentId, new[] { "review", "editEmployee" }),
@@ -216,14 +217,16 @@ public sealed class FeedbackResolutionContextContractTests
             Problem("b", "employee:one", "employee", 11),
             Problem("c", "employmentStatus:employee:one", "employmentStatus", 33),
             Problem("d", "employee:two", "employee", 62)
-        });
+        }, canCreateReport: false, canEditEmployee: true);
 
         Assert.Equal(3, groups.Count);
         Assert.Equal(new[] { "employee:one", "employmentStatus:employee:one", "employee:two" },
             groups.Select(group => group.GroupKey).ToArray());
         Assert.Equal(new[] { 4, 11 }, groups[0].Problems.Select(problem => problem.Code).ToArray());
         Assert.Equal("employee", groups[0].ResolverType);
+        Assert.True(groups[0].CanExecute);
         Assert.Equal("employmentStatus", groups[1].ResolverType);
+        Assert.False(groups[1].CanExecute);
     }
 
     [Fact]
