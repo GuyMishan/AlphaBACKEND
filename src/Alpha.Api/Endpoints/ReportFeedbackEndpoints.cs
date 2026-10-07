@@ -76,6 +76,7 @@ public static class ReportFeedbackEndpoints
         group.MapPost("/{reportId:guid}/deposits/{reportProductId:guid}/resolution-actions/employee/validate", ValidateEmployeeResolutionActionAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/internal/prepare", PrepareInternalResolutionActionAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/problems/resolve", ResolveProblemsAsync);
+        group.MapPost("/{reportId:guid}/resolution-actions/decision", DecideProblemAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/documents/{problemId}", UploadResolutionDocumentAsync).DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(11 * 1024 * 1024));
         group.MapPut("/{reportId:guid}/deposits/{reportProductId:guid}/treatment", UpdateTreatmentAsync);
         group.MapGet("/{reportId:guid}/exports/{exportType}", ExportAsync);
@@ -808,6 +809,161 @@ public static class ReportFeedbackEndpoints
         });
     }
 
+    private static async Task<IResult> DecideProblemAsync(
+        Guid organizationId,
+        Guid employerId,
+        Guid reportId,
+        DecideProblemRequest request,
+        IAlphaDbContext db,
+        OrganizationAccessService access,
+        IDataProtectionService protector,
+        ICurrentUser currentUser,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.ProblemId))
+            return Results.BadRequest(new { error = "problem_id_required" });
+        if ((request.Note?.Length ?? 0) > 4000)
+            return Results.BadRequest(new { error = "decision_note_too_long" });
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+
+        var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
+        var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
+        if (!canCreateReport && !canEditEmployee)
+            return Results.Forbid();
+
+        var sourceExists = await db.ManualReports.AsNoTracking().AnyAsync(report =>
+            report.Id == reportId
+            && report.OrganizationId == organizationId
+            && report.EmployerId == employerId
+            && !report.IsCorrectionWorkspace
+            && !report.IsTechnicalCorrectionDocument, ct);
+        if (!sourceExists) return Results.NotFound();
+
+        var activeRows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
+        var row = activeRows.FirstOrDefault(item =>
+            item.ErrorCode.HasValue
+            && string.Equals(
+                FeedbackResolutionWireProjection.BuildProblemId(
+                    item.FeedbackId, item.ContributionId, item.Sequence, item.ErrorCode.Value),
+                request.ProblemId,
+                StringComparison.Ordinal));
+        if (row is null) return Results.Conflict(new { error = "resolution_problem_stale" });
+        if (!FeedbackResolutionPlaybookCatalog.TryGet(row.ErrorCode!.Value, out var playbook)
+            || playbook.ResolutionType != FeedbackResolutionType.Decision
+            || !playbook.Actions.HasFlag(FeedbackResolutionAction.Review))
+            return Results.BadRequest(new { error = "decision_not_allowed" });
+
+        var outcome = request.Outcome?.Trim().ToLowerInvariant() ?? string.Empty;
+        var needsCreateReport = outcome is "confirm" or "correction" or "external" or "reconcile" or "link-original";
+        if (needsCreateReport && !canCreateReport)
+            return Results.Forbid();
+
+        var allowed = outcome switch
+        {
+            "confirm" => playbook.Actions.HasFlag(FeedbackResolutionAction.Confirm),
+            "correction" => playbook.Actions.HasFlag(FeedbackResolutionAction.PrepareCorrection),
+            "external" => playbook.Actions.HasFlag(FeedbackResolutionAction.OpenExternalCase),
+            "reconcile" => playbook.Actions.HasFlag(FeedbackResolutionAction.Reconcile),
+            "link-original" => playbook.Actions.HasFlag(FeedbackResolutionAction.LinkOriginalRecord),
+            _ => false
+        };
+        if (!allowed) return Results.BadRequest(new { error = "decision_outcome_not_allowed" });
+        if (outcome is "external" or "reconcile" or "link-original"
+            && string.IsNullOrWhiteSpace(request.Note))
+            return Results.BadRequest(new { error = "decision_note_required" });
+
+        CorrectionWorkflowService.WorkspaceResult? workspace = null;
+        if (outcome == "correction")
+        {
+            try
+            {
+                workspace = await CorrectionWorkflowService.EnsureWorkspaceAsync(
+                    organizationId, employerId, reportId, row.ReportProductId, db, protector, ct);
+            }
+            catch (DbUpdateException)
+            {
+                return Results.Conflict(new { error = "correction_workspace_conflict" });
+            }
+
+            if (workspace is null)
+                return Results.Conflict(new { error = "correction_workspace_source_invalid" });
+        }
+
+        var decision = new FeedbackProblemDecision(
+            request.ProblemId,
+            row.FeedbackId,
+            row.ReportId,
+            row.ReportProductId,
+            row.ContributionId,
+            row.ErrorCode.Value,
+            outcome,
+            request.Note,
+            currentUser.UserId);
+        db.FeedbackProblemDecisions.Add(decision);
+
+        if (outcome == "confirm")
+        {
+            db.FeedbackProblemResolutions.Add(new FeedbackProblemResolution(
+                request.ProblemId,
+                row.FeedbackId,
+                row.ReportId,
+                row.ReportProductId,
+                row.ContributionId,
+                row.ErrorCode.Value,
+                "decision-confirm",
+                currentUser.UserId));
+        }
+
+        db.AuditEvents.Add(new AuditEvent(
+            currentUser.UserId,
+            "feedback-resolution.decision",
+            nameof(EmployerInterfaceContributionFeedback),
+            row.Id,
+            organizationId,
+            employerId,
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                request.ProblemId,
+                errorCode = row.ErrorCode.Value,
+                outcome,
+                hasNote = !string.IsNullOrWhiteSpace(request.Note),
+                workspaceReportId = workspace?.ReportId,
+                workspaceReportProductId = workspace?.ReportProductId
+            }),
+            http.TraceIdentifier));
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Results.Conflict(new { error = "decision_conflict" });
+        }
+
+        Guid? workspaceReportEmployeeId = null;
+        if (workspace?.ReportProductId is Guid workspaceProductId)
+        {
+            workspaceReportEmployeeId = await db.ManualReportProducts.AsNoTracking()
+                .Where(product => product.Id == workspaceProductId)
+                .Select(product => (Guid?)product.ReportEmployeeId)
+                .SingleOrDefaultAsync(ct);
+        }
+
+        return Results.Ok(new
+        {
+            decisionId = decision.Id,
+            problemId = request.ProblemId,
+            outcome,
+            resolved = outcome == "confirm",
+            workspaceReportId = workspace?.ReportId,
+            workspaceReportProductId = workspace?.ReportProductId,
+            workspaceReportEmployeeId
+        });
+    }
+
     private static async Task<IResult> ResolveProblemsAsync(
         Guid organizationId,
         Guid employerId,
@@ -1122,7 +1278,35 @@ public static class ReportFeedbackEndpoints
                 ReportedValues: reportedValues,
                 CurrentValues: currentValues,
                 FeedbackValues: feedbackValues,
+                LatestDecision: null,
+                LatestDecisionNote: string.Empty,
+                LatestDecisionAt: null,
                 ReceivedAt: row.ReceivedAt));
+        }
+
+        if (problems.Count > 0)
+        {
+            var problemIds = problems.Select(problem => problem.ProblemId).ToArray();
+            var latestDecisions = await db.FeedbackProblemDecisions.AsNoTracking()
+                .Where(decision => problemIds.Contains(decision.ProblemId))
+                .OrderByDescending(decision => decision.DecidedAt)
+                .ThenByDescending(decision => decision.CreatedAt)
+                .ToListAsync(ct);
+            var latestByProblem = latestDecisions
+                .GroupBy(decision => decision.ProblemId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
+            for (var index = 0; index < problems.Count; index++)
+            {
+                var problem = problems[index];
+                if (!latestByProblem.TryGetValue(problem.ProblemId, out var decision)) continue;
+                problems[index] = problem with
+                {
+                    LatestDecision = decision.Outcome,
+                    LatestDecisionNote = decision.Note,
+                    LatestDecisionAt = decision.DecidedAt
+                };
+            }
         }
 
         var groups = FeedbackResolutionWireProjection.BuildGroups(
@@ -2006,5 +2190,9 @@ public static class ReportFeedbackEndpoints
         IReadOnlyList<string> ProblemIds,
         string Source,
         Guid? ValidatedReportId);
+    public sealed record DecideProblemRequest(
+        string ProblemId,
+        string Outcome,
+        string? Note);
     public sealed record UpdateTreatmentRequest(string StatusCode, string? Note, DateTimeOffset? ExpectedUpdatedAt);
 }

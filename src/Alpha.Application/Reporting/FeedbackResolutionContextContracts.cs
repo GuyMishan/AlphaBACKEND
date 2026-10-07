@@ -46,6 +46,9 @@ public sealed record FeedbackResolutionProblemDto(
     IReadOnlyDictionary<string, string?> ReportedValues,
     IReadOnlyDictionary<string, string?> CurrentValues,
     IReadOnlyDictionary<string, string?> FeedbackValues,
+    string? LatestDecision,
+    string LatestDecisionNote,
+    DateTimeOffset? LatestDecisionAt,
     DateTimeOffset ReceivedAt);
 
 public static class FeedbackResolutionWireProjection
@@ -100,12 +103,17 @@ public static class FeedbackResolutionWireProjection
             .Select(group =>
             {
                 var first = group.First();
-                var canExecute = string.Equals(
+                var isEmployee = string.Equals(
                     first.ResolverType,
                     WireName(FeedbackResolverType.Employee),
-                    StringComparison.Ordinal)
-                    ? canEditEmployee
-                    : canCreateReport;
+                    StringComparison.Ordinal);
+                var isDecision = group.Any(problem => string.Equals(
+                    problem.ResolutionType,
+                    WireName(FeedbackResolutionType.Decision),
+                    StringComparison.Ordinal));
+                var canExecute = isDecision
+                    ? canCreateReport || (isEmployee && canEditEmployee)
+                    : isEmployee ? canEditEmployee : canCreateReport;
                 return new FeedbackResolutionGroupDto(
                     group.Key,
                     first.ResolverType,
