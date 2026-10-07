@@ -106,12 +106,14 @@ public sealed class FeedbackResolutionContextContractTests
             ReportId: Guid.NewGuid(),
             ReportProductId: Guid.NewGuid(),
             CanResolve: true,
+            CanCreateReport: true,
             CanEditEmployee: false,
             UnsupportedCodes: Array.Empty<int>(),
             Problems: Array.Empty<FeedbackResolutionProblemDto>(),
             Groups: Array.Empty<FeedbackResolutionGroupDto>());
 
         Assert.True(response.CanResolve);
+        Assert.True(response.CanCreateReport);
         Assert.False(response.CanEditEmployee);
     }
 

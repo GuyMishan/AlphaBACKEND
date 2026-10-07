@@ -551,11 +551,11 @@ public static class ReportFeedbackEndpoints
             .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
                 == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)
             .ToArray();
-        var canResolve = await access.CanCreateReportAsync(organizationId, employerId, ct);
+        var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
 
         return Results.Ok(await BuildResolutionContextAsync(
-            "employer", organizationId, employerId, null, null, canResolve, canEditEmployee, rows, db, protector, ct));
+            "employer", organizationId, employerId, null, null, canCreateReport, canEditEmployee, rows, db, protector, ct));
     }
 
     private static async Task<IResult> ReportResolutionContextAsync(
@@ -572,11 +572,11 @@ public static class ReportFeedbackEndpoints
             .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
                 == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)
             .ToArray();
-        var canResolve = await access.CanCreateReportAsync(organizationId, employerId, ct);
+        var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
 
         return Results.Ok(await BuildResolutionContextAsync(
-            "report", organizationId, employerId, reportId, null, canResolve, canEditEmployee, rows, db, protector, ct));
+            "report", organizationId, employerId, reportId, null, canCreateReport, canEditEmployee, rows, db, protector, ct));
     }
 
     private static async Task<IResult> DepositResolutionContextAsync(
@@ -601,11 +601,11 @@ public static class ReportFeedbackEndpoints
                     or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution;
             })
             .ToArray();
-        var canResolve = await access.CanCreateReportAsync(organizationId, employerId, ct);
+        var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
 
         return Results.Ok(await BuildResolutionContextAsync(
-            "deposit", organizationId, employerId, reportId, reportProductId, canResolve, canEditEmployee, rows, db, protector, ct));
+            "deposit", organizationId, employerId, reportId, reportProductId, canCreateReport, canEditEmployee, rows, db, protector, ct));
     }
 
     private static async Task<FeedbackResolutionContextResponse> BuildResolutionContextAsync(
@@ -614,7 +614,7 @@ public static class ReportFeedbackEndpoints
         Guid employerId,
         Guid? requestedReportId,
         Guid? requestedReportProductId,
-        bool canResolve,
+        bool canCreateReport,
         bool canEditEmployee,
         IReadOnlyCollection<EmployerInterfaceContributionFeedback> rows,
         IAlphaDbContext db,
@@ -623,7 +623,8 @@ public static class ReportFeedbackEndpoints
     {
         if (rows.Count == 0)
             return new FeedbackResolutionContextResponse(
-                contextType, employerId, requestedReportId, requestedReportProductId, canResolve, canEditEmployee,
+                contextType, employerId, requestedReportId, requestedReportProductId,
+                canCreateReport || canEditEmployee, canCreateReport, canEditEmployee,
                 Array.Empty<int>(), Array.Empty<FeedbackResolutionProblemDto>(),
                 Array.Empty<FeedbackResolutionGroupDto>());
 
@@ -760,7 +761,8 @@ public static class ReportFeedbackEndpoints
 
         return new FeedbackResolutionContextResponse(
             contextType, employerId, requestedReportId, requestedReportProductId,
-            canResolve && unsupportedCodes.Length == 0, canEditEmployee, unsupportedCodes, problems, groups);
+            (canCreateReport || canEditEmployee) && unsupportedCodes.Length == 0,
+            canCreateReport, canEditEmployee, unsupportedCodes, problems, groups);
     }
 
     private static IReadOnlyDictionary<string, string?> ReportedValues(
