@@ -7,6 +7,7 @@ using Alpha.Api.Security;
 using Alpha.Api.Services;
 using Alpha.Domain.Auditing;
 using Alpha.Domain.Employees;
+using Alpha.Domain.Employers;
 using Alpha.Domain.Reporting;
 using Microsoft.EntityFrameworkCore;
 
@@ -666,6 +667,9 @@ public static class ReportFeedbackEndpoints
                 .Where(x => currentProductIds.Contains(x.EmployeePensionProductId))
                 .ToArrayAsync(ct);
 
+        var currentPaymentAccount = await new ReportPaymentAccountService(db)
+            .ResolveForReportAsync(employerId, null, ct);
+
         var transferRows = await db.EmployerInterfaceTransferFeedback.AsNoTracking()
             .Where(x => reportIds.Contains(x.ReportId) && feedbackIds.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt)
@@ -686,16 +690,10 @@ public static class ReportFeedbackEndpoints
             Person? person = null;
             if (employment is not null) people.TryGetValue(employment.PersonId, out person);
 
-            var liveProduct = FindCurrentProduct(product, reportEmployee.EmploymentId, currentProducts);
-            EmployeePensionContribution? liveContribution = null;
-            if (liveProduct is not null && contribution is not null)
-            {
-                var matching = currentContributions.Where(x =>
-                    x.EmployeePensionProductId == liveProduct.Id
-                    && x.Party == contribution.Party
-                    && x.Component == contribution.Component).ToArray();
-                liveContribution = matching.Length == 1 ? matching[0] : null;
-            }
+            var liveProduct = FeedbackResolutionContextMatcher.FindCurrentProduct(
+                product, reportEmployee.EmploymentId, currentProducts);
+            var liveContribution = FeedbackResolutionContextMatcher.FindCurrentContribution(
+                contribution, liveProduct, currentContributions);
 
             metadata.TryGetValue(row.ReportProductId, out var productMetadata);
             payments.TryGetValue(row.ReportProductId, out var payment);
@@ -707,12 +705,12 @@ public static class ReportFeedbackEndpoints
                 && string.Equals(x.TransferIdentifier, transferIdentifier, StringComparison.OrdinalIgnoreCase));
 
             var reportedValues = ReportedValues(playbook.Resolver, report, reportEmployee, product, contribution, productMetadata, payment, protector);
-            var currentValues = CurrentValues(playbook.Resolver, employment, person, liveProduct, liveContribution, protector);
+            var currentValues = CurrentValues(playbook.Resolver, employment, person, liveProduct, liveContribution, currentPaymentAccount, protector);
             var feedbackValues = FeedbackValues(row, transfer);
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
-            var groupKey = FeedbackResolutionWireProjection.BuildGroupKey(
-                playbook.GroupStrategy, employerId, row.ReportId, row.ReportProductId, row.ContributionId,
-                reportEmployee.EmploymentId, transferIdentifier, previousRecordIdentifier, playbook.Code, row.FeedbackId, row.Sequence);
+            var groupKey = FeedbackResolutionWireProjection.BuildResolutionGroupKey(
+                playbook, employerId, row.ReportId, row.ReportProductId, row.ContributionId,
+                reportEmployee.EmploymentId, transferIdentifier, previousRecordIdentifier, row.FeedbackId, row.Sequence);
 
             problems.Add(new FeedbackResolutionProblemDto(
                 ProblemId: $"{row.FeedbackId:N}:{row.ContributionId:N}:{row.Sequence}:{playbook.Code}",
@@ -748,39 +746,6 @@ public static class ReportFeedbackEndpoints
 
         return new FeedbackResolutionContextResponse(
             contextType, employerId, requestedReportId, requestedReportProductId, canResolve, problems);
-    }
-
-    private static EmployeePensionProduct? FindCurrentProduct(
-        ManualReportProduct reported,
-        Guid employmentId,
-        IReadOnlyCollection<EmployeePensionProduct> currentProducts)
-    {
-        var candidates = currentProducts.Where(x => x.EmploymentId == employmentId).ToArray();
-        if (candidates.Length == 0) return null;
-
-        if (!string.IsNullOrWhiteSpace(reported.PolicyNumber))
-        {
-            var byPolicy = candidates.Where(x =>
-                string.Equals(x.PolicyNumber, reported.PolicyNumber, StringComparison.OrdinalIgnoreCase)).ToArray();
-            if (byPolicy.Length == 1) return byPolicy[0];
-        }
-
-        if (!string.IsNullOrWhiteSpace(reported.FundExternalKey))
-        {
-            var byExternalKey = candidates.Where(x =>
-                string.Equals(x.FundExternalKey, reported.FundExternalKey, StringComparison.OrdinalIgnoreCase)).ToArray();
-            if (byExternalKey.Length == 1) return byExternalKey[0];
-        }
-
-        if (!string.IsNullOrWhiteSpace(reported.FundCode))
-        {
-            var byFundCode = candidates.Where(x =>
-                string.Equals(x.FundCode, reported.FundCode, StringComparison.OrdinalIgnoreCase)).ToArray();
-            if (byFundCode.Length == 1) return byFundCode[0];
-        }
-
-        var byType = candidates.Where(x => x.ProductType == reported.ProductType).ToArray();
-        return byType.Length == 1 ? byType[0] : null;
     }
 
     private static IReadOnlyDictionary<string, string?> ReportedValues(
@@ -886,6 +851,7 @@ public static class ReportFeedbackEndpoints
         Person? person,
         EmployeePensionProduct? product,
         EmployeePensionContribution? contribution,
+        EmployerPaymentAccount? paymentAccount,
         IDataProtectionService protector)
     {
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
@@ -918,7 +884,7 @@ public static class ReportFeedbackEndpoints
         }
 
         if (resolver is FeedbackResolverType.ProductPolicy or FeedbackResolverType.Contribution
-            or FeedbackResolverType.Split or FeedbackResolverType.ExternalCase)
+            or FeedbackResolverType.Split or FeedbackResolverType.Refund or FeedbackResolverType.ExternalCase)
         {
             Add("entityFound", product is not null);
             if (product is not null)
@@ -937,7 +903,7 @@ public static class ReportFeedbackEndpoints
             }
         }
 
-        if (resolver == FeedbackResolverType.Contribution)
+        if (resolver is FeedbackResolverType.Contribution or FeedbackResolverType.Refund)
         {
             Add("contributionFound", contribution is not null);
             if (contribution is not null)
@@ -945,6 +911,19 @@ public static class ReportFeedbackEndpoints
                 Add("contributionAmount", contribution.Amount);
                 Add("contributionPercentage", contribution.Percentage);
                 Add("exemptPayments", contribution.ExemptPayments);
+            }
+        }
+
+        if (resolver is FeedbackResolverType.Payment or FeedbackResolverType.Refund)
+        {
+            Add("currentPaymentAccountFound", paymentAccount is not null);
+            if (paymentAccount is not null)
+            {
+                Add("currentPaymentBankId", paymentAccount.BankId);
+                Add("currentPaymentBranchId", paymentAccount.BranchId);
+                Add("currentPaymentAccountNumber", paymentAccount.AccountNumberEncrypted is null ? null
+                    : protector.Unprotect(paymentAccount.AccountNumberEncrypted, "bank-account-number"));
+                Add("currentPaymentAccountHolderName", paymentAccount.AccountHolderName);
             }
         }
 

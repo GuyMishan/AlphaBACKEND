@@ -77,4 +77,21 @@ public static class FeedbackResolutionWireProjection
             _ => $"error:{feedbackId:N}:{Id(contributionId)}:{sequence}:{code}"
         };
     }
+    public static string BuildResolutionGroupKey(
+        FeedbackResolutionPlaybook playbook,
+        Guid employerId,
+        Guid reportId,
+        Guid? reportProductId,
+        Guid? contributionId,
+        Guid? employmentId,
+        string? transferIdentifier,
+        string? previousRecordIdentifier,
+        Guid feedbackId,
+        int sequence)
+    {
+        var target = BuildGroupKey(playbook.GroupStrategy, employerId, reportId, reportProductId, contributionId,
+            employmentId, transferIdentifier, previousRecordIdentifier, playbook.Code, feedbackId, sequence);
+        return $"{WireName(playbook.Resolver)}:{target}";
+    }
+
 }
