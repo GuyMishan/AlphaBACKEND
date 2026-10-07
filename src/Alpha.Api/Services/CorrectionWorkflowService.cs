@@ -404,6 +404,75 @@ public static class CorrectionWorkflowService
         return true;
     }
 
+    public static async Task<bool> SyncEmployeeMasterToWorkspaceAsync(
+        Guid organizationId,
+        Guid employerId,
+        Guid workspaceReportId,
+        Guid employmentId,
+        IAlphaDbContext db,
+        IDataProtectionService protector,
+        CancellationToken ct)
+    {
+        var workspace = await db.ManualReports.SingleOrDefaultAsync(report =>
+            report.Id == workspaceReportId
+            && report.OrganizationId == organizationId
+            && report.EmployerId == employerId
+            && report.IsCorrectionWorkspace
+            && report.SourceReportId.HasValue
+            && (report.Status == ManualReportStatus.Draft
+                || report.Status == ManualReportStatus.ReadyForValidation
+                || report.Status == ManualReportStatus.Error), ct);
+        if (workspace is null) return false;
+
+        var employment = await db.Employments.AsNoTracking().SingleOrDefaultAsync(item =>
+            item.Id == employmentId
+            && item.OrganizationId == organizationId
+            && item.EmployerId == employerId, ct);
+        if (employment is null) return false;
+
+        var person = await db.People.AsNoTracking().SingleOrDefaultAsync(item =>
+            item.Id == employment.PersonId && item.OrganizationId == organizationId, ct);
+        if (person is null || string.IsNullOrWhiteSpace(person.NationalIdEncrypted)) return false;
+
+        var reportEmployee = await db.ManualReportEmployees.SingleOrDefaultAsync(item =>
+            item.ReportId == workspaceReportId
+            && item.OrganizationId == organizationId
+            && item.EmployerId == employerId
+            && item.EmploymentId == employmentId, ct);
+        if (reportEmployee is null) return false;
+
+        var identifier = protector.Unprotect(person.NationalIdEncrypted, "person-national-id");
+        reportEmployee.UpdateMasterSnapshot(
+            person.FirstName,
+            person.LastName,
+            employment.EmployeeNumber,
+            employment.MonthlySalary);
+        reportEmployee.SetInterfaceSnapshot(
+            (int)person.IdentifierType,
+            identifier,
+            person.BirthDate,
+            person.Gender.HasValue ? (int)person.Gender.Value : null,
+            person.Email,
+            person.Mobile,
+            person.City,
+            person.Street,
+            person.HouseNumber,
+            person.Apartment,
+            person.PostalCode,
+            person.PostOfficeBox,
+            employment.StartDate);
+        reportEmployee.SetProtectedIdentifiers(
+            protector.Protect(identifier, $"report-employee-national-id:{reportEmployee.Id}"),
+            protector.LookupHash(identifier, "report-employee-national-id-lookup"),
+            protector.Protect(identifier, $"report-employee-interface-id:{reportEmployee.Id}"));
+        reportEmployee.SetProtectedContactSnapshot(
+            protector.Protect(person.Email, $"report-employee-email:{reportEmployee.Id}"),
+            protector.Protect(person.Mobile, $"report-employee-mobile:{reportEmployee.Id}"));
+        workspace.MarkDirty();
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public static async Task<int> PendingChangeCountAsync(
         Guid reportId, IAlphaDbContext db, IDataProtectionService protector, CancellationToken ct)
     {

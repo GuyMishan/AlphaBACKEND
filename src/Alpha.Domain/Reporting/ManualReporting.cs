@@ -244,6 +244,21 @@ public sealed class ManualReportEmployee : Entity
     public ManualReportItemStatus ValidationStatus { get; private set; } = ManualReportItemStatus.Draft;
     public string ValidationError { get; private set; } = string.Empty;
 
+    public void UpdateMasterSnapshot(string firstName, string lastName, string employeeNumber, decimal monthlySalary)
+    {
+        if (string.IsNullOrWhiteSpace(firstName)) throw new ArgumentException("First name is required.", nameof(firstName));
+        if (string.IsNullOrWhiteSpace(lastName)) throw new ArgumentException("Last name is required.", nameof(lastName));
+        if (string.IsNullOrWhiteSpace(employeeNumber)) throw new ArgumentException("Employee number is required.", nameof(employeeNumber));
+        if (monthlySalary < 0) throw new ArgumentOutOfRangeException(nameof(monthlySalary));
+        FirstName = firstName.Trim();
+        LastName = lastName.Trim();
+        EmployeeNumber = employeeNumber.Trim();
+        MonthlySalary = monthlySalary;
+        ValidationStatus = ManualReportItemStatus.Draft;
+        ValidationError = string.Empty;
+        Touch();
+    }
+
     public void SetInterfaceSnapshot(int identifierType, string identifier, DateOnly? birthDate, int? gender,
         string? email, string? mobile, string? city, string? street, string? houseNumber, string? apartment,
         string? postalCode, string? postOfficeBox, DateOnly? employmentStartDate)
