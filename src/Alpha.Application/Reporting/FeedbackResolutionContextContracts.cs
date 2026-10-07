@@ -98,6 +98,19 @@ public static class FeedbackResolutionWireProjection
                 group.ToArray()))
             .ToArray();
 
+    public static bool CanExecuteEmployeeEdit(
+        FeedbackResolutionGroupDto group,
+        Guid employmentId)
+    {
+        var employeeResolver = WireName(FeedbackResolverType.Employee);
+        var editEmployee = WireName(FeedbackResolutionAction.EditEmployee);
+        return string.Equals(group.ResolverType, employeeResolver, StringComparison.Ordinal)
+            && group.Problems.Count > 0
+            && group.Problems.All(problem =>
+                problem.EmploymentId == employmentId
+                && problem.AvailableActions.Contains(editEmployee, StringComparer.Ordinal));
+    }
+
     public static string BuildResolutionGroupKey(
         FeedbackResolutionPlaybook playbook,
         Guid employerId,

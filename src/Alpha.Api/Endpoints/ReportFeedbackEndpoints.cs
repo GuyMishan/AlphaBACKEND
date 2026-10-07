@@ -73,6 +73,7 @@ public static class ReportFeedbackEndpoints
         group.MapGet("/{reportId:guid}/deposits", DepositListAsync);
         group.MapGet("/{reportId:guid}/deposits/{reportProductId:guid}", DepositDetailsAsync);
         group.MapGet("/{reportId:guid}/deposits/{reportProductId:guid}/resolution-context", DepositResolutionContextAsync);
+        group.MapPost("/{reportId:guid}/deposits/{reportProductId:guid}/resolution-actions/employee/validate", ValidateEmployeeResolutionActionAsync);
         group.MapPut("/{reportId:guid}/deposits/{reportProductId:guid}/treatment", UpdateTreatmentAsync);
         group.MapGet("/{reportId:guid}/exports/{exportType}", ExportAsync);
         return endpoints;
@@ -606,6 +607,55 @@ public static class ReportFeedbackEndpoints
 
         return Results.Ok(await BuildResolutionContextAsync(
             "deposit", organizationId, employerId, reportId, reportProductId, canCreateReport, canEditEmployee, rows, db, protector, ct));
+    }
+
+    private static async Task<IResult> ValidateEmployeeResolutionActionAsync(
+        Guid organizationId,
+        Guid employerId,
+        Guid reportId,
+        Guid reportProductId,
+        EmployeeResolutionActionRequest request,
+        IAlphaDbContext db,
+        OrganizationAccessService access,
+        IDataProtectionService protector,
+        CancellationToken ct)
+    {
+        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+
+        var belongs = await (from product in db.ManualReportProducts.AsNoTracking()
+                             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+                             where product.Id == reportProductId && employee.ReportId == reportId
+                                 && employee.OrganizationId == organizationId && employee.EmployerId == employerId
+                             select product.Id).AnyAsync(ct);
+        if (!belongs) return Results.NotFound();
+
+        var rows = (await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct))
+            .Where(x => x.ReportProductId == reportProductId)
+            .Where(x =>
+            {
+                var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
+                return scope is EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee
+                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit
+                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution;
+            })
+            .ToArray();
+
+        var context = await BuildResolutionContextAsync(
+            "deposit", organizationId, employerId, reportId, reportProductId,
+            canCreateReport: false, canEditEmployee: true, rows, db, protector, ct);
+
+        if (context.UnsupportedCodes.Count > 0)
+            return Results.Conflict(new { error = "resolution_context_unsupported" });
+
+        var resolutionGroup = context.Groups.SingleOrDefault(group =>
+            string.Equals(group.GroupKey, request.GroupKey, StringComparison.Ordinal));
+        if (resolutionGroup is null)
+            return Results.Conflict(new { error = "resolution_group_stale" });
+
+        if (!FeedbackResolutionWireProjection.CanExecuteEmployeeEdit(resolutionGroup, request.EmploymentId))
+            return Results.BadRequest(new { error = "resolution_action_not_allowed" });
+
+        return Results.Ok(new { resolutionGroup.GroupKey, request.EmploymentId });
     }
 
     private static async Task<FeedbackResolutionContextResponse> BuildResolutionContextAsync(
@@ -1596,5 +1646,6 @@ public static class ReportFeedbackEndpoints
         });
     }
 
+    public sealed record EmployeeResolutionActionRequest(string GroupKey, Guid EmploymentId);
     public sealed record UpdateTreatmentRequest(string StatusCode, string? Note, DateTimeOffset? ExpectedUpdatedAt);
 }

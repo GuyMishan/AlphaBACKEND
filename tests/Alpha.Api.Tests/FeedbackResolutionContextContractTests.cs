@@ -118,6 +118,66 @@ public sealed class FeedbackResolutionContextContractTests
     }
 
     [Fact]
+    public void Employee_resolution_action_requires_matching_employee_group_and_edit_action()
+    {
+        var employmentId = Guid.NewGuid();
+        var group = new FeedbackResolutionGroupDto(
+            "employee:employee:one",
+            "employee",
+            "perEmployee",
+            new[]
+            {
+                CreateProblem("a", employmentId, new[] { "review", "editEmployee" }),
+                CreateProblem("b", employmentId, new[] { "editEmployee", "prepareCorrection" })
+            });
+
+        Assert.True(FeedbackResolutionWireProjection.CanExecuteEmployeeEdit(group, employmentId));
+        Assert.False(FeedbackResolutionWireProjection.CanExecuteEmployeeEdit(group, Guid.NewGuid()));
+
+        var wrongResolver = group with { ResolverType = "productPolicy" };
+        Assert.False(FeedbackResolutionWireProjection.CanExecuteEmployeeEdit(wrongResolver, employmentId));
+
+        var missingAction = group with
+        {
+            Problems = new[] { CreateProblem("c", employmentId, new[] { "review" }) }
+        };
+        Assert.False(FeedbackResolutionWireProjection.CanExecuteEmployeeEdit(missingAction, employmentId));
+
+        static FeedbackResolutionProblemDto CreateProblem(
+            string id,
+            Guid employmentId,
+            IReadOnlyList<string> actions) =>
+            new(
+                ProblemId: id,
+                Code: 4,
+                Description: "identity",
+                Scope: "employee",
+                ResolutionType: "decision",
+                Family: "identity",
+                ResolverType: "employee",
+                GroupStrategy: "perEmployee",
+                GroupKey: "employee:employee:one",
+                CorrectionBehavior: "dynamic",
+                AvailableActions: actions,
+                CanEscalateExternally: true,
+                FeedbackId: Guid.NewGuid(),
+                ReportId: Guid.NewGuid(),
+                ReportProductId: Guid.NewGuid(),
+                ContributionId: Guid.NewGuid(),
+                ReportEmployeeId: Guid.NewGuid(),
+                EmploymentId: employmentId,
+                PersonId: Guid.NewGuid(),
+                EmployeeName: "Employee",
+                ProductName: "Product",
+                FundCompanyName: "Fund",
+                PolicyNumber: "P-1",
+                ReportedValues: new Dictionary<string, string?>(),
+                CurrentValues: new Dictionary<string, string?>(),
+                FeedbackValues: new Dictionary<string, string?>(),
+                ReceivedAt: DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
     public void Resolution_queue_groups_problems_by_resolver_qualified_group_key_in_first_seen_order()
     {
         static FeedbackResolutionProblemDto Problem(string id, string groupKey, string resolver, int code) =>
