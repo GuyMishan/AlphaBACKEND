@@ -118,3 +118,60 @@ public sealed class FeedbackProblemDecisionConfiguration : IEntityTypeConfigurat
         b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+
+public sealed class FeedbackExternalCaseConfiguration : IEntityTypeConfiguration<FeedbackExternalCase>
+{
+    public void Configure(EntityTypeBuilder<FeedbackExternalCase> b)
+    {
+        b.ToTable("feedback_external_cases", "reporting");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.CaseKey).HasMaxLength(300).IsRequired();
+        b.Property(x => x.Status).HasMaxLength(20).IsRequired();
+        b.Property(x => x.Destination).HasMaxLength(120).IsRequired();
+        b.Property(x => x.Subject).HasMaxLength(300).IsRequired();
+        b.Property(x => x.MessageTemplate).HasColumnType("text");
+        b.HasIndex(x => new { x.EmployerId, x.CaseKey }).IsUnique();
+        b.HasIndex(x => new { x.EmployerId, x.Status, x.UpdatedAt });
+    }
+}
+public sealed class FeedbackExternalCaseProblemConfiguration : IEntityTypeConfiguration<FeedbackExternalCaseProblem>
+{
+    public void Configure(EntityTypeBuilder<FeedbackExternalCaseProblem> b)
+    {
+        b.ToTable("feedback_external_case_problems", "reporting");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.ProblemId).HasMaxLength(180).IsRequired();
+        b.HasIndex(x => new { x.CaseId, x.ProblemId }).IsUnique();
+        b.HasIndex(x => x.ProblemId);
+        b.HasOne<FeedbackExternalCase>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<EmployerInterfaceFeedback>().WithMany().HasForeignKey(x => x.FeedbackId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ManualReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+public sealed class FeedbackExternalCaseEventConfiguration : IEntityTypeConfiguration<FeedbackExternalCaseEvent>
+{
+    public void Configure(EntityTypeBuilder<FeedbackExternalCaseEvent> b)
+    {
+        b.ToTable("feedback_external_case_events", "reporting");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.EventType).HasMaxLength(60).IsRequired();
+        b.Property(x => x.Note).HasColumnType("text");
+        b.HasIndex(x => new { x.CaseId, x.CreatedAt });
+        b.HasOne<FeedbackExternalCase>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+public sealed class FeedbackExternalCaseAttachmentConfiguration : IEntityTypeConfiguration<FeedbackExternalCaseAttachment>
+{
+    public void Configure(EntityTypeBuilder<FeedbackExternalCaseAttachment> b)
+    {
+        b.ToTable("feedback_external_case_attachments", "reporting");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.OriginalFileName).HasMaxLength(260).IsRequired();
+        b.Property(x => x.ContentType).HasMaxLength(100).IsRequired();
+        b.Property(x => x.Content).HasColumnType("bytea").IsRequired();
+        b.Property(x => x.Sha256).HasMaxLength(64).IsRequired();
+        b.HasIndex(x => new { x.CaseId, x.CreatedAt });
+        b.HasOne<FeedbackExternalCase>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+    }
+}

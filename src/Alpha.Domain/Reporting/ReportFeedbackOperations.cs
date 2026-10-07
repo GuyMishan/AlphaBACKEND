@@ -252,3 +252,137 @@ public sealed class FeedbackProblemDecision : Entity
     public Guid DecidedByUserId { get; private set; }
     public DateTimeOffset DecidedAt { get; private set; }
 }
+
+
+public sealed class FeedbackExternalCase : Entity
+{
+    private FeedbackExternalCase() { }
+
+    public FeedbackExternalCase(Guid organizationId, Guid employerId, string caseKey, string destination,
+        string subject, string messageTemplate, Guid createdByUserId)
+    {
+        if (string.IsNullOrWhiteSpace(caseKey) || caseKey.Trim().Length > 300)
+            throw new ArgumentException("Case key is required.", nameof(caseKey));
+        OrganizationId = organizationId;
+        EmployerId = employerId;
+        CaseKey = caseKey.Trim();
+        Destination = Required(destination, 120, nameof(destination));
+        Subject = Required(subject, 300, nameof(subject));
+        MessageTemplate = Limited(messageTemplate, 8000, nameof(messageTemplate));
+        Status = "open";
+        CreatedByUserId = createdByUserId;
+    }
+
+    public Guid OrganizationId { get; private set; }
+    public Guid EmployerId { get; private set; }
+    public string CaseKey { get; private set; } = string.Empty;
+    public string Status { get; private set; } = string.Empty;
+    public string Destination { get; private set; } = string.Empty;
+    public string Subject { get; private set; } = string.Empty;
+    public string MessageTemplate { get; private set; } = string.Empty;
+    public Guid? AssignedToUserId { get; private set; }
+    public Guid CreatedByUserId { get; private set; }
+    public DateTimeOffset? ClosedAt { get; private set; }
+
+    public void UpdateTemplate(string destination, string subject, string messageTemplate)
+    {
+        Destination = Required(destination, 120, nameof(destination));
+        Subject = Required(subject, 300, nameof(subject));
+        MessageTemplate = Limited(messageTemplate, 8000, nameof(messageTemplate));
+        Touch();
+    }
+
+    public void Assign(Guid? userId)
+    {
+        AssignedToUserId = userId;
+        Touch();
+    }
+
+    public void SetStatus(string status)
+    {
+        status = status?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (status is not ("open" or "waiting" or "resolved"))
+            throw new ArgumentOutOfRangeException(nameof(status));
+        Status = status;
+        ClosedAt = status == "resolved" ? DateTimeOffset.UtcNow : null;
+        Touch();
+    }
+
+    private static string Required(string value, int max, string name) =>
+        string.IsNullOrWhiteSpace(value) || value.Trim().Length > max
+            ? throw new ArgumentException("Value is required or too long.", name)
+            : value.Trim();
+    private static string Limited(string? value, int max, string name) =>
+        (value?.Length ?? 0) > max ? throw new ArgumentOutOfRangeException(name) : value?.Trim() ?? string.Empty;
+}
+
+public sealed class FeedbackExternalCaseProblem : Entity
+{
+    private FeedbackExternalCaseProblem() { }
+
+    public FeedbackExternalCaseProblem(Guid caseId, string problemId, Guid feedbackId, Guid reportId,
+        Guid? reportProductId, Guid? contributionId, int errorCode)
+    {
+        CaseId = caseId;
+        ProblemId = string.IsNullOrWhiteSpace(problemId) ? throw new ArgumentException("Problem ID is required.", nameof(problemId)) : problemId.Trim();
+        FeedbackId = feedbackId;
+        ReportId = reportId;
+        ReportProductId = reportProductId;
+        ContributionId = contributionId;
+        ErrorCode = errorCode;
+    }
+
+    public Guid CaseId { get; private set; }
+    public string ProblemId { get; private set; } = string.Empty;
+    public Guid FeedbackId { get; private set; }
+    public Guid ReportId { get; private set; }
+    public Guid? ReportProductId { get; private set; }
+    public Guid? ContributionId { get; private set; }
+    public int ErrorCode { get; private set; }
+}
+
+public sealed class FeedbackExternalCaseEvent : Entity
+{
+    private FeedbackExternalCaseEvent() { }
+
+    public FeedbackExternalCaseEvent(Guid caseId, string eventType, string? note, Guid actorUserId)
+    {
+        CaseId = caseId;
+        EventType = string.IsNullOrWhiteSpace(eventType) || eventType.Trim().Length > 60
+            ? throw new ArgumentException("Event type is required.", nameof(eventType))
+            : eventType.Trim();
+        if ((note?.Length ?? 0) > 4000) throw new ArgumentOutOfRangeException(nameof(note));
+        Note = note?.Trim() ?? string.Empty;
+        ActorUserId = actorUserId;
+    }
+
+    public Guid CaseId { get; private set; }
+    public string EventType { get; private set; } = string.Empty;
+    public string Note { get; private set; } = string.Empty;
+    public Guid ActorUserId { get; private set; }
+}
+
+public sealed class FeedbackExternalCaseAttachment : Entity
+{
+    private FeedbackExternalCaseAttachment() { }
+
+    public FeedbackExternalCaseAttachment(Guid caseId, string originalFileName, string contentType, byte[] content,
+        long sizeBytes, string sha256, Guid uploadedByUserId)
+    {
+        CaseId = caseId;
+        OriginalFileName = Path.GetFileName(originalFileName);
+        ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType.Trim();
+        Content = content;
+        SizeBytes = sizeBytes;
+        Sha256 = sha256;
+        UploadedByUserId = uploadedByUserId;
+    }
+
+    public Guid CaseId { get; private set; }
+    public string OriginalFileName { get; private set; } = string.Empty;
+    public string ContentType { get; private set; } = string.Empty;
+    public byte[] Content { get; private set; } = Array.Empty<byte>();
+    public long SizeBytes { get; private set; }
+    public string Sha256 { get; private set; } = string.Empty;
+    public Guid UploadedByUserId { get; private set; }
+}

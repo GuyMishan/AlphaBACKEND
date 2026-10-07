@@ -173,6 +173,71 @@ public static class ReportFeedbackOperationsSchemaInitializer
                 ON reporting.feedback_problem_decisions ("ProblemId", "DecidedAt");
             CREATE INDEX IF NOT EXISTS "IX_feedback_problem_decision_Report_DecidedAt"
                 ON reporting.feedback_problem_decisions ("ReportId", "DecidedAt");
+
+
+            CREATE TABLE IF NOT EXISTS reporting.feedback_external_cases (
+                "Id" uuid PRIMARY KEY,
+                "OrganizationId" uuid NOT NULL,
+                "EmployerId" uuid NOT NULL,
+                "CaseKey" varchar(300) NOT NULL,
+                "Status" varchar(20) NOT NULL,
+                "Destination" varchar(120) NOT NULL,
+                "Subject" varchar(300) NOT NULL,
+                "MessageTemplate" text NOT NULL DEFAULT '',
+                "AssignedToUserId" uuid NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "ClosedAt" timestamptz NULL,
+                "CreatedAt" timestamptz NOT NULL,
+                "UpdatedAt" timestamptz NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "UX_feedback_external_case_Employer_CaseKey"
+                ON reporting.feedback_external_cases ("EmployerId", "CaseKey");
+            CREATE INDEX IF NOT EXISTS "IX_feedback_external_case_Employer_Status_UpdatedAt"
+                ON reporting.feedback_external_cases ("EmployerId", "Status", "UpdatedAt");
+
+            CREATE TABLE IF NOT EXISTS reporting.feedback_external_case_problems (
+                "Id" uuid PRIMARY KEY,
+                "CaseId" uuid NOT NULL REFERENCES reporting.feedback_external_cases("Id") ON DELETE CASCADE,
+                "ProblemId" varchar(180) NOT NULL,
+                "FeedbackId" uuid NOT NULL REFERENCES reporting.employer_interface_feedback("Id") ON DELETE RESTRICT,
+                "ReportId" uuid NOT NULL REFERENCES reporting.manual_reports("Id") ON DELETE RESTRICT,
+                "ReportProductId" uuid NULL,
+                "ContributionId" uuid NULL,
+                "ErrorCode" integer NOT NULL,
+                "CreatedAt" timestamptz NOT NULL,
+                "UpdatedAt" timestamptz NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "UX_feedback_external_case_problem_Case_Problem"
+                ON reporting.feedback_external_case_problems ("CaseId", "ProblemId");
+            CREATE INDEX IF NOT EXISTS "IX_feedback_external_case_problem_Problem"
+                ON reporting.feedback_external_case_problems ("ProblemId");
+
+            CREATE TABLE IF NOT EXISTS reporting.feedback_external_case_events (
+                "Id" uuid PRIMARY KEY,
+                "CaseId" uuid NOT NULL REFERENCES reporting.feedback_external_cases("Id") ON DELETE CASCADE,
+                "EventType" varchar(60) NOT NULL,
+                "Note" text NOT NULL DEFAULT '',
+                "ActorUserId" uuid NOT NULL,
+                "CreatedAt" timestamptz NOT NULL,
+                "UpdatedAt" timestamptz NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_feedback_external_case_event_Case_CreatedAt"
+                ON reporting.feedback_external_case_events ("CaseId", "CreatedAt");
+
+            CREATE TABLE IF NOT EXISTS reporting.feedback_external_case_attachments (
+                "Id" uuid PRIMARY KEY,
+                "CaseId" uuid NOT NULL REFERENCES reporting.feedback_external_cases("Id") ON DELETE CASCADE,
+                "OriginalFileName" varchar(260) NOT NULL,
+                "ContentType" varchar(100) NOT NULL,
+                "Content" bytea NOT NULL,
+                "SizeBytes" bigint NOT NULL,
+                "Sha256" varchar(64) NOT NULL,
+                "UploadedByUserId" uuid NOT NULL,
+                "CreatedAt" timestamptz NOT NULL,
+                "UpdatedAt" timestamptz NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_feedback_external_case_attachment_Case_CreatedAt"
+                ON reporting.feedback_external_case_attachments ("CaseId", "CreatedAt");
             """);
     }
 }

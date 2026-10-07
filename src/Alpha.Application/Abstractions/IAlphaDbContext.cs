@@ -54,6 +54,10 @@ public interface IAlphaDbContext
     DbSet<FeedbackProblemResolution> FeedbackProblemResolutions { get; }
     DbSet<FeedbackResolutionDocument> FeedbackResolutionDocuments { get; }
     DbSet<FeedbackProblemDecision> FeedbackProblemDecisions { get; }
+    DbSet<FeedbackExternalCase> FeedbackExternalCases { get; }
+    DbSet<FeedbackExternalCaseProblem> FeedbackExternalCaseProblems { get; }
+    DbSet<FeedbackExternalCaseEvent> FeedbackExternalCaseEvents { get; }
+    DbSet<FeedbackExternalCaseAttachment> FeedbackExternalCaseAttachments { get; }
     DbSet<ContributionPercentageLimit> ContributionPercentageLimits { get; }
     DbSet<AuditEvent> AuditEvents { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
