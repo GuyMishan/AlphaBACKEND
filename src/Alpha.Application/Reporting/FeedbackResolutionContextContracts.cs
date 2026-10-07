@@ -134,6 +134,8 @@ public static class FeedbackResolutionWireProjection
             WireName(FeedbackResolverType.Contribution),
             WireName(FeedbackResolverType.ProductPolicy),
             WireName(FeedbackResolverType.EmploymentStatus),
+            WireName(FeedbackResolverType.Payment),
+            WireName(FeedbackResolverType.Documents),
             WireName(FeedbackResolverType.ReportCorrection)
         };
         if (!correctionResolvers.Contains(requestedResolver)
