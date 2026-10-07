@@ -191,15 +191,31 @@ public static class ReportFeedbackEndpoints
         var feedbackContributionCounts = latestContributionFeedback
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ContributionId).Distinct().Count());
-        var errorCounts = latestContributionFeedback
+        var latestProblemIds = latestContributionFeedback
+            .Where(x => x.ErrorCode.HasValue && ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
+            .Select(x => FeedbackResolutionWireProjection.BuildProblemId(
+                x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value))
+            .ToArray();
+        var resolvedProblemIds = latestProblemIds.Length == 0
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : await db.FeedbackProblemResolutions.AsNoTracking()
+                .Where(x => latestProblemIds.Contains(x.ProblemId))
+                .Select(x => x.ProblemId)
+                .ToHashSetAsync(ct);
+        var unresolvedLatestFeedback = latestContributionFeedback
+            .Where(x => !x.ErrorCode.HasValue
+                || !resolvedProblemIds.Contains(FeedbackResolutionWireProjection.BuildProblemId(
+                    x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode.Value)))
+            .ToArray();
+        var errorCounts = unresolvedLatestFeedback
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ContributionId).Distinct().Count());
-        var attentionProductCounts = latestContributionFeedback
+        var attentionProductCounts = unresolvedLatestFeedback
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ReportProductId).Distinct().Count());
-        var reportIssueCounts = latestContributionFeedback
+        var reportIssueCounts = unresolvedLatestFeedback
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
             .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
                 == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)
@@ -446,13 +462,26 @@ public static class ReportFeedbackEndpoints
         var feedback = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId) && activeFeedbackIdsForReport.Contains(x.FeedbackId))
             .OrderByDescending(x => x.ReceivedAt).ToListAsync(ct);
-        var latestFeedback = feedback
+        var latestFeedbackRows = feedback
             .GroupBy(x => x.ContributionId)
             .SelectMany(group =>
             {
                 var latest = group.First();
                 return group.Where(x => x.FeedbackId == latest.FeedbackId);
             })
+            .ToArray();
+        var depositProblemIds = latestFeedbackRows
+            .Where(x => x.ErrorCode.HasValue && ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
+            .Select(x => FeedbackResolutionWireProjection.BuildProblemId(
+                x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value))
+            .ToArray();
+        var resolvedDepositProblemIds = depositProblemIds.Length == 0
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : await db.FeedbackProblemResolutions.AsNoTracking()
+                .Where(x => depositProblemIds.Contains(x.ProblemId))
+                .Select(x => x.ProblemId)
+                .ToHashSetAsync(ct);
+        var latestFeedback = latestFeedbackRows
             .GroupBy(x => x.ReportProductId)
             .ToDictionary(g => g.Key, g => g.ToArray());
         var treatments = await db.ReportProductTreatments.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId))
@@ -473,6 +502,9 @@ public static class ReportFeedbackEndpoints
             var expected = total?.Count ?? 0; var received = rows?.Length ?? 0;
             var actionableFeedback = (rows ?? [])
                 .Where(item => ReportFeedbackStatusResolver.IsActionableFeedbackError(item.ErrorCode))
+                .Where(item => !item.ErrorCode.HasValue
+                    || !resolvedDepositProblemIds.Contains(FeedbackResolutionWireProjection.BuildProblemId(
+                        item.FeedbackId, item.ContributionId, item.Sequence, item.ErrorCode.Value)))
                 .ToArray();
             var actionableErrors = actionableFeedback
                 .Select(item => string.IsNullOrWhiteSpace(item.ErrorDescription)
@@ -1364,6 +1396,17 @@ public static class ReportFeedbackEndpoints
         {
             var latest = group.First(); return group.Where(x => x.FeedbackId == latest.FeedbackId).OrderBy(x => x.Sequence);
         }).ToArray();
+        var manufacturerProblemIds = manufacturer
+            .Where(x => x.ErrorCode.HasValue && ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
+            .Select(x => FeedbackResolutionWireProjection.BuildProblemId(
+                x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value))
+            .ToArray();
+        var resolvedManufacturerProblemIds = manufacturerProblemIds.Length == 0
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : await db.FeedbackProblemResolutions.AsNoTracking()
+                .Where(x => manufacturerProblemIds.Contains(x.ProblemId))
+                .Select(x => x.ProblemId)
+                .ToHashSetAsync(ct);
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
         var transferKey = !string.IsNullOrWhiteSpace(metadata?.InterfaceTransferIdentifier)
             ? metadata.InterfaceTransferIdentifier : reportProductId.ToString("D").ToUpperInvariant();
@@ -1426,6 +1469,9 @@ public static class ReportFeedbackEndpoints
             manufacturerContributions = manufacturer.Select(x => new
             {
                 x.ContributionId, x.RecordIdentifier, x.Sequence, x.IntakeStatus, x.ErrorCode, x.ErrorDescription,
+                isResolved = x.ErrorCode.HasValue
+                    && resolvedManufacturerProblemIds.Contains(FeedbackResolutionWireProjection.BuildProblemId(
+                        x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode.Value)),
                 errorScope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode).ToString().ToLowerInvariant(),
                 x.ErrorAmount, x.ErrorDate, x.ContributionTypeCode, x.CalculatedSalary, x.SalaryMonth, x.PolicyNumber,
                 x.ContributionRate, x.ContributionAmount, x.SourceFileName, x.ReceivedAt
