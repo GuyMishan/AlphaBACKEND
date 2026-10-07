@@ -650,6 +650,28 @@ public static class ReportValidationEndpoints
             result.Issues.Add(new("EMPLOYER_INTERFACE_006", issue, ValidationScope.Report));
     }
 
+    internal static async Task<FeedbackResolutionValidationResult?> ValidateForFeedbackResolutionAsync(
+        Guid organizationId,
+        Guid employerId,
+        Guid reportId,
+        string stage,
+        IAlphaDbContext db,
+        EmployerInterface006ExportService employerInterfaceExporter,
+        IDataProtectionService protector,
+        CancellationToken ct)
+    {
+        var normalizedStage = NormalizeStage(stage);
+        var result = await ValidateReportAsync(
+            organizationId, employerId, reportId, normalizedStage, db, protector, false, ct);
+        if (result is null) return null;
+
+        await AppendEmployerInterfacePreflightAsync(result, normalizedStage, employerInterfaceExporter, ct);
+        return new FeedbackResolutionValidationResult(
+            result.Issues.Count == 0,
+            result.Issues.Select(issue => issue.Code).Distinct(StringComparer.Ordinal).ToArray(),
+            result.Issues.Select(issue => issue.Message).Distinct(StringComparer.Ordinal).Take(100).ToArray());
+    }
+
     private static object ToResponse(ValidationContext result) => new
     {
         isValid = result.Issues.Count == 0,
@@ -685,3 +707,9 @@ public static class ReportValidationEndpoints
         List<ManualReportProduct> Products, Dictionary<Guid, List<ManualReportProduct>> ProductsByEmployee,
         List<ValidationIssue> Issues);
 }
+
+
+internal sealed record FeedbackResolutionValidationResult(
+    bool IsValid,
+    IReadOnlyList<string> Codes,
+    IReadOnlyList<string> Errors);
