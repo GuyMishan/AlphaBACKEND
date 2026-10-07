@@ -1008,6 +1008,15 @@ public static class ReportFeedbackEndpoints
         if (requested.Any(problemId => !byProblemId.ContainsKey(problemId)))
             return Results.Conflict(new { error = "resolution_problem_stale" });
 
+        var latestDecisionByProblem = await db.FeedbackProblemDecisions.AsNoTracking()
+            .Where(decision => requested.Contains(decision.ProblemId))
+            .OrderByDescending(decision => decision.DecidedAt)
+            .ThenByDescending(decision => decision.CreatedAt)
+            .ToListAsync(ct);
+        var latestDecisionOutcomes = latestDecisionByProblem
+            .GroupBy(decision => decision.ProblemId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().Outcome, StringComparer.Ordinal);
+
         foreach (var problemId in requested)
         {
             var row = byProblemId[problemId];
@@ -1024,8 +1033,12 @@ public static class ReportFeedbackEndpoints
                         or FeedbackResolverType.Contribution
                         or FeedbackResolverType.EmploymentStatus
                         or FeedbackResolverType.ProductPolicy,
-                "workspace-validation" => playbook.ResolutionType == FeedbackResolutionType.Edit
-                    && playbook.CorrectionBehavior == FeedbackCorrectionBehavior.CorrectionWorkspace,
+                "workspace-validation" => (playbook.ResolutionType == FeedbackResolutionType.Edit
+                        && playbook.CorrectionBehavior == FeedbackCorrectionBehavior.CorrectionWorkspace)
+                    || (playbook.ResolutionType == FeedbackResolutionType.Decision
+                        && playbook.Actions.HasFlag(FeedbackResolutionAction.PrepareCorrection)
+                        && latestDecisionOutcomes.TryGetValue(problemId, out var decisionOutcome)
+                        && string.Equals(decisionOutcome, "correction", StringComparison.Ordinal)),
                 _ => false
             };
             if (!sourceAllowed) return Results.BadRequest(new { error = "resolution_source_not_allowed" });
