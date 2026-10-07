@@ -1,4 +1,5 @@
 using Alpha.Api.Validation;
+using Alpha.Api.Services;
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Domain.Employees;
@@ -95,29 +96,9 @@ public static class EmployerInterfaceProfileEndpoints
         // Employee card is the sole address editor. Keep draft snapshots synchronized
         // only when their prior address matched the master profile; imported/custom
         // report addresses and every finalized/submitted report remain unchanged.
-        if (previousPostalCode != person.PostalCode || previousPostOfficeBox != person.PostOfficeBox)
-        {
-            var editableReports = await db.ManualReports
-                .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
-                    && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
-                        || x.Status == ManualReportStatus.Error))
-                .ToListAsync(ct);
-            var reportIds = editableReports.Select(x => x.Id).ToArray();
-            if (reportIds.Length > 0)
-            {
-                var matchingSnapshots = await db.ManualReportEmployees
-                    .Where(x => reportIds.Contains(x.ReportId) && x.EmploymentId == employmentId
-                        && x.OrganizationId == organizationId && x.EmployerId == employerId
-                        && x.PostalCodeSnapshot == previousPostalCode
-                        && x.PostOfficeBoxSnapshot == previousPostOfficeBox)
-                    .ToListAsync(ct);
-                foreach (var snapshot in matchingSnapshots)
-                    snapshot.UpdatePostalAddressSnapshot(person.PostalCode, person.PostOfficeBox);
-                var touchedReportIds = matchingSnapshots.Select(x => x.ReportId).ToHashSet();
-                foreach (var report in editableReports.Where(x => touchedReportIds.Contains(x.Id)))
-                    report.MarkDirty();
-            }
-        }
+        await EmployeeDraftSnapshotSync.SyncPostalAddressAsync(
+            db, organizationId, employerId, employmentId,
+            previousPostalCode, previousPostOfficeBox, person.PostalCode, person.PostOfficeBox, ct);
         await db.SaveChangesAsync(ct);
         return Results.Ok(new
         {

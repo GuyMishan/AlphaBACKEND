@@ -1,4 +1,5 @@
 using Alpha.Api.Security;
+using Alpha.Api.Services;
 using System.Text.Json;
 using Alpha.Api.Contracts;
 using Alpha.Api.Validation;
@@ -241,11 +242,16 @@ public static class EmployerEndpoints
             var identifierHash = protector.LookupHash(identifier, "person-national-id-lookup");
             if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.IdentifierType == request.IdentifierType && x.NationalIdLookupHash == identifierHash && x.Id != person.Id, ct)) return Results.Conflict(new { error = "Employee identifier already exists in this organization." });
             if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber && x.Id != employmentId, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
+            var previousPostalCode = person.PostalCode;
+            var previousPostOfficeBox = person.PostOfficeBox;
             person.Update(identifier, request.FirstName.Trim(), request.LastName.Trim());
             person.SetProtectedIdentifier(request.IdentifierType, protector.Protect(identifier, "person-national-id"), identifierHash);
             person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City,
                 request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
             employment.Update(employeeNumber, request.StartDate, request.MonthlySalary);
+            await EmployeeDraftSnapshotSync.SyncPostalAddressAsync(
+                db, organizationId, employerId, employmentId,
+                previousPostalCode, previousPostOfficeBox, person.PostalCode, person.PostOfficeBox, ct);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.updated", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(new { employment.EmployeeNumber, person.FirstName, person.LastName }), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
             var updated = await EmployeeQuery(db, organizationId, employerId).SingleAsync(x => x.Id == employmentId, ct);
