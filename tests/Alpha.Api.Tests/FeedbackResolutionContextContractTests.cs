@@ -80,6 +80,22 @@ public sealed class FeedbackResolutionContextContractTests
     }
 
     [Fact]
+    public void Problem_id_is_stable_and_distinguishes_individual_feedback_errors()
+    {
+        var feedbackId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var contributionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+        var first = FeedbackResolutionWireProjection.BuildProblemId(feedbackId, contributionId, 1, 50);
+        var same = FeedbackResolutionWireProjection.BuildProblemId(feedbackId, contributionId, 1, 50);
+        var otherSequence = FeedbackResolutionWireProjection.BuildProblemId(feedbackId, contributionId, 2, 50);
+        var otherCode = FeedbackResolutionWireProjection.BuildProblemId(feedbackId, contributionId, 1, 56);
+
+        Assert.Equal(first, same);
+        Assert.NotEqual(first, otherSequence);
+        Assert.NotEqual(first, otherCode);
+    }
+
+    [Fact]
     public void Per_error_key_keeps_separate_feedback_rows_separate()
     {
         var feedbackId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
