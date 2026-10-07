@@ -1359,19 +1359,19 @@ public static class ReportFeedbackEndpoints
                 .Select(user => user.DisplayName)
                 .SingleOrDefaultAsync(ct) ?? string.Empty
             : string.Empty;
-        var problems = await db.FeedbackExternalCaseProblems.AsNoTracking()
+        var problemRows = await db.FeedbackExternalCaseProblems.AsNoTracking()
             .Where(item => item.CaseId == caseId)
             .OrderBy(item => item.CreatedAt)
-            .Select(item => new
-            {
-                item.ProblemId,
-                item.ReportId,
-                item.ReportProductId,
-                item.ErrorCode,
-                description = EmployerInterfaceLineFeedbackParser.Description(item.ErrorCode),
-                item.CreatedAt
-            })
             .ToListAsync(ct);
+        var problems = problemRows.Select(item => new
+        {
+            item.ProblemId,
+            item.ReportId,
+            item.ReportProductId,
+            item.ErrorCode,
+            description = EmployerInterfaceLineFeedbackParser.Description(item.ErrorCode),
+            item.CreatedAt
+        }).ToArray();
         var events = await db.FeedbackExternalCaseEvents.AsNoTracking()
             .Where(item => item.CaseId == caseId)
             .OrderByDescending(item => item.CreatedAt)
