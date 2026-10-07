@@ -668,6 +668,7 @@ public static class ReportFeedbackEndpoints
         CancellationToken ct)
     {
         if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
 
         var belongs = await (from product in db.ManualReportProducts.AsNoTracking()
                              join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
@@ -689,7 +690,7 @@ public static class ReportFeedbackEndpoints
 
         var context = await BuildResolutionContextAsync(
             "deposit", organizationId, employerId, reportId, reportProductId,
-            canCreateReport: false, canEditEmployee: true, rows, db, protector, ct);
+            canCreateReport, canEditEmployee: true, rows, db, protector, ct);
 
         if (context.UnsupportedCodes.Count > 0)
             return Results.Conflict(new { error = "resolution_context_unsupported" });
@@ -702,7 +703,14 @@ public static class ReportFeedbackEndpoints
         if (!FeedbackResolutionWireProjection.CanExecuteEmployeeEdit(resolutionGroup, request.EmploymentId))
             return Results.BadRequest(new { error = "resolution_action_not_allowed" });
 
-        return Results.Ok(new { resolutionGroup.GroupKey, request.EmploymentId });
+        var requiresCorrection = resolutionGroup.Problems.Any(problem =>
+            string.Equals(problem.ResolutionType, "edit", StringComparison.Ordinal)
+            && string.Equals(problem.CorrectionBehavior, "correctionWorkspace", StringComparison.Ordinal)
+            && problem.AvailableActions.Contains("prepareCorrection", StringComparer.Ordinal));
+        if (requiresCorrection && !canCreateReport)
+            return Results.Forbid();
+
+        return Results.Ok(new { resolutionGroup.GroupKey, request.EmploymentId, requiresCorrection });
     }
 
     private static async Task<IResult> PrepareInternalResolutionActionAsync(
@@ -1575,8 +1583,12 @@ public static class ReportFeedbackEndpoints
         if (requested.Any(problemId => !byProblemId.ContainsKey(problemId)))
             return Results.Conflict(new { error = "resolution_problem_stale" });
 
+        Guid? employeeWorkspaceId = null;
         if (request.Source == "employee-save")
         {
+            if (!canCreate)
+                return Results.Forbid();
+
             var employeeContext = await BuildResolutionContextAsync(
                 "report", organizationId, employerId, reportId, null,
                 canCreate, canEditEmployee, activeRows, db, protector, ct);
@@ -1584,9 +1596,12 @@ public static class ReportFeedbackEndpoints
                 .Where(problem => requested.Contains(problem.ProblemId))
                 .ToDictionary(problem => problem.ProblemId, StringComparer.Ordinal);
 
+            Guid? focusedProductId = null;
+            var employmentIds = new HashSet<Guid>();
             foreach (var problemId in requested)
             {
-                if (!employeeProblems.TryGetValue(problemId, out var problem))
+                if (!employeeProblems.TryGetValue(problemId, out var problem)
+                    || problem.EmploymentId is null)
                     return Results.Conflict(new { error = "resolution_problem_stale" });
 
                 var keys = problem.ReportedValues.Keys
@@ -1599,7 +1614,76 @@ public static class ReportFeedbackEndpoints
                         StringComparison.Ordinal));
                 if (!changed)
                     return Results.Conflict(new { error = "resolution_employee_not_changed" });
+
+                if (!string.Equals(problem.CorrectionBehavior, "correctionWorkspace", StringComparison.Ordinal))
+                    return Results.BadRequest(new { error = "resolution_employee_correction_required" });
+
+                focusedProductId ??= problem.ReportProductId;
+                employmentIds.Add(problem.EmploymentId.Value);
             }
+
+            CorrectionWorkflowService.WorkspaceResult? workspace;
+            try
+            {
+                workspace = await CorrectionWorkflowService.EnsureWorkspaceAsync(
+                    organizationId, employerId, reportId, focusedProductId, db, protector, ct);
+            }
+            catch (DbUpdateException)
+            {
+                return Results.Conflict(new { error = "correction_workspace_conflict" });
+            }
+            if (workspace is null)
+                return Results.Conflict(new { error = "correction_workspace_source_invalid" });
+
+            foreach (var employmentId in employmentIds)
+            {
+                if (!await CorrectionWorkflowService.SyncEmployeeMasterToWorkspaceAsync(
+                        organizationId, employerId, workspace.ReportId, employmentId, db, protector, ct))
+                    return Results.Conflict(new { error = "resolution_employee_workspace_sync_failed" });
+            }
+
+            var validation = await ReportValidationEndpoints.ValidateForFeedbackResolutionAsync(
+                organizationId,
+                employerId,
+                workspace.ReportId,
+                "employees",
+                db,
+                employerInterfaceExporter,
+                protector,
+                ct);
+            if (validation is null) return Results.NotFound();
+            if (!validation.IsValid)
+                return Results.Conflict(new
+                {
+                    error = "resolution_revalidation_failed",
+                    validationCodes = validation.Codes,
+                    validationErrors = validation.Errors
+                });
+
+            var pendingChanges = await CorrectionWorkflowService.PendingChangeCountAsync(
+                workspace.ReportId, db, protector, ct);
+            if (pendingChanges <= 0)
+                return Results.Conflict(new { error = "resolution_no_correction_change" });
+
+            var existingLinks = await db.FeedbackCorrectionResolutionLinks.AsNoTracking()
+                .Where(link => requested.Contains(link.ProblemId))
+                .Select(link => link.ProblemId)
+                .ToListAsync(ct);
+            var existingLinkSet = existingLinks.ToHashSet(StringComparer.Ordinal);
+            foreach (var problemId in requested)
+            {
+                if (existingLinkSet.Contains(problemId)) continue;
+                var problem = employeeProblems[problemId];
+                db.FeedbackCorrectionResolutionLinks.Add(new FeedbackCorrectionResolutionLink(
+                    problemId,
+                    reportId,
+                    workspace.ReportId,
+                    problem.ReportProductId,
+                    problem.ResolverType,
+                    currentUser.UserId));
+            }
+
+            employeeWorkspaceId = workspace.ReportId;
         }
 
         var latestDecisionByProblem = await db.FeedbackProblemDecisions.AsNoTracking()
@@ -1691,7 +1775,7 @@ public static class ReportFeedbackEndpoints
                     problemId,
                     row.ErrorCode,
                     source = request.Source,
-                    validatedReportId = request.ValidatedReportId
+                    validatedReportId = request.ValidatedReportId ?? employeeWorkspaceId
                 }),
                 http.TraceIdentifier));
         }
