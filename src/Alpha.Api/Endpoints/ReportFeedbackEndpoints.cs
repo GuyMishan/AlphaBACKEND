@@ -78,6 +78,8 @@ public static class ReportFeedbackEndpoints
         group.MapPost("/{reportId:guid}/resolution-actions/problems/resolve", ResolveProblemsAsync);
         group.MapGet("/correction-workspaces/{workspaceReportId:guid}/resolution-links", CorrectionWorkspaceResolutionLinksAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/decision", DecideProblemAsync);
+        group.MapGet("/{reportId:guid}/resolution-actions/{problemId}/original-movement-candidates", OriginalMovementCandidatesAsync);
+        group.MapPost("/{reportId:guid}/resolution-actions/{problemId}/link-original", LinkOriginalMovementAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/external-case/open", OpenExternalCaseAsync);
         group.MapGet("/external-cases/{caseId:guid}", ExternalCaseDetailsAsync);
         group.MapPost("/external-cases/{caseId:guid}/events", AddExternalCaseEventAsync);
@@ -1022,6 +1024,277 @@ public static class ReportFeedbackEndpoints
             workspaceReportId = workspace?.ReportId,
             workspaceReportProductId = workspace?.ReportProductId,
             workspaceReportEmployeeId
+        });
+    }
+
+    private static async Task<IResult> OriginalMovementCandidatesAsync(
+        Guid organizationId,
+        Guid employerId,
+        Guid reportId,
+        string problemId,
+        IAlphaDbContext db,
+        OrganizationAccessService access,
+        CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+
+        var activeRows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
+        var row = activeRows.FirstOrDefault(item => item.ErrorCode.HasValue
+            && string.Equals(
+                FeedbackResolutionWireProjection.BuildProblemId(
+                    item.FeedbackId, item.ContributionId, item.Sequence, item.ErrorCode.Value),
+                problemId,
+                StringComparison.Ordinal));
+        if (row is null) return Results.Conflict(new { error = "resolution_problem_stale" });
+        if (!FeedbackResolutionPlaybookCatalog.TryGet(row.ErrorCode!.Value, out var playbook)
+            || !playbook.Actions.HasFlag(FeedbackResolutionAction.LinkOriginalRecord))
+            return Results.BadRequest(new { error = "link_original_not_allowed" });
+
+        var sourceContribution = await db.ManualContributions.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == row.ContributionId, ct);
+        var sourceProduct = await db.ManualReportProducts.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == row.ReportProductId, ct);
+        if (sourceContribution is null || sourceProduct is null) return Results.NotFound();
+
+        var sourceEmployee = await db.ManualReportEmployees.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == sourceProduct.ReportEmployeeId
+                && item.ReportId == reportId
+                && item.OrganizationId == organizationId
+                && item.EmployerId == employerId, ct);
+        if (sourceEmployee is null) return Results.NotFound();
+
+        var immutableReportIds = await db.ManualReports.AsNoTracking()
+            .Where(report => report.OrganizationId == organizationId
+                && report.EmployerId == employerId
+                && report.Id != reportId
+                && !report.IsCorrectionWorkspace
+                && !report.IsTechnicalCorrectionDocument
+                && (report.Status == ManualReportStatus.Sent
+                    || report.Status == ManualReportStatus.Completed))
+            .Select(report => report.Id)
+            .ToArrayAsync(ct);
+
+        var employeeRows = await db.ManualReportEmployees.AsNoTracking()
+            .Where(employee => immutableReportIds.Contains(employee.ReportId)
+                && employee.PersonId == sourceEmployee.PersonId)
+            .ToListAsync(ct);
+        var employeeIds = employeeRows.Select(employee => employee.Id).ToArray();
+        var products = await db.ManualReportProducts.AsNoTracking()
+            .Where(product => employeeIds.Contains(product.ReportEmployeeId)
+                && product.ProductType == sourceProduct.ProductType)
+            .ToListAsync(ct);
+        products = products.Where(product =>
+        {
+            var policyMatches = string.IsNullOrWhiteSpace(sourceProduct.PolicyNumber)
+                ? string.IsNullOrWhiteSpace(product.PolicyNumber)
+                : string.Equals(product.PolicyNumber, sourceProduct.PolicyNumber, StringComparison.OrdinalIgnoreCase);
+            var fundMatches = !string.IsNullOrWhiteSpace(sourceProduct.FundCode)
+                ? string.Equals(product.FundCode, sourceProduct.FundCode, StringComparison.OrdinalIgnoreCase)
+                : string.Equals(product.FundExternalKey, sourceProduct.FundExternalKey, StringComparison.OrdinalIgnoreCase);
+            return policyMatches && fundMatches;
+        }).ToList();
+
+        var productIds = products.Select(product => product.Id).ToArray();
+        var contributions = await db.ManualContributions.AsNoTracking()
+            .Where(item => productIds.Contains(item.ReportProductId)
+                && item.Party == sourceContribution.Party
+                && item.Component == sourceContribution.Component)
+            .ToListAsync(ct);
+        var reportByEmployeeId = employeeRows.ToDictionary(employee => employee.Id, employee => employee.ReportId);
+        var reportIds = reportByEmployeeId.Values.Distinct().ToArray();
+        var reports = await db.ManualReports.AsNoTracking()
+            .Where(report => reportIds.Contains(report.Id))
+            .ToDictionaryAsync(report => report.Id, ct);
+        var productById = products.ToDictionary(product => product.Id);
+        var employeeById = employeeRows.ToDictionary(employee => employee.Id);
+
+        var candidates = contributions
+            .Where(item => productById.ContainsKey(item.ReportProductId))
+            .Select(item =>
+            {
+                var product = productById[item.ReportProductId];
+                var employee = employeeById[product.ReportEmployeeId];
+                var report = reports[employee.ReportId];
+                var identifier = string.IsNullOrWhiteSpace(item.InterfaceRecordIdentifier)
+                    ? item.Id.ToString("D").ToUpperInvariant()
+                    : item.InterfaceRecordIdentifier;
+                return new
+                {
+                    contributionId = item.Id,
+                    recordIdentifier = identifier,
+                    reportId = report.Id,
+                    reportingMonth = report.ReportingMonth,
+                    salaryMonth = product.SalaryMonth,
+                    amount = item.Amount,
+                    percentage = item.Percentage,
+                    productName = product.FundName,
+                    policyNumber = product.PolicyNumber
+                };
+            })
+            .OrderByDescending(item => item.reportingMonth)
+            .ThenByDescending(item => item.salaryMonth)
+            .Take(100)
+            .ToArray();
+
+        return Results.Ok(new { items = candidates });
+    }
+
+    private static async Task<IResult> LinkOriginalMovementAsync(
+        Guid organizationId,
+        Guid employerId,
+        Guid reportId,
+        string problemId,
+        LinkOriginalMovementRequest request,
+        IAlphaDbContext db,
+        OrganizationAccessService access,
+        EmployerInterface006ExportService employerInterfaceExporter,
+        IDataProtectionService protector,
+        ICurrentUser currentUser,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+
+        var activeRows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
+        var row = activeRows.FirstOrDefault(item => item.ErrorCode.HasValue
+            && string.Equals(
+                FeedbackResolutionWireProjection.BuildProblemId(
+                    item.FeedbackId, item.ContributionId, item.Sequence, item.ErrorCode.Value),
+                problemId,
+                StringComparison.Ordinal));
+        if (row is null) return Results.Conflict(new { error = "resolution_problem_stale" });
+        if (!FeedbackResolutionPlaybookCatalog.TryGet(row.ErrorCode!.Value, out var playbook)
+            || playbook.ResolutionType != FeedbackResolutionType.Decision
+            || !playbook.Actions.HasFlag(FeedbackResolutionAction.LinkOriginalRecord))
+            return Results.BadRequest(new { error = "link_original_not_allowed" });
+
+        var sourceContribution = await db.ManualContributions.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == row.ContributionId, ct);
+        var sourceProduct = await db.ManualReportProducts.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == row.ReportProductId, ct);
+        if (sourceContribution is null || sourceProduct is null) return Results.NotFound();
+        var sourceEmployee = await db.ManualReportEmployees.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == sourceProduct.ReportEmployeeId
+                && item.ReportId == reportId
+                && item.OrganizationId == organizationId
+                && item.EmployerId == employerId, ct);
+        if (sourceEmployee is null) return Results.NotFound();
+
+        var candidate = await db.ManualContributions.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == request.ContributionId, ct);
+        if (candidate is null) return Results.BadRequest(new { error = "original_movement_not_found" });
+        var candidateProduct = await db.ManualReportProducts.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == candidate.ReportProductId, ct);
+        if (candidateProduct is null) return Results.BadRequest(new { error = "original_movement_not_found" });
+        var candidateEmployee = await db.ManualReportEmployees.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == candidateProduct.ReportEmployeeId
+                && item.OrganizationId == organizationId
+                && item.EmployerId == employerId
+                && item.PersonId == sourceEmployee.PersonId, ct);
+        if (candidateEmployee is null) return Results.BadRequest(new { error = "original_movement_owner_mismatch" });
+        var candidateReport = await db.ManualReports.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == candidateEmployee.ReportId
+                && item.OrganizationId == organizationId
+                && item.EmployerId == employerId
+                && item.Id != reportId
+                && !item.IsCorrectionWorkspace
+                && !item.IsTechnicalCorrectionDocument
+                && (item.Status == ManualReportStatus.Sent || item.Status == ManualReportStatus.Completed), ct);
+        if (candidateReport is null) return Results.BadRequest(new { error = "original_movement_report_invalid" });
+
+        var productMatches = candidateProduct.ProductType == sourceProduct.ProductType
+            && (string.IsNullOrWhiteSpace(sourceProduct.PolicyNumber)
+                ? string.IsNullOrWhiteSpace(candidateProduct.PolicyNumber)
+                : string.Equals(candidateProduct.PolicyNumber, sourceProduct.PolicyNumber, StringComparison.OrdinalIgnoreCase))
+            && (!string.IsNullOrWhiteSpace(sourceProduct.FundCode)
+                ? string.Equals(candidateProduct.FundCode, sourceProduct.FundCode, StringComparison.OrdinalIgnoreCase)
+                : string.Equals(candidateProduct.FundExternalKey, sourceProduct.FundExternalKey, StringComparison.OrdinalIgnoreCase));
+        if (!productMatches
+            || candidate.Party != sourceContribution.Party
+            || candidate.Component != sourceContribution.Component)
+            return Results.BadRequest(new { error = "original_movement_product_mismatch" });
+
+        var recordIdentifier = string.IsNullOrWhiteSpace(candidate.InterfaceRecordIdentifier)
+            ? candidate.Id.ToString("D").ToUpperInvariant()
+            : candidate.InterfaceRecordIdentifier;
+
+        CorrectionWorkflowService.WorkspaceResult? workspace;
+        try
+        {
+            workspace = await CorrectionWorkflowService.EnsureWorkspaceAsync(
+                organizationId, employerId, reportId, row.ReportProductId, db, protector, ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Results.Conflict(new { error = "correction_workspace_conflict" });
+        }
+        if (workspace?.ReportProductId is null)
+            return Results.Conflict(new { error = "correction_workspace_source_invalid" });
+
+        var workspaceContribution = await db.ManualContributions.SingleOrDefaultAsync(item =>
+            item.ReportProductId == workspace.ReportProductId.Value
+            && item.Party == sourceContribution.Party
+            && item.Component == sourceContribution.Component, ct);
+        var workspaceReport = await db.ManualReports.SingleOrDefaultAsync(item => item.Id == workspace.ReportId, ct);
+        if (workspaceContribution is null || workspaceReport is null)
+            return Results.Conflict(new { error = "correction_workspace_target_missing" });
+
+        workspaceContribution.SetPreviousRecordIdentifier(recordIdentifier);
+        workspaceReport.MarkDirty();
+
+        var linkExists = await db.FeedbackCorrectionResolutionLinks.AsNoTracking()
+            .AnyAsync(link => link.ProblemId == problemId, ct);
+        if (!linkExists)
+            db.FeedbackCorrectionResolutionLinks.Add(new FeedbackCorrectionResolutionLink(
+                problemId, reportId, workspace.ReportId, row.ReportProductId,
+                FeedbackResolutionWireProjection.WireName(playbook.Resolver), currentUser.UserId));
+
+        db.FeedbackProblemDecisions.Add(new FeedbackProblemDecision(
+            problemId, row.FeedbackId, row.ReportId, row.ReportProductId, row.ContributionId,
+            row.ErrorCode.Value, "link-original", $"קושר לתנועה {recordIdentifier}", currentUser.UserId));
+        await db.SaveChangesAsync(ct);
+
+        var validation = await ReportValidationEndpoints.ValidateForFeedbackResolutionAsync(
+            organizationId, employerId, workspace.ReportId, "deposits",
+            db, employerInterfaceExporter, protector, ct);
+        if (validation is null) return Results.NotFound();
+        if (!validation.IsValid)
+            return Results.Conflict(new
+            {
+                error = "resolution_revalidation_failed",
+                validationCodes = validation.Codes,
+                validationErrors = validation.Errors
+            });
+
+        if (await CorrectionWorkflowService.PendingChangeCountAsync(workspace.ReportId, db, protector, ct) <= 0)
+            return Results.Conflict(new { error = "resolution_no_correction_change" });
+
+        db.FeedbackProblemResolutions.Add(new FeedbackProblemResolution(
+            problemId, row.FeedbackId, row.ReportId, row.ReportProductId, row.ContributionId,
+            row.ErrorCode.Value, "link-original", currentUser.UserId));
+        db.AuditEvents.Add(new AuditEvent(
+            currentUser.UserId,
+            "feedback-resolution.original-movement-linked",
+            nameof(EmployerInterfaceContributionFeedback),
+            row.Id,
+            organizationId,
+            employerId,
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                problemId,
+                recordIdentifier,
+                candidateReportId = candidateReport.Id,
+                workspaceReportId = workspace.ReportId
+            }),
+            http.TraceIdentifier));
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new
+        {
+            resolvedProblemId = problemId,
+            recordIdentifier,
+            workspaceReportId = workspace.ReportId,
+            workspaceReportProductId = workspace.ReportProductId
         });
     }
 
@@ -3034,6 +3307,7 @@ public static class ReportFeedbackEndpoints
         string ProblemId,
         string Outcome,
         string? Note);
+    public sealed record LinkOriginalMovementRequest(Guid ContributionId);
     public sealed record OpenExternalCaseRequest(
         string GroupKey,
         IReadOnlyList<string> ProblemIds,
