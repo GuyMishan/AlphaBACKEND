@@ -893,6 +893,14 @@ public static class ReportFeedbackEndpoints
             || !playbook.Actions.HasFlag(FeedbackResolutionAction.Review))
             return Results.BadRequest(new { error = "decision_not_allowed" });
 
+        // A duplicate transfer identifier is not evidence of bad payment fields.
+        // Require the operator to record why a correction is needed before
+        // preparing a new 006 revision; blind resubmission can duplicate funds.
+        if (row.ErrorCode == 50 && string.Equals(request.Outcome?.Trim(),
+                "correction", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(request.Note))
+            return Results.BadRequest(new { error = "duplicate_transfer_investigation_note_required" });
+
         var outcome = request.Outcome?.Trim().ToLowerInvariant() ?? string.Empty;
         if (outcome == "external")
             return Results.BadRequest(new { error = "external_case_required" });
