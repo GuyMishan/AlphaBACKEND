@@ -145,17 +145,31 @@ public sealed class FeedbackResolutionStage9ContractTests
     }
 
     [Fact]
-    public void Revalidate_only_payment_resolution_does_not_wait_for_a_correction_revision()
+    public void Duplicate_transfer_code_50_requires_an_explicit_decision_not_a_local_payment_revalidation()
     {
-        var payment = FeedbackResolutionPlaybookCatalog.Get(50);
-        Assert.Equal(FeedbackResolutionType.Edit, payment.ResolutionType);
-        Assert.Equal(FeedbackResolverType.Payment, payment.Resolver);
-        Assert.Equal(FeedbackCorrectionBehavior.RevalidateOnly, payment.CorrectionBehavior);
+        var duplicate = FeedbackResolutionPlaybookCatalog.Get(50);
 
+        Assert.Equal(FeedbackResolutionType.Decision, duplicate.ResolutionType);
+        Assert.Equal(FeedbackResolutionFamily.Payment, duplicate.Family);
+        Assert.Equal(FeedbackResolverType.Payment, duplicate.Resolver);
+        Assert.Equal(FeedbackResolutionGroupStrategy.PerTransfer, duplicate.GroupStrategy);
+        Assert.Equal(FeedbackCorrectionBehavior.Dynamic, duplicate.CorrectionBehavior);
+        Assert.True(duplicate.Actions.HasFlag(FeedbackResolutionAction.Review));
+        Assert.True(duplicate.Actions.HasFlag(FeedbackResolutionAction.PrepareCorrection));
+        Assert.True(duplicate.Actions.HasFlag(FeedbackResolutionAction.OpenExternalCase));
+        Assert.False(duplicate.Actions.HasFlag(FeedbackResolutionAction.EditPayment));
+        Assert.False(duplicate.Actions.HasFlag(FeedbackResolutionAction.Confirm));
+        Assert.False(duplicate.Actions.HasFlag(FeedbackResolutionAction.RetryAfterResolution));
+        Assert.True(duplicate.CanEscalateExternally);
+        Assert.Equal("דיווח כפול על מספר זיהוי של פרטי העברת כספים",
+            EmployerInterfaceLineFeedbackParser.Description(50));
+
+        // Decision problems must never be accepted by deposit-save, even after
+        // server-side deposit validation succeeds.
         var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
-        Assert.Contains("item.ErrorCode", endpoint, StringComparison.Ordinal);
-        Assert.Contains("FeedbackCorrectionBehavior.RevalidateOnly", endpoint, StringComparison.Ordinal);
-        Assert.Contains("playbook.CorrectionBehavior is FeedbackCorrectionBehavior.CorrectionWorkspace", endpoint, StringComparison.Ordinal);
+        Assert.Contains("\"deposit-save\" => playbook.ResolutionType == FeedbackResolutionType.Edit",
+            endpoint, StringComparison.Ordinal);
+        Assert.Contains("decision-confirm", endpoint, StringComparison.Ordinal);
     }
 
     [Fact]
