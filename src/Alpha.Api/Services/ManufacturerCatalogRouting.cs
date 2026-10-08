@@ -25,33 +25,34 @@ public static class ManufacturerCatalogRouting
         string defaultProvider, IConfiguration configuration, CancellationToken ct)
     {
         if (products.Count == 0) return new Dictionary<Guid, string>();
-        var dbContext = db as DbContext
-            ?? throw new InvalidOperationException("manufacturer_route_database_context_unavailable");
-
-        // One bounded read for the entire report rather than one query per
-        // contribution or autocomplete field. Never accept browser-supplied
-        // manufacturer names as authoritative routing input.
-        var catalog = await dbContext.Database.SqlQueryRaw<CatalogEntry>(
-            """
-            SELECT DISTINCT p.fund_code AS "FundCode",
-                   p.company_name AS "CompanyName",
-                   g.manufacturer_name AS "ManufacturerName",
-                   g.mapping_status AS "MappingStatus"
-            FROM reference_data.pension_products p
-            JOIN reference_data.manufacturer_company_groups g
-              ON g.company_name = p.company_name
-            WHERE p.fund_code IS NOT NULL
-            """).ToListAsync(ct);
-
-        var byIdentity = catalog
-            .GroupBy(row => (Code: row.FundCode.Trim(), Company: row.CompanyName.Trim()))
-            .ToDictionary(group => group.Key, group => group.ToArray());
         var explicitFunds = configuration.GetSection("Reporting:ManufacturerRouting:Funds")
             .GetChildren().ToDictionary(item => item.Key.Trim(),
                 item => item.Value?.Trim() ?? "", StringComparer.OrdinalIgnoreCase);
         var manufacturerProviders = configuration.GetSection("Reporting:ManufacturerRouting:Manufacturers")
             .GetChildren().ToDictionary(item => item.Key.Trim(),
                 item => item.Value?.Trim() ?? "", StringComparer.OrdinalIgnoreCase);
+        var byIdentity = new Dictionary<(string Code, string Company), CatalogEntry[]>();
+        if (manufacturerProviders.Any(entry => !string.IsNullOrWhiteSpace(entry.Value)))
+        {
+            var dbContext = db as DbContext
+                ?? throw new InvalidOperationException("manufacturer_route_database_context_unavailable");
+            // One catalog read for the report. A bad/missing reference table
+            // cannot silently redirect financial data to the wrong provider.
+            var catalog = await dbContext.Database.SqlQueryRaw<CatalogEntry>(
+                """
+                SELECT DISTINCT p.fund_code AS "FundCode",
+                       p.company_name AS "CompanyName",
+                       g.manufacturer_name AS "ManufacturerName",
+                       g.mapping_status AS "MappingStatus"
+                FROM reference_data.pension_products p
+                JOIN reference_data.manufacturer_company_groups g
+                  ON g.company_name = p.company_name
+                WHERE p.fund_code IS NOT NULL
+                """).ToListAsync(ct);
+            byIdentity = catalog.GroupBy(row =>
+                (Code: row.FundCode.Trim(), Company: row.CompanyName.Trim()))
+                .ToDictionary(group => group.Key, group => group.ToArray());
+        }
         var routes = new Dictionary<Guid, string>();
         foreach (var product in products)
         {
@@ -61,10 +62,10 @@ public static class ManufacturerCatalogRouting
 
             // Deliberate per-fund exception takes precedence; an empty value
             // explicitly disables a formerly configured exception.
-            if (explicitFunds.TryGetValue(code, out var exception))
+            if (explicitFunds.TryGetValue(code, out var exception)
+                && !string.IsNullOrWhiteSpace(exception))
             {
-                if (!string.IsNullOrWhiteSpace(exception))
-                    provider = exception;
+                provider = exception;
             }
             else if (manufacturerProviders.Count > 0
                 && byIdentity.TryGetValue((code, company), out var matches))
