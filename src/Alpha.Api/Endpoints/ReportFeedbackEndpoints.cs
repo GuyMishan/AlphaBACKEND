@@ -3030,7 +3030,7 @@ public static class ReportFeedbackEndpoints
             .Where(group => group.All(contribution =>
                 latestRows.TryGetValue(contribution.Id, out var rows)
                 && rows.Any(row => row.ReportProductId == contribution.ReportProductId)
-                && rows.All(row => !ReportFeedbackStatusResolver.IsActionableFeedbackError(row.ErrorCode))))
+                && rows.All(row => row.ErrorCode is 1 or 31)))
             .Select(group => group.Key).ToHashSet();
 
         var sourceProductIds = correctionLinks.Where(link => link.ReportProductId.HasValue)
