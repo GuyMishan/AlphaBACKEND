@@ -87,12 +87,16 @@ public static class ReportTransmissionEndpoints
         {
             return Results.Conflict(new { error = exception.Message });
         }
-        if (!string.Equals(routingPlan.Provider, providerName, StringComparison.OrdinalIgnoreCase))
+        // The server owns routing policy: an explicit client provider may not
+        // override a configured fund destination. Otherwise select that destination.
+        if (!string.IsNullOrWhiteSpace(request?.Provider)
+            && !string.Equals(routingPlan.Provider, providerName, StringComparison.OrdinalIgnoreCase))
             return Results.Conflict(new
             {
                 error = "manufacturer_route_override_conflict",
                 requiredProvider = routingPlan.Provider
             });
+        providerName = routingPlan.Provider;
 
         var provider = availableProviders.FirstOrDefault(x => string.Equals(x.Name, providerName, StringComparison.OrdinalIgnoreCase));
         if (provider is null) return Results.BadRequest(new { error = "The selected transmission provider does not exist.", provider = providerName });
