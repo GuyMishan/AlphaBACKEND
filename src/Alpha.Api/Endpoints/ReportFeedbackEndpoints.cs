@@ -2939,16 +2939,89 @@ public static class ReportFeedbackEndpoints
         if (correctionLinks.Count == 0) return immediate;
 
         var workspaceIds = correctionLinks.Select(link => link.WorkspaceReportId).Distinct().ToArray();
-        var completedWorkspaces = await db.ManualReports.AsNoTracking()
+        var sentWorkspaces = await db.ManualReports.AsNoTracking()
             .Where(report => workspaceIds.Contains(report.Id)
-                && report.IsRevisionSnapshot
-                && report.Status == ManualReportStatus.Completed)
-            .Select(report => report.Id)
-            .ToHashSetAsync(ct);
+                && report.IsRevisionSnapshot && report.Status == ManualReportStatus.Completed)
+            .Select(report => report.Id).ToHashSetAsync(ct);
+        if (sentWorkspaces.Count == 0) return immediate;
 
+        // Completing the 006 dispatch is a pending state, never a successful reply.
+        // Confirm each affected technical product against fresh feedback for the
+        // exact technical transmission; missing/partial/failed feedback stays open.
+        var documents = await db.ManualReports.AsNoTracking()
+            .Where(report => report.CorrectionWorkspaceId.HasValue
+                && sentWorkspaces.Contains(report.CorrectionWorkspaceId.Value)
+                && report.IsTechnicalCorrectionDocument)
+            .Select(report => new { report.Id, WorkspaceId = report.CorrectionWorkspaceId!.Value })
+            .ToListAsync(ct);
+        var documentIds = documents.Select(document => document.Id).ToArray();
+        var employees = await db.ManualReportEmployees.AsNoTracking()
+            .Where(employee => documentIds.Contains(employee.ReportId))
+            .Select(employee => new { employee.Id, employee.ReportId }).ToListAsync(ct);
+        var employeeIds = employees.Select(employee => employee.Id).ToArray();
+        var documentProducts = await db.ManualReportProducts.AsNoTracking()
+            .Where(product => employeeIds.Contains(product.ReportEmployeeId))
+            .Select(product => new { product.Id, product.SourceReportProductId, product.ReportEmployeeId })
+            .ToListAsync(ct);
+        var productIds = documentProducts.Select(product => product.Id).ToArray();
+        var contributions = await db.ManualContributions.AsNoTracking()
+            .Where(contribution => productIds.Contains(contribution.ReportProductId))
+            .Select(contribution => new { contribution.Id, contribution.ReportProductId })
+            .ToListAsync(ct);
+        var transmissions = await db.ReportTransmissions.AsNoTracking()
+            .Where(tx => documentIds.Contains(tx.ReportId))
+            .OrderByDescending(tx => tx.AttemptNumber)
+            .Select(tx => new { tx.Id, tx.ReportId })
+            .ToListAsync(ct);
+        var latestTx = transmissions.GroupBy(tx => tx.ReportId)
+            .ToDictionary(group => group.Key, group => group.First().Id);
+        var feedbackFiles = await db.EmployerInterfaceFeedback.AsNoTracking()
+            .Where(file => file.ReportId.HasValue && documentIds.Contains(file.ReportId.Value))
+            .Select(file => new { file.Id, file.ReportId, file.TransmissionId })
+            .ToListAsync(ct);
+        var freshFeedbackIds = feedbackFiles
+            .Where(file => file.ReportId.HasValue && latestTx.TryGetValue(file.ReportId.Value, out var txId)
+                && file.TransmissionId == txId)
+            .Select(file => file.Id).ToArray();
+        var feedbackRows = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+            .Where(row => freshFeedbackIds.Contains(row.FeedbackId)
+                && documentIds.Contains(row.ReportId))
+            .OrderByDescending(row => row.ReceivedAt)
+            .ThenByDescending(row => row.CreatedAt)
+            .Select(row => new { row.ContributionId, row.ReportProductId, row.FeedbackId, row.ErrorCode })
+            .ToListAsync(ct);
+        var latestRows = feedbackRows.GroupBy(row => row.ContributionId)
+            .ToDictionary(group => group.Key, group =>
+                group.Where(row => row.FeedbackId == group.First().FeedbackId).ToArray());
+        var confirmedProductIds = contributions.GroupBy(row => row.ReportProductId)
+            .Where(group => group.All(contribution =>
+                latestRows.TryGetValue(contribution.Id, out var rows)
+                && rows.Any(row => row.ReportProductId == contribution.ReportProductId)
+                && rows.All(row => !ReportFeedbackStatusResolver.IsActionableFeedbackError(row.ErrorCode))))
+            .Select(group => group.Key).ToHashSet();
+
+        var sourceProductIds = correctionLinks.Where(link => link.ReportProductId.HasValue)
+            .Select(link => link.ReportProductId!.Value).Distinct().ToArray();
+        var workspaceProducts = await db.ManualReportProducts.AsNoTracking()
+            .Where(product => product.SourceReportProductId.HasValue
+                && sourceProductIds.Contains(product.SourceReportProductId.Value))
+            .Select(product => new { product.Id, product.SourceReportProductId })
+            .ToListAsync(ct);
         foreach (var link in correctionLinks)
-            if (completedWorkspaces.Contains(link.WorkspaceReportId))
+        {
+            if (!sentWorkspaces.Contains(link.WorkspaceReportId) || !link.ReportProductId.HasValue)
+                continue;
+            var mappedWorkspaceProductIds = workspaceProducts
+                .Where(product => product.SourceReportProductId == link.ReportProductId)
+                .Select(product => product.Id).ToHashSet();
+            var matchedDocuments = documentProducts
+                .Where(product => product.SourceReportProductId.HasValue
+                    && mappedWorkspaceProductIds.Contains(product.SourceReportProductId.Value))
+                .ToArray();
+            if (matchedDocuments.Length > 0
+                && matchedDocuments.All(product => confirmedProductIds.Contains(product.Id)))
                 immediate.Add(link.ProblemId);
+        }
 
         return immediate;
     }
