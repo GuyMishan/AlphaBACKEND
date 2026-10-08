@@ -136,7 +136,7 @@ public sealed class FeedbackResolutionStage9ContractTests
         Assert.Contains("file.TransmissionId == txId", endpoint, StringComparison.Ordinal);
         Assert.Contains("confirmedProductIds", endpoint, StringComparison.Ordinal);
         Assert.Contains("latestRows.TryGetValue(contribution.Id", endpoint, StringComparison.Ordinal);
-        Assert.Contains("rows.All(row => row.ErrorCode is 1 or 31)",
+        Assert.Contains("rows.All(row => row.IntakeStatus == 1 && (row.ErrorCode is 1 or 31))",
             endpoint, StringComparison.Ordinal);
         Assert.Contains("allTechnicalProducts.Length > 0", endpoint, StringComparison.Ordinal);
         Assert.Contains("matchedDocuments.Length > 0", endpoint, StringComparison.Ordinal);
