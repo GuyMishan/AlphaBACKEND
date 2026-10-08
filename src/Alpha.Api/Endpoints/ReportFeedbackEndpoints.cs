@@ -3060,8 +3060,8 @@ public static class ReportFeedbackEndpoints
                 && rows.All(row => row.IntakeStatus == 1 && (row.ErrorCode is 1 or 31))))
             .Select(group => group.Key).ToHashSet();
 
-        var sourceProductIds = correctionLinks.Where(link => link.ReportProductId.HasValue)
-            .Select(link => link.ReportProductId!.Value).Distinct().ToArray();
+        var sourceProductIds = correctionLinks.Where(link => link.SourceReportProductId.HasValue)
+            .Select(link => link.SourceReportProductId!.Value).Distinct().ToArray();
         var workspaceEmployeeReports = await db.ManualReportEmployees.AsNoTracking()
             .Where(employee => sentWorkspaces.Contains(employee.ReportId))
             .Select(employee => new { employee.Id, employee.ReportId })
@@ -3077,7 +3077,7 @@ public static class ReportFeedbackEndpoints
         {
             if (!sentWorkspaces.Contains(link.WorkspaceReportId))
                 continue;
-            if (!link.ReportProductId.HasValue)
+            if (!link.SourceReportProductId.HasValue)
             {
                 // Report-level correction: require positive acknowledgement of every
                 // technical product, not only a successful file dispatch.
@@ -3095,7 +3095,7 @@ public static class ReportFeedbackEndpoints
                 continue;
             }
             var mappedWorkspaceProductIds = workspaceProducts
-                .Where(product => product.SourceReportProductId == link.ReportProductId
+                .Where(product => product.SourceReportProductId == link.SourceReportProductId
                     && workspaceEmployeeReports.GetValueOrDefault(product.ReportEmployeeId) == link.WorkspaceReportId)
                 .Select(product => product.Id).ToHashSet();
             var matchedDocuments = documentProducts
