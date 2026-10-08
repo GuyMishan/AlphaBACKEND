@@ -2006,6 +2006,21 @@ public static class ReportFeedbackEndpoints
             }
         }
 
+        if (request.Source == "deposit-save")
+        {
+            // A submitted 006 report is immutable. Correction-backed feedback may only
+            // be prepared against a workspace belonging to the original report.
+            // A revalidate-only payment exception does not require a new 006 revision.
+            var requiresWorkspace = requested.Any(problemId =>
+            {
+                var row = byProblemId[problemId];
+                return FeedbackResolutionPlaybookCatalog.TryGet(row.ErrorCode!.Value, out var playbook)
+                    && playbook.CorrectionBehavior == FeedbackCorrectionBehavior.CorrectionWorkspace;
+            });
+            if (requiresWorkspace && validationTarget?.IsCorrectionWorkspace != true)
+                return Results.Conflict(new { error = "resolution_correction_workspace_required" });
+        }
+
         var existingResolutionProblemIds = await db.FeedbackProblemResolutions.AsNoTracking()
             .Where(item => requested.Contains(item.ProblemId))
             .Select(item => item.ProblemId)
