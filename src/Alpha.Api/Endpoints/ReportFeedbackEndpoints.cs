@@ -3002,17 +3002,24 @@ public static class ReportFeedbackEndpoints
 
         var sourceProductIds = correctionLinks.Where(link => link.ReportProductId.HasValue)
             .Select(link => link.ReportProductId!.Value).Distinct().ToArray();
+        var workspaceEmployeeReports = await db.ManualReportEmployees.AsNoTracking()
+            .Where(employee => sentWorkspaces.Contains(employee.ReportId))
+            .Select(employee => new { employee.Id, employee.ReportId })
+            .ToDictionaryAsync(employee => employee.Id, employee => employee.ReportId, ct);
+        var workspaceEmployees = workspaceEmployeeReports.Keys.ToArray();
         var workspaceProducts = await db.ManualReportProducts.AsNoTracking()
-            .Where(product => product.SourceReportProductId.HasValue
+            .Where(product => workspaceEmployees.Contains(product.ReportEmployeeId)
+                && product.SourceReportProductId.HasValue
                 && sourceProductIds.Contains(product.SourceReportProductId.Value))
-            .Select(product => new { product.Id, product.SourceReportProductId })
+            .Select(product => new { product.Id, product.SourceReportProductId, product.ReportEmployeeId })
             .ToListAsync(ct);
         foreach (var link in correctionLinks)
         {
             if (!sentWorkspaces.Contains(link.WorkspaceReportId) || !link.ReportProductId.HasValue)
                 continue;
             var mappedWorkspaceProductIds = workspaceProducts
-                .Where(product => product.SourceReportProductId == link.ReportProductId)
+                .Where(product => product.SourceReportProductId == link.ReportProductId
+                    && workspaceEmployeeReports.GetValueOrDefault(product.ReportEmployeeId) == link.WorkspaceReportId)
                 .Select(product => product.Id).ToHashSet();
             var matchedDocuments = documentProducts
                 .Where(product => product.SourceReportProductId.HasValue
