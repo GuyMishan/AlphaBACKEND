@@ -125,6 +125,22 @@ public sealed class FeedbackResolutionStage9ContractTests
     }
 
     [Fact]
+    public void Transmitted_correction_remains_open_until_exact_technical_feedback_is_confirmed()
+    {
+        var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
+
+        Assert.Contains("transmitted-awaiting-feedback", endpoint, StringComparison.Ordinal);
+        Assert.Contains("freshFeedbackIds", endpoint, StringComparison.Ordinal);
+        Assert.Contains("file.TransmissionId == txId", endpoint, StringComparison.Ordinal);
+        Assert.Contains("confirmedProductIds", endpoint, StringComparison.Ordinal);
+        Assert.Contains("latestRows.TryGetValue(contribution.Id", endpoint, StringComparison.Ordinal);
+        Assert.Contains("ReportFeedbackStatusResolver.IsActionableFeedbackError(row.ErrorCode)",
+            endpoint, StringComparison.Ordinal);
+        Assert.Contains("allTechnicalProducts.Length > 0", endpoint, StringComparison.Ordinal);
+        Assert.Contains("matchedDocuments.Length > 0", endpoint, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Deposit_correction_resolution_requires_a_workspace_target()
     {
         var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
