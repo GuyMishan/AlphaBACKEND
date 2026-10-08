@@ -8,6 +8,22 @@ namespace Alpha.Api.Tests;
 public sealed class FeedbackResolutionStage9ContractTests
 {
     [Fact]
+    public void Report_list_keeps_multi_vault_report_pending_until_all_destination_feedback_is_received()
+    {
+        var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
+
+        Assert.Contains("pendingRecipientByReport", endpoint, StringComparison.Ordinal);
+        Assert.Contains("reportIdsWithHybridRoutes", endpoint, StringComparison.Ordinal);
+        Assert.Contains("awaitingFeedback = new", endpoint, StringComparison.Ordinal);
+        Assert.Contains("manufacturerCount = awaitingManufacturers.Length", endpoint, StringComparison.Ordinal);
+        Assert.Contains("clearinghouse = awaitingClearinghouse", endpoint, StringComparison.Ordinal);
+        Assert.Contains("if (pendingRecipientByReport.TryGetValue(id, out var waiting)", endpoint,
+            StringComparison.Ordinal);
+        Assert.Contains("return \"pending\";", endpoint, StringComparison.Ordinal);
+        Assert.Contains("return \"attention\";", endpoint, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void All_errors_simulator_and_playbook_catalog_cover_the_same_actionable_codes()
     {
         var simulated = SimulatedClearinghouseResponder.ExpandScenario(
