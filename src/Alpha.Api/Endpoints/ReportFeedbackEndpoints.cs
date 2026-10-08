@@ -170,11 +170,16 @@ public static class ReportFeedbackEndpoints
             .Where(x => x.ReportId.HasValue && candidateIds.Contains(x.ReportId.Value))
             .Select(x => new { x.Id, ReportId = x.ReportId!.Value, x.TransmissionId })
             .ToListAsync(ct);
-        var activeFeedbackFiles = feedbackFiles.Where(x =>
-        {
-            latestTransmission.TryGetValue(x.ReportId, out var tx);
-            return tx is null ? x.TransmissionId is null : x.TransmissionId == tx.Id;
-        }).ToArray();
+        var latestPerRoute = transmissions
+            .GroupBy(tx => tx.ReportId)
+            .ToDictionary(group => group.Key,
+                group => ReportTransmissionFeedbackSelection.LatestAttemptIds(group));
+        var activeFeedbackFiles = feedbackFiles.Where(file =>
+            ReportTransmissionFeedbackSelection.IsActive(
+                file.TransmissionId,
+                latestPerRoute.TryGetValue(file.ReportId, out var activeTx)
+                    ? activeTx : new HashSet<Guid>(),
+                latestPerRoute.ContainsKey(file.ReportId))).ToArray();
         var activeFeedbackIds = activeFeedbackFiles.Select(x => x.Id).ToHashSet();
         var officialCounts = activeFeedbackFiles
             .GroupBy(x => x.ReportId)
@@ -3506,17 +3511,18 @@ public static class ReportFeedbackEndpoints
     private static async Task<HashSet<Guid>> ActiveFeedbackIdsAsync(
         Guid reportId, IAlphaDbContext db, CancellationToken ct)
     {
-        var latestTransmissionId = await db.ReportTransmissions.AsNoTracking()
-            .Where(x => x.ReportId == reportId)
-            .OrderByDescending(x => x.AttemptNumber)
-            .Select(x => (Guid?)x.Id)
-            .FirstOrDefaultAsync(ct);
-
-        var query = db.EmployerInterfaceFeedback.AsNoTracking().Where(x => x.ReportId == reportId);
-        query = latestTransmissionId.HasValue
-            ? query.Where(x => x.TransmissionId == latestTransmissionId.Value)
-            : query.Where(x => x.TransmissionId == null);
-        return (await query.Select(x => x.Id).ToListAsync(ct)).ToHashSet();
+        var transmissions = await db.ReportTransmissions.AsNoTracking()
+            .Where(tx => tx.ReportId == reportId)
+            .OrderByDescending(tx => tx.AttemptNumber)
+            .ToListAsync(ct);
+        var activeTransmissionIds = ReportTransmissionFeedbackSelection.LatestAttemptIds(transmissions);
+        var files = await db.EmployerInterfaceFeedback.AsNoTracking()
+            .Where(file => file.ReportId == reportId)
+            .Select(file => new { file.Id, file.TransmissionId })
+            .ToListAsync(ct);
+        return files.Where(file => ReportTransmissionFeedbackSelection.IsActive(
+                file.TransmissionId, activeTransmissionIds, transmissions.Count > 0))
+            .Select(file => file.Id).ToHashSet();
     }
 
     private static async Task<IResult> DetailsAsync(
