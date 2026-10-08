@@ -78,7 +78,16 @@ public sealed class ManufacturerTransmissionRoutingTests
                 ManufacturerTransmissionRouting.Resolve([], "clearinghouse", Config())).Message);
         Assert.Equal("manufacturer_route_fund_code_missing",
             Assert.Throws<InvalidOperationException>(() =>
-                ManufacturerTransmissionRouting.Resolve([""], "clearinghouse", Config())).Message);
+                ManufacturerTransmissionRouting.Resolve([""], "clearinghouse", Config(("100", "direct")))).Message);
+    }
+
+    [Fact]
+    public void Missing_fund_code_without_any_override_uses_legacy_default()
+    {
+        var plan = ManufacturerTransmissionRouting.Resolve(
+            [""], "clearinghouse", Config());
+
+        Assert.Equal("clearinghouse", plan.Provider);
     }
 
     [Fact]
