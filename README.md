@@ -117,3 +117,19 @@ Automatic monthly billing is disabled by default. Configure it with environment 
 - `Billing__GracePeriodDays=7` suspends an unpaid billing account after the grace period.
 
 The worker only bills completed calendar months. Existing billing-period, payment and payment-attempt unique indexes provide idempotency/concurrency guards. Historical periods use only pricing components whose effective dates cover that period; current pricing is never retroactively substituted.
+
+
+## TEST-only manufacturer vault simulation
+
+The 006 hybrid routing subsystem can simulate distinct filesystem vaults for the clearinghouse and any configured manufacturers (for example Menora) without contacting external financial institutions. It remains disabled for actual mixed-recipient dispatch unless explicitly opted in.
+
+Configure the backend in **TEST** (`EmployerInterface006:EnvironmentCode=1`):
+
+- `EmployerInterface006:SimulatedVault:Enabled=true`
+- `EmployerInterface006:SimulatedVault:Manufacturers:Menora:Enabled=true`
+- `Reporting:ManufacturerRouting:EnableHybridDispatch=true`
+- `Reporting:ManufacturerRouting:Funds:<actual-test-Menora-fund-code>=SimulatedVault-Menora`
+
+Use the **exact `FundCode` from the selected report product**, not a guessed brand-to-fund mapping. Other funds route to `SimulatedVault` (clearinghouse test vault). Additional manufacturers can be declared under `SimulatedVault:Manufacturers:<key>:Enabled` and use the provider name `SimulatedVault-<key>`. Each test vault owns an isolated `manufacturers/<lowercase-key>/{outbox,inbox,processed,failed,responded}` hierarchy. Simulation feedback is associated with the transmission and products of its own vault.
+
+See `docs/menora-vault-simulation.md` for the complete later acceptance scenario (mixed employer products, separate 006 XSD checks, dual mock dispatch, positive/error feedback, amendment and safe recovery). These are simulations only; live manufacturer vault protocols, credentials and response format require official onboarding.
