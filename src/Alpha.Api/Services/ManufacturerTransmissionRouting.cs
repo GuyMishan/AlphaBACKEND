@@ -27,7 +27,10 @@ public static class ManufacturerTransmissionRouting
             .OrderBy(code => code, StringComparer.OrdinalIgnoreCase)
             .Select(code =>
             {
-                if (string.IsNullOrWhiteSpace(code))
+                // Legacy reports may not have a canonical fund code yet.
+                // Retain the existing default provider only when no routing
+                // overrides exist; hybrid routing must fail closed if unknown.
+                if (string.IsNullOrWhiteSpace(code) && rules.Count > 0)
                     throw new InvalidOperationException("manufacturer_route_fund_code_missing");
                 var provider = rules.TryGetValue(code, out var configured)
                     ? configured : defaultProvider;
