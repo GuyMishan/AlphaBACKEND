@@ -195,18 +195,49 @@ public static class ReportTransmissionEndpoints
         // Resolve the full report's actual fund destinations *before* claiming the report.
         // Never transmit a mixed-route 006 file to a single recipient: this would
         // leak other manufacturers' employee data and invalidate feedback correlation.
-        var manufacturerFunds = await (
+        var manufacturerProducts = await (
             from product in db.ManualReportProducts.AsNoTracking()
             join employee in db.ManualReportEmployees.AsNoTracking()
                 on product.ReportEmployeeId equals employee.Id
             where employee.ReportId == reportId
-            select product.FundCode
+            select new { product.Id, product.FundCode }
         ).ToArrayAsync(ct);
+        IReadOnlyList<ManufacturerTransmissionRouting.Destination> destinations;
+        try
+        {
+            destinations = ManufacturerTransmissionRouting.Destinations(
+                manufacturerProducts.Select(item => item.FundCode), providerName, configuration);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
+        var providerByFund = destinations.ToDictionary(item => item.FundCode,
+            item => item.Provider, StringComparer.OrdinalIgnoreCase);
+        var recipientGroups = manufacturerProducts
+            .GroupBy(item => providerByFund[item.FundCode], StringComparer.OrdinalIgnoreCase)
+            .Select(group => new HybridReportTransmissionDispatcher.Recipient(
+                group.Key, group.Select(item => item.Id).ToArray()))
+            .OrderBy(route => route.Provider, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (recipientGroups.Length > 1)
+        {
+            if (!configuration.GetValue<bool>("Reporting:ManufacturerRouting:EnableHybridDispatch"))
+                return Results.Conflict(new { error = "manufacturer_route_split_disabled",
+                    requiresSplit = true, destinations });
+            if (!string.IsNullOrWhiteSpace(request?.Provider))
+                return Results.Conflict(new { error = "manufacturer_route_client_override_not_allowed" });
+            return await HybridReportTransmissionDispatcher.SendAsync(
+                organizationId, employerId, reportId, db, recipientGroups,
+                availableProviders, exporter, fileSequences, protector, ct);
+        }
+
         ManufacturerTransmissionRouting.Plan routingPlan;
         try
         {
-            routingPlan = ManufacturerTransmissionRouting.Resolve(manufacturerFunds,
-                providerName, configuration);
+            routingPlan = ManufacturerTransmissionRouting.Resolve(
+                manufacturerProducts.Select(item => item.FundCode), providerName, configuration);
         }
         catch (InvalidOperationException exception)
         {
