@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Alpha.Application.Abstractions;
 using Alpha.Api.Services;
 using Alpha.Application.Reporting;
@@ -101,6 +102,31 @@ public sealed class SimulatedManufacturerVaultTests
         Assert.Throws<ArgumentException>(() =>
             SimulatedManufacturerVaultReportTransmissionProvider
                 .CreateManufacturerOptions(defaults, "../outside"));
+    }
+
+    [Fact]
+    public void Each_test_manufacturer_can_choose_a_separate_feedback_scenario()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["EmployerInterface006:SimulatedVault:Manufacturers:Menora:DefaultScenario"] = "error",
+                ["EmployerInterface006:SimulatedVault:Manufacturers:Harel:DefaultScenario"] = "success"
+            }).Build();
+        var defaults = new SimulatedClearinghouseVaultOptions
+        {
+            Enabled = true,
+            RootDirectory = "isolated-vaults",
+            DefaultScenario = "partial"
+        };
+
+        var menora = SimulatedManufacturerVaultReportTransmissionProvider
+            .CreateManufacturerOptions(defaults, "Menora", config);
+        var harel = SimulatedManufacturerVaultReportTransmissionProvider
+            .CreateManufacturerOptions(defaults, "Harel", config);
+        Assert.Equal("error", menora.DefaultScenario);
+        Assert.Equal("success", harel.DefaultScenario);
+        Assert.Equal("partial", defaults.DefaultScenario);
     }
 
     [Fact]
