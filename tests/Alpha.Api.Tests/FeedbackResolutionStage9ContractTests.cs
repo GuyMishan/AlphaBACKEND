@@ -125,6 +125,20 @@ public sealed class FeedbackResolutionStage9ContractTests
     }
 
     [Fact]
+    public void Revalidate_only_payment_resolution_does_not_wait_for_a_correction_revision()
+    {
+        var payment = FeedbackResolutionPlaybookCatalog.Get(50);
+        Assert.Equal(FeedbackResolutionType.Edit, payment.ResolutionType);
+        Assert.Equal(FeedbackResolverType.Payment, payment.Resolver);
+        Assert.Equal(FeedbackCorrectionBehavior.RevalidateOnly, payment.CorrectionBehavior);
+
+        var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
+        Assert.Contains("item.ErrorCode", endpoint, StringComparison.Ordinal);
+        Assert.Contains("FeedbackCorrectionBehavior.RevalidateOnly", endpoint, StringComparison.Ordinal);
+        Assert.Contains("playbook.CorrectionBehavior is FeedbackCorrectionBehavior.CorrectionWorkspace", endpoint, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Correction_problem_links_survive_refresh_and_are_server_owned()
     {
         var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
