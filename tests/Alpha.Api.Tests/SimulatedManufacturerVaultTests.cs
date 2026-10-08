@@ -20,7 +20,7 @@ public sealed class SimulatedManufacturerVaultTests
         };
 
         var menora = SimulatedManufacturerVaultReportTransmissionProvider
-            .CreateMenoraOptions(settings);
+            .CreateManufacturerOptions(settings, "Menora");
         Assert.Equal("SimulatedVault-Menora", menora.ProviderName);
         Assert.Equal(Path.Combine(settings.RootDirectory, "manufacturers", "menora"),
             menora.RootDirectory);
@@ -42,7 +42,7 @@ public sealed class SimulatedManufacturerVaultTests
             });
             var testEnvironment = Options.Create(new EmployerInterface006Options { EnvironmentCode = 1 });
             var clearing = new SimulatedVaultReportTransmissionProvider(vault, testEnvironment);
-            var menora = new SimulatedManufacturerVaultReportTransmissionProvider(vault, testEnvironment);
+            var menora = new SimulatedManufacturerVaultReportTransmissionProvider(vault, testEnvironment, "Menora");
             var payloadName = EmployerInterface006FileNaming.Build("123456789", 6, false,
                 new DateTimeOffset(2026, 10, 8, 11, 0, 0, TimeSpan.FromHours(3)),
                 testFile: true).PayloadFileName;
@@ -77,9 +77,30 @@ public sealed class SimulatedManufacturerVaultTests
     {
         var vault = Options.Create(new SimulatedClearinghouseVaultOptions { Enabled = true });
         var prod = Options.Create(new EmployerInterface006Options { EnvironmentCode = 2 });
-        var menora = new SimulatedManufacturerVaultReportTransmissionProvider(vault, prod);
+        var menora = new SimulatedManufacturerVaultReportTransmissionProvider(vault, prod, "Menora");
 
         Assert.False(menora.IsConfigured);
+    }
+
+    [Fact]
+    public void Two_manufacturers_get_isolated_roots_and_provider_names()
+    {
+        var defaults = new SimulatedClearinghouseVaultOptions
+        {
+            Enabled = true,
+            RootDirectory = "alpha-test-vault"
+        };
+        var menora = SimulatedManufacturerVaultReportTransmissionProvider
+            .CreateManufacturerOptions(defaults, "Menora");
+        var harel = SimulatedManufacturerVaultReportTransmissionProvider
+            .CreateManufacturerOptions(defaults, "Harel");
+
+        Assert.Equal("SimulatedVault-Menora", menora.ProviderName);
+        Assert.Equal("SimulatedVault-Harel", harel.ProviderName);
+        Assert.NotEqual(menora.RootDirectory, harel.RootDirectory);
+        Assert.Throws<ArgumentException>(() =>
+            SimulatedManufacturerVaultReportTransmissionProvider
+                .CreateManufacturerOptions(defaults, "../outside"));
     }
 
     [Fact]
@@ -89,7 +110,7 @@ public sealed class SimulatedManufacturerVaultTests
         var vault = Read("src", "Alpha.Api", "Services", "SimulatedClearinghouseVault.cs");
         var responder = Read("src", "Alpha.Api", "Services", "SimulatedClearinghouseResponder.cs");
 
-        Assert.Contains("SimulatedVault:Manufacturers:Menora:Enabled", api);
+        Assert.Contains("SimulatedVault:Manufacturers", api);
         Assert.Contains("simulatedVaultEnabled", api);
         Assert.Contains("transmission.Provider == _options.ProviderName", vault);
         Assert.Contains("x.Provider == _options.ProviderName", responder);
