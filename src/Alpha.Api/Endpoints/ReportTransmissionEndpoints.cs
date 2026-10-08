@@ -127,43 +127,43 @@ public static class ReportTransmissionEndpoints
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct))
             return Results.Forbid();
-        var reportExists = await db.ManualReports.AsNoTracking().AnyAsync(
-            report => report.Id == reportId && report.OrganizationId == organizationId
-                && report.EmployerId == employerId, ct);
-        if (!reportExists) return Results.NotFound();
+        var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(
+            item => item.Id == reportId && item.OrganizationId == organizationId
+                && item.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
 
         var available = providers.ToArray();
         var defaultProvider = available.FirstOrDefault(provider => provider.IsConfigured)?.Name
             ?? available.FirstOrDefault()?.Name ?? string.Empty;
-        var funds = await (
+        var products = await (
             from product in db.ManualReportProducts.AsNoTracking()
             join employee in db.ManualReportEmployees.AsNoTracking()
                 on product.ReportEmployeeId equals employee.Id
             where employee.ReportId == reportId
-            select product.FundCode).ToArrayAsync(ct);
+            select new { product.Id, product.FundCode, product.SourceReportProductId }
+        ).ToArrayAsync(ct);
         try
         {
-            var plan = ManufacturerTransmissionRouting.Resolve(funds, defaultProvider, configuration);
-            var selected = available.FirstOrDefault(provider =>
-                string.Equals(provider.Name, plan.Provider, StringComparison.OrdinalIgnoreCase));
+            var assignments = await ManufacturerHistoricalRoutingResolver.ResolveAsync(
+                report, products.Select(item => new ManufacturerHistoricalRoutingResolver.Product(
+                    item.Id, item.FundCode, item.SourceReportProductId)).ToArray(),
+                db, defaultProvider, configuration, ct);
+            var providersById = assignments.ToDictionary(item => item.ProductId,
+                item => item.Provider);
+            var destinations = products.Select(product =>
+                new { fundCode = product.FundCode, provider = providersById[product.Id] })
+                .Distinct().ToArray();
+            var distinctProviders = assignments.Select(item => item.Provider)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             return Results.Ok(new
             {
-                provider = plan.Provider,
-                configured = selected?.IsConfigured == true,
-                requiresSplit = false,
-                destinations = plan.Destinations
-            });
-        }
-        catch (InvalidOperationException exception) when (
-            exception.Message == "manufacturer_route_split_not_implemented")
-        {
-            return Results.Ok(new
-            {
-                provider = (string?)null,
-                configured = false,
-                requiresSplit = true,
-                destinations = ManufacturerTransmissionRouting.Destinations(funds,
-                    defaultProvider, configuration)
+                provider = distinctProviders.Length == 1 ? distinctProviders[0] : null,
+                configured = distinctProviders.Length > 0 && distinctProviders.All(name =>
+                    available.Any(provider => provider.IsConfigured
+                        && string.Equals(provider.Name, name, StringComparison.OrdinalIgnoreCase))),
+                requiresSplit = distinctProviders.Length > 1,
+                hybridEnabled = configuration.GetValue<bool>("Reporting:ManufacturerRouting:EnableHybridDispatch"),
+                destinations
             });
         }
         catch (InvalidOperationException exception)
