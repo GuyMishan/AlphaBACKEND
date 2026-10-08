@@ -58,6 +58,18 @@ public static class ManufacturerCatalogRouting
                 (Code: row.FundCode.Trim(), Company: row.CompanyName.Trim()))
                 .ToDictionary(group => group.Key, group => group.ToArray());
         }
+        return ResolveProducts(products, defaultProvider, explicitFunds, manufacturerProviders,
+            aliases, byIdentity);
+    }
+
+    public static IReadOnlyDictionary<Guid, string> ResolveProducts(
+        IReadOnlyCollection<Product> products,
+        string defaultProvider,
+        IReadOnlyDictionary<string, string> explicitFunds,
+        IReadOnlyDictionary<string, string> manufacturerProviders,
+        IReadOnlyDictionary<string, string> aliases,
+        IReadOnlyDictionary<(string Code, string Company), CatalogEntry[]> byIdentity)
+    {
         var routes = new Dictionary<Guid, string>();
         foreach (var product in products)
         {
