@@ -29,6 +29,7 @@ public sealed class SimulatedManufacturerVaultReportTransmissionProvider(
         SimulatedClearinghouseVaultOptions defaults) => new()
     {
         Enabled = defaults.Enabled,
+        ProviderName = ProviderName,
         RootDirectory = Path.Combine(defaults.RootDirectory, "manufacturers", "menora"),
         PollIntervalSeconds = defaults.PollIntervalSeconds,
         AutoRespond = defaults.AutoRespond,
