@@ -133,7 +133,7 @@ public sealed class FeedbackResolutionStage9ContractTests
         Assert.Contains("feedback-returned-needs-review", endpoint, StringComparison.Ordinal);
         Assert.Contains("returnedWorkspaceIds", endpoint, StringComparison.Ordinal);
         Assert.Contains("freshFeedbackIds", endpoint, StringComparison.Ordinal);
-        Assert.Contains("file.TransmissionId == txId", endpoint, StringComparison.Ordinal);
+        Assert.Contains("txIds.Contains(file.TransmissionId.Value)", endpoint, StringComparison.Ordinal);
         Assert.Contains("confirmedProductIds", endpoint, StringComparison.Ordinal);
         Assert.Contains("latestRows.TryGetValue(contribution.Id", endpoint, StringComparison.Ordinal);
         Assert.Contains("ReportFeedbackStatusResolver.IsCorrectionFeedbackAccepted(row.IntakeStatus, row.ErrorCode)",
