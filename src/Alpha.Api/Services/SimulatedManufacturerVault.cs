@@ -30,9 +30,27 @@ public sealed class SimulatedManufacturerVaultReportTransmissionProvider
     public string Name { get; }
     public bool IsConfigured => _inner.IsConfigured;
 
-    public Task<ReportTransmissionProviderResult> SendAsync(
-        ReportTransmissionEnvelope envelope, CancellationToken ct) =>
-        _inner.SendAsync(envelope, ct);
+    public async Task<ReportTransmissionProviderResult> SendAsync(
+        ReportTransmissionEnvelope envelope, CancellationToken ct)
+    {
+        var result = await _inner.SendAsync(envelope, ct);
+        // The filesystem transport is shared, but audit evidence must identify
+        // the actual manufacturer vault rather than the clearinghouse provider.
+        return result with
+        {
+            ResponsePayload = result.Success
+                ? System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    queued = true,
+                    provider = Name,
+                    manufacturer = Manufacturer,
+                    result.ExternalId,
+                    envelope.PayloadFileName,
+                    envelope.EmployerId
+                })
+                : result.ResponsePayload
+        };
+    }
 
     public static string ProviderFor(string manufacturer) => "SimulatedVault-" + ValidateKey(manufacturer);
 
