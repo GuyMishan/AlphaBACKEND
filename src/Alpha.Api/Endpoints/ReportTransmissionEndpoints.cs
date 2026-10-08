@@ -71,20 +71,21 @@ public static class ReportTransmissionEndpoints
             join employee in db.ManualReportEmployees.AsNoTracking()
                 on product.ReportEmployeeId equals employee.Id
             where employee.ReportId == reportId
-            select new { product.Id, product.FundCode }).ToListAsync(ct);
-        IReadOnlyList<ManufacturerTransmissionRouting.Destination> destinations;
+            select new { product.Id, product.FundCode, product.SourceReportProductId }).ToListAsync(ct);
+        IReadOnlyList<ManufacturerHistoricalRoutingResolver.Assignment> assignments;
         try
         {
-            destinations = ManufacturerTransmissionRouting.Destinations(
-                products.Select(product => product.FundCode), defaultProvider, configuration);
+            assignments = await ManufacturerHistoricalRoutingResolver.ResolveAsync(
+                report, products.Select(product =>
+                    new ManufacturerHistoricalRoutingResolver.Product(product.Id, product.FundCode,
+                        product.SourceReportProductId)).ToArray(),
+                db, defaultProvider, configuration, ct);
         }
         catch (InvalidOperationException exception)
         {
             return Results.Conflict(new { error = exception.Message });
         }
-        var routeByFund = destinations.ToDictionary(destination => destination.FundCode,
-            destination => destination.Provider, StringComparer.OrdinalIgnoreCase);
-        var groups = products.GroupBy(product => routeByFund[product.FundCode])
+        var groups = assignments.GroupBy(item => item.Provider, StringComparer.OrdinalIgnoreCase)
             .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase).ToArray();
         var packages = new List<object>(groups.Length);
         var allPackagesValid = true;
@@ -96,7 +97,7 @@ public static class ReportTransmissionEndpoints
             // Export in-memory and validate with canonical workbook + official XSD.
             // No file number is reserved, no record is persisted, no send occurs.
             var generated = await exporter.ExportAsync(report, ct,
-                fileSequence: sequence++, includedProductIds: group.Select(item => item.Id).ToArray());
+                fileSequence: sequence++, includedProductIds: group.Select(item => item.ProductId).ToArray());
             allPackagesValid &= generated.Validation.IsValid;
             packages.Add(new
             {
@@ -110,10 +111,11 @@ public static class ReportTransmissionEndpoints
         return Results.Ok(new
         {
             reportId,
-            canTransmit = allPackagesValid && groups.Length == 1
-                && available.Any(provider => provider.IsConfigured
-                    && string.Equals(provider.Name, groups[0].Key, StringComparison.OrdinalIgnoreCase))
-                && packages.Count > 0,
+            canTransmit = allPackagesValid && groups.Length > 0
+                && (groups.Length == 1
+                    || configuration.GetValue<bool>("Reporting:ManufacturerRouting:EnableHybridDispatch"))
+                && groups.All(group => available.Any(provider => provider.IsConfigured
+                    && string.Equals(provider.Name, group.Key, StringComparison.OrdinalIgnoreCase))),
             requiresSplit = groups.Length > 1,
             packages
         });
