@@ -30,6 +30,10 @@ public sealed class ReportTransmission : Entity
     public Guid OrganizationId { get; private set; }
     public Guid EmployerId { get; private set; }
     public string Provider { get; private set; } = string.Empty;
+    // Empty route key retains the legacy one-file-per-report contract.
+    public string RoutingKey { get; private set; } = string.Empty;
+    public string RoutedProductIdsJson { get; private set; } = "[]";
+
     public int AttemptNumber { get; private set; }
     public ReportTransmissionStatus Status { get; private set; } = ReportTransmissionStatus.Pending;
     public string ExternalId { get; private set; } = string.Empty;
@@ -43,18 +47,46 @@ public sealed class ReportTransmission : Entity
     public DateTimeOffset? SentAt { get; private set; }
     public DateTimeOffset? CompletedAt { get; private set; }
 
-    public void Start(string payloadHash, string payloadFileName, byte[] payload, string? attachmentManifestJson = null)
+    public void ConfigureRoute(string routingKey, IReadOnlyCollection<Guid> productIds)
     {
+        if (Status != ReportTransmissionStatus.Pending || StartedAt.HasValue)
+            throw new InvalidOperationException("Transmission route cannot be changed after dispatch.");
+        if (string.IsNullOrWhiteSpace(routingKey) || routingKey.Length > 120)
+            throw new ArgumentException("Routing key is required.", nameof(routingKey));
+        if (productIds.Count == 0 || productIds.Any(id => id == Guid.Empty))
+            throw new ArgumentException("At least one valid routed product is required.", nameof(productIds));
+        RoutingKey = routingKey.Trim();
+        RoutedProductIdsJson = System.Text.Json.JsonSerializer.Serialize(productIds.Distinct().Order().ToArray());
+        Touch();
+    }
+
+    public void Prepare(string payloadHash, string payloadFileName, byte[] payload, string? attachmentManifestJson = null)
+    {
+        if (Status != ReportTransmissionStatus.Pending)
+            throw new InvalidOperationException("Cannot replace a dispatched transmission.");
         if (string.IsNullOrWhiteSpace(payloadFileName)) throw new ArgumentException("Payload file name is required.", nameof(payloadFileName));
         if (payload is null || payload.Length == 0) throw new ArgumentException("Payload is required.", nameof(payload));
-        Status = ReportTransmissionStatus.Sending;
         PayloadHash = payloadHash?.Trim() ?? string.Empty;
         PayloadFileName = payloadFileName.Trim();
         Payload = payload.ToArray();
         AttachmentManifestJson = string.IsNullOrWhiteSpace(attachmentManifestJson) ? "[]" : attachmentManifestJson.Trim();
-        StartedAt = DateTimeOffset.UtcNow;
         ErrorMessage = string.Empty;
         Touch();
+    }
+
+    public void BeginDispatch()
+    {
+        if (Status != ReportTransmissionStatus.Pending || Payload.Length == 0)
+            throw new InvalidOperationException("Only a prepared pending transmission may be dispatched.");
+        Status = ReportTransmissionStatus.Sending;
+        StartedAt = DateTimeOffset.UtcNow;
+        Touch();
+    }
+
+    public void Start(string payloadHash, string payloadFileName, byte[] payload, string? attachmentManifestJson = null)
+    {
+        Prepare(payloadHash, payloadFileName, payload, attachmentManifestJson);
+        BeginDispatch();
     }
 
     public void Complete(ReportTransmissionStatus status, string? externalId, string? responsePayload, string? errorMessage)
