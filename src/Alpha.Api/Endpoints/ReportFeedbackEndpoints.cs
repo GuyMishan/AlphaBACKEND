@@ -336,6 +336,67 @@ public static class ReportFeedbackEndpoints
             .Select(g => new { RootId = g.Key, RevisionNumber = g.Max(x => x.RevisionNumber) })
             .ToDictionaryAsync(x => x.RootId, x => x.RevisionNumber, ct);
 
+        var pageProblems = unresolvedLatestFeedback
+            .Where(row => pageIds.Contains(row.ReportId) && row.ErrorCode.HasValue
+                && ReportFeedbackStatusResolver.IsActionableFeedbackError(row.ErrorCode))
+            .Select(row => new
+            {
+                row.ReportId,
+                ProblemId = FeedbackResolutionWireProjection.BuildProblemId(
+                    row.FeedbackId, row.ContributionId, row.Sequence, row.ErrorCode!.Value)
+            }).ToArray();
+        var pageProblemIds = pageProblems.Select(problem => problem.ProblemId).ToArray();
+        var pendingCorrectionResolutions = await db.FeedbackProblemResolutions.AsNoTracking()
+            .Where(resolution => pageProblemIds.Contains(resolution.ProblemId))
+            .Select(resolution => resolution.ProblemId).ToListAsync(ct);
+        var pendingResolutionSet = pendingCorrectionResolutions.ToHashSet(StringComparer.Ordinal);
+        var correctionStatusLinks = await db.FeedbackCorrectionResolutionLinks.AsNoTracking()
+            .Where(link => pageProblemIds.Contains(link.ProblemId))
+            .Select(link => new { link.ProblemId, link.WorkspaceReportId }).ToListAsync(ct);
+        var linkedWorkspaceIds = correctionStatusLinks.Select(link => link.WorkspaceReportId)
+            .Distinct().ToArray();
+        var completedCorrectionWorkspaceIds = await db.ManualReports.AsNoTracking()
+            .Where(workspace => linkedWorkspaceIds.Contains(workspace.Id)
+                && workspace.IsRevisionSnapshot
+                && workspace.Status == ManualReportStatus.Completed)
+            .Select(workspace => workspace.Id).ToHashSetAsync(ct);
+        var linkedTechnicalReports = await db.ManualReports.AsNoTracking()
+            .Where(report => report.CorrectionWorkspaceId.HasValue
+                && completedCorrectionWorkspaceIds.Contains(report.CorrectionWorkspaceId.Value)
+                && report.IsTechnicalCorrectionDocument)
+            .Select(report => new { report.Id, WorkspaceId = report.CorrectionWorkspaceId!.Value })
+            .ToListAsync(ct);
+        var linkedTechnicalReportIds = linkedTechnicalReports.Select(report => report.Id).ToArray();
+        var linkedLatestTransmissions = await db.ReportTransmissions.AsNoTracking()
+            .Where(tx => linkedTechnicalReportIds.Contains(tx.ReportId))
+            .OrderByDescending(tx => tx.AttemptNumber)
+            .Select(tx => new { tx.ReportId, tx.Id }).ToListAsync(ct);
+        var linkedLatestByReport = linkedLatestTransmissions.GroupBy(tx => tx.ReportId)
+            .ToDictionary(group => group.Key, group => group.First().Id);
+        var linkedFeedback = await db.EmployerInterfaceFeedback.AsNoTracking()
+            .Where(feedback => feedback.ReportId.HasValue
+                && linkedTechnicalReportIds.Contains(feedback.ReportId.Value))
+            .Select(feedback => new { feedback.ReportId, feedback.TransmissionId }).ToListAsync(ct);
+        var returnedWorkspaceSet = linkedTechnicalReports
+            .Where(document => linkedLatestByReport.TryGetValue(document.Id, out var latestTx)
+                && linkedFeedback.Any(feedback => feedback.ReportId == document.Id
+                    && feedback.TransmissionId == latestTx))
+            .Select(document => document.WorkspaceId).ToHashSet();
+        var correctionStatusesByReport = pageProblems
+            .Where(problem => pendingResolutionSet.Contains(problem.ProblemId))
+            .GroupBy(problem => problem.ReportId)
+            .ToDictionary(group => group.Key, group =>
+            {
+                var workspaces = correctionStatusLinks
+                    .Where(link => group.Any(problem => problem.ProblemId == link.ProblemId))
+                    .Select(link => link.WorkspaceReportId).ToArray();
+                if (workspaces.Any(returnedWorkspaceSet.Contains))
+                    return "feedback-returned-needs-review";
+                if (workspaces.Any(completedCorrectionWorkspaceIds.Contains))
+                    return "transmitted-awaiting-feedback";
+                return "correction-in-progress";
+            });
+
         var items = page.Select(report =>
         {
             latestTransmission.TryGetValue(report.Id, out var tx); money.TryGetValue(report.Id, out var cash);
@@ -353,7 +414,9 @@ public static class ReportFeedbackEndpoints
             {
                 report.Id, employerName, report.ReportingMonth, report.SalaryPaymentDate, report.ReportKind, report.Status,
                 revisionRootReportId = rootId, report.RevisionNumber, report.IsRevisionSnapshot,
-                feedbackStatus = State(report.Id), hasFeedback = officialCounts.GetValueOrDefault(report.Id) > 0,
+                feedbackStatus = State(report.Id),
+                correctionResolutionStatus = correctionStatusesByReport.GetValueOrDefault(report.Id, "needs-treatment"),
+                hasFeedback = officialCounts.GetValueOrDefault(report.Id) > 0,
                 issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id),
                 reportIssueCount = reportIssueCounts.GetValueOrDefault(report.Id)
                     + (string.IsNullOrWhiteSpace(report.ValidationError) ? 0 : 1)
