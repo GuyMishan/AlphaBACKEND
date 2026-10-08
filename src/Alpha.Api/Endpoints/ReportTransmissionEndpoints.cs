@@ -78,7 +78,7 @@ public static class ReportTransmissionEndpoints
             assignments = await ManufacturerHistoricalRoutingResolver.ResolveAsync(
                 report, products.Select(product =>
                     new ManufacturerHistoricalRoutingResolver.Product(product.Id, product.FundCode,
-                        product.SourceReportProductId)).ToArray(),
+                        product.FundCompanyName, product.SourceReportProductId)).ToArray(),
                 db, defaultProvider, configuration, ct);
         }
         catch (InvalidOperationException exception)
