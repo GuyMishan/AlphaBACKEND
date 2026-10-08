@@ -12,7 +12,7 @@ public static class ManufacturerTransmissionRouting
     public sealed record Destination(string FundCode, string Provider);
     public sealed record Plan(string Provider, IReadOnlyList<Destination> Destinations);
 
-    public static Plan Resolve(
+    public static IReadOnlyList<Destination> Destinations(
         IEnumerable<string> fundCodes,
         string defaultProvider,
         IConfiguration configuration)
@@ -21,7 +21,7 @@ public static class ManufacturerTransmissionRouting
             .GetChildren().ToDictionary(x => x.Key.Trim(), x => x.Value?.Trim() ?? "",
                 StringComparer.OrdinalIgnoreCase);
 
-        var destinations = fundCodes
+        return fundCodes
             .Select(code => code?.Trim() ?? "")
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(code => code, StringComparer.OrdinalIgnoreCase)
@@ -35,6 +35,14 @@ public static class ManufacturerTransmissionRouting
                     throw new InvalidOperationException("manufacturer_route_provider_missing");
                 return new Destination(code, provider);
             }).ToArray();
+    }
+
+    public static Plan Resolve(
+        IEnumerable<string> fundCodes,
+        string defaultProvider,
+        IConfiguration configuration)
+    {
+        var destinations = Destinations(fundCodes, defaultProvider, configuration);
         if (destinations.Length == 0)
             throw new InvalidOperationException("manufacturer_route_no_products");
         var providers = destinations.Select(x => x.Provider)
