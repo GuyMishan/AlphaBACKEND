@@ -71,7 +71,7 @@ public static class ReportTransmissionEndpoints
             join employee in db.ManualReportEmployees.AsNoTracking()
                 on product.ReportEmployeeId equals employee.Id
             where employee.ReportId == reportId
-            select new { product.Id, product.FundCode, product.SourceReportProductId }).ToListAsync(ct);
+            select new { product.Id, product.FundCode, product.FundCompanyName, product.SourceReportProductId }).ToListAsync(ct);
         IReadOnlyList<ManufacturerHistoricalRoutingResolver.Assignment> assignments;
         try
         {
@@ -142,13 +142,13 @@ public static class ReportTransmissionEndpoints
             join employee in db.ManualReportEmployees.AsNoTracking()
                 on product.ReportEmployeeId equals employee.Id
             where employee.ReportId == reportId
-            select new { product.Id, product.FundCode, product.SourceReportProductId }
+            select new { product.Id, product.FundCode, product.FundCompanyName, product.SourceReportProductId }
         ).ToArrayAsync(ct);
         try
         {
             var assignments = await ManufacturerHistoricalRoutingResolver.ResolveAsync(
                 report, products.Select(item => new ManufacturerHistoricalRoutingResolver.Product(
-                    item.Id, item.FundCode, item.SourceReportProductId)).ToArray(),
+                    item.Id, item.FundCode, item.FundCompanyName, item.SourceReportProductId)).ToArray(),
                 db, defaultProvider, configuration, ct);
             var providersById = assignments.ToDictionary(item => item.ProductId,
                 item => item.Provider);
@@ -228,7 +228,7 @@ public static class ReportTransmissionEndpoints
             join employee in db.ManualReportEmployees.AsNoTracking()
                 on product.ReportEmployeeId equals employee.Id
             where employee.ReportId == reportId
-            select new { product.Id, product.FundCode, product.SourceReportProductId }
+            select new { product.Id, product.FundCode, product.FundCompanyName, product.SourceReportProductId }
         ).ToArrayAsync(ct);
         IReadOnlyList<ManufacturerHistoricalRoutingResolver.Assignment> assignments;
         try
@@ -236,7 +236,7 @@ public static class ReportTransmissionEndpoints
             assignments = await ManufacturerHistoricalRoutingResolver.ResolveAsync(
                 report, manufacturerProducts.Select(item =>
                     new ManufacturerHistoricalRoutingResolver.Product(
-                        item.Id, item.FundCode, item.SourceReportProductId)).ToArray(),
+                        item.Id, item.FundCode, item.FundCompanyName, item.SourceReportProductId)).ToArray(),
                 db, providerName, configuration, ct);
         }
         catch (InvalidOperationException exception)
