@@ -226,32 +226,35 @@ public static class ReportTransmissionEndpoints
             join employee in db.ManualReportEmployees.AsNoTracking()
                 on product.ReportEmployeeId equals employee.Id
             where employee.ReportId == reportId
-            select new { product.Id, product.FundCode }
+            select new { product.Id, product.FundCode, product.SourceReportProductId }
         ).ToArrayAsync(ct);
-        IReadOnlyList<ManufacturerTransmissionRouting.Destination> destinations;
+        IReadOnlyList<ManufacturerHistoricalRoutingResolver.Assignment> assignments;
         try
         {
-            destinations = ManufacturerTransmissionRouting.Destinations(
-                manufacturerProducts.Select(item => item.FundCode), providerName, configuration);
+            assignments = await ManufacturerHistoricalRoutingResolver.ResolveAsync(
+                report, manufacturerProducts.Select(item =>
+                    new ManufacturerHistoricalRoutingResolver.Product(
+                        item.Id, item.FundCode, item.SourceReportProductId)).ToArray(),
+                db, providerName, configuration, ct);
         }
         catch (InvalidOperationException exception)
         {
             return Results.Conflict(new { error = exception.Message });
         }
-        var providerByFund = destinations.ToDictionary(item => item.FundCode,
-            item => item.Provider, StringComparer.OrdinalIgnoreCase);
-        var recipientGroups = manufacturerProducts
-            .GroupBy(item => providerByFund[item.FundCode], StringComparer.OrdinalIgnoreCase)
+        var recipientGroups = assignments
+            .GroupBy(item => item.Provider, StringComparer.OrdinalIgnoreCase)
             .Select(group => new HybridReportTransmissionDispatcher.Recipient(
-                group.Key, group.Select(item => item.Id).ToArray()))
+                group.Key, group.Select(item => item.ProductId).ToArray()))
             .OrderBy(route => route.Provider, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        if (recipientGroups.Length == 0)
+            return Results.Conflict(new { error = "manufacturer_route_no_products" });
 
         if (recipientGroups.Length > 1)
         {
             if (!configuration.GetValue<bool>("Reporting:ManufacturerRouting:EnableHybridDispatch"))
                 return Results.Conflict(new { error = "manufacturer_route_split_disabled",
-                    requiresSplit = true, destinations });
+                    requiresSplit = true });
             if (!string.IsNullOrWhiteSpace(request?.Provider))
                 return Results.Conflict(new { error = "manufacturer_route_client_override_not_allowed" });
             return await HybridReportTransmissionDispatcher.SendAsync(
@@ -259,20 +262,11 @@ public static class ReportTransmissionEndpoints
                 availableProviders, exporter, fileSequences, protector, ct);
         }
 
-        ManufacturerTransmissionRouting.Plan routingPlan;
-        try
-        {
-            routingPlan = ManufacturerTransmissionRouting.Resolve(
-                manufacturerProducts.Select(item => item.FundCode), providerName, configuration);
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Results.Conflict(new { error = exception.Message });
-        }
+        var routedProvider = recipientGroups[0].Provider;
         // The server owns routing policy: an explicit client provider may not
         // override a configured fund destination. Otherwise select that destination.
         if (!string.IsNullOrWhiteSpace(request?.Provider)
-            && !string.Equals(routingPlan.Provider, providerName, StringComparison.OrdinalIgnoreCase))
+            && !string.Equals(routedProvider, providerName, StringComparison.OrdinalIgnoreCase))
             return Results.Conflict(new
             {
                 error = "manufacturer_route_override_conflict",
