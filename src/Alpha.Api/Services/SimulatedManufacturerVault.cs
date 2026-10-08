@@ -1,3 +1,4 @@
+using Alpha.Application.Abstractions;
 using Alpha.Application.Reporting;
 using Microsoft.Extensions.Options;
 
