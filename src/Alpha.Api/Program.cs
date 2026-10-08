@@ -61,6 +61,15 @@ if (simulatedVaultEnabled)
     builder.Services.AddScoped<SimulatedClearinghouseTechnicalFeedbackHandler>();
     builder.Services.AddHostedService<SimulatedClearinghouseResponder>();
     builder.Services.AddHostedService<SimulatedClearinghouseVaultWorker>();
+    // Opt-in, TEST-only isolated manufacturer vault. The fund-to-provider
+    // routing rule remains explicitly configured per actual product code.
+    if (builder.Configuration.GetValue<bool>(
+        "EmployerInterface006:SimulatedVault:Manufacturers:Menora:Enabled"))
+    {
+        builder.Services.AddScoped<IReportTransmissionProvider,
+            SimulatedManufacturerVaultReportTransmissionProvider>();
+        builder.Services.AddSingleton<IHostedService, SimulatedMenoraVaultHostedService>();
+    }
 }
 else if (allowMockTransmission)
     builder.Services.AddScoped<IReportTransmissionProvider, MockReportTransmissionProvider>();
