@@ -16,12 +16,13 @@ public sealed class SimulatedManufacturerVaultReportTransmissionProvider
     public SimulatedManufacturerVaultReportTransmissionProvider(
         IOptions<SimulatedClearinghouseVaultOptions> defaults,
         IOptions<EmployerInterface006Options> employerOptions,
-        string manufacturer)
+        string manufacturer,
+        IConfiguration? configuration = null)
     {
         Manufacturer = ValidateKey(manufacturer);
         Name = ProviderFor(Manufacturer);
         _inner = new SimulatedVaultReportTransmissionProvider(
-            Options.Create(CreateManufacturerOptions(defaults.Value, Manufacturer)),
+            Options.Create(CreateManufacturerOptions(defaults.Value, Manufacturer, configuration)),
             employerOptions);
     }
 
@@ -45,19 +46,22 @@ public sealed class SimulatedManufacturerVaultReportTransmissionProvider
     }
 
     public static SimulatedClearinghouseVaultOptions CreateManufacturerOptions(
-        SimulatedClearinghouseVaultOptions defaults, string manufacturer)
+        SimulatedClearinghouseVaultOptions defaults, string manufacturer,
+        IConfiguration? configuration = null)
     {
         var key = ValidateKey(manufacturer);
+        var overrides = configuration?.GetSection(
+            $"EmployerInterface006:SimulatedVault:Manufacturers:{key}");
         return new()
         {
             Enabled = defaults.Enabled,
             ProviderName = ProviderFor(key),
             RootDirectory = Path.Combine(defaults.RootDirectory, "manufacturers",
                 key.ToLowerInvariant()),
-            PollIntervalSeconds = defaults.PollIntervalSeconds,
-            AutoRespond = defaults.AutoRespond,
-            DefaultScenario = defaults.DefaultScenario,
-            ResponseDelaySeconds = defaults.ResponseDelaySeconds
+            PollIntervalSeconds = overrides?.GetValue<int?>("PollIntervalSeconds") ?? defaults.PollIntervalSeconds,
+            AutoRespond = overrides?.GetValue<bool?>("AutoRespond") ?? defaults.AutoRespond,
+            DefaultScenario = overrides?.GetValue<string>("DefaultScenario") ?? defaults.DefaultScenario,
+            ResponseDelaySeconds = overrides?.GetValue<int?>("ResponseDelaySeconds") ?? defaults.ResponseDelaySeconds
         };
     }
 }
@@ -80,13 +84,14 @@ public sealed class SimulatedManufacturerVaultHostedService : IHostedService
         IOptions<SimulatedClearinghouseVaultOptions> defaults,
         IOptions<EmployerInterface006Options> employerOptions,
         ILoggerFactory loggerFactory,
-        string manufacturer)
+        string manufacturer,
+        IConfiguration? configuration = null)
     {
         _scopes = scopes;
         _employerOptions = employerOptions;
         _loggerFactory = loggerFactory;
         _settings = SimulatedManufacturerVaultReportTransmissionProvider
-            .CreateManufacturerOptions(defaults.Value, manufacturer);
+            .CreateManufacturerOptions(defaults.Value, manufacturer, configuration);
     }
 
     public async Task StartAsync(CancellationToken ct)
