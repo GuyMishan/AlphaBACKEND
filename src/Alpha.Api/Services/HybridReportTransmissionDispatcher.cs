@@ -37,8 +37,8 @@ public static class HybridReportTransmissionDispatcher
             item.Id == reportId && item.OrganizationId == organizationId
                 && item.EmployerId == employerId, ct);
         if (report is null) return Results.NotFound();
-        if (report.Status != ManualReportStatus.Processing)
-            return Results.Conflict(new { error = "manufacturer_route_not_processing" });
+        if (report.Status is not (ManualReportStatus.Processing or ManualReportStatus.Sent))
+            return Results.Conflict(new { error = "manufacturer_route_not_resumable" });
 
         var transmissions = await db.ReportTransmissions.AsNoTracking()
             .Where(item => item.ReportId == reportId)
