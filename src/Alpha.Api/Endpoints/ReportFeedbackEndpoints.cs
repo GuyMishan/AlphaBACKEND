@@ -210,12 +210,7 @@ public static class ReportFeedbackEndpoints
             .Select(x => FeedbackResolutionWireProjection.BuildProblemId(
                 x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value))
             .ToArray();
-        var resolvedProblemIds = latestProblemIds.Length == 0
-            ? new HashSet<string>(StringComparer.Ordinal)
-            : await db.FeedbackProblemResolutions.AsNoTracking()
-                .Where(x => latestProblemIds.Contains(x.ProblemId))
-                .Select(x => x.ProblemId)
-                .ToHashSetAsync(ct);
+        var resolvedProblemIds = await EffectiveResolvedProblemIdsAsync(latestProblemIds, db, ct);
         var unresolvedLatestFeedback = latestContributionFeedback
             .Where(x => !x.ErrorCode.HasValue
                 || !resolvedProblemIds.Contains(FeedbackResolutionWireProjection.BuildProblemId(
@@ -489,12 +484,7 @@ public static class ReportFeedbackEndpoints
             .Select(x => FeedbackResolutionWireProjection.BuildProblemId(
                 x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value))
             .ToArray();
-        var resolvedDepositProblemIds = depositProblemIds.Length == 0
-            ? new HashSet<string>(StringComparer.Ordinal)
-            : await db.FeedbackProblemResolutions.AsNoTracking()
-                .Where(x => depositProblemIds.Contains(x.ProblemId))
-                .Select(x => x.ProblemId)
-                .ToHashSetAsync(ct);
+        var resolvedDepositProblemIds = await EffectiveResolvedProblemIdsAsync(depositProblemIds, db, ct);
         var latestFeedback = latestFeedbackRows
             .GroupBy(x => x.ReportProductId)
             .ToDictionary(g => g.Key, g => g.ToArray());
@@ -2102,12 +2092,7 @@ public static class ReportFeedbackEndpoints
             .OrderBy(link => link.CreatedAt)
             .ToListAsync(ct);
         var ids = links.Select(link => link.ProblemId).Distinct(StringComparer.Ordinal).ToArray();
-        var resolved = ids.Length == 0
-            ? new HashSet<string>(StringComparer.Ordinal)
-            : (await db.FeedbackProblemResolutions.AsNoTracking()
-                .Where(item => ids.Contains(item.ProblemId))
-                .Select(item => item.ProblemId)
-                .ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
+        var resolved = await EffectiveResolvedProblemIdsAsync(ids, db, ct);
         var pending = links.Where(link => !resolved.Contains(link.ProblemId)).ToArray();
 
         return Results.Ok(new
@@ -2717,12 +2702,7 @@ public static class ReportFeedbackEndpoints
             .Select(x => FeedbackResolutionWireProjection.BuildProblemId(
                 x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value))
             .ToArray();
-        var resolvedManufacturerProblemIds = manufacturerProblemIds.Length == 0
-            ? new HashSet<string>(StringComparer.Ordinal)
-            : await db.FeedbackProblemResolutions.AsNoTracking()
-                .Where(x => manufacturerProblemIds.Contains(x.ProblemId))
-                .Select(x => x.ProblemId)
-                .ToHashSetAsync(ct);
+        var resolvedManufacturerProblemIds = await EffectiveResolvedProblemIdsAsync(manufacturerProblemIds, db, ct);
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
         var transferKey = !string.IsNullOrWhiteSpace(metadata?.InterfaceTransferIdentifier)
             ? metadata.InterfaceTransferIdentifier : reportProductId.ToString("D").ToUpperInvariant();
