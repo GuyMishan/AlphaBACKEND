@@ -119,7 +119,9 @@ public sealed class FeedbackResolutionStage9ContractTests
         Assert.Contains("EffectiveResolvedProblemIdsAsync", endpoint, StringComparison.Ordinal);
         Assert.Contains("report.IsRevisionSnapshot", endpoint, StringComparison.Ordinal);
         Assert.Contains("report.Status == ManualReportStatus.Completed", endpoint, StringComparison.Ordinal);
-        Assert.Contains("pendingCorrectionProblems", endpoint, StringComparison.Ordinal);
+        Assert.Contains("RequiresCompletedCorrection", endpoint, StringComparison.Ordinal);
+        Assert.Contains("workspace-validation", endpoint, StringComparison.Ordinal);
+        Assert.Contains("if (correctionLinks.Count == 0) return immediate;", endpoint, StringComparison.Ordinal);
     }
 
     [Fact]
