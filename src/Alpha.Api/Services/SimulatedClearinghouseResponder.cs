@@ -587,7 +587,11 @@ public sealed class SimulatedClearinghouseTechnicalFeedbackHandler(IAlphaDbConte
                 : instruction.ErrorDetail;
             transmission.Complete(ReportTransmissionStatus.Rejected, transmission.ExternalId, response,
                 $"FEDBKA {code}: {detail}");
-            report.MarkTransmissionError($"המסלקה דחתה את הקובץ טכנית (FEDBKA {code}): {detail}");
+            // A hybrid report has independent recipients. A technical rejection
+            // is a failure of this route only; do not put the entire report
+            // into Error and strand accepted manufacturer destinations.
+            if (string.IsNullOrWhiteSpace(transmission.RoutingKey))
+                report.MarkTransmissionError($"המסלקה דחתה את הקובץ טכנית (FEDBKA {code}): {detail}");
         }
         else
         {
