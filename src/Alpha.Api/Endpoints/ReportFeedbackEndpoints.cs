@@ -2320,6 +2320,28 @@ public static class ReportFeedbackEndpoints
             .OrderByDescending(x => x.ReceivedAt)
             .ToListAsync(ct);
 
+        var rowProblemIds = rows.Where(row => row.ErrorCode.HasValue)
+            .Select(row => FeedbackResolutionWireProjection.BuildProblemId(
+                row.FeedbackId, row.ContributionId, row.Sequence, row.ErrorCode!.Value))
+            .ToArray();
+        var pendingResolutions = await db.FeedbackProblemResolutions.AsNoTracking()
+            .Where(resolution => rowProblemIds.Contains(resolution.ProblemId))
+            .Select(resolution => resolution.ProblemId).ToListAsync(ct);
+        var pendingResolutionIds = pendingResolutions.ToHashSet(StringComparer.Ordinal);
+        var pendingCorrectionLinks = await db.FeedbackCorrectionResolutionLinks.AsNoTracking()
+            .Where(link => rowProblemIds.Contains(link.ProblemId))
+            .Select(link => new { link.ProblemId, link.WorkspaceReportId }).ToListAsync(ct);
+        var relatedWorkspaceIds = pendingCorrectionLinks.Select(link => link.WorkspaceReportId)
+            .Distinct().ToArray();
+        var transmittedCorrectionIds = await db.ManualReports.AsNoTracking()
+            .Where(report => relatedWorkspaceIds.Contains(report.Id)
+                && report.IsRevisionSnapshot && report.Status == ManualReportStatus.Completed)
+            .Select(report => report.Id).ToHashSetAsync(ct);
+        var transmittedProblemIds = pendingCorrectionLinks
+            .Where(link => pendingResolutionIds.Contains(link.ProblemId)
+                && transmittedCorrectionIds.Contains(link.WorkspaceReportId))
+            .Select(link => link.ProblemId).ToHashSet(StringComparer.Ordinal);
+
         var problems = new List<FeedbackResolutionProblemDto>(rows.Count);
         foreach (var row in rows.OrderByDescending(x => x.ReceivedAt).ThenBy(x => x.Sequence))
         {
@@ -2351,7 +2373,18 @@ public static class ReportFeedbackEndpoints
 
             var reportedValues = ReportedValues(playbook.Resolver, report, reportEmployee, product, contribution, productMetadata, payment, protector);
             var currentValues = CurrentValues(playbook.Resolver, employment, person, liveProduct, liveContribution, currentPaymentAccount, protector);
-            var feedbackValues = FeedbackValues(row, transfer);
+            var feedbackValues = new Dictionary<string, string?>(FeedbackValues(row, transfer), StringComparer.Ordinal)
+            {
+                ["resolutionWorkflowStatus"] = transmittedProblemIds.Contains(
+                    FeedbackResolutionWireProjection.BuildProblemId(row.FeedbackId, row.ContributionId,
+                        row.Sequence, playbook.Code))
+                    ? "transmitted-awaiting-feedback"
+                    : pendingResolutionIds.Contains(
+                        FeedbackResolutionWireProjection.BuildProblemId(row.FeedbackId, row.ContributionId,
+                            row.Sequence, playbook.Code))
+                        ? "correction-in-progress"
+                        : "needs-treatment"
+            };
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
             var groupKey = FeedbackResolutionWireProjection.BuildResolutionGroupKey(
                 playbook, employerId, row.ReportId, row.ReportProductId, row.ContributionId,
