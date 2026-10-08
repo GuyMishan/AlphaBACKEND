@@ -73,13 +73,14 @@ if (simulatedVaultEnabled)
             new SimulatedManufacturerVaultReportTransmissionProvider(
                 sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SimulatedClearinghouseVaultOptions>>(),
                 sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EmployerInterface006Options>>(),
-                manufacturer));
+                manufacturer, sp.GetRequiredService<IConfiguration>()));
         builder.Services.AddSingleton<IHostedService>(sp =>
             new SimulatedManufacturerVaultHostedService(
                 sp.GetRequiredService<IServiceScopeFactory>(),
                 sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SimulatedClearinghouseVaultOptions>>(),
                 sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EmployerInterface006Options>>(),
-                sp.GetRequiredService<ILoggerFactory>(), manufacturer));
+                sp.GetRequiredService<ILoggerFactory>(), manufacturer,
+                sp.GetRequiredService<IConfiguration>()));
     }
 }
 else if (allowMockTransmission)
