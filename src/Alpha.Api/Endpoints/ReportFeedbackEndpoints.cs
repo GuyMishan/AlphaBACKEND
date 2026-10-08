@@ -180,6 +180,24 @@ public static class ReportFeedbackEndpoints
                 latestPerRoute.TryGetValue(file.ReportId, out var activeTx)
                     ? activeTx : new HashSet<Guid>(),
                 latestPerRoute.ContainsKey(file.ReportId))).ToArray();
+        // Aggregate one employer report from independently acknowledged vaults.
+        // A route stays pending until its own latest transmission has feedback;
+        // a reply from another manufacturer must never complete it.
+        var fileIdsByTransmission = activeFeedbackFiles
+            .Where(file => file.TransmissionId.HasValue)
+            .GroupBy(file => file.TransmissionId!.Value)
+            .ToDictionary(group => group.Key, group => group.Select(file => file.Id).ToHashSet());
+        var activeRecipientRoutes = transmissions
+            .Where(tx => !string.IsNullOrWhiteSpace(tx.RoutingKey))
+            .GroupBy(tx => new { tx.ReportId, tx.RoutingKey })
+            .Select(group => group.OrderByDescending(tx => tx.AttemptNumber).First())
+            .ToArray();
+        var pendingRecipientByReport = activeRecipientRoutes
+            .Where(tx => !fileIdsByTransmission.TryGetValue(tx.Id, out var ids) || ids.Count == 0)
+            .GroupBy(tx => tx.ReportId)
+            .ToDictionary(group => group.Key, group => group
+                .Select(tx => tx.RoutingKey).OrderBy(value => value).ToArray());
+        var reportIdsWithHybridRoutes = activeRecipientRoutes.Select(tx => tx.ReportId).ToHashSet();
         var activeFeedbackIds = activeFeedbackFiles.Select(x => x.Id).ToHashSet();
         var officialCounts = activeFeedbackFiles
             .GroupBy(x => x.ReportId)
@@ -245,6 +263,16 @@ public static class ReportFeedbackEndpoints
         {
             if (completedRevisionIds.Contains(id)) return "completed";
             latestTransmission.TryGetValue(id, out var tx);
+            if (reportIdsWithHybridRoutes.Contains(id))
+            {
+                // Preserve actionable errors even when another vault has not replied.
+                if (errorCounts.GetValueOrDefault(id) > 0
+                    || activeRecipientRoutes.Any(route => route.ReportId == id
+                        && route.Status is ReportTransmissionStatus.Rejected or ReportTransmissionStatus.Error))
+                    return "attention";
+                if (pendingRecipientByReport.TryGetValue(id, out var waiting) && waiting.Length > 0)
+                    return "pending";
+            }
             return ReportFeedbackStatusResolver.ResolveReportState(
                 tx?.Status,
                 officialCounts.GetValueOrDefault(id),
@@ -405,6 +433,16 @@ public static class ReportFeedbackEndpoints
         var items = page.Select(report =>
         {
             latestTransmission.TryGetValue(report.Id, out var tx); money.TryGetValue(report.Id, out var cash);
+            var waitingRoutes = pendingRecipientByReport.GetValueOrDefault(report.Id) ?? [];
+            var awaitingClearinghouse = waitingRoutes.Any(route =>
+                string.Equals(route, "SimulatedVault", StringComparison.OrdinalIgnoreCase)
+                || route.Contains("clearing", StringComparison.OrdinalIgnoreCase));
+            var awaitingManufacturers = waitingRoutes
+                .Where(route => !string.Equals(route, "SimulatedVault", StringComparison.OrdinalIgnoreCase)
+                    && !route.Contains("clearing", StringComparison.OrdinalIgnoreCase))
+                .Select(route => route.StartsWith("SimulatedVault-", StringComparison.OrdinalIgnoreCase)
+                    ? route["SimulatedVault-".Length..] : route)
+                .ToArray();
             var latestRecipients = transmissions
                 .Where(item => item.ReportId == report.Id && !string.IsNullOrWhiteSpace(item.RoutingKey))
                 .GroupBy(item => item.RoutingKey, StringComparer.OrdinalIgnoreCase)
@@ -432,6 +470,13 @@ public static class ReportFeedbackEndpoints
                 report.Id, employerName, report.ReportingMonth, report.SalaryPaymentDate, report.ReportKind, report.Status,
                 revisionRootReportId = rootId, report.RevisionNumber, report.IsRevisionSnapshot,
                 feedbackStatus = State(report.Id),
+                awaitingFeedback = new
+                {
+                    manufacturerCount = awaitingManufacturers.Length,
+                    manufacturers = awaitingManufacturers,
+                    clearinghouse = awaitingClearinghouse,
+                    totalDestinations = waitingRoutes.Length
+                },
                 correctionResolutionStatus = correctionStatusesByReport.GetValueOrDefault(report.Id, "needs-treatment"),
                 hasFeedback = officialCounts.GetValueOrDefault(report.Id) > 0,
                 issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id),
