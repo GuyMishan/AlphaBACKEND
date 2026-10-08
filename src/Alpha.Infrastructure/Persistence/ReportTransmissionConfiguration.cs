@@ -11,6 +11,8 @@ public sealed class ReportTransmissionConfiguration : IEntityTypeConfiguration<R
         b.ToTable("report_transmissions", "reporting");
         b.HasKey(x => x.Id);
         b.Property(x => x.Provider).HasMaxLength(120).IsRequired();
+        b.Property(x => x.RoutingKey).HasMaxLength(120).IsRequired();
+        b.Property(x => x.RoutedProductIdsJson).HasColumnType("text").IsRequired();
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(30);
         b.Property(x => x.ExternalId).HasMaxLength(200);
         b.Property(x => x.PayloadHash).HasMaxLength(128);
