@@ -3048,8 +3048,25 @@ public static class ReportFeedbackEndpoints
             .ToListAsync(ct);
         foreach (var link in correctionLinks)
         {
-            if (!sentWorkspaces.Contains(link.WorkspaceReportId) || !link.ReportProductId.HasValue)
+            if (!sentWorkspaces.Contains(link.WorkspaceReportId))
                 continue;
+            if (!link.ReportProductId.HasValue)
+            {
+                // Report-level correction: require positive acknowledgement of every
+                // technical product, not only a successful file dispatch.
+                var allWorkspaceProducts = workspaceProducts
+                    .Where(product => workspaceEmployeeReports.GetValueOrDefault(product.ReportEmployeeId)
+                        == link.WorkspaceReportId)
+                    .Select(product => product.Id).ToHashSet();
+                var allTechnicalProducts = documentProducts
+                    .Where(product => product.SourceReportProductId.HasValue
+                        && allWorkspaceProducts.Contains(product.SourceReportProductId.Value))
+                    .ToArray();
+                if (allTechnicalProducts.Length > 0
+                    && allTechnicalProducts.All(product => confirmedProductIds.Contains(product.Id)))
+                    immediate.Add(link.ProblemId);
+                continue;
+            }
             var mappedWorkspaceProductIds = workspaceProducts
                 .Where(product => product.SourceReportProductId == link.ReportProductId
                     && workspaceEmployeeReports.GetValueOrDefault(product.ReportEmployeeId) == link.WorkspaceReportId)
