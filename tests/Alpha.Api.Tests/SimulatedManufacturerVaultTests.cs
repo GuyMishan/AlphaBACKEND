@@ -66,6 +66,16 @@ public sealed class SimulatedManufacturerVaultTests
                 "outbox", folder, payloadName)));
             Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(root,
                 "manufacturers", "menora", "outbox", folder, payloadName)));
+
+            // The same payload is idempotent per vault; a conflicting retry
+            // must never silently overwrite existing financial evidence.
+            var replay = await menora.SendAsync(envelope, CancellationToken.None);
+            Assert.True(replay.Success);
+            var changedEnvelope = envelope with { Payload = new byte[] { 9, 8, 7 } };
+            await Assert.ThrowsAsync<IOException>(() =>
+                menora.SendAsync(changedEnvelope, CancellationToken.None));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(root,
+                "manufacturers", "menora", "outbox", folder, payloadName)));
         }
         finally
         {
