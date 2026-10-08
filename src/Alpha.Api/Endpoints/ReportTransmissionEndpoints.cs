@@ -19,8 +19,34 @@ public static class ReportTransmissionEndpoints
         group.MapGet("/{reportId:guid}/transmissions", GetHistoryAsync);
         group.MapGet("/{reportId:guid}/transmission-routing", GetRoutingAsync);
         group.MapGet("/{reportId:guid}/transmission-routing/validate", ValidateRoutingAsync);
+        group.MapPost("/{reportId:guid}/transmissions/resume-hybrid", ResumeHybridAsync);
         group.MapPost("/{reportId:guid}/transmissions", SendAsync);
         return endpoints;
+    }
+
+    private static async Task<IResult> ResumeHybridAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        IAlphaDbContext db, OrganizationAccessService access,
+        EntitlementService entitlements, BillingGateService billingGate,
+        IEnumerable<IReportTransmissionProvider> providers,
+        EmployerInterface006ExportService exporter,
+        EmployerInterfaceFileSequenceService fileSequences,
+        IDataProtectionService protector, IConfiguration configuration,
+        CancellationToken ct)
+    {
+        if (!configuration.GetValue<bool>("Reporting:ManufacturerRouting:EnableHybridDispatch"))
+            return Results.Conflict(new { error = "manufacturer_route_split_disabled" });
+        if (!await access.CanTransmitReportAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+        var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
+        if (!entitlement.Allowed)
+            return Results.Conflict(new { error = entitlement.Error, feature = entitlement.Feature });
+        var billing = await billingGate.CanTransmitAsync(employerId, ct);
+        if (!billing.Allowed)
+            return Results.Conflict(new { error = billing.Error });
+        return await HybridReportTransmissionDispatcher.ResumeAsync(
+            organizationId, employerId, reportId, db, providers.ToArray(),
+            exporter, fileSequences, protector, ct);
     }
 
     private static async Task<IResult> ValidateRoutingAsync(
