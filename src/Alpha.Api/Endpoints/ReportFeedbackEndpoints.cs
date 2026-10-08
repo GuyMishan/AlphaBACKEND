@@ -2865,16 +2865,30 @@ public static class ReportFeedbackEndpoints
     {
         if (problemIds.Count == 0) return new HashSet<string>(StringComparer.Ordinal);
 
-        var resolutionIds = await db.FeedbackProblemResolutions.AsNoTracking()
+        var resolutions = await db.FeedbackProblemResolutions.AsNoTracking()
             .Where(item => problemIds.Contains(item.ProblemId))
-            .Select(item => item.ProblemId)
+            .Select(item => new { item.ProblemId, item.ResolutionSource })
             .ToListAsync(ct);
-        if (resolutionIds.Count == 0) return new HashSet<string>(StringComparer.Ordinal);
+        if (resolutions.Count == 0) return new HashSet<string>(StringComparer.Ordinal);
+
+        static bool RequiresCompletedCorrection(string source) =>
+            source is "employee-save" or "deposit-save" or "workspace-validation" or "link-original";
+
+        var immediate = resolutions
+            .Where(item => !RequiresCompletedCorrection(item.ResolutionSource))
+            .Select(item => item.ProblemId)
+            .ToHashSet(StringComparer.Ordinal);
+        var correctionProblemIds = resolutions
+            .Where(item => RequiresCompletedCorrection(item.ResolutionSource))
+            .Select(item => item.ProblemId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (correctionProblemIds.Length == 0) return immediate;
 
         var correctionLinks = await db.FeedbackCorrectionResolutionLinks.AsNoTracking()
-            .Where(link => resolutionIds.Contains(link.ProblemId))
+            .Where(link => correctionProblemIds.Contains(link.ProblemId))
             .ToListAsync(ct);
-        if (correctionLinks.Count == 0) return resolutionIds.ToHashSet(StringComparer.Ordinal);
+        if (correctionLinks.Count == 0) return immediate;
 
         var workspaceIds = correctionLinks.Select(link => link.WorkspaceReportId).Distinct().ToArray();
         var completedWorkspaces = await db.ManualReports.AsNoTracking()
@@ -2883,14 +2897,12 @@ public static class ReportFeedbackEndpoints
                 && report.Status == ManualReportStatus.Completed)
             .Select(report => report.Id)
             .ToHashSetAsync(ct);
-        var pendingCorrectionProblems = correctionLinks
-            .Where(link => !completedWorkspaces.Contains(link.WorkspaceReportId))
-            .Select(link => link.ProblemId)
-            .ToHashSet(StringComparer.Ordinal);
 
-        return resolutionIds
-            .Where(problemId => !pendingCorrectionProblems.Contains(problemId))
-            .ToHashSet(StringComparer.Ordinal);
+        foreach (var link in correctionLinks)
+            if (completedWorkspaces.Contains(link.WorkspaceReportId))
+                immediate.Add(link.ProblemId);
+
+        return immediate;
     }
 
     private static async Task<IResult> EmployerContextAsync(
