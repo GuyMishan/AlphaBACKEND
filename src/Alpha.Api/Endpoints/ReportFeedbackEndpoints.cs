@@ -2341,6 +2341,34 @@ public static class ReportFeedbackEndpoints
             .Where(link => pendingResolutionIds.Contains(link.ProblemId)
                 && transmittedCorrectionIds.Contains(link.WorkspaceReportId))
             .Select(link => link.ProblemId).ToHashSet(StringComparer.Ordinal);
+        var transmittedDocumentMap = await db.ManualReports.AsNoTracking()
+            .Where(report => report.CorrectionWorkspaceId.HasValue
+                && transmittedCorrectionIds.Contains(report.CorrectionWorkspaceId.Value)
+                && report.IsTechnicalCorrectionDocument)
+            .Select(report => new { report.Id, WorkspaceId = report.CorrectionWorkspaceId!.Value })
+            .ToListAsync(ct);
+        var returnedDocumentIds = transmittedDocumentMap.Select(document => document.Id).ToArray();
+        var documentLatestTransmissions = await db.ReportTransmissions.AsNoTracking()
+            .Where(tx => returnedDocumentIds.Contains(tx.ReportId))
+            .OrderByDescending(tx => tx.AttemptNumber)
+            .Select(tx => new { tx.ReportId, tx.Id }).ToListAsync(ct);
+        var latestTransmissionIds = documentLatestTransmissions
+            .GroupBy(tx => tx.ReportId).ToDictionary(group => group.Key, group => group.First().Id);
+        var documentFeedback = await db.EmployerInterfaceFeedback.AsNoTracking()
+            .Where(feedback => feedback.ReportId.HasValue
+                && returnedDocumentIds.Contains(feedback.ReportId.Value))
+            .Select(feedback => new { feedback.ReportId, feedback.TransmissionId })
+            .ToListAsync(ct);
+        var returnedWorkspaceIds = transmittedDocumentMap
+            .Where(document => latestTransmissionIds.TryGetValue(document.Id, out var latestTx)
+                && documentFeedback.Any(feedback => feedback.ReportId == document.Id
+                    && feedback.TransmissionId == latestTx))
+            .Select(document => document.WorkspaceId).ToHashSet();
+        var returnedProblemIds = pendingCorrectionLinks
+            .Where(link => pendingResolutionIds.Contains(link.ProblemId)
+                && returnedWorkspaceIds.Contains(link.WorkspaceReportId))
+            .Select(link => link.ProblemId).ToHashSet(StringComparer.Ordinal);
+
 
         var problems = new List<FeedbackResolutionProblemDto>(rows.Count);
         foreach (var row in rows.OrderByDescending(x => x.ReceivedAt).ThenBy(x => x.Sequence))
@@ -2377,9 +2405,11 @@ public static class ReportFeedbackEndpoints
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
             var feedbackProblemId = FeedbackResolutionWireProjection.BuildProblemId(
                 row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code);
-            feedbackValues["resolutionWorkflowStatus"] = transmittedProblemIds.Contains(feedbackProblemId)
-                ? "transmitted-awaiting-feedback"
-                : pendingResolutionIds.Contains(feedbackProblemId)
+            feedbackValues["resolutionWorkflowStatus"] = returnedProblemIds.Contains(feedbackProblemId)
+                ? "feedback-returned-needs-review"
+                : transmittedProblemIds.Contains(feedbackProblemId)
+                    ? "transmitted-awaiting-feedback"
+                    : pendingResolutionIds.Contains(feedbackProblemId)
                     ? "correction-in-progress"
                     : "needs-treatment";
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
