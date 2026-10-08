@@ -272,9 +272,9 @@ public static class ReportTransmissionEndpoints
             return Results.Conflict(new
             {
                 error = "manufacturer_route_override_conflict",
-                requiredProvider = routingPlan.Provider
+                requiredProvider = routedProvider
             });
-        providerName = routingPlan.Provider;
+        providerName = routedProvider;
 
         var provider = availableProviders.FirstOrDefault(x => string.Equals(x.Name, providerName, StringComparison.OrdinalIgnoreCase));
         if (provider is null) return Results.BadRequest(new { error = "The selected transmission provider does not exist.", provider = providerName });
