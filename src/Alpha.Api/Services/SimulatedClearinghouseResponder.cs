@@ -110,6 +110,7 @@ public sealed class SimulatedClearinghouseResponder(
                 var db = scope.ServiceProvider.GetRequiredService<IAlphaDbContext>();
                 var transmission = await db.ReportTransmissions.AsNoTracking()
                     .Where(x => x.EmployerId == employerId && x.PayloadFileName == fileName
+                        && x.Provider == _options.ProviderName
                         && (x.Status == ReportTransmissionStatus.Accepted || x.Status == ReportTransmissionStatus.Sent))
                     .OrderByDescending(x => x.AttemptNumber)
                     .Select(x => new { x.Id, x.ReportId, x.OrganizationId, x.EmployerId })
@@ -617,11 +618,13 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
                 && x.EmployerId == instruction.EmployerId, ct);
         if (report is null) return null;
 
-        var transmissionExists = await db.ReportTransmissions.AsNoTracking()
-            .AnyAsync(x => x.Id == instruction.TransmissionId
+        var transmission = await db.ReportTransmissions.AsNoTracking()
+            .Where(x => x.Id == instruction.TransmissionId
                 && x.ReportId == instruction.ReportId
-                && x.EmployerId == instruction.EmployerId, ct);
-        if (!transmissionExists) return null;
+                && x.EmployerId == instruction.EmployerId)
+            .Select(x => new { x.RoutingKey, x.RoutedProductIdsJson })
+            .SingleOrDefaultAsync(ct);
+        if (transmission is null) return null;
 
         var parsedScenario = SimulatedClearinghouseResponder.ParseScenario(
             instruction.ErrorCode.HasValue ? $"{instruction.Scenario}:{instruction.ErrorCode.Value}" : instruction.Scenario);
@@ -662,6 +665,16 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
         var products = await db.ManualReportProducts.AsNoTracking()
             .Where(x => employeeIds.Contains(x.ReportEmployeeId))
             .ToListAsync(ct);
+        if (!string.IsNullOrWhiteSpace(transmission.RoutingKey))
+        {
+            Guid[] allowedIds;
+            try { allowedIds = JsonSerializer.Deserialize<Guid[]>(transmission.RoutedProductIdsJson) ?? []; }
+            catch (JsonException) { return null; }
+            var allowed = allowedIds.ToHashSet();
+            if (allowed.Count == 0 || products.Count(product => allowed.Contains(product.Id)) != allowed.Count)
+                return null;
+            products = products.Where(product => allowed.Contains(product.Id)).ToList();
+        }
         var productIds = products.Select(x => x.Id).ToArray();
         var contributions = await db.ManualContributions.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId))
