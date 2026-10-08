@@ -125,6 +125,16 @@ public sealed class FeedbackResolutionStage9ContractTests
     }
 
     [Fact]
+    public void Deposit_correction_resolution_requires_a_workspace_target()
+    {
+        var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
+
+        Assert.Contains("resolution_correction_workspace_required", endpoint, StringComparison.Ordinal);
+        Assert.Contains("requiresWorkspace && validationTarget?.IsCorrectionWorkspace != true", endpoint, StringComparison.Ordinal);
+        Assert.Contains("FeedbackCorrectionBehavior.CorrectionWorkspace", endpoint, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Pending_correction_resolution_can_be_revalidated_idempotently()
     {
         var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
