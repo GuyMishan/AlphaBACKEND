@@ -17,8 +17,62 @@ public static class ReportTransmissionEndpoints
     {
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/manual-reports").RequireAuthorization().WithTags("Report transmission");
         group.MapGet("/{reportId:guid}/transmissions", GetHistoryAsync);
+        group.MapGet("/{reportId:guid}/transmission-routing", GetRoutingAsync);
         group.MapPost("/{reportId:guid}/transmissions", SendAsync);
         return endpoints;
+    }
+
+    private static async Task<IResult> GetRoutingAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        IAlphaDbContext db, OrganizationAccessService access,
+        IEnumerable<IReportTransmissionProvider> providers,
+        IConfiguration configuration, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+        var reportExists = await db.ManualReports.AsNoTracking().AnyAsync(
+            report => report.Id == reportId && report.OrganizationId == organizationId
+                && report.EmployerId == employerId, ct);
+        if (!reportExists) return Results.NotFound();
+
+        var available = providers.ToArray();
+        var defaultProvider = available.FirstOrDefault(provider => provider.IsConfigured)?.Name
+            ?? available.FirstOrDefault()?.Name ?? string.Empty;
+        var funds = await (
+            from product in db.ManualReportProducts.AsNoTracking()
+            join employee in db.ManualReportEmployees.AsNoTracking()
+                on product.ReportEmployeeId equals employee.Id
+            where employee.ReportId == reportId
+            select product.FundCode).ToArrayAsync(ct);
+        try
+        {
+            var plan = ManufacturerTransmissionRouting.Resolve(funds, defaultProvider, configuration);
+            var selected = available.FirstOrDefault(provider =>
+                string.Equals(provider.Name, plan.Provider, StringComparison.OrdinalIgnoreCase));
+            return Results.Ok(new
+            {
+                provider = plan.Provider,
+                configured = selected?.IsConfigured == true,
+                requiresSplit = false,
+                destinations = plan.Destinations
+            });
+        }
+        catch (InvalidOperationException exception) when (
+            exception.Message == "manufacturer_route_split_not_implemented")
+        {
+            return Results.Ok(new
+            {
+                provider = (string?)null,
+                configured = false,
+                requiresSplit = true,
+                destinations = ManufacturerTransmissionRouting.Destinations(funds,
+                    defaultProvider, configuration)
+            });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
     }
 
     private static async Task<IResult> GetHistoryAsync(Guid organizationId, Guid employerId, Guid reportId, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
