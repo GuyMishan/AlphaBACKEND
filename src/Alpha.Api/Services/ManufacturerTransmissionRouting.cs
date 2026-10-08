@@ -43,7 +43,7 @@ public static class ManufacturerTransmissionRouting
         IConfiguration configuration)
     {
         var destinations = Destinations(fundCodes, defaultProvider, configuration);
-        if (destinations.Length == 0)
+        if (destinations.Count == 0)
             throw new InvalidOperationException("manufacturer_route_no_products");
         var providers = destinations.Select(x => x.Provider)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
