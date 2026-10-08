@@ -31,6 +31,11 @@ public static class ManufacturerCatalogRouting
         var manufacturerProviders = configuration.GetSection("Reporting:ManufacturerRouting:Manufacturers")
             .GetChildren().ToDictionary(item => item.Key.Trim(),
                 item => item.Value?.Trim() ?? "", StringComparer.OrdinalIgnoreCase);
+        // ASCII configuration keys (suitable for environment variables) can
+        // map to Hebrew parent labels from the catalog.
+        var aliases = configuration.GetSection("Reporting:ManufacturerRouting:Aliases")
+            .GetChildren().ToDictionary(item => item.Value?.Trim() ?? "",
+                item => item.Key.Trim(), StringComparer.OrdinalIgnoreCase);
         var byIdentity = new Dictionary<(string Code, string Company), CatalogEntry[]>();
         if (manufacturerProviders.Any(entry => !string.IsNullOrWhiteSpace(entry.Value)))
         {
@@ -76,10 +81,14 @@ public static class ManufacturerCatalogRouting
                     .ToArray();
                 if (verified.Length > 1)
                     throw new InvalidOperationException("manufacturer_route_catalog_ambiguous");
-                if (verified.Length == 1
-                    && manufacturerProviders.TryGetValue(verified[0], out var destination)
-                    && !string.IsNullOrWhiteSpace(destination))
-                    provider = destination;
+                if (verified.Length == 1)
+                {
+                    var key = aliases.TryGetValue(verified[0], out var alias)
+                        ? alias : verified[0];
+                    if (manufacturerProviders.TryGetValue(key, out var destination)
+                        && !string.IsNullOrWhiteSpace(destination))
+                        provider = destination;
+                }
                 // Historical/unknown legal entities do not inherit a brand
                 // destination until operational ownership is explicitly reviewed.
             }
