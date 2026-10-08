@@ -2441,18 +2441,22 @@ public static class ReportFeedbackEndpoints
         var documentLatestTransmissions = await db.ReportTransmissions.AsNoTracking()
             .Where(tx => returnedDocumentIds.Contains(tx.ReportId))
             .OrderByDescending(tx => tx.AttemptNumber)
-            .Select(tx => new { tx.ReportId, tx.Id }).ToListAsync(ct);
+            .Select(tx => new { tx.ReportId, tx.Id, tx.RoutingKey }).ToListAsync(ct);
         var latestTransmissionIds = documentLatestTransmissions
-            .GroupBy(tx => tx.ReportId).ToDictionary(group => group.Key, group => group.First().Id);
+            .GroupBy(tx => tx.ReportId).ToDictionary(group => group.Key, group =>
+                group.GroupBy(tx => string.IsNullOrWhiteSpace(tx.RoutingKey)
+                        ? "legacy" : tx.RoutingKey, StringComparer.OrdinalIgnoreCase)
+                    .Select(route => route.First().Id).ToHashSet());
         var documentFeedback = await db.EmployerInterfaceFeedback.AsNoTracking()
             .Where(feedback => feedback.ReportId.HasValue
                 && returnedDocumentIds.Contains(feedback.ReportId.Value))
             .Select(feedback => new { feedback.ReportId, feedback.TransmissionId })
             .ToListAsync(ct);
         var returnedWorkspaceIds = transmittedDocumentMap
-            .Where(document => latestTransmissionIds.TryGetValue(document.Id, out var latestTx)
+            .Where(document => latestTransmissionIds.TryGetValue(document.Id, out var latestTxIds)
                 && documentFeedback.Any(feedback => feedback.ReportId == document.Id
-                    && feedback.TransmissionId == latestTx))
+                    && feedback.TransmissionId.HasValue
+                    && latestTxIds.Contains(feedback.TransmissionId.Value)))
             .Select(document => document.WorkspaceId).ToHashSet();
         var returnedProblemIds = pendingCorrectionLinks
             .Where(link => pendingResolutionIds.Contains(link.ProblemId)
@@ -3123,17 +3127,21 @@ public static class ReportFeedbackEndpoints
         var transmissions = await db.ReportTransmissions.AsNoTracking()
             .Where(tx => documentIds.Contains(tx.ReportId))
             .OrderByDescending(tx => tx.AttemptNumber)
-            .Select(tx => new { tx.Id, tx.ReportId })
+            .Select(tx => new { tx.Id, tx.ReportId, tx.RoutingKey })
             .ToListAsync(ct);
         var latestTx = transmissions.GroupBy(tx => tx.ReportId)
-            .ToDictionary(group => group.Key, group => group.First().Id);
+            .ToDictionary(group => group.Key, group =>
+                group.GroupBy(tx => string.IsNullOrWhiteSpace(tx.RoutingKey)
+                        ? "legacy" : tx.RoutingKey, StringComparer.OrdinalIgnoreCase)
+                    .Select(route => route.First().Id).ToHashSet());
         var feedbackFiles = await db.EmployerInterfaceFeedback.AsNoTracking()
             .Where(file => file.ReportId.HasValue && documentIds.Contains(file.ReportId.Value))
             .Select(file => new { file.Id, file.ReportId, file.TransmissionId })
             .ToListAsync(ct);
         var freshFeedbackIds = feedbackFiles
-            .Where(file => file.ReportId.HasValue && latestTx.TryGetValue(file.ReportId.Value, out var txId)
-                && file.TransmissionId == txId)
+            .Where(file => file.ReportId.HasValue
+                && latestTx.TryGetValue(file.ReportId.Value, out var txIds)
+                && file.TransmissionId.HasValue && txIds.Contains(file.TransmissionId.Value))
             .Select(file => file.Id).ToArray();
         var feedbackRows = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
             .Where(row => freshFeedbackIds.Contains(row.FeedbackId)
