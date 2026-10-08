@@ -112,6 +112,17 @@ public sealed class FeedbackResolutionStage9ContractTests
     }
 
     [Fact]
+    public void Correction_backed_resolution_is_effective_only_after_revision_completion()
+    {
+        var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
+
+        Assert.Contains("EffectiveResolvedProblemIdsAsync", endpoint, StringComparison.Ordinal);
+        Assert.Contains("report.IsRevisionSnapshot", endpoint, StringComparison.Ordinal);
+        Assert.Contains("report.Status == ManualReportStatus.Completed", endpoint, StringComparison.Ordinal);
+        Assert.Contains("pendingCorrectionProblems", endpoint, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Correction_problem_links_survive_refresh_and_are_server_owned()
     {
         var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
