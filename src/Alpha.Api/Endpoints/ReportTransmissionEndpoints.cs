@@ -32,7 +32,8 @@ public static class ReportTransmissionEndpoints
         IAlphaDbContext db, OrganizationAccessService access, EntitlementService entitlements,
         ReportPaymentAccountService paymentAccounts, BillingGateService billingGate,
         IEnumerable<IReportTransmissionProvider> providers, EmployerInterface006ExportService exporter,
-        EmployerInterfaceFileSequenceService fileSequences, IDataProtectionService protector, CancellationToken ct)
+        EmployerInterfaceFileSequenceService fileSequences, IDataProtectionService protector,
+        IConfiguration configuration, CancellationToken ct)
     {
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct)) return Results.Forbid();
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
@@ -66,6 +67,33 @@ public static class ReportTransmissionEndpoints
                 ?? availableProviders.FirstOrDefault()?.Name
                 ?? string.Empty
             : request.Provider.Trim();
+        // Resolve the full report's actual fund destinations *before* claiming the report.
+        // Never transmit a mixed-route 006 file to a single recipient: this would
+        // leak other manufacturers' employee data and invalidate feedback correlation.
+        var manufacturerFunds = await (
+            from product in db.ManualReportProducts.AsNoTracking()
+            join employee in db.ManualReportEmployees.AsNoTracking()
+                on product.ReportEmployeeId equals employee.Id
+            where employee.ReportId == reportId
+            select product.FundCode
+        ).ToArrayAsync(ct);
+        ManufacturerTransmissionRouting.Plan routingPlan;
+        try
+        {
+            routingPlan = ManufacturerTransmissionRouting.Resolve(manufacturerFunds,
+                providerName, configuration);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
+        if (!string.Equals(routingPlan.Provider, providerName, StringComparison.OrdinalIgnoreCase))
+            return Results.Conflict(new
+            {
+                error = "manufacturer_route_override_conflict",
+                requiredProvider = routingPlan.Provider
+            });
+
         var provider = availableProviders.FirstOrDefault(x => string.Equals(x.Name, providerName, StringComparison.OrdinalIgnoreCase));
         if (provider is null) return Results.BadRequest(new { error = "The selected transmission provider does not exist.", provider = providerName });
         if (!provider.IsConfigured)
