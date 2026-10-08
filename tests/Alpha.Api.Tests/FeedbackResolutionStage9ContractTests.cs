@@ -169,6 +169,7 @@ public sealed class FeedbackResolutionStage9ContractTests
         var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
         Assert.Contains("\"deposit-save\" => playbook.ResolutionType == FeedbackResolutionType.Edit",
             endpoint, StringComparison.Ordinal);
+        Assert.Contains("duplicate_transfer_investigation_note_required", endpoint, StringComparison.Ordinal);
         Assert.Contains("decision-confirm", endpoint, StringComparison.Ordinal);
     }
 
