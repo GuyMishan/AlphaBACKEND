@@ -130,6 +130,8 @@ public sealed class FeedbackResolutionStage9ContractTests
         var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
 
         Assert.Contains("transmitted-awaiting-feedback", endpoint, StringComparison.Ordinal);
+        Assert.Contains("feedback-returned-needs-review", endpoint, StringComparison.Ordinal);
+        Assert.Contains("returnedWorkspaceIds", endpoint, StringComparison.Ordinal);
         Assert.Contains("freshFeedbackIds", endpoint, StringComparison.Ordinal);
         Assert.Contains("file.TransmissionId == txId", endpoint, StringComparison.Ordinal);
         Assert.Contains("confirmedProductIds", endpoint, StringComparison.Ordinal);
