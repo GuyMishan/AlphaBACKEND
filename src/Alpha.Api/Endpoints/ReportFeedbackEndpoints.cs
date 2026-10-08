@@ -2373,7 +2373,7 @@ public static class ReportFeedbackEndpoints
 
             var reportedValues = ReportedValues(playbook.Resolver, report, reportEmployee, product, contribution, productMetadata, payment, protector);
             var currentValues = CurrentValues(playbook.Resolver, employment, person, liveProduct, liveContribution, currentPaymentAccount, protector);
-            var feedbackValues = new Dictionary<string, string?>(FeedbackValues(row, transfer), StringComparer.Ordinal)
+            var feedbackValues = FeedbackValues(row, transfer).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
             {
                 ["resolutionWorkflowStatus"] = transmittedProblemIds.Contains(
                     FeedbackResolutionWireProjection.BuildProblemId(row.FeedbackId, row.ContributionId,
