@@ -96,6 +96,13 @@ public sealed class SimulatedManufacturerVaultHostedService : IHostedService
 
     public async Task StartAsync(CancellationToken ct)
     {
+        // Materialize the independent vault before the first outgoing 006 file,
+        // making its inbox/outbox ready for manual TEST scenario inspection.
+        var root = Path.GetFullPath(_settings.RootDirectory);
+        foreach (var bucket in new[] { "outbox", "inbox", "processing",
+            "processed", "failed", "responded" })
+            Directory.CreateDirectory(Path.Combine(root, bucket));
+
         var options = Options.Create(_settings);
         _worker = new SimulatedClearinghouseVaultWorker(_scopes, options,
             _employerOptions, _loggerFactory.CreateLogger<SimulatedClearinghouseVaultWorker>());
