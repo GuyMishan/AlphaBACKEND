@@ -61,14 +61,25 @@ if (simulatedVaultEnabled)
     builder.Services.AddScoped<SimulatedClearinghouseTechnicalFeedbackHandler>();
     builder.Services.AddHostedService<SimulatedClearinghouseResponder>();
     builder.Services.AddHostedService<SimulatedClearinghouseVaultWorker>();
-    // Opt-in, TEST-only isolated manufacturer vault. The fund-to-provider
-    // routing rule remains explicitly configured per actual product code.
-    if (builder.Configuration.GetValue<bool>(
-        "EmployerInterface006:SimulatedVault:Manufacturers:Menora:Enabled"))
+    // Opt-in TEST-only manufacturer vaults. Every configured manufacturer
+    // receives a separate provider identity, outbox, inbox and responder.
+    foreach (var manufacturerSection in builder.Configuration
+        .GetSection("EmployerInterface006:SimulatedVault:Manufacturers").GetChildren())
     {
-        builder.Services.AddScoped<IReportTransmissionProvider,
-            SimulatedManufacturerVaultReportTransmissionProvider>();
-        builder.Services.AddSingleton<IHostedService, SimulatedMenoraVaultHostedService>();
+        if (!manufacturerSection.GetValue<bool>("Enabled")) continue;
+        var manufacturer = SimulatedManufacturerVaultReportTransmissionProvider
+            .ValidateKey(manufacturerSection.Key);
+        builder.Services.AddScoped<IReportTransmissionProvider>(sp =>
+            new SimulatedManufacturerVaultReportTransmissionProvider(
+                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SimulatedClearinghouseVaultOptions>>(),
+                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EmployerInterface006Options>>(),
+                manufacturer));
+        builder.Services.AddSingleton<IHostedService>(sp =>
+            new SimulatedManufacturerVaultHostedService(
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SimulatedClearinghouseVaultOptions>>(),
+                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EmployerInterface006Options>>(),
+                sp.GetRequiredService<ILoggerFactory>(), manufacturer));
     }
 }
 else if (allowMockTransmission)
