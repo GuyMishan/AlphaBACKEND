@@ -2006,6 +2006,11 @@ public static class ReportFeedbackEndpoints
             }
         }
 
+        var existingResolutionProblemIds = await db.FeedbackProblemResolutions.AsNoTracking()
+            .Where(item => requested.Contains(item.ProblemId))
+            .Select(item => item.ProblemId)
+            .ToHashSetAsync(ct);
+
         foreach (var problemId in requested)
         {
             var row = byProblemId[problemId];
@@ -2033,6 +2038,12 @@ public static class ReportFeedbackEndpoints
                 _ => false
             };
             if (!sourceAllowed) return Results.BadRequest(new { error = "resolution_source_not_allowed" });
+
+            // Correction-backed problems intentionally remain actionable until the linked
+            // revision is completed. Re-validating or resuming the workspace must therefore
+            // be idempotent instead of attempting to insert the same unique ProblemId again.
+            if (existingResolutionProblemIds.Contains(problemId))
+                continue;
 
             db.FeedbackProblemResolutions.Add(new FeedbackProblemResolution(
                 problemId, row.FeedbackId, row.ReportId, row.ReportProductId, row.ContributionId,
