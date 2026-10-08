@@ -18,8 +18,77 @@ public static class ReportTransmissionEndpoints
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/manual-reports").RequireAuthorization().WithTags("Report transmission");
         group.MapGet("/{reportId:guid}/transmissions", GetHistoryAsync);
         group.MapGet("/{reportId:guid}/transmission-routing", GetRoutingAsync);
+        group.MapGet("/{reportId:guid}/transmission-routing/validate", ValidateRoutingAsync);
         group.MapPost("/{reportId:guid}/transmissions", SendAsync);
         return endpoints;
+    }
+
+    private static async Task<IResult> ValidateRoutingAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        IAlphaDbContext db, OrganizationAccessService access,
+        IEnumerable<IReportTransmissionProvider> providers,
+        EmployerInterface006ExportService exporter,
+        IConfiguration configuration, CancellationToken ct)
+    {
+        if (!await access.CanTransmitReportAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+        var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(
+            item => item.Id == reportId && item.OrganizationId == organizationId
+                && item.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+
+        var available = providers.ToArray();
+        var defaultProvider = available.FirstOrDefault(provider => provider.IsConfigured)?.Name
+            ?? available.FirstOrDefault()?.Name ?? string.Empty;
+        var products = await (
+            from product in db.ManualReportProducts.AsNoTracking()
+            join employee in db.ManualReportEmployees.AsNoTracking()
+                on product.ReportEmployeeId equals employee.Id
+            where employee.ReportId == reportId
+            select new { product.Id, product.FundCode }).ToListAsync(ct);
+        IReadOnlyList<ManufacturerTransmissionRouting.Destination> destinations;
+        try
+        {
+            destinations = ManufacturerTransmissionRouting.Destinations(
+                products.Select(product => product.FundCode), defaultProvider, configuration);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
+        var routeByFund = destinations.ToDictionary(destination => destination.FundCode,
+            destination => destination.Provider, StringComparer.OrdinalIgnoreCase);
+        var groups = products.GroupBy(product => routeByFund[product.FundCode])
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase).ToArray();
+        var packages = new List<object>(groups.Length);
+        var sequence = 1;
+        foreach (var group in groups)
+        {
+            var provider = available.FirstOrDefault(item =>
+                string.Equals(item.Name, group.Key, StringComparison.OrdinalIgnoreCase));
+            // Export in-memory and validate with canonical workbook + official XSD.
+            // No file number is reserved, no record is persisted, no send occurs.
+            var generated = await exporter.ExportAsync(report, ct,
+                fileSequence: sequence++, includedProductIds: group.Select(item => item.Id).ToArray());
+            packages.Add(new
+            {
+                provider = group.Key,
+                providerConfigured = provider?.IsConfigured == true,
+                productCount = group.Count(),
+                valid = generated.Validation.IsValid,
+                errors = generated.Validation.Issues
+            });
+        }
+        return Results.Ok(new
+        {
+            reportId,
+            canTransmit = groups.Length == 1
+                && available.Any(provider => provider.IsConfigured
+                    && string.Equals(provider.Name, groups[0].Key, StringComparison.OrdinalIgnoreCase))
+                && packages.Count > 0,
+            requiresSplit = groups.Length > 1,
+            packages
+        });
     }
 
     private static async Task<IResult> GetRoutingAsync(
