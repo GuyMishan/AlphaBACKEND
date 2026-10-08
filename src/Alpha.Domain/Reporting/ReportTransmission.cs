@@ -49,8 +49,8 @@ public sealed class ReportTransmission : Entity
 
     public void ConfigureRoute(string routingKey, IReadOnlyCollection<Guid> productIds)
     {
-        if (Status != ReportTransmissionStatus.Pending || StartedAt.HasValue)
-            throw new InvalidOperationException("Transmission route cannot be changed after dispatch.");
+        if (Status != ReportTransmissionStatus.Pending || StartedAt.HasValue || Payload.Length > 0)
+            throw new InvalidOperationException("Transmission route cannot be changed after preparation or dispatch.");
         if (string.IsNullOrWhiteSpace(routingKey) || routingKey.Length > 120)
             throw new ArgumentException("Routing key is required.", nameof(routingKey));
         if (productIds.Count == 0 || productIds.Any(id => id == Guid.Empty))
