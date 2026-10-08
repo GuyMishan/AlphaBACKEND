@@ -2018,6 +2018,8 @@ public static class ReportFeedbackEndpoints
                     && playbook.Resolver == FeedbackResolverType.Employee
                     && playbook.Actions.HasFlag(FeedbackResolutionAction.EditEmployee),
                 "deposit-save" => playbook.ResolutionType == FeedbackResolutionType.Edit
+                    && playbook.CorrectionBehavior is FeedbackCorrectionBehavior.CorrectionWorkspace
+                        or FeedbackCorrectionBehavior.RevalidateOnly
                     && playbook.Resolver is FeedbackResolverType.Payment
                         or FeedbackResolverType.Contribution
                         or FeedbackResolverType.EmploymentStatus
@@ -2867,19 +2869,31 @@ public static class ReportFeedbackEndpoints
 
         var resolutions = await db.FeedbackProblemResolutions.AsNoTracking()
             .Where(item => problemIds.Contains(item.ProblemId))
-            .Select(item => new { item.ProblemId, item.ResolutionSource })
+            .Select(item => new { item.ProblemId, item.ErrorCode, item.ResolutionSource })
             .ToListAsync(ct);
         if (resolutions.Count == 0) return new HashSet<string>(StringComparer.Ordinal);
 
-        static bool RequiresCompletedCorrection(string source) =>
-            source is "employee-save" or "deposit-save" or "workspace-validation" or "link-original";
+        static bool RequiresCompletedCorrection(string source, int errorCode)
+        {
+            if (source is "employee-save" or "workspace-validation" or "link-original")
+                return true;
+            if (source != "deposit-save")
+                return false;
+
+            // A payment issue such as code 50 is deliberately RevalidateOnly: once the
+            // server has revalidated the corrected payment data it does not need a
+            // transmitted correction revision. Every other deposit-save path fails
+            // closed behind correction completion.
+            return !FeedbackResolutionPlaybookCatalog.TryGet(errorCode, out var playbook)
+                || playbook.CorrectionBehavior != FeedbackCorrectionBehavior.RevalidateOnly;
+        }
 
         var immediate = resolutions
-            .Where(item => !RequiresCompletedCorrection(item.ResolutionSource))
+            .Where(item => !RequiresCompletedCorrection(item.ResolutionSource, item.ErrorCode))
             .Select(item => item.ProblemId)
             .ToHashSet(StringComparer.Ordinal);
         var correctionProblemIds = resolutions
-            .Where(item => RequiresCompletedCorrection(item.ResolutionSource))
+            .Where(item => RequiresCompletedCorrection(item.ResolutionSource, item.ErrorCode))
             .Select(item => item.ProblemId)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
