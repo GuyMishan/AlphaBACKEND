@@ -411,7 +411,7 @@ public static class ReportFeedbackEndpoints
                 .Select(group => group.OrderByDescending(item => item.AttemptNumber).First())
                 .ToArray();
             var canResumeHybrid = canCreateReport
-                && report.Status == ManualReportStatus.Processing
+                && (report.Status is ManualReportStatus.Processing or ManualReportStatus.Sent)
                 && latestRecipients.Length > 1
                 && latestRecipients.Any(item => item.Status is ReportTransmissionStatus.Pending
                     or ReportTransmissionStatus.Rejected)
