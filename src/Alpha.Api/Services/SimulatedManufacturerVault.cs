@@ -1,66 +1,101 @@
 using Alpha.Application.Abstractions;
-using Alpha.Application.Reporting;
 using Microsoft.Extensions.Options;
+using System.Text.RegularExpressions;
 
 namespace Alpha.Api.Services;
 
 /// <summary>
-/// Separate TEST-only vault for a manufacturer. Uses the same 006 transport
-/// and feedback pipeline as the simulated clearing house but with an isolated root.
+/// An independently configured, TEST-only simulated manufacturer vault.
+/// Each manufacturer's outbox/inbox is isolated from the clearinghouse and peers.
 /// </summary>
-public sealed class SimulatedManufacturerVaultReportTransmissionProvider(
-    IOptions<SimulatedClearinghouseVaultOptions> vaultOptions,
-    IOptions<EmployerInterface006Options> employerInterfaceOptions)
+public sealed class SimulatedManufacturerVaultReportTransmissionProvider
     : IReportTransmissionProvider
 {
-    public const string ManufacturerKey = "Menora";
-    public const string ProviderName = "SimulatedVault-Menora";
+    private readonly SimulatedVaultReportTransmissionProvider _inner;
 
-    private readonly SimulatedVaultReportTransmissionProvider _inner =
-        new(Options.Create(CreateMenoraOptions(vaultOptions.Value)), employerInterfaceOptions);
+    public SimulatedManufacturerVaultReportTransmissionProvider(
+        IOptions<SimulatedClearinghouseVaultOptions> defaults,
+        IOptions<EmployerInterface006Options> employerOptions,
+        string manufacturer)
+    {
+        Manufacturer = ValidateKey(manufacturer);
+        Name = ProviderFor(Manufacturer);
+        _inner = new SimulatedVaultReportTransmissionProvider(
+            Options.Create(CreateManufacturerOptions(defaults.Value, Manufacturer)),
+            employerOptions);
+    }
 
-    public string Name => ProviderName;
+    public string Manufacturer { get; }
+    public string Name { get; }
     public bool IsConfigured => _inner.IsConfigured;
 
     public Task<ReportTransmissionProviderResult> SendAsync(
         ReportTransmissionEnvelope envelope, CancellationToken ct) =>
         _inner.SendAsync(envelope, ct);
 
-    public static SimulatedClearinghouseVaultOptions CreateMenoraOptions(
-        SimulatedClearinghouseVaultOptions defaults) => new()
+    public static string ProviderFor(string manufacturer) => "SimulatedVault-" + ValidateKey(manufacturer);
+
+    public static string ValidateKey(string manufacturer)
     {
-        Enabled = defaults.Enabled,
-        ProviderName = ProviderName,
-        RootDirectory = Path.Combine(defaults.RootDirectory, "manufacturers", "menora"),
-        PollIntervalSeconds = defaults.PollIntervalSeconds,
-        AutoRespond = defaults.AutoRespond,
-        DefaultScenario = defaults.DefaultScenario,
-        ResponseDelaySeconds = defaults.ResponseDelaySeconds
-    };
+        if (string.IsNullOrWhiteSpace(manufacturer)
+            || !Regex.IsMatch(manufacturer, @"^[a-zA-Z0-9_-]{1,60}$",
+                RegexOptions.CultureInvariant))
+            throw new ArgumentException("Simulated manufacturer key must be a safe ASCII identifier.", nameof(manufacturer));
+        return manufacturer;
+    }
+
+    public static SimulatedClearinghouseVaultOptions CreateManufacturerOptions(
+        SimulatedClearinghouseVaultOptions defaults, string manufacturer)
+    {
+        var key = ValidateKey(manufacturer);
+        return new()
+        {
+            Enabled = defaults.Enabled,
+            ProviderName = ProviderFor(key),
+            RootDirectory = Path.Combine(defaults.RootDirectory, "manufacturers",
+                key.ToLowerInvariant()),
+            PollIntervalSeconds = defaults.PollIntervalSeconds,
+            AutoRespond = defaults.AutoRespond,
+            DefaultScenario = defaults.DefaultScenario,
+            ResponseDelaySeconds = defaults.ResponseDelaySeconds
+        };
+    }
 }
 
 /// <summary>
-/// Hosts Menora's isolated inbox and mock responder without re-registering
-/// the clearing-house background service type or sharing any vault folders.
+/// Runs a separate inbox worker and mock responder for ONE manufacturer;
+/// the existing clearinghouse workers continue to use their own root.
 /// </summary>
-public sealed class SimulatedMenoraVaultHostedService(
-    IServiceScopeFactory scopes,
-    IOptions<SimulatedClearinghouseVaultOptions> defaults,
-    IOptions<EmployerInterface006Options> employerOptions,
-    ILoggerFactory loggerFactory) : IHostedService
+public sealed class SimulatedManufacturerVaultHostedService : IHostedService
 {
-    private readonly SimulatedClearinghouseVaultOptions _settings =
-        SimulatedManufacturerVaultReportTransmissionProvider.CreateMenoraOptions(defaults.Value);
+    private readonly IServiceScopeFactory _scopes;
+    private readonly IOptions<EmployerInterface006Options> _employerOptions;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly SimulatedClearinghouseVaultOptions _settings;
     private SimulatedClearinghouseResponder? _responder;
     private SimulatedClearinghouseVaultWorker? _worker;
 
+    public SimulatedManufacturerVaultHostedService(
+        IServiceScopeFactory scopes,
+        IOptions<SimulatedClearinghouseVaultOptions> defaults,
+        IOptions<EmployerInterface006Options> employerOptions,
+        ILoggerFactory loggerFactory,
+        string manufacturer)
+    {
+        _scopes = scopes;
+        _employerOptions = employerOptions;
+        _loggerFactory = loggerFactory;
+        _settings = SimulatedManufacturerVaultReportTransmissionProvider
+            .CreateManufacturerOptions(defaults.Value, manufacturer);
+    }
+
     public async Task StartAsync(CancellationToken ct)
     {
-        var settings = Options.Create(_settings);
-        _worker = new SimulatedClearinghouseVaultWorker(scopes, settings, employerOptions,
-            loggerFactory.CreateLogger<SimulatedClearinghouseVaultWorker>());
-        _responder = new SimulatedClearinghouseResponder(scopes, settings, employerOptions,
-            loggerFactory.CreateLogger<SimulatedClearinghouseResponder>());
+        var options = Options.Create(_settings);
+        _worker = new SimulatedClearinghouseVaultWorker(_scopes, options,
+            _employerOptions, _loggerFactory.CreateLogger<SimulatedClearinghouseVaultWorker>());
+        _responder = new SimulatedClearinghouseResponder(_scopes, options,
+            _employerOptions, _loggerFactory.CreateLogger<SimulatedClearinghouseResponder>());
         await _worker.StartAsync(ct);
         await _responder.StartAsync(ct);
     }
