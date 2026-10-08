@@ -12,7 +12,7 @@ namespace Alpha.Api.Services;
 /// </summary>
 public static class ManufacturerHistoricalRoutingResolver
 {
-    public sealed record Product(Guid Id, string FundCode, Guid? SourceReportProductId);
+    public sealed record Product(Guid Id, string FundCode, string FundCompanyName, Guid? SourceReportProductId);
     public sealed record Assignment(Guid ProductId, string Provider);
 
     public static async Task<IReadOnlyList<Assignment>> ResolveAsync(
@@ -95,15 +95,15 @@ public static class ManufacturerHistoricalRoutingResolver
         }
 
         var withoutHistory = products.Where(product => !historical.ContainsKey(product.Id)).ToArray();
-        var currentRoutes = ManufacturerTransmissionRouting.Destinations(
-            withoutHistory.Select(product => product.FundCode), defaultProvider, configuration);
-        var currentByFund = currentRoutes.ToDictionary(route => route.FundCode,
-            route => route.Provider, StringComparer.OrdinalIgnoreCase);
+        var currentByProduct = await ManufacturerCatalogRouting.ResolveAsync(
+            db, withoutHistory.Select(product => new ManufacturerCatalogRouting.Product(
+                product.Id, product.FundCode, product.FundCompanyName)).ToArray(),
+            defaultProvider, configuration, ct);
 
         return products.OrderBy(product => product.Id)
             .Select(product => new Assignment(product.Id,
                 historical.TryGetValue(product.Id, out var provider)
-                    ? provider : currentByFund[product.FundCode]))
+                    ? provider : currentByProduct[product.Id]))
             .ToArray();
     }
 }
