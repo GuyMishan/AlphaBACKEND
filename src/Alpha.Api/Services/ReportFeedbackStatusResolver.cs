@@ -44,6 +44,11 @@ public static class ReportFeedbackStatusResolver
         return Math.Round(allocatedAmount / reportedDepositAmount * 100m, 2);
     }
 
+    // An informational error code alone is not producer acceptance: the official
+    // RESHUMA-NIKLETA (intake status) must also explicitly confirm receipt.
+    public static bool IsCorrectionFeedbackAccepted(int? intakeStatus, int? errorCode) =>
+        intakeStatus == 1 && errorCode is 1 or 31;
+
     public static bool IsActionableFeedbackError(int? errorCode) =>
         errorCode.HasValue && errorCode is not (1 or 31);
 
