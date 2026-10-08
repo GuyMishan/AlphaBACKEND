@@ -314,12 +314,13 @@ public static class HybridReportTransmissionDispatcher
                 }));
                 evidence.Prepare(hash, package.PayloadFileName,
                     protector.ProtectBytes(package.Bytes, $"report-transmission:{evidence.Id}"), manifest);
-                db.ReportTransmissions.Add(evidence);
                 prepared.Add(new PreparedRecipient(pair.Provider, evidence,
                     new ReportTransmissionEnvelope(reportId, organizationId, employerId,
                         package.Bytes, hash, attachments, package.PayloadFileName)));
             }
-            // Save every independent planned package before the first remote side effect.
+            // Persist the complete plan atomically. If one package fails its
+            // preflight, no partial destination rows can be accidentally saved.
+            foreach (var batch in prepared) db.ReportTransmissions.Add(batch.Transmission);
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (Exception exception) when (exception is InvalidOperationException or DbUpdateException)
