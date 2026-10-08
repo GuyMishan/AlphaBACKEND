@@ -61,6 +61,7 @@ public static class ReportTransmissionEndpoints
         var groups = products.GroupBy(product => routeByFund[product.FundCode])
             .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase).ToArray();
         var packages = new List<object>(groups.Length);
+        var allPackagesValid = true;
         var sequence = 1;
         foreach (var group in groups)
         {
@@ -70,6 +71,7 @@ public static class ReportTransmissionEndpoints
             // No file number is reserved, no record is persisted, no send occurs.
             var generated = await exporter.ExportAsync(report, ct,
                 fileSequence: sequence++, includedProductIds: group.Select(item => item.Id).ToArray());
+            allPackagesValid &= generated.Validation.IsValid;
             packages.Add(new
             {
                 provider = group.Key,
@@ -82,7 +84,7 @@ public static class ReportTransmissionEndpoints
         return Results.Ok(new
         {
             reportId,
-            canTransmit = groups.Length == 1
+            canTransmit = allPackagesValid && groups.Length == 1
                 && available.Any(provider => provider.IsConfigured
                     && string.Equals(provider.Name, groups[0].Key, StringComparison.OrdinalIgnoreCase))
                 && packages.Count > 0,
