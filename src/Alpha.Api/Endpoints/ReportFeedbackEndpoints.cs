@@ -2871,16 +2871,46 @@ public static class ReportFeedbackEndpoints
             .ToArray();
         if (problemIds.Length == 0) return latestRows;
 
-        var resolved = await db.FeedbackProblemResolutions.AsNoTracking()
-            .Where(x => problemIds.Contains(x.ProblemId))
-            .Select(x => x.ProblemId)
-            .ToHashSetAsync(ct);
+        var resolved = await EffectiveResolvedProblemIdsAsync(problemIds, db, ct);
 
         return latestRows
             .Where(x => !x.ErrorCode.HasValue
                 || !resolved.Contains(FeedbackResolutionWireProjection.BuildProblemId(
                     x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode.Value)))
             .ToArray();
+    }
+
+    private static async Task<HashSet<string>> EffectiveResolvedProblemIdsAsync(
+        IReadOnlyCollection<string> problemIds, IAlphaDbContext db, CancellationToken ct)
+    {
+        if (problemIds.Count == 0) return new HashSet<string>(StringComparer.Ordinal);
+
+        var resolutionIds = await db.FeedbackProblemResolutions.AsNoTracking()
+            .Where(item => problemIds.Contains(item.ProblemId))
+            .Select(item => item.ProblemId)
+            .ToListAsync(ct);
+        if (resolutionIds.Count == 0) return new HashSet<string>(StringComparer.Ordinal);
+
+        var correctionLinks = await db.FeedbackCorrectionResolutionLinks.AsNoTracking()
+            .Where(link => resolutionIds.Contains(link.ProblemId))
+            .ToListAsync(ct);
+        if (correctionLinks.Count == 0) return resolutionIds.ToHashSet(StringComparer.Ordinal);
+
+        var workspaceIds = correctionLinks.Select(link => link.WorkspaceReportId).Distinct().ToArray();
+        var completedWorkspaces = await db.ManualReports.AsNoTracking()
+            .Where(report => workspaceIds.Contains(report.Id)
+                && report.IsRevisionSnapshot
+                && report.Status == ManualReportStatus.Completed)
+            .Select(report => report.Id)
+            .ToHashSetAsync(ct);
+        var pendingCorrectionProblems = correctionLinks
+            .Where(link => !completedWorkspaces.Contains(link.WorkspaceReportId))
+            .Select(link => link.ProblemId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return resolutionIds
+            .Where(problemId => !pendingCorrectionProblems.Contains(problemId))
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     private static async Task<IResult> EmployerContextAsync(
