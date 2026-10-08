@@ -233,3 +233,9 @@ Audited on the current backend/frontend main branches, tracing playbook routing,
 6. **Open — The original-movement, refunds, split routing and stale feedback-after-new-transmission scenarios need full API/PostgreSQL integration and simulated round-trip fixtures, in addition to existing catalog/contract tests.
 
 Do not report this audit as CI-green or production end-to-end verified until verification and clearinghouse boundary tests are available.
+
+### Official code 50 duplicate-transfer correction (2026-10-08)
+
+The official Version 6 error-code workbook, sheet `סוג שגיאה וסטטוס רשומה`, describes `SUG-SHGIHA=50` as `דיווח כפול על מספר זיהוי של פרטי העברת כספים`. It is not payment-treatment-status 50 (`לא התקבל טופס הרשאה לחיוב חשבון חתום על ידי המעסיק`) in sheet `סטטוס טיפול בכספים`.
+
+The playbook now routes error 50 to `Decision`, `Payment`, `PerTransfer`, `Dynamic` with `Review`, `PrepareCorrection`, and `OpenExternalCase`. No `Confirm`, direct `EditPayment` closure, or `RevalidateOnly` path is available. Operators should compare the original transfer identifier and already transmitted evidence: do not retransmit an already accepted transfer; prepare a correction only when genuinely needed under official rules; otherwise investigate externally. A correction decision is not equivalent to resolution: workspace validation and completed correction transmission are still required. No automatic acceptance assertion is made from local validation.
