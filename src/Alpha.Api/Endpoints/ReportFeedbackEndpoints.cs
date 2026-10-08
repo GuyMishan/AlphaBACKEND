@@ -2373,18 +2373,15 @@ public static class ReportFeedbackEndpoints
 
             var reportedValues = ReportedValues(playbook.Resolver, report, reportEmployee, product, contribution, productMetadata, payment, protector);
             var currentValues = CurrentValues(playbook.Resolver, employment, person, liveProduct, liveContribution, currentPaymentAccount, protector);
-            var feedbackValues = FeedbackValues(row, transfer).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
-            {
-                ["resolutionWorkflowStatus"] = transmittedProblemIds.Contains(
-                    FeedbackResolutionWireProjection.BuildProblemId(row.FeedbackId, row.ContributionId,
-                        row.Sequence, playbook.Code))
-                    ? "transmitted-awaiting-feedback"
-                    : pendingResolutionIds.Contains(
-                        FeedbackResolutionWireProjection.BuildProblemId(row.FeedbackId, row.ContributionId,
-                            row.Sequence, playbook.Code))
-                        ? "correction-in-progress"
-                        : "needs-treatment"
-            };
+            var feedbackValues = FeedbackValues(row, transfer)
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            var feedbackProblemId = FeedbackResolutionWireProjection.BuildProblemId(
+                row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code);
+            feedbackValues["resolutionWorkflowStatus"] = transmittedProblemIds.Contains(feedbackProblemId)
+                ? "transmitted-awaiting-feedback"
+                : pendingResolutionIds.Contains(feedbackProblemId)
+                    ? "correction-in-progress"
+                    : "needs-treatment";
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
             var groupKey = FeedbackResolutionWireProjection.BuildResolutionGroupKey(
                 playbook, employerId, row.ReportId, row.ReportProductId, row.ContributionId,
