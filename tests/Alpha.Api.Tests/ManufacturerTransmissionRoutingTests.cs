@@ -41,6 +41,25 @@ public sealed class ManufacturerTransmissionRoutingTests
     }
 
     [Fact]
+    public void Routing_preview_shows_each_destination_even_when_dispatch_is_blocked()
+    {
+        var destinations = ManufacturerTransmissionRouting.Destinations(
+            ["100", "200"], "clearinghouse", Config(("100", "manufacturer-direct")));
+
+        Assert.Collection(destinations,
+            first =>
+            {
+                Assert.Equal("100", first.FundCode);
+                Assert.Equal("manufacturer-direct", first.Provider);
+            },
+            second =>
+            {
+                Assert.Equal("200", second.FundCode);
+                Assert.Equal("clearinghouse", second.Provider);
+            });
+    }
+
+    [Fact]
     public void Mixed_direct_providers_are_blocked()
     {
         var error = Assert.Throws<InvalidOperationException>(() =>
