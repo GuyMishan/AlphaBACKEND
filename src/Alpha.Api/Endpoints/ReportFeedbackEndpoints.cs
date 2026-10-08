@@ -3088,7 +3088,9 @@ public static class ReportFeedbackEndpoints
             .ToListAsync(ct);
         var productIds = documentProducts.Select(product => product.Id).ToArray();
         var contributions = await db.ManualContributions.AsNoTracking()
-            .Where(contribution => productIds.Contains(contribution.ReportProductId))
+            .Where(contribution => productIds.Contains(contribution.ReportProductId)
+                && (contribution.Amount != 0m || contribution.Percentage != 0m
+                    || contribution.ExemptPayments != 0m))
             .Select(contribution => new { contribution.Id, contribution.ReportProductId })
             .ToListAsync(ct);
         var transmissions = await db.ReportTransmissions.AsNoTracking()
