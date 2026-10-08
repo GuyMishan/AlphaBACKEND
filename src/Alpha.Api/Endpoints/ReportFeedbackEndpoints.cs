@@ -3048,7 +3048,7 @@ public static class ReportFeedbackEndpoints
                 && documentIds.Contains(row.ReportId))
             .OrderByDescending(row => row.ReceivedAt)
             .ThenByDescending(row => row.CreatedAt)
-            .Select(row => new { row.ContributionId, row.ReportProductId, row.FeedbackId, row.ErrorCode })
+            .Select(row => new { row.ContributionId, row.ReportProductId, row.FeedbackId, row.ErrorCode, row.IntakeStatus })
             .ToListAsync(ct);
         var latestRows = feedbackRows.GroupBy(row => row.ContributionId)
             .ToDictionary(group => group.Key, group =>
@@ -3057,7 +3057,7 @@ public static class ReportFeedbackEndpoints
             .Where(group => group.All(contribution =>
                 latestRows.TryGetValue(contribution.Id, out var rows)
                 && rows.Any(row => row.ReportProductId == contribution.ReportProductId)
-                && rows.All(row => row.ErrorCode is 1 or 31)))
+                && rows.All(row => row.IntakeStatus == 1 && (row.ErrorCode is 1 or 31))))
             .Select(group => group.Key).ToHashSet();
 
         var sourceProductIds = correctionLinks.Where(link => link.ReportProductId.HasValue)
