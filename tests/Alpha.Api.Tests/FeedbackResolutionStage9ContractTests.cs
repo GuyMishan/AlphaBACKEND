@@ -125,6 +125,16 @@ public sealed class FeedbackResolutionStage9ContractTests
     }
 
     [Fact]
+    public void Pending_correction_resolution_can_be_revalidated_idempotently()
+    {
+        var endpoint = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
+
+        Assert.Contains("existingResolutionProblemIds", endpoint, StringComparison.Ordinal);
+        Assert.Contains("if (existingResolutionProblemIds.Contains(problemId))", endpoint, StringComparison.Ordinal);
+        Assert.Contains("continue;", endpoint, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Revalidate_only_payment_resolution_does_not_wait_for_a_correction_revision()
     {
         var payment = FeedbackResolutionPlaybookCatalog.Get(50);
