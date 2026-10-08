@@ -205,3 +205,31 @@ GitHub `backend-ci` runs the same Release restore/build/test sequence. Do not ma
 ## Feedback resolution Stage 9
 
 The feedback-resolution audit now cross-checks the simulator `all-errors` expansion against the complete actionable playbook catalog. Resolution invariants include per-ProblemId persistence, unsupported/stale fail-closed behavior, durable correction-workspace links across refresh, server-side employee/deposit/workspace revalidation, a non-zero correction delta requirement, correction lineage for negative/current technical documents, durable external/reconciliation cases, and actual previous-movement selection for codes 97/98. A newer clearing-house feedback file produces new ProblemIds and therefore cannot be hidden by a historic resolution.
+
+## Feedback-resolution full-flow audit — 2026-10-08
+
+Audited on the current backend/frontend main branches, tracing playbook routing, scope checks, active feedback projections, decision/document/external-case handlers, correction workspace creation, report validation, delta materialization, technical transmission, revision promotion and frontend re-entry.
+
+### Confirmed controls by code inspection
+- Actionable feedback is projected with deterministic per-feedback/contribution/sequence/error ProblemIds; unsupported playbook codes are explicit rather than silently mapped.
+- Report and deposit resolution contexts verify employer scope; source report snapshots remain distinct from live employee/payment information.
+- Correction workspaces require an already-sent/completed eligible source and reject superseded revisions; actual source/workspace delta and official 006 validation gate materialization.
+- Technical negative/current documents are persisted separately and must both reach a successful sent/completed state before the business workspace is promoted.
+- Correction-backed problem records remain *operationally open* until linked business revision promotion; missing/deleted workspace links do not count as effective resolution.
+- External cases, decisions, document evidence and original-movement references have separate durable records; document upload verifies type/signature/scanner.
+- Frontend wizard restores correction links from the server after reopening a workspace rather than relying solely on query parameters.
+
+### Fixed during this review
+- `deposit-save` now enforces `CorrectionWorkspace` as validation target for playbooks that require a formal correction; a mutable/original report ID cannot act as substitute.
+- Earlier same-day hardening distinguishes code 50 `RevalidateOnly` from correction-backed edit cases, blocks `Dynamic` from an unsupported direct close, and makes repeated workspace validation idempotent.
+- Wizard success messaging no longer suggests correction-backed problems are terminally resolved before correction transmission.
+
+### Remaining verification gaps / follow-up decisions
+1. **High — No green backend CI for this HEAD established in the audit.** The GitHub connector returned no backend combined statuses, and its workflow-run lookup is limited to pull-request runs; no local .NET/PostgreSQL execution was available. Source-level contract tests were added, but these are not substitutes for running `dotnet restore/build/test`.
+2. **High — End-to-end institutional acceptance is unverified.** `FinalizeRevisionIfCompleteAsync` promotes when all technical documents reach `Sent/Completed`; this means transport-provider acceptance, not necessarily a *new manufacturer business feedback acknowledging every correction*. Whether resolution should remain pending for fresh institution feedback is a business/clearinghouse contract decision, not something to silently change in an audit.
+3. **Medium — `RevalidateOnly` payment remediation needs a dedicated user path review.** Code 50 can be closed by successful local revalidation without a transmitted correction, but the Reports page may open a correction workspace automatically when editing a previously sent deposit. Confirm that this is the intended payment-only experience and add an integration test.
+4. **Medium — Duplicate correction preparation and partial failure need database-level tests.** Contract/source-assertion tests cover selected gates, not the entire request sequence under concurrent requests or a failed transaction.
+5. **Medium — External-case closure records an operator's explicit decision, not proof of email delivery or actual third-party settlement.** Email dispatch is intentionally not implemented; external-case status must not be represented as third-party confirmation.
+6. **Open — The original-movement, refunds, split routing and stale feedback-after-new-transmission scenarios need full API/PostgreSQL integration and simulated round-trip fixtures, in addition to existing catalog/contract tests.
+
+Do not report this audit as CI-green or production end-to-end verified until verification and clearinghouse boundary tests are available.
