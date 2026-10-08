@@ -21,6 +21,215 @@ public static class HybridReportTransmissionDispatcher
         ReportTransmission Transmission,
         ReportTransmissionEnvelope Envelope);
 
+    /// <summary>
+    /// Resume only unattempted recipient packages or explicitly rejected ones.
+    /// A Sending/Error attempt is ambiguous and must be reconciled manually.
+    /// Never redispatch a successfully accepted recipient.
+    /// </summary>
+    public static async Task<IResult> ResumeAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        IAlphaDbContext db, IReadOnlyCollection<IReportTransmissionProvider> availableProviders,
+        EmployerInterface006ExportService exporter,
+        EmployerInterfaceFileSequenceService fileSequences,
+        IDataProtectionService protector, CancellationToken ct)
+    {
+        var report = await db.ManualReports.SingleOrDefaultAsync(item =>
+            item.Id == reportId && item.OrganizationId == organizationId
+                && item.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (report.Status != ManualReportStatus.Processing)
+            return Results.Conflict(new { error = "manufacturer_route_not_processing" });
+
+        var transmissions = await db.ReportTransmissions.AsNoTracking()
+            .Where(item => item.ReportId == reportId)
+            .OrderByDescending(item => item.AttemptNumber).ToListAsync(ct);
+        if (transmissions.Count < 2
+            || transmissions.Any(item => string.IsNullOrWhiteSpace(item.RoutingKey)))
+            return Results.Conflict(new { error = "manufacturer_route_no_hybrid_plan" });
+        var latestRoutes = transmissions.GroupBy(item => item.RoutingKey,
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(item => item.RoutingKey, StringComparer.OrdinalIgnoreCase).ToArray();
+
+        if (latestRoutes.Any(item => item.Status is ReportTransmissionStatus.Sending
+            or ReportTransmissionStatus.Error))
+            return Results.Conflict(new { error = "manufacturer_route_reconciliation_required" });
+
+        foreach (var previous in latestRoutes)
+        {
+            if (previous.Status == ReportTransmissionStatus.Accepted) continue;
+            var provider = availableProviders.FirstOrDefault(item =>
+                string.Equals(item.Name, previous.Provider, StringComparison.OrdinalIgnoreCase));
+            if (provider is null || !provider.IsConfigured)
+                return Results.Json(new { error = "manufacturer_route_provider_unavailable",
+                    provider = previous.Provider }, statusCode: StatusCodes.Status503ServiceUnavailable);
+
+            ReportTransmission target;
+            ReportTransmissionEnvelope envelope;
+            if (previous.Status == ReportTransmissionStatus.Pending)
+            {
+                // The prepared payload and its attachments are immutable evidence;
+                // a process restart must never create a different package.
+                target = previous;
+                envelope = await RebuildEnvelopeAsync(previous, organizationId, employerId,
+                    db, protector, ct);
+            }
+            else if (previous.Status == ReportTransmissionStatus.Rejected)
+            {
+                // Definitive provider rejection permits a new, uniquely named
+                // attempt; prior attempts remain immutable for audit.
+                Guid[] productIds;
+                try
+                {
+                    productIds = JsonSerializer.Deserialize<Guid[]>(
+                        previous.RoutedProductIdsJson) ?? [];
+                }
+                catch (JsonException)
+                {
+                    return Results.Conflict(new { error = "manufacturer_route_scope_invalid" });
+                }
+                if (productIds.Length == 0)
+                    return Results.Conflict(new { error = "manufacturer_route_scope_invalid" });
+
+                var reservation = await fileSequences.ReserveAsync(employerId, ct);
+                var generated = await exporter.ExportAsync(report, ct,
+                    reservation.Sequence, reservation.PreparedAt, productIds);
+                if (!generated.Validation.IsValid || string.IsNullOrWhiteSpace(generated.PayloadFileName))
+                    return Results.Conflict(new { error = "manufacturer_route_retry_validation_failed",
+                        validation = generated.Validation });
+
+                var attachments = (generated.AttachmentFiles ?? [])
+                    .Select(file => new ReportTransmissionAttachment(file.FileName,
+                        file.ContentType, file.Content, file.Sha256)).ToArray();
+                var attemptNumber = (await db.ReportTransmissions
+                    .Where(item => item.ReportId == reportId)
+                    .MaxAsync(item => (int?)item.AttemptNumber, ct) ?? 0) + 1;
+                target = new ReportTransmission(reportId, organizationId, employerId,
+                    previous.Provider, attemptNumber);
+                target.ConfigureRoute(previous.RoutingKey, productIds);
+                var hash = EmployerInterfaceService.Hash(generated.Bytes);
+                var manifest = JsonSerializer.Serialize(attachments.Select(item => new
+                {
+                    item.FileName, item.ContentType, sizeBytes = item.Content.LongLength, item.Sha256
+                }));
+                target.Prepare(hash, generated.PayloadFileName,
+                    protector.ProtectBytes(generated.Bytes, $"report-transmission:{target.Id}"), manifest);
+                db.ReportTransmissions.Add(target);
+                try
+                {
+                    await db.SaveChangesAsync(CancellationToken.None);
+                }
+                catch (DbUpdateException)
+                {
+                    return Results.Conflict(new { error = "manufacturer_route_concurrent_retry" });
+                }
+                envelope = new ReportTransmissionEnvelope(reportId, organizationId, employerId,
+                    generated.Bytes, hash, attachments, generated.PayloadFileName);
+            }
+            else
+            {
+                return Results.Conflict(new { error = "manufacturer_route_invalid_attempt_state" });
+            }
+
+            var claimed = await db.ReportTransmissions
+                .Where(item => item.Id == target.Id && item.ReportId == reportId
+                    && item.Status == ReportTransmissionStatus.Pending)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(item => item.Status, ReportTransmissionStatus.Sending)
+                    .SetProperty(item => item.StartedAt, DateTimeOffset.UtcNow)
+                    .SetProperty(item => item.UpdatedAt, DateTimeOffset.UtcNow),
+                    CancellationToken.None);
+            if (claimed != 1)
+                return Results.Conflict(new { error = "manufacturer_route_concurrent_dispatch" });
+
+            // ExecuteUpdate does not synchronize tracked entities. Only attach
+            // the updated transmission after successfully claiming the row.
+            if (db is DbContext ef)
+            {
+                var tracked = ef.ChangeTracker.Entries<ReportTransmission>()
+                    .FirstOrDefault(entry => entry.Entity.Id == target.Id);
+                if (tracked is not null) tracked.State = EntityState.Detached;
+            }
+            var dispatch = await db.ReportTransmissions.SingleAsync(
+                item => item.Id == target.Id, CancellationToken.None);
+            try
+            {
+                var result = await provider.SendAsync(envelope, CancellationToken.None);
+                dispatch.Complete(result.Success ? ReportTransmissionStatus.Accepted
+                        : ReportTransmissionStatus.Rejected,
+                    result.ExternalId,
+                    string.IsNullOrWhiteSpace(result.ResponsePayload) ? string.Empty
+                        : protector.Protect(result.ResponsePayload,
+                            $"report-transmission-response:{dispatch.Id}"),
+                    result.ErrorMessage);
+                await db.SaveChangesAsync(CancellationToken.None);
+                if (!result.Success)
+                    return Results.Conflict(new { error = "manufacturer_route_partial_rejection",
+                        provider = dispatch.Provider, transmissionId = dispatch.Id });
+            }
+            catch (Exception)
+            {
+                dispatch.Complete(ReportTransmissionStatus.Error, null, null,
+                    "Remote transmission outcome is uncertain; reconciliation required.");
+                await db.SaveChangesAsync(CancellationToken.None);
+                return Results.Json(new { error = "manufacturer_route_reconciliation_required",
+                    provider = dispatch.Provider }, statusCode: StatusCodes.Status502BadGateway);
+            }
+        }
+
+        var allAttempts = await db.ReportTransmissions.AsNoTracking()
+            .Where(item => item.ReportId == reportId)
+            .OrderByDescending(item => item.AttemptNumber).ToListAsync(CancellationToken.None);
+        var allAccepted = allAttempts.GroupBy(item => item.RoutingKey,
+                StringComparer.OrdinalIgnoreCase)
+            .All(group => group.First().Status == ReportTransmissionStatus.Accepted);
+        if (!allAccepted)
+            return Results.Conflict(new { error = "manufacturer_route_pending_recipient" });
+
+        report.MarkSent();
+        await db.SaveChangesAsync(CancellationToken.None);
+        await CorrectionWorkflowService.FinalizeRevisionIfCompleteAsync(reportId, db,
+            CancellationToken.None);
+        return Results.Ok(new { reportId, reportStatus = report.Status,
+            requiresProducerFeedback = true });
+    }
+
+    private static async Task<ReportTransmissionEnvelope> RebuildEnvelopeAsync(
+        ReportTransmission transmission, Guid organizationId, Guid employerId,
+        IAlphaDbContext db, IDataProtectionService protector, CancellationToken ct)
+    {
+        var bytes = protector.UnprotectBytes(transmission.Payload,
+            $"report-transmission:{transmission.Id}");
+        if (!string.Equals(EmployerInterfaceService.Hash(bytes), transmission.PayloadHash,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("manufacturer_route_payload_hash_mismatch");
+
+        var attachments = new List<ReportTransmissionAttachment>();
+        var stored = await db.ManualReportAttachments.AsNoTracking()
+            .Where(item => item.ReportId == transmission.ReportId).ToListAsync(ct);
+        var scope = JsonSerializer.Deserialize<Guid[]>(transmission.RoutedProductIdsJson) ?? [];
+        using var manifest = JsonDocument.Parse(transmission.AttachmentManifestJson);
+        foreach (var element in manifest.RootElement.EnumerateArray())
+        {
+            var hash = element.GetProperty("Sha256").GetString() ?? string.Empty;
+            var filename = element.GetProperty("FileName").GetString() ?? string.Empty;
+            var mime = element.GetProperty("ContentType").GetString() ?? string.Empty;
+            var source = stored.FirstOrDefault(item =>
+                string.Equals(item.Sha256, hash, StringComparison.OrdinalIgnoreCase)
+                && (!item.ReportProductId.HasValue
+                    || scope.Contains(item.ReportProductId.Value)));
+            if (source is null)
+                throw new InvalidOperationException("manufacturer_route_attachment_not_found");
+            var content = protector.UnprotectBytes(source.Content,
+                $"report-attachment:{source.ReportId}:{source.ReportProductId}:{source.DocumentTypeCode}");
+            if (element.GetProperty("sizeBytes").GetInt64() != content.LongLength)
+                throw new InvalidOperationException("manufacturer_route_attachment_size_mismatch");
+            attachments.Add(new ReportTransmissionAttachment(filename, mime, content, hash));
+        }
+        return new ReportTransmissionEnvelope(transmission.ReportId, organizationId, employerId,
+            bytes, transmission.PayloadHash, attachments.ToArray(), transmission.PayloadFileName);
+    }
+
     public static async Task<IResult> SendAsync(
         Guid organizationId, Guid employerId, Guid reportId,
         IAlphaDbContext db, IReadOnlyCollection<Recipient> recipients,
