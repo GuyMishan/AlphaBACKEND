@@ -6,6 +6,22 @@ namespace Alpha.Api.Tests;
 
 public sealed class ReportFeedbackStatusResolverTests
 {
+    [Theory]
+    [InlineData(1, 1, true)]
+    [InlineData(1, 31, true)]
+    [InlineData(2, 1, false)]
+    [InlineData(3, 31, false)]
+    [InlineData(6, 1, false)]
+    [InlineData(1, 50, false)]
+    [InlineData(1, null, false)]
+    [InlineData(null, 1, false)]
+    public void Corrected_feedback_requires_explicit_record_acceptance(
+        int? intakeStatus, int? errorCode, bool expected)
+    {
+        Assert.Equal(expected,
+            ReportFeedbackStatusResolver.IsCorrectionFeedbackAccepted(intakeStatus, errorCode));
+    }
+
     [Fact]
     public void No_transmission_and_no_feedback_is_not_sent()
     {
