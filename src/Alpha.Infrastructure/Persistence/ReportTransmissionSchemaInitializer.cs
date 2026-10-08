@@ -13,6 +13,8 @@ public static class ReportTransmissionSchemaInitializer
                 "OrganizationId" uuid NOT NULL,
                 "EmployerId" uuid NOT NULL,
                 "Provider" varchar(120) NOT NULL,
+                "RoutingKey" varchar(120) NOT NULL DEFAULT '',
+                "RoutedProductIdsJson" text NOT NULL DEFAULT '[]',
                 "AttemptNumber" integer NOT NULL,
                 "Status" varchar(30) NOT NULL,
                 "ExternalId" varchar(200) NOT NULL DEFAULT '',
@@ -30,6 +32,8 @@ public static class ReportTransmissionSchemaInitializer
                 CONSTRAINT "FK_report_transmissions_manual_reports_ReportId"
                     FOREIGN KEY ("ReportId") REFERENCES reporting.manual_reports("Id") ON DELETE CASCADE
             );
+            ALTER TABLE reporting.report_transmissions ADD COLUMN IF NOT EXISTS "RoutingKey" varchar(120) NOT NULL DEFAULT '';
+            ALTER TABLE reporting.report_transmissions ADD COLUMN IF NOT EXISTS "RoutedProductIdsJson" text NOT NULL DEFAULT '[]';
             ALTER TABLE reporting.report_transmissions ADD COLUMN IF NOT EXISTS "PayloadFileName" varchar(100) NOT NULL DEFAULT '';
             ALTER TABLE reporting.report_transmissions ADD COLUMN IF NOT EXISTS "Payload" bytea NOT NULL DEFAULT decode('', 'hex');
             ALTER TABLE reporting.report_transmissions ADD COLUMN IF NOT EXISTS "AttachmentManifestJson" text NOT NULL DEFAULT '[]';
