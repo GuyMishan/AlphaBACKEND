@@ -12,6 +12,7 @@ EmployerInterface006:SimulatedVault:Enabled=true
 EmployerInterface006:SimulatedVault:AutoRespond=true
 EmployerInterface006:SimulatedVault:DefaultScenario=success
 EmployerInterface006:SimulatedVault:Manufacturers:Menora:Enabled=true
+EmployerInterface006:SimulatedVault:Manufacturers:Menora:DefaultScenario=success
 Reporting:ManufacturerRouting:EnableHybridDispatch=true
 Reporting:ManufacturerRouting:Funds:<ACTUAL_MENORA_FUND_CODE>=SimulatedVault-Menora
 ```
@@ -35,6 +36,8 @@ simulated-clearinghouse-vault/
 ```
 
 Both channels share the official Employer Interface 006 outgoing file naming and schema validation, but **not** their directories. Menora messages are accepted by the Menora inbox worker only when their `TransmissionId` belongs to `SimulatedVault-Menora`. The simulated contribution feedback is limited to the `RoutedProductIdsJson` products of that transmission; it may not acknowledge unrelated clearinghouse contributions.
+
+Each manufacturer can override `DefaultScenario`, `AutoRespond`, `PollIntervalSeconds` and `ResponseDelaySeconds` under its own `SimulatedVault:Manufacturers:<Key>` section, while inheriting defaults when absent. For example, set Menora's `DefaultScenario=error` while the clearinghouse remains `success`. No shared TEST inbox or sent-file directory is used.
 
 ## Acceptance scenario for the later E2E session
 
