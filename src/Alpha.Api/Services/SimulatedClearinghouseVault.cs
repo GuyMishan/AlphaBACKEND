@@ -11,6 +11,7 @@ public sealed class SimulatedClearinghouseVaultOptions
     public const string SectionName = "EmployerInterface006:SimulatedVault";
 
     public bool Enabled { get; set; }
+    public string ProviderName { get; set; } = "SimulatedVault";
     public string RootDirectory { get; set; } = "simulated-clearinghouse-vault";
     public int PollIntervalSeconds { get; set; } = 5;
     public bool AutoRespond { get; set; } = true;
@@ -216,6 +217,20 @@ public sealed class SimulatedClearinghouseVaultWorker(
             {
                 var json = await File.ReadAllTextAsync(processingPath, ct);
                 var instruction = JsonSerializer.Deserialize<SimulatedVaultFeedbackInstruction>(json);
+                if (instruction is not null)
+                {
+                    var belongsToVault = await db.ReportTransmissions.AsNoTracking().AnyAsync(
+                        transmission => transmission.Id == instruction.TransmissionId
+                            && transmission.ReportId == instruction.ReportId
+                            && transmission.EmployerId == employerId
+                            && transmission.Provider == _options.ProviderName, ct);
+                    if (!belongsToVault)
+                    {
+                        MoveTo(root, "failed", employerId, processingPath, safeName);
+                        logger.LogWarning("Simulated feedback rejected: transmission does not belong to this vault.");
+                        return;
+                    }
+                }
                 if (instruction is null)
                 {
                     MoveTo(root, "failed", employerId, processingPath, safeName);
