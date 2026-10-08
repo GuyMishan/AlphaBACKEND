@@ -405,6 +405,18 @@ public static class ReportFeedbackEndpoints
         var items = page.Select(report =>
         {
             latestTransmission.TryGetValue(report.Id, out var tx); money.TryGetValue(report.Id, out var cash);
+            var latestRecipients = transmissions
+                .Where(item => item.ReportId == report.Id && !string.IsNullOrWhiteSpace(item.RoutingKey))
+                .GroupBy(item => item.RoutingKey, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.OrderByDescending(item => item.AttemptNumber).First())
+                .ToArray();
+            var canResumeHybrid = canCreateReport
+                && report.Status == ManualReportStatus.Processing
+                && latestRecipients.Length > 1
+                && latestRecipients.Any(item => item.Status is ReportTransmissionStatus.Pending
+                    or ReportTransmissionStatus.Rejected)
+                && latestRecipients.All(item => item.Status is ReportTransmissionStatus.Accepted
+                    or ReportTransmissionStatus.Pending or ReportTransmissionStatus.Rejected);
             var rootId = report.RevisionRootReportId ?? report.Id;
             var hasNewerRevision = latestRevisionByRoot.TryGetValue(rootId, out var latestRevisionNumber)
                 && (!report.IsRevisionSnapshot || report.RevisionNumber < latestRevisionNumber);
@@ -429,6 +441,16 @@ public static class ReportFeedbackEndpoints
                 employeeCount = employeeCounts.GetValueOrDefault(report.Id), totalAmount = total, payoffRate,
                 allocatedAmount = cash?.Allocated, actualReceivedAmount = cash?.Received, inTransitAmount = cash?.InTransit,
                 canEdit = canCreateReport && report.IsEditable,
+                canResumeHybrid,
+                hybridTransmission = latestRecipients.Length > 1 ? new
+                {
+                    recipientCount = latestRecipients.Length,
+                    acceptedCount = latestRecipients.Count(item => item.Status == ReportTransmissionStatus.Accepted),
+                    rejectedCount = latestRecipients.Count(item => item.Status == ReportTransmissionStatus.Rejected),
+                    pendingCount = latestRecipients.Count(item => item.Status == ReportTransmissionStatus.Pending),
+                    uncertainCount = latestRecipients.Count(item => item.Status is ReportTransmissionStatus.Sending
+                        or ReportTransmissionStatus.Error)
+                } : null,
                 canDelete = canCreateReport && report.IsEditable
                     && tx is null && officialCounts.GetValueOrDefault(report.Id) == 0,
                 canStartCorrectionWorkspace = canCreateReport
