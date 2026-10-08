@@ -18,7 +18,8 @@ public sealed class EmployerInterface006ExportService(
     private static readonly UTF8Encoding Utf8NoBom = new(false);
 
     public async Task<EmployerInterfaceService.GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct,
-        int fileSequence = 1, DateTimeOffset? preparedAtOverride = null)
+        int fileSequence = 1, DateTimeOffset? preparedAtOverride = null,
+        IReadOnlyCollection<Guid>? includedProductIds = null)
     {
         if (report.ReportKind == ManualReportKind.Differences)
             return Invalid(EmployerInterfaceDocumentType.CurrentReport,
@@ -52,6 +53,15 @@ public sealed class EmployerInterface006ExportService(
         var products = await db.ManualReportProducts.AsNoTracking()
             .Where(x => employeeIds.Contains(x.ReportEmployeeId))
             .OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToListAsync(ct);
+        if (includedProductIds is not null)
+        {
+            var included = includedProductIds.ToHashSet();
+            if (included.Count == 0 || products.Count(product => included.Contains(product.Id)) != included.Count)
+                return Invalid(documentType, "Recipient transmission product scope is missing or contains products outside this report.");
+            products = products.Where(product => included.Contains(product.Id)).ToList();
+            var selectedEmployeeIds = products.Select(product => product.ReportEmployeeId).ToHashSet();
+            employees = employees.Where(employee => selectedEmployeeIds.Contains(employee.Id)).ToList();
+        }
         var productIds = products.Select(x => x.Id).ToArray();
         var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
         var payments = await db.ManualReportPayments.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
@@ -104,7 +114,10 @@ public sealed class EmployerInterface006ExportService(
         }
 
         var attachments = await db.ManualReportAttachments.AsNoTracking()
-            .Where(x => x.ReportId == report.Id).ToListAsync(ct);
+            .Where(x => x.ReportId == report.Id
+                && (includedProductIds == null || x.ReportProductId == null
+                    || productIds.Contains(x.ReportProductId.Value)))
+            .ToListAsync(ct);
 
         var annualEmployerAffidavitSatisfied = attachments.Any(x => x.DocumentTypeCode == 3);
         if (!annualEmployerAffidavitSatisfied && report.ReportKind == ManualReportKind.Negative)
