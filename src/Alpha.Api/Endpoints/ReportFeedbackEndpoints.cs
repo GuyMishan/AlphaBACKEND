@@ -2995,6 +2995,7 @@ public static class ReportFeedbackEndpoints
                 x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value))
             .ToArray();
         var resolvedManufacturerProblemIds = await EffectiveResolvedProblemIdsAsync(manufacturerProblemIds, db, ct);
+        var manufacturerTargetSelections = await TreatmentTargetSelectionsAsync(manufacturer, db, ct);
         var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().SingleOrDefaultAsync(x => x.ReportProductId == reportProductId, ct);
         var transferKey = !string.IsNullOrWhiteSpace(metadata?.InterfaceTransferIdentifier)
             ? metadata.InterfaceTransferIdentifier : reportProductId.ToString("D").ToUpperInvariant();
@@ -3061,6 +3062,7 @@ public static class ReportFeedbackEndpoints
                     && resolvedManufacturerProblemIds.Contains(FeedbackResolutionWireProjection.BuildProblemId(
                         x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode.Value)),
                 errorScope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode).ToString().ToLowerInvariant(),
+                targetScope = TreatmentTargetFor(x, manufacturerTargetSelections).ToString().ToLowerInvariant(),
                 x.ErrorAmount, x.ErrorDate, x.ContributionTypeCode, x.CalculatedSalary, x.SalaryMonth, x.PolicyNumber,
                 x.ContributionRate, x.ContributionAmount, x.SourceFileName, x.ReceivedAt
             }),
