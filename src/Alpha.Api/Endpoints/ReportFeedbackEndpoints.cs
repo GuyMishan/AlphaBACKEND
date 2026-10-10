@@ -999,12 +999,16 @@ public static class ReportFeedbackEndpoints
             && !report.IsTechnicalCorrectionDocument, ct))
             return Results.NotFound();
 
-        var activeRows = await ActiveActionableFeedbackAsync([reportId], db, ct);
+        var authorizedReportIds = await db.ManualReports.AsNoTracking()
+            .Where(report => report.OrganizationId == organizationId && report.EmployerId == employerId
+                && !report.IsCorrectionWorkspace && !report.IsTechnicalCorrectionDocument)
+            .Select(report => report.Id).ToArrayAsync(ct);
+        var activeRows = await ActiveActionableFeedbackAsync(authorizedReportIds, db, ct);
         var requestIds = request.ProblemIds.ToHashSet(StringComparer.Ordinal);
         var rows = activeRows.Where(row => row.ErrorCode.HasValue &&
             requestIds.Contains(FeedbackResolutionWireProjection.BuildProblemId(
                 row.FeedbackId, row.ContributionId, row.Sequence, row.ErrorCode.Value))).ToArray();
-        if (rows.Length != requestIds.Count)
+        if (rows.Length != requestIds.Count || !rows.Any(row => row.ReportId == reportId))
             return Results.Conflict(new { error = "resolution_problem_stale" });
         if (rows.Any(row => !FeedbackTreatmentTargetCatalog.AllowedTargets(row.ErrorCode!.Value).Contains(target)))
             return Results.BadRequest(new { error = "target_scope_not_allowed" });
