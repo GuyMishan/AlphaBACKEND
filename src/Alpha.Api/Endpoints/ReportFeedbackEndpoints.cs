@@ -2553,10 +2553,14 @@ public static class ReportFeedbackEndpoints
                     : "needs-treatment";
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
             var treatmentTarget = TreatmentTargetFor(row, targetSelections);
-            var effectiveStrategy = playbook.Code == 56 && treatmentTarget == FeedbackTreatmentTarget.Deposit
-                ? FeedbackResolutionGroupStrategy.PerTransfer : playbook.GroupStrategy;
-            var groupKey = playbook.Code == 56 && treatmentTarget == FeedbackTreatmentTarget.Deposit
-                ? $"payment:deposit:{row.ReportId:N}:{row.ReportProductId:N}"
+            var effectiveStrategy = treatmentTarget == FeedbackTreatmentTarget.Report
+                ? FeedbackResolutionGroupStrategy.PerReport
+                : playbook.Code == 56 && treatmentTarget == FeedbackTreatmentTarget.Deposit
+                    ? FeedbackResolutionGroupStrategy.PerTransfer : playbook.GroupStrategy;
+            var groupKey = treatmentTarget == FeedbackTreatmentTarget.Report
+                ? $"{FeedbackResolutionWireProjection.WireName(playbook.Resolver)}:report:{row.ReportId:N}:code:{playbook.Code}"
+                : playbook.Code == 56 && treatmentTarget == FeedbackTreatmentTarget.Deposit
+                    ? $"payment:deposit:{row.ReportId:N}:{row.ReportProductId:N}"
                 : FeedbackResolutionWireProjection.BuildResolutionGroupKey(
                     playbook, employerId, row.ReportId, row.ReportProductId, row.ContributionId,
                     reportEmployee.EmploymentId, transferIdentifier, previousRecordIdentifier, row.FeedbackId, row.Sequence);
