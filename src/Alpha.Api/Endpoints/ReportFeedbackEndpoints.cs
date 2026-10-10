@@ -981,7 +981,10 @@ public static class ReportFeedbackEndpoints
         OrganizationAccessService access, ICurrentUser currentUser,
         HttpContext http, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.ProblemId)
+        if (request.ProblemIds is null || request.ProblemIds.Count == 0
+            || request.ProblemIds.Count > 200
+            || request.ProblemIds.Any(string.IsNullOrWhiteSpace)
+            || request.ProblemIds.Distinct(StringComparer.Ordinal).Count() != request.ProblemIds.Count
             || !Enum.TryParse<FeedbackTreatmentTarget>(request.TargetScope, true, out var target)
             || !Enum.IsDefined(target))
             return Results.BadRequest(new { error = "target_scope_invalid" });
@@ -997,27 +1000,33 @@ public static class ReportFeedbackEndpoints
             return Results.NotFound();
 
         var activeRows = await ActiveActionableFeedbackAsync([reportId], db, ct);
-        var row = activeRows.FirstOrDefault(item => item.ErrorCode.HasValue
-            && FeedbackResolutionWireProjection.BuildProblemId(
-                item.FeedbackId, item.ContributionId, item.Sequence, item.ErrorCode.Value)
-                == request.ProblemId);
-        if (row is null) return Results.Conflict(new { error = "resolution_problem_stale" });
-        if (!FeedbackTreatmentTargetCatalog.AllowedTargets(row.ErrorCode!.Value).Contains(target))
+        var requestIds = request.ProblemIds.ToHashSet(StringComparer.Ordinal);
+        var rows = activeRows.Where(row => row.ErrorCode.HasValue &&
+            requestIds.Contains(FeedbackResolutionWireProjection.BuildProblemId(
+                row.FeedbackId, row.ContributionId, row.Sequence, row.ErrorCode.Value))).ToArray();
+        if (rows.Length != requestIds.Count)
+            return Results.Conflict(new { error = "resolution_problem_stale" });
+        if (rows.Any(row => !FeedbackTreatmentTargetCatalog.AllowedTargets(row.ErrorCode!.Value).Contains(target)))
             return Results.BadRequest(new { error = "target_scope_not_allowed" });
 
-        db.FeedbackProblemDecisions.Add(new FeedbackProblemDecision(
-            request.ProblemId, row.FeedbackId, row.ReportId, row.ReportProductId,
-            row.ContributionId, row.ErrorCode.Value,
-            $"target:{FeedbackResolutionWireProjection.WireName(target)}",
-            "Treatment target selected by authorized operator", currentUser.UserId));
-        db.AuditEvents.Add(new AuditEvent(
-            currentUser.UserId, "feedback-resolution.target-selected",
-            nameof(EmployerInterfaceContributionFeedback), row.Id,
-            organizationId, employerId,
-            JsonSerializer.Serialize(new { request.ProblemId, row.ErrorCode, target = target.ToString() }),
-            http.TraceIdentifier));
+        foreach (var row in rows)
+        {
+            var problemId = FeedbackResolutionWireProjection.BuildProblemId(
+                row.FeedbackId, row.ContributionId, row.Sequence, row.ErrorCode!.Value);
+            db.FeedbackProblemDecisions.Add(new FeedbackProblemDecision(
+                problemId, row.FeedbackId, row.ReportId, row.ReportProductId,
+                row.ContributionId, row.ErrorCode.Value,
+                $"target:{FeedbackResolutionWireProjection.WireName(target)}",
+                "Treatment target selected by authorized operator", currentUser.UserId));
+            db.AuditEvents.Add(new AuditEvent(
+                currentUser.UserId, "feedback-resolution.target-selected",
+                nameof(EmployerInterfaceContributionFeedback), row.Id,
+                organizationId, employerId,
+                JsonSerializer.Serialize(new { problemId, row.ErrorCode, target = target.ToString() }),
+                http.TraceIdentifier));
+        }
         await db.SaveChangesAsync(ct);
-        return Results.Ok(new { request.ProblemId, targetScope = FeedbackResolutionWireProjection.WireName(target) });
+        return Results.Ok(new { problemIds = request.ProblemIds, targetScope = FeedbackResolutionWireProjection.WireName(target) });
     }
 
     private static async Task<IResult> DecideProblemAsync(
@@ -3774,7 +3783,7 @@ public static class ReportFeedbackEndpoints
         IReadOnlyList<string> ProblemIds,
         string Source,
         Guid? ValidatedReportId);
-    public sealed record SelectTreatmentTargetRequest(string ProblemId, string TargetScope);
+    public sealed record SelectTreatmentTargetRequest(IReadOnlyList<string> ProblemIds, string TargetScope);
     public sealed record DecideProblemRequest(
         string ProblemId,
         string Outcome,
