@@ -78,6 +78,7 @@ public static class ReportFeedbackEndpoints
         group.MapPost("/{reportId:guid}/resolution-actions/problems/resolve", ResolveProblemsAsync);
         group.MapGet("/correction-workspaces/{workspaceReportId:guid}/resolution-links", CorrectionWorkspaceResolutionLinksAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/decision", DecideProblemAsync);
+        group.MapPost("/{reportId:guid}/resolution-actions/target", SelectTreatmentTargetAsync);
         group.MapGet("/{reportId:guid}/resolution-actions/{problemId}/original-movement-candidates", OriginalMovementCandidatesAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/{problemId}/link-original", LinkOriginalMovementAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/external-case/open", OpenExternalCaseAsync);
@@ -972,6 +973,51 @@ public static class ReportFeedbackEndpoints
             resolutionGroup.GroupKey,
             resolutionGroup.ResolverType
         });
+    }
+
+    private static async Task<IResult> SelectTreatmentTargetAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        SelectTreatmentTargetRequest request, IAlphaDbContext db,
+        OrganizationAccessService access, ICurrentUser currentUser,
+        HttpContext http, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.ProblemId)
+            || !Enum.TryParse<FeedbackTreatmentTarget>(request.TargetScope, true, out var target)
+            || !Enum.IsDefined(target))
+            return Results.BadRequest(new { error = "target_scope_invalid" });
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)
+            && !await access.CanEditEmployeeAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+        if (!await db.ManualReports.AsNoTracking().AnyAsync(report =>
+            report.Id == reportId && report.OrganizationId == organizationId
+            && report.EmployerId == employerId && !report.IsCorrectionWorkspace
+            && !report.IsTechnicalCorrectionDocument, ct))
+            return Results.NotFound();
+
+        var activeRows = await ActiveActionableFeedbackAsync([reportId], db, ct);
+        var row = activeRows.FirstOrDefault(item => item.ErrorCode.HasValue
+            && FeedbackResolutionWireProjection.BuildProblemId(
+                item.FeedbackId, item.ContributionId, item.Sequence, item.ErrorCode.Value)
+                == request.ProblemId);
+        if (row is null) return Results.Conflict(new { error = "resolution_problem_stale" });
+        if (!FeedbackTreatmentTargetCatalog.AllowedTargets(row.ErrorCode!.Value).Contains(target))
+            return Results.BadRequest(new { error = "target_scope_not_allowed" });
+
+        db.FeedbackProblemDecisions.Add(new FeedbackProblemDecision(
+            request.ProblemId, row.FeedbackId, row.ReportId, row.ReportProductId,
+            row.ContributionId, row.ErrorCode.Value,
+            $"target:{FeedbackResolutionWireProjection.WireName(target)}",
+            "Treatment target selected by authorized operator", currentUser.UserId));
+        db.AuditEvents.Add(new AuditEvent(
+            currentUser.UserId, "feedback-resolution.target-selected",
+            nameof(EmployerInterfaceContributionFeedback), row.Id,
+            organizationId, employerId,
+            JsonSerializer.Serialize(new { request.ProblemId, row.ErrorCode, target = target.ToString() }),
+            http.TraceIdentifier));
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { request.ProblemId, targetScope = FeedbackResolutionWireProjection.WireName(target) });
     }
 
     private static async Task<IResult> DecideProblemAsync(
@@ -3728,6 +3774,7 @@ public static class ReportFeedbackEndpoints
         IReadOnlyList<string> ProblemIds,
         string Source,
         Guid? ValidatedReportId);
+    public sealed record SelectTreatmentTargetRequest(string ProblemId, string TargetScope);
     public sealed record DecideProblemRequest(
         string ProblemId,
         string Outcome,
