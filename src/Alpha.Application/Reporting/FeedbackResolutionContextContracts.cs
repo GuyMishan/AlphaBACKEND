@@ -52,7 +52,8 @@ public sealed record FeedbackResolutionProblemDto(
     DateTimeOffset? LatestDecisionAt = null,
     Guid? ExternalCaseId = null,
     string ExternalCaseStatus = "",
-    string ExternalCaseAssigneeName = "");
+    string ExternalCaseAssigneeName = "",
+    string TargetScope = "deposit");
 
 public static class FeedbackResolutionWireProjection
 {
