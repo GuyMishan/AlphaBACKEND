@@ -455,11 +455,13 @@ public sealed class ReportingStressScenarioRegressionTests
     }
 
     [Fact]
-    public void Feedback_projection_reads_only_feedback_for_latest_transmission_attempt()
+    public void Feedback_projection_reads_only_feedback_for_latest_transmission_attempt_per_route()
     {
         var source = Read("src", "Alpha.Api", "Endpoints", "ReportFeedbackEndpoints.cs");
-        Assert.Contains("OrderByDescending(x => x.AttemptNumber)", source, StringComparison.Ordinal);
-        Assert.Contains("query.Where(x => x.TransmissionId == latestTransmissionId.Value)", source, StringComparison.Ordinal);
+        Assert.Contains("GroupBy(tx => tx.ReportId)", source, StringComparison.Ordinal);
+        Assert.Contains("ReportTransmissionFeedbackSelection.LatestAttemptIds(group)", source, StringComparison.Ordinal);
+        Assert.Contains("ReportTransmissionFeedbackSelection.IsActive(", source, StringComparison.Ordinal);
+        Assert.Contains("latestPerRoute.TryGetValue(file.ReportId, out var activeTx)", source, StringComparison.Ordinal);
     }
 
     [Fact]
