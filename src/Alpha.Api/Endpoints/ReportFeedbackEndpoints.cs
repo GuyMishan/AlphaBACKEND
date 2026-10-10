@@ -2563,7 +2563,6 @@ public static class ReportFeedbackEndpoints
                     : row.ErrorDescription,
                 Scope: FeedbackResolutionWireProjection.WireName(playbook.Scope),
                 TargetScope: FeedbackResolutionWireProjection.WireName(treatmentTarget),
-                AllowedTargetScopes: Array.Empty<string>(),
                 ResolutionType: FeedbackResolutionWireProjection.WireName(playbook.ResolutionType),
                 Family: FeedbackResolutionWireProjection.WireName(playbook.Family),
                 ResolverType: FeedbackResolutionWireProjection.WireName(playbook.Resolver),
