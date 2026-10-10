@@ -248,10 +248,34 @@ public static class ReportFeedbackEndpoints
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ReportProductId).Distinct().Count());
+        // The report grid must use the same persisted target choices as the context modal.
+        // Selecting a different treatment destination must immediately affect the count.
+        var savedTargetChoices = latestProblemIds.Length == 0
+            ? new List<FeedbackProblemDecision>()
+            : await db.FeedbackProblemDecisions.AsNoTracking()
+                .Where(decision => latestProblemIds.Contains(decision.ProblemId)
+                    && decision.Outcome.StartsWith("target:"))
+                .OrderByDescending(decision => decision.DecidedAt)
+                .ThenByDescending(decision => decision.CreatedAt)
+                .ToListAsync(ct);
+        var targetsByProblem = new Dictionary<string, FeedbackTreatmentTarget>(StringComparer.Ordinal);
+        foreach (var choice in savedTargetChoices)
+        {
+            if (targetsByProblem.ContainsKey(choice.ProblemId)) continue;
+            if (Enum.TryParse<FeedbackTreatmentTarget>(choice.Outcome["target:".Length..], true, out var target)
+                && Enum.IsDefined(target))
+                targetsByProblem[choice.ProblemId] = target;
+        }
         var reportIssueCounts = unresolvedLatestFeedback
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
-            .Where(x => FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
-                == FeedbackTreatmentTarget.Report)
+            .Where(x =>
+            {
+                var id = FeedbackResolutionWireProjection.BuildProblemId(
+                    x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value);
+                return FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode,
+                    explicitlySelected: targetsByProblem.TryGetValue(id, out var chosen) ? chosen : null)
+                    == FeedbackTreatmentTarget.Report;
+            })
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorCode).Distinct().Count());
 
