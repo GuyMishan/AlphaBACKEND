@@ -108,4 +108,40 @@ public sealed class FeedbackResolutionPlaybookCatalogTests
         Assert.Equal(expected, FeedbackResolutionPlaybookCatalog.Get(code).GroupStrategy);
     }
 
+    [Theory]
+    [InlineData(45, FeedbackTreatmentTarget.Deposit)]
+    [InlineData(50, FeedbackTreatmentTarget.Deposit)]
+    [InlineData(56, FeedbackTreatmentTarget.Deposit)]
+    [InlineData(79, FeedbackTreatmentTarget.Deposit)]
+    [InlineData(83, FeedbackTreatmentTarget.Deposit)]
+    [InlineData(84, FeedbackTreatmentTarget.Deposit)]
+    [InlineData(85, FeedbackTreatmentTarget.Deposit)]
+    [InlineData(18, FeedbackTreatmentTarget.Report)]
+    [InlineData(100, FeedbackTreatmentTarget.Report)]
+    [InlineData(102, FeedbackTreatmentTarget.Report)]
+    [InlineData(4, FeedbackTreatmentTarget.Employee)]
+    [InlineData(53, FeedbackTreatmentTarget.Deposit)]
+    [InlineData(1, FeedbackTreatmentTarget.Informational)]
+    [InlineData(31, FeedbackTreatmentTarget.Informational)]
+    public void Treatment_target_is_independent_of_official_error_scope(
+        int code, FeedbackTreatmentTarget target)
+    {
+        Assert.Equal(target, FeedbackTreatmentTargetCatalog.Resolve(code));
+    }
+
+    [Fact]
+    public void Bank_account_code_requires_verified_employer_configuration_mismatch()
+    {
+        Assert.Equal(FeedbackTreatmentTarget.Deposit, FeedbackTreatmentTargetCatalog.Resolve(56));
+        Assert.Equal(FeedbackTreatmentTarget.Employer,
+            FeedbackTreatmentTargetCatalog.Resolve(56, verifiedEmployerAccountMismatch: true));
+    }
+
+    [Fact]
+    public void Every_official_code_has_treatment_target()
+    {
+        foreach (var code in EmployerInterfaceLineFeedbackParser.OfficialErrorCodes)
+            Assert.True(Enum.IsDefined(FeedbackTreatmentTargetCatalog.Resolve(code)));
+    }
+
 }
