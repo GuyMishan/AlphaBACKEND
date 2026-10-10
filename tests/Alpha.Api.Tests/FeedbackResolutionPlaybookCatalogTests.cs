@@ -144,4 +144,27 @@ public sealed class FeedbackResolutionPlaybookCatalogTests
             Assert.True(Enum.IsDefined(FeedbackTreatmentTargetCatalog.Resolve(code)));
     }
 
+    [Fact]
+    public void Employer_target_groups_require_employer_edit_permission()
+    {
+        var problem = new FeedbackResolutionProblemDto(
+            ProblemId: "problem-56", Code: 56, Description: "Account feedback",
+            Scope: "money", ResolutionType: "edit", Family: "payment",
+            ResolverType: "payment", GroupStrategy: "perEmployer", GroupKey: "employer:1",
+            CorrectionBehavior: "revalidateOnly", AvailableActions: ["editPayment"],
+            CanEscalateExternally: false, FeedbackId: Guid.NewGuid(), ReportId: Guid.NewGuid(),
+            ReportProductId: Guid.NewGuid(), ContributionId: Guid.NewGuid(),
+            ReportEmployeeId: Guid.NewGuid(), EmploymentId: Guid.NewGuid(), PersonId: Guid.NewGuid(),
+            EmployeeName: "", ProductName: "", FundCompanyName: "", PolicyNumber: "",
+            ReportedValues: new Dictionary<string, string?>(),
+            CurrentValues: new Dictionary<string, string?>(),
+            FeedbackValues: new Dictionary<string, string?>(),
+            ReceivedAt: DateTimeOffset.UtcNow, TargetScope: "employer");
+
+        Assert.False(FeedbackResolutionWireProjection.BuildGroups([problem],
+            canCreateReport: true, canEditEmployee: true, canEditEmployer: false)[0].CanExecute);
+        Assert.True(FeedbackResolutionWireProjection.BuildGroups([problem],
+            canCreateReport: false, canEditEmployee: false, canEditEmployer: true)[0].CanExecute);
+    }
+
 }
