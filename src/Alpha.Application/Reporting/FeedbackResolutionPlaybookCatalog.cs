@@ -1,5 +1,28 @@
 namespace Alpha.Application.Reporting;
 
+
+// The official feedback error scope describes the source field, not the entity whose
+// master data needs to be corrected. Keep routing independent of the official scope.
+public enum FeedbackTreatmentTarget { Employer, Report, Employee, Deposit, Informational }
+
+public static class FeedbackTreatmentTargetCatalog
+{
+    private static readonly HashSet<int> ReportCodes = [18, 100, 101, 102, 103, 111, 112];
+    private static readonly HashSet<int> EmployeeCodes =
+        [4, 11, 19, 33, 34, 44, 47, 48, 49, 62, 78, 80, 86, 109, 110];
+
+    public static FeedbackTreatmentTarget Resolve(int? code, bool verifiedEmployerAccountMismatch = false)
+    {
+        if (code is null or 1 or 31) return FeedbackTreatmentTarget.Informational;
+        if (code == 56 && verifiedEmployerAccountMismatch) return FeedbackTreatmentTarget.Employer;
+        if (ReportCodes.Contains(code.Value)) return FeedbackTreatmentTarget.Report;
+        if (EmployeeCodes.Contains(code.Value)) return FeedbackTreatmentTarget.Employee;
+        // Financial and refund feedback is transfer/contribution-scoped unless proven
+        // to originate from persistent employer configuration.
+        return FeedbackTreatmentTarget.Deposit;
+    }
+}
+
 public enum FeedbackResolutionType
 {
     Edit,
