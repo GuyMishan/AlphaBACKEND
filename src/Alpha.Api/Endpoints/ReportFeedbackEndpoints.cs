@@ -994,9 +994,15 @@ public static class ReportFeedbackEndpoints
             return Results.BadRequest(new { error = "target_scope_invalid" });
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct))
             return Results.Forbid();
-        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)
-            && !await access.CanEditEmployeeAsync(organizationId, employerId, ct))
-            return Results.Forbid();
+        var canChooseTarget = target switch
+        {
+            FeedbackTreatmentTarget.Employer => await access.CanEditEmployerAsync(organizationId, employerId, ct),
+            FeedbackTreatmentTarget.Employee => await access.CanEditEmployeeAsync(organizationId, employerId, ct),
+            FeedbackTreatmentTarget.Report or FeedbackTreatmentTarget.Deposit =>
+                await access.CanCreateReportAsync(organizationId, employerId, ct),
+            _ => false
+        };
+        if (!canChooseTarget) return Results.Forbid();
         if (!await db.ManualReports.AsNoTracking().AnyAsync(report =>
             report.Id == reportId && report.OrganizationId == organizationId
             && report.EmployerId == employerId && !report.IsCorrectionWorkspace
