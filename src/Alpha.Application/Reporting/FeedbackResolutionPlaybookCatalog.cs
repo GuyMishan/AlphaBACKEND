@@ -11,9 +11,25 @@ public static class FeedbackTreatmentTargetCatalog
     private static readonly HashSet<int> EmployeeCodes =
         [4, 11, 19, 33, 34, 44, 47, 48, 49, 62, 78, 80, 86, 109, 110];
 
-    public static FeedbackTreatmentTarget Resolve(int? code, bool verifiedEmployerAccountMismatch = false)
+    // Ambiguous official feedback must be triaged explicitly, never assigned to
+    // employer scope merely because it refers to money or employer documents.
+    public static IReadOnlyList<FeedbackTreatmentTarget> AllowedTargets(int code) => code switch
+    {
+        18 => [FeedbackTreatmentTarget.Employer, FeedbackTreatmentTarget.Report,
+               FeedbackTreatmentTarget.Employee, FeedbackTreatmentTarget.Deposit],
+        45 or 56 => [FeedbackTreatmentTarget.Employer, FeedbackTreatmentTarget.Deposit],
+        102 or 103 or 111 or 112 => [FeedbackTreatmentTarget.Employer, FeedbackTreatmentTarget.Report],
+        _ => []
+    };
+
+    public static FeedbackTreatmentTarget Resolve(
+        int? code,
+        bool verifiedEmployerAccountMismatch = false,
+        FeedbackTreatmentTarget? explicitlySelected = null)
     {
         if (code is null or 1 or 31) return FeedbackTreatmentTarget.Informational;
+        if (explicitlySelected.HasValue && AllowedTargets(code.Value).Contains(explicitlySelected.Value))
+            return explicitlySelected.Value;
         if (code == 56 && verifiedEmployerAccountMismatch) return FeedbackTreatmentTarget.Employer;
         if (ReportCodes.Contains(code.Value)) return FeedbackTreatmentTarget.Report;
         if (EmployeeCodes.Contains(code.Value)) return FeedbackTreatmentTarget.Employee;
