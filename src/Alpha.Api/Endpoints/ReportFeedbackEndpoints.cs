@@ -3326,7 +3326,7 @@ public static class ReportFeedbackEndpoints
         var selectedTargets = await TreatmentTargetsAsync(rows, employerId, db, protector, ct);
         var issues = rows
             .Where(row => TreatmentTargetFor(row, selectedTargets) == FeedbackTreatmentTarget.Employer)
-            .GroupBy(row => new { row.ErrorCode, row.ErrorDescription })
+            .GroupBy(row => row.ErrorCode)
             .Select(group => FeedbackIssue(group.OrderByDescending(row => row.ReceivedAt).First(),
                 FeedbackTreatmentTarget.Employer, group.Select(row => row.ReportId).Distinct().ToArray())).ToArray();
 
