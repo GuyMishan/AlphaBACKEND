@@ -735,7 +735,8 @@ public static class ReportFeedbackEndpoints
         var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
 
         return Results.Ok(await BuildResolutionContextAsync(
-            "employer", organizationId, employerId, null, null, canCreateReport, canEditEmployee, rows, db, protector, ct));
+            "employer", organizationId, employerId, null, null, canCreateReport, canEditEmployee, rows, db, protector, ct,
+            canEditEmployer: await access.CanEditEmployerAsync(organizationId, employerId, ct)));
     }
 
     private static async Task<IResult> ReportResolutionContextAsync(
@@ -2383,7 +2384,8 @@ public static class ReportFeedbackEndpoints
         IReadOnlyCollection<EmployerInterfaceContributionFeedback> rows,
         IAlphaDbContext db,
         IDataProtectionService protector,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool canEditEmployer = false)
     {
         if (rows.Count == 0)
             return new FeedbackResolutionContextResponse(
@@ -2663,7 +2665,7 @@ public static class ReportFeedbackEndpoints
         }
 
         var groups = FeedbackResolutionWireProjection.BuildGroups(
-            problems, canCreateReport, canEditEmployee);
+            problems, canCreateReport, canEditEmployee, canEditEmployer);
         var canResolve = unsupportedCodes.Length == 0 && groups.Any(group => group.CanExecute);
 
         return new FeedbackResolutionContextResponse(
