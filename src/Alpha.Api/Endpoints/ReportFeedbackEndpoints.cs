@@ -621,6 +621,7 @@ public static class ReportFeedbackEndpoints
                 x.FeedbackId, x.ContributionId, x.Sequence, x.ErrorCode!.Value))
             .ToArray();
         var resolvedDepositProblemIds = await EffectiveResolvedProblemIdsAsync(depositProblemIds, db, ct);
+        var treatmentTargetSelections = await TreatmentTargetSelectionsAsync(latestFeedbackRows, db, ct);
         var latestFeedback = latestFeedbackRows
             .GroupBy(x => x.ReportProductId)
             .ToDictionary(g => g.Key, g => g.ToArray());
@@ -646,13 +647,16 @@ public static class ReportFeedbackEndpoints
                     || !resolvedDepositProblemIds.Contains(FeedbackResolutionWireProjection.BuildProblemId(
                         item.FeedbackId, item.ContributionId, item.Sequence, item.ErrorCode.Value)))
                 .ToArray();
-            var actionableErrors = actionableFeedback
+            var depositActionableFeedback = actionableFeedback.Where(item =>
+                TreatmentTargetFor(item, treatmentTargetSelections)
+                    is FeedbackTreatmentTarget.Deposit or FeedbackTreatmentTarget.Employee).ToArray();
+            var actionableErrors = depositActionableFeedback
                 .Select(item => string.IsNullOrWhiteSpace(item.ErrorDescription)
                     ? $"קוד שגיאה {item.ErrorCode}"
                     : item.ErrorDescription.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
-            var errorSummary = actionableFeedback
+            var errorSummary = depositActionableFeedback
                 .Where(item => item.ErrorCode.HasValue)
                 .Select(item => new
                 {
@@ -665,7 +669,7 @@ public static class ReportFeedbackEndpoints
                     group => group.Key.ToString().ToLowerInvariant(),
                     group => group.Count(),
                     StringComparer.Ordinal);
-            var hasError = actionableErrors.Length > 0;
+            var hasError = actionableFeedback.Length > 0;
             var feedbackState = received == 0 ? "pending" : hasError ? "attention" : received < expected ? "partial" : "completed";
             var transferKey = !string.IsNullOrWhiteSpace(productMetadata?.InterfaceTransferIdentifier)
                 ? productMetadata.InterfaceTransferIdentifier : x.Product.Id.ToString("D").ToUpperInvariant();
@@ -698,7 +702,7 @@ public static class ReportFeedbackEndpoints
                 treatmentStatus = treatment?.StatusCode ?? "",
                 treatmentStatusLabel = treatment is null ? "" : labels.GetValueOrDefault(treatment.StatusCode) ?? treatment.StatusCode,
                 updatedAt = timestamps.Count == 0 ? (DateTimeOffset?)null : timestamps.Max(),
-                requiresAttention = hasError,
+                requiresAttention = depositActionableFeedback.Length > 0,
                 pendingCorrectionReportId = correctionWorkspace?.Id,
                 pendingCorrectionProductId = pendingBySourceProduct.TryGetValue(x.Product.Id, out var pending)
                     ? pending.ProductId : (Guid?)null,
