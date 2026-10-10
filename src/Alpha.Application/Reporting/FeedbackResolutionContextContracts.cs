@@ -53,8 +53,7 @@ public sealed record FeedbackResolutionProblemDto(
     Guid? ExternalCaseId = null,
     string ExternalCaseStatus = "",
     string ExternalCaseAssigneeName = "",
-    string TargetScope = "deposit",
-    IReadOnlyList<string>? AllowedTargetScopes = null);
+    string TargetScope = "deposit");
 
 public static class FeedbackResolutionWireProjection
 {
