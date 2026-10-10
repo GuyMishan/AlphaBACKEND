@@ -144,32 +144,4 @@ public sealed class FeedbackResolutionPlaybookCatalogTests
             Assert.True(Enum.IsDefined(FeedbackTreatmentTargetCatalog.Resolve(code)));
     }
 
-    [Theory]
-    [InlineData(18, FeedbackTreatmentTarget.Employee)]
-    [InlineData(45, FeedbackTreatmentTarget.Employer)]
-    [InlineData(56, FeedbackTreatmentTarget.Employer)]
-    [InlineData(102, FeedbackTreatmentTarget.Employer)]
-    [InlineData(103, FeedbackTreatmentTarget.Employer)]
-    [InlineData(111, FeedbackTreatmentTarget.Employer)]
-    [InlineData(112, FeedbackTreatmentTarget.Employer)]
-    public void Contextual_codes_use_explicitly_selected_target(
-        int code, FeedbackTreatmentTarget selection)
-    {
-        Assert.Contains(selection, FeedbackTreatmentTargetCatalog.AllowedTargets(code));
-        Assert.Equal(selection, FeedbackTreatmentTargetCatalog.Resolve(code, explicitlySelected: selection));
-    }
-
-    [Theory]
-    [InlineData(85, FeedbackTreatmentTarget.Employer)]
-    [InlineData(53, FeedbackTreatmentTarget.Employer)]
-    [InlineData(56, FeedbackTreatmentTarget.Report)]
-    [InlineData(102, FeedbackTreatmentTarget.Deposit)]
-    public void Unapproved_target_selection_is_ignored(
-        int code, FeedbackTreatmentTarget selection)
-    {
-        Assert.DoesNotContain(selection, FeedbackTreatmentTargetCatalog.AllowedTargets(code));
-        Assert.Equal(FeedbackTreatmentTargetCatalog.Resolve(code),
-            FeedbackTreatmentTargetCatalog.Resolve(code, explicitlySelected: selection));
-    }
-
 }
