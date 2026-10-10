@@ -2553,9 +2553,13 @@ public static class ReportFeedbackEndpoints
                     : "needs-treatment";
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
             var treatmentTarget = TreatmentTargetFor(row, targetSelections);
-            var groupKey = FeedbackResolutionWireProjection.BuildResolutionGroupKey(
-                playbook, employerId, row.ReportId, row.ReportProductId, row.ContributionId,
-                reportEmployee.EmploymentId, transferIdentifier, previousRecordIdentifier, row.FeedbackId, row.Sequence);
+            var effectiveStrategy = playbook.Code == 56 && treatmentTarget == FeedbackTreatmentTarget.Deposit
+                ? FeedbackResolutionGroupStrategy.PerTransfer : playbook.GroupStrategy;
+            var groupKey = playbook.Code == 56 && treatmentTarget == FeedbackTreatmentTarget.Deposit
+                ? $"payment:deposit:{row.ReportId:N}:{row.ReportProductId:N}"
+                : FeedbackResolutionWireProjection.BuildResolutionGroupKey(
+                    playbook, employerId, row.ReportId, row.ReportProductId, row.ContributionId,
+                    reportEmployee.EmploymentId, transferIdentifier, previousRecordIdentifier, row.FeedbackId, row.Sequence);
 
             problems.Add(new FeedbackResolutionProblemDto(
                 ProblemId: FeedbackResolutionWireProjection.BuildProblemId(row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code),
@@ -2568,7 +2572,7 @@ public static class ReportFeedbackEndpoints
                 ResolutionType: FeedbackResolutionWireProjection.WireName(playbook.ResolutionType),
                 Family: FeedbackResolutionWireProjection.WireName(playbook.Family),
                 ResolverType: FeedbackResolutionWireProjection.WireName(playbook.Resolver),
-                GroupStrategy: FeedbackResolutionWireProjection.WireName(playbook.GroupStrategy),
+                GroupStrategy: FeedbackResolutionWireProjection.WireName(effectiveStrategy),
                 GroupKey: groupKey,
                 CorrectionBehavior: FeedbackResolutionWireProjection.WireName(playbook.CorrectionBehavior),
                 AvailableActions: FeedbackResolutionWireProjection.ActionNames(playbook.Actions),
