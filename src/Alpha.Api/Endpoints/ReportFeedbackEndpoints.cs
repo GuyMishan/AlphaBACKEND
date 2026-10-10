@@ -3043,7 +3043,7 @@ public static class ReportFeedbackEndpoints
     }
 
 
-    private static object FeedbackIssue(EmployerInterfaceContributionFeedback row, FeedbackTreatmentTarget? target = null) => new
+    private static object FeedbackIssue(EmployerInterfaceContributionFeedback row, FeedbackTreatmentTarget? target = null, IReadOnlyCollection<Guid>? affectedReportIds = null) => new
     {
         code = row.ErrorCode ?? 0,
         description = string.IsNullOrWhiteSpace(row.ErrorDescription)
@@ -3322,7 +3322,7 @@ public static class ReportFeedbackEndpoints
             .Where(row => TreatmentTargetFor(row, selectedTargets) == FeedbackTreatmentTarget.Employer)
             .GroupBy(row => new { row.ErrorCode, row.ErrorDescription })
             .Select(group => FeedbackIssue(group.OrderByDescending(row => row.ReceivedAt).First(),
-                FeedbackTreatmentTarget.Employer)).ToArray();
+                FeedbackTreatmentTarget.Employer, group.Select(row => row.ReportId).Distinct().ToArray())).ToArray();
 
         return Results.Ok(new
         {
