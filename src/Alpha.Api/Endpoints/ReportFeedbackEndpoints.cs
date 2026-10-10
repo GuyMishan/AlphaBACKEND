@@ -249,8 +249,8 @@ public static class ReportFeedbackEndpoints
             .ToDictionary(g => g.Key, g => g.Select(x => x.ReportProductId).Distinct().Count());
         var reportIssueCounts = unresolvedLatestFeedback
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
-            .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
-                == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)
+            .Where(x => FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
+                == FeedbackTreatmentTarget.Report)
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorCode).Distinct().Count());
 
@@ -723,8 +723,8 @@ public static class ReportFeedbackEndpoints
             .Select(x => x.Id)
             .ToListAsync(ct);
         var rows = (await ActiveActionableFeedbackAsync(reportIds, db, ct))
-            .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
-                == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)
+            .Where(x => FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
+                == FeedbackTreatmentTarget.Employer)
             .ToArray();
         var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
@@ -744,8 +744,8 @@ public static class ReportFeedbackEndpoints
         if (!exists) return Results.NotFound();
 
         var rows = (await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct))
-            .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
-                == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report)
+            .Where(x => FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
+                == FeedbackTreatmentTarget.Report)
             .ToArray();
         var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
@@ -771,9 +771,8 @@ public static class ReportFeedbackEndpoints
             .Where(x =>
             {
                 var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
-                return scope is EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee
-                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit
-                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution;
+                return FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
+                    is FeedbackTreatmentTarget.Deposit or FeedbackTreatmentTarget.Employee;
             })
             .ToArray();
         var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
@@ -809,9 +808,8 @@ public static class ReportFeedbackEndpoints
             .Where(x =>
             {
                 var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
-                return scope is EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Employee
-                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Deposit
-                    or EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Contribution;
+                return FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
+                    is FeedbackTreatmentTarget.Deposit or FeedbackTreatmentTarget.Employee;
             })
             .ToArray();
 
@@ -3046,7 +3044,7 @@ public static class ReportFeedbackEndpoints
         description = string.IsNullOrWhiteSpace(row.ErrorDescription)
             ? EmployerInterfaceLineFeedbackParser.Description(row.ErrorCode)
             : row.ErrorDescription,
-        scope = EmployerInterfaceLineFeedbackParser.ErrorScope(row.ErrorCode).ToString().ToLowerInvariant(),
+        scope = FeedbackTreatmentTargetCatalog.Resolve(row.ErrorCode).ToString().ToLowerInvariant(),
         row.ReportId,
         row.ReportProductId,
         row.ContributionId,
@@ -3273,8 +3271,8 @@ public static class ReportFeedbackEndpoints
 
         var rows = await ActiveActionableFeedbackAsync(reportIds, db, ct);
         var issues = rows
-            .Where(x => EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode)
-                == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Money)
+            .Where(x => FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
+                == FeedbackTreatmentTarget.Employer)
             .GroupBy(x => new { x.ErrorCode, x.ErrorDescription })
             .Select(g => FeedbackIssue(g.OrderByDescending(x => x.ReceivedAt).First()))
             .ToArray();
@@ -3318,7 +3316,7 @@ public static class ReportFeedbackEndpoints
             .Where(x =>
             {
                 var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
-                return scope == EmployerInterfaceLineFeedbackParser.FeedbackErrorScope.Report;
+                return FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode) == FeedbackTreatmentTarget.Report;
             })
             .GroupBy(x => new { x.ErrorCode, x.ErrorDescription, Scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode) })
             .Select(g => FeedbackIssue(g.First()))
