@@ -722,10 +722,10 @@ public static class ReportFeedbackEndpoints
                 && !x.IsCorrectionWorkspace && !x.IsTechnicalCorrectionDocument)
             .Select(x => x.Id)
             .ToListAsync(ct);
-        var rows = (await ActiveActionableFeedbackAsync(reportIds, db, ct))
-            .Where(x => FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
-                == FeedbackTreatmentTarget.Employer)
-            .ToArray();
+        var activeRows = await ActiveActionableFeedbackAsync(reportIds, db, ct);
+        var selectedTargets = await TreatmentTargetSelectionsAsync(activeRows, db, ct);
+        var rows = activeRows.Where(row =>
+            TreatmentTargetFor(row, selectedTargets) == FeedbackTreatmentTarget.Employer).ToArray();
         var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
 
@@ -743,10 +743,10 @@ public static class ReportFeedbackEndpoints
             && !x.IsCorrectionWorkspace && !x.IsTechnicalCorrectionDocument, ct);
         if (!exists) return Results.NotFound();
 
-        var rows = (await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct))
-            .Where(x => FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
-                == FeedbackTreatmentTarget.Report)
-            .ToArray();
+        var activeRows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
+        var selectedTargets = await TreatmentTargetSelectionsAsync(activeRows, db, ct);
+        var rows = activeRows.Where(row =>
+            TreatmentTargetFor(row, selectedTargets) == FeedbackTreatmentTarget.Report).ToArray();
         var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
 
@@ -766,14 +766,11 @@ public static class ReportFeedbackEndpoints
                              select product.Id).AnyAsync(ct);
         if (!belongs) return Results.NotFound();
 
-        var rows = (await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct))
-            .Where(x => x.ReportProductId == reportProductId)
-            .Where(x =>
-            {
-                var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
-                return FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
-                    is FeedbackTreatmentTarget.Deposit or FeedbackTreatmentTarget.Employee;
-            })
+        var activeRows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
+        var selectedTargets = await TreatmentTargetSelectionsAsync(activeRows, db, ct);
+        var rows = activeRows.Where(row => row.ReportProductId == reportProductId
+            && TreatmentTargetFor(row, selectedTargets)
+                is FeedbackTreatmentTarget.Deposit or FeedbackTreatmentTarget.Employee)
             .ToArray();
         var canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct);
         var canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct);
@@ -803,14 +800,11 @@ public static class ReportFeedbackEndpoints
                              select product.Id).AnyAsync(ct);
         if (!belongs) return Results.NotFound();
 
-        var rows = (await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct))
-            .Where(x => x.ReportProductId == reportProductId)
-            .Where(x =>
-            {
-                var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
-                return FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
-                    is FeedbackTreatmentTarget.Deposit or FeedbackTreatmentTarget.Employee;
-            })
+        var activeRows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
+        var selectedTargets = await TreatmentTargetSelectionsAsync(activeRows, db, ct);
+        var rows = activeRows.Where(row => row.ReportProductId == reportProductId
+            && TreatmentTargetFor(row, selectedTargets)
+                is FeedbackTreatmentTarget.Deposit or FeedbackTreatmentTarget.Employee)
             .ToArray();
 
         var context = await BuildResolutionContextAsync(
@@ -2393,6 +2387,7 @@ public static class ReportFeedbackEndpoints
                 Array.Empty<int>(), Array.Empty<FeedbackResolutionProblemDto>(),
                 Array.Empty<FeedbackResolutionGroupDto>());
 
+        var targetSelections = await TreatmentTargetSelectionsAsync(rows, db, ct);
         var unsupportedCodes = rows
             .Where(x => x.ErrorCode.HasValue && !FeedbackResolutionPlaybookCatalog.TryGet(x.ErrorCode.Value, out _))
             .Select(x => x.ErrorCode!.Value)
@@ -2550,6 +2545,7 @@ public static class ReportFeedbackEndpoints
                     ? "correction-in-progress"
                     : "needs-treatment";
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
+            var treatmentTarget = TreatmentTargetFor(row, targetSelections);
             var groupKey = FeedbackResolutionWireProjection.BuildResolutionGroupKey(
                 playbook, employerId, row.ReportId, row.ReportProductId, row.ContributionId,
                 reportEmployee.EmploymentId, transferIdentifier, previousRecordIdentifier, row.FeedbackId, row.Sequence);
@@ -2561,7 +2557,9 @@ public static class ReportFeedbackEndpoints
                     ? EmployerInterfaceLineFeedbackParser.Description(row.ErrorCode)
                     : row.ErrorDescription,
                 Scope: FeedbackResolutionWireProjection.WireName(playbook.Scope),
-                TargetScope: FeedbackTreatmentTargetCatalog.Resolve(row.ErrorCode).ToString().ToLowerInvariant(),
+                TargetScope: FeedbackResolutionWireProjection.WireName(treatmentTarget),
+                AllowedTargetScopes: FeedbackTreatmentTargetCatalog.AllowedTargets(playbook.Code)
+                    .Select(FeedbackResolutionWireProjection.WireName).ToArray(),
                 ResolutionType: FeedbackResolutionWireProjection.WireName(playbook.ResolutionType),
                 Family: FeedbackResolutionWireProjection.WireName(playbook.Family),
                 ResolverType: FeedbackResolutionWireProjection.WireName(playbook.Resolver),
@@ -2594,7 +2592,8 @@ public static class ReportFeedbackEndpoints
         {
             var problemIds = problems.Select(problem => problem.ProblemId).ToArray();
             var latestDecisions = await db.FeedbackProblemDecisions.AsNoTracking()
-                .Where(decision => problemIds.Contains(decision.ProblemId))
+                .Where(decision => problemIds.Contains(decision.ProblemId)
+                    && !decision.Outcome.StartsWith("target:"))
                 .OrderByDescending(decision => decision.DecidedAt)
                 .ThenByDescending(decision => decision.CreatedAt)
                 .ToListAsync(ct);
@@ -3039,18 +3038,55 @@ public static class ReportFeedbackEndpoints
     }
 
 
-    private static object FeedbackIssue(EmployerInterfaceContributionFeedback row) => new
+    private static object FeedbackIssue(EmployerInterfaceContributionFeedback row, FeedbackTreatmentTarget? target = null) => new
     {
         code = row.ErrorCode ?? 0,
         description = string.IsNullOrWhiteSpace(row.ErrorDescription)
             ? EmployerInterfaceLineFeedbackParser.Description(row.ErrorCode)
             : row.ErrorDescription,
-        scope = FeedbackTreatmentTargetCatalog.Resolve(row.ErrorCode).ToString().ToLowerInvariant(),
+        scope = (target ?? FeedbackTreatmentTargetCatalog.Resolve(row.ErrorCode)).ToString().ToLowerInvariant(),
         row.ReportId,
         row.ReportProductId,
         row.ContributionId,
         row.ReceivedAt
     };
+
+    // A target choice is an append-only routing decision, not a resolved error.
+    private static async Task<Dictionary<string, FeedbackTreatmentTarget>> TreatmentTargetSelectionsAsync(
+        IReadOnlyCollection<EmployerInterfaceContributionFeedback> rows, IAlphaDbContext db, CancellationToken ct)
+    {
+        var ids = rows.Where(row => row.ErrorCode.HasValue)
+            .Select(row => FeedbackResolutionWireProjection.BuildProblemId(
+                row.FeedbackId, row.ContributionId, row.Sequence, row.ErrorCode!.Value)).ToArray();
+        if (ids.Length == 0) return new Dictionary<string, FeedbackTreatmentTarget>(StringComparer.Ordinal);
+        var choices = await db.FeedbackProblemDecisions.AsNoTracking()
+            .Where(decision => ids.Contains(decision.ProblemId)
+                && decision.Outcome.StartsWith("target:"))
+            .OrderByDescending(decision => decision.DecidedAt)
+            .ThenByDescending(decision => decision.CreatedAt)
+            .Select(decision => new { decision.ProblemId, decision.Outcome })
+            .ToListAsync(ct);
+        var result = new Dictionary<string, FeedbackTreatmentTarget>(StringComparer.Ordinal);
+        foreach (var choice in choices)
+        {
+            if (result.ContainsKey(choice.ProblemId)) continue;
+            if (Enum.TryParse<FeedbackTreatmentTarget>(choice.Outcome["target:".Length..], true, out var target)
+                && Enum.IsDefined(target))
+                result[choice.ProblemId] = target;
+        }
+        return result;
+    }
+
+    private static FeedbackTreatmentTarget TreatmentTargetFor(
+        EmployerInterfaceContributionFeedback row,
+        IReadOnlyDictionary<string, FeedbackTreatmentTarget> selections)
+    {
+        if (!row.ErrorCode.HasValue) return FeedbackTreatmentTarget.Informational;
+        var id = FeedbackResolutionWireProjection.BuildProblemId(
+            row.FeedbackId, row.ContributionId, row.Sequence, row.ErrorCode.Value);
+        return FeedbackTreatmentTargetCatalog.Resolve(row.ErrorCode,
+            explicitlySelected: selections.TryGetValue(id, out var value) ? value : null);
+    }
 
     private static async Task<IReadOnlyList<EmployerInterfaceContributionFeedback>> ActiveActionableFeedbackAsync(
         IReadOnlyCollection<Guid> reportIds, IAlphaDbContext db, CancellationToken ct)
@@ -3271,12 +3307,12 @@ public static class ReportFeedbackEndpoints
             .ToListAsync(ct);
 
         var rows = await ActiveActionableFeedbackAsync(reportIds, db, ct);
+        var selectedTargets = await TreatmentTargetSelectionsAsync(rows, db, ct);
         var issues = rows
-            .Where(x => FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode)
-                == FeedbackTreatmentTarget.Employer)
-            .GroupBy(x => new { x.ErrorCode, x.ErrorDescription })
-            .Select(g => FeedbackIssue(g.OrderByDescending(x => x.ReceivedAt).First()))
-            .ToArray();
+            .Where(row => TreatmentTargetFor(row, selectedTargets) == FeedbackTreatmentTarget.Employer)
+            .GroupBy(row => new { row.ErrorCode, row.ErrorDescription })
+            .Select(group => FeedbackIssue(group.OrderByDescending(row => row.ReceivedAt).First(),
+                FeedbackTreatmentTarget.Employer)).ToArray();
 
         return Results.Ok(new
         {
@@ -3313,14 +3349,11 @@ public static class ReportFeedbackEndpoints
         if (employer is null) return Results.NotFound();
 
         var rows = await ActiveActionableFeedbackAsync(new[] { reportId }, db, ct);
+        var selectedTargets = await TreatmentTargetSelectionsAsync(rows, db, ct);
         var scopedIssues = rows
-            .Where(x =>
-            {
-                var scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode);
-                return FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode) == FeedbackTreatmentTarget.Report;
-            })
-            .GroupBy(x => new { x.ErrorCode, x.ErrorDescription, Scope = EmployerInterfaceLineFeedbackParser.ErrorScope(x.ErrorCode) })
-            .Select(g => FeedbackIssue(g.First()))
+            .Where(row => TreatmentTargetFor(row, selectedTargets) == FeedbackTreatmentTarget.Report)
+            .GroupBy(row => new { row.ErrorCode, row.ErrorDescription })
+            .Select(group => FeedbackIssue(group.First(), FeedbackTreatmentTarget.Report))
             .ToList<object>();
 
         var latestTransmission = await db.ReportTransmissions.AsNoTracking()
