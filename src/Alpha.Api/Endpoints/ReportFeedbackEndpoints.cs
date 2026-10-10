@@ -249,11 +249,6 @@ public static class ReportFeedbackEndpoints
             .ToDictionary(g => g.Key, g => g.Select(x => x.ReportProductId).Distinct().Count());
         // The report grid must use the same persisted target choices as the context modal.
         // Selecting a different treatment destination must immediately affect the count.
-        var unresolvedRowEntities = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
-            .Where(row => candidateIds.Contains(row.ReportId) && activeFeedbackIds.Contains(row.FeedbackId)
-                && row.ErrorCode.HasValue && row.ErrorCode.Value == 56)
-            .ToArrayAsync(ct);
-        var automaticTargets = await TreatmentTargetsAsync(unresolvedRowEntities, employerId, db, protector, ct);
         var reportIssueCounts = unresolvedLatestFeedback
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
             .Where(x => FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode) == FeedbackTreatmentTarget.Report)
@@ -3091,8 +3086,8 @@ public static class ReportFeedbackEndpoints
             var reported = protector.Unprotect(payment.EmployerAccount,
                 $"report-payment-account:{payment.ReportProductId}");
             if (Digits(reported) == Digits(account)
-                && payment.EmployerBankCode == effective.BankId.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                && payment.EmployerBranch == effective.BranchId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                && Digits(payment.EmployerBankCode).TrimStart('0') == effective.BankId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                && Digits(payment.EmployerBranch).TrimStart('0') == effective.BranchId.ToString(System.Globalization.CultureInfo.InvariantCulture))
                 result[row.Id] = FeedbackTreatmentTarget.Employer;
         }
         return result;
