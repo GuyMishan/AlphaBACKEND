@@ -2561,6 +2561,7 @@ public static class ReportFeedbackEndpoints
                     ? EmployerInterfaceLineFeedbackParser.Description(row.ErrorCode)
                     : row.ErrorDescription,
                 Scope: FeedbackResolutionWireProjection.WireName(playbook.Scope),
+                TargetScope: FeedbackTreatmentTargetCatalog.Resolve(row.ErrorCode).ToString().ToLowerInvariant(),
                 ResolutionType: FeedbackResolutionWireProjection.WireName(playbook.ResolutionType),
                 Family: FeedbackResolutionWireProjection.WireName(playbook.Family),
                 ResolverType: FeedbackResolutionWireProjection.WireName(playbook.Resolver),
