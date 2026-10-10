@@ -101,7 +101,8 @@ public static class FeedbackResolutionWireProjection
     public static IReadOnlyList<FeedbackResolutionGroupDto> BuildGroups(
         IReadOnlyList<FeedbackResolutionProblemDto> problems,
         bool canCreateReport = false,
-        bool canEditEmployee = false) =>
+        bool canEditEmployee = false,
+        bool canEditEmployer = false) =>
         problems
             .GroupBy(problem => problem.GroupKey, StringComparer.Ordinal)
             .Select(group =>
@@ -115,9 +116,13 @@ public static class FeedbackResolutionWireProjection
                     problem.ResolutionType,
                     WireName(FeedbackResolutionType.Decision),
                     StringComparison.Ordinal));
-                var canExecute = isDecision
-                    ? canCreateReport || (isEmployee && canEditEmployee)
-                    : isEmployee ? canEditEmployee : canCreateReport;
+                var employerTarget = group.All(problem =>
+                    string.Equals(problem.TargetScope, "employer", StringComparison.Ordinal));
+                var canExecute = employerTarget
+                    ? canEditEmployer
+                    : isDecision
+                        ? canCreateReport || (isEmployee && canEditEmployee)
+                        : isEmployee ? canEditEmployee : canCreateReport;
                 return new FeedbackResolutionGroupDto(
                     group.Key,
                     first.ResolverType,
