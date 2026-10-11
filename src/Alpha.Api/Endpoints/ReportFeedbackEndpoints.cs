@@ -9,6 +9,7 @@ using Alpha.Domain.Auditing;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Reporting;
+using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Endpoints;
@@ -2553,6 +2554,38 @@ public static class ReportFeedbackEndpoints
                     : "needs-treatment";
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
             var treatmentTarget = TreatmentTargetFor(row, targetSelections);
+            if (playbook.Code == 18)
+            {
+                var missingFieldNumber = EmployerInterface006FieldMapInitializer.Code18FieldNumber(row.ErrorAmount);
+                // Error code 18 is the only case where the official workbook defines
+                // PERUT-SHGIHA-SHUM as a numbered missing field.
+                var sourceInterfaceType = report.ReportKind == ManualReportKind.Negative ? 13 : 12;
+                var missingField = missingFieldNumber.HasValue
+                    ? EmployerInterface006FieldMapInitializer.Find(sourceInterfaceType, missingFieldNumber.Value)
+                    : null;
+                feedbackValues["missingFieldNumber"] = missingFieldNumber;
+                feedbackValues["missingFieldName"] = missingField?.FieldName;
+                feedbackValues["missingFieldXmlTag"] = missingField?.XmlTag;
+                feedbackValues["missingFieldXmlBlock"] = missingField?.XmlBlock;
+                feedbackValues["missingFieldInterfaceType"] = sourceInterfaceType;
+                feedbackValues["missingFieldMapped"] = missingField is not null;
+                if (missingField is not null)
+                {
+                    // Prefer the actual XML block over a hardcoded classification by error code.
+                    treatmentTarget = missingField.XmlBlock switch
+                    {
+                        "NetuneiGoremSholech" or "NetuneiGoremNimaan" or
+                        "YeshutGoremPoneLemislaka" => FeedbackTreatmentTarget.Employer,
+                        "PirteiOved" or "ChodeshMaskoretVestatusOved" =>
+                            FeedbackTreatmentTarget.Employee,
+                        "PirteiKupa" or "PizulHafrashotOvedBeKupa" or
+                        "SachHafrashaLeKupaBechodeshMaskoretOved" or
+                        "SachHafrashaLeOvedBekupa" => FeedbackTreatmentTarget.Deposit,
+                        _ => FeedbackTreatmentTarget.Report
+                    };
+                }
+                // Missing/non-integer/unmapped field numbers keep the safe original scope.
+            }
             var effectiveStrategy = treatmentTarget == FeedbackTreatmentTarget.Report
                 ? FeedbackResolutionGroupStrategy.PerReport
                 : playbook.Code == 56 && treatmentTarget == FeedbackTreatmentTarget.Deposit
