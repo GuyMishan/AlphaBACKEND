@@ -28,7 +28,7 @@ For interface 13 (negative reports), automated field editing remains intentional
 Incoming interfaces 14, 16 and 18 (203 field entries) currently map to `unknown` for editing; they are not routed as outgoing editable fields.
 
 ## Verified code routing architecture
-101 entries were located in `FeedbackResolutionPlaybookCatalog`: 2 informational, 40 edit, 39 decision, and 20 external. These are **playbook decisions**, not 101 distinct field-specific editors.
+101 entries were located in `FeedbackResolutionPlaybookCatalog`: 2 informational, 38 edit, 41 decision, and 20 external. These are **playbook decisions**, not 101 distinct field-specific editors.
 
 - `employee`: `FeedbackEmployeeResolver` — shared employee form.
 - `contribution`, `productPolicy`, `employmentStatus`, `payment`, `documents`, `reportCorrection`, `refund`: `FeedbackInternalCorrectionResolver` — displays contextual fields and prepares correction workspace, but does **not** provide a unique in-modal editor for every affected field.
