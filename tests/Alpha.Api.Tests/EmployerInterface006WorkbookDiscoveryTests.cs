@@ -41,6 +41,17 @@ public sealed class EmployerInterface006OfficialWorkbookTests
     }
 
     [Fact]
+    public void Simulated_code_18_field_74_matches_official_employee_status_field()
+    {
+        using var workbook = OpenWorkbook();
+        var candidates = workbook.FindRowsWithExactCell("74");
+        Assert.Contains(candidates, row =>
+            row.Contains("סטטוס עובד בחודש משכורתו", StringComparison.Ordinal)
+            || (row.Contains("STATUS-OVED", StringComparison.OrdinalIgnoreCase)
+                && row.Contains("סטטוס עובד", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void Official_workbook_contains_the_negative_v6_rules_alpha_depends_on()
     {
         using var workbook = OpenWorkbook();
