@@ -20,6 +20,31 @@ public static class EmployerInterface006FieldMapInitializer
     public static FieldRow? Find(int interfaceType, int fieldNumber) =>
         Catalog.Value.GetValueOrDefault((interfaceType, fieldNumber));
 
+    /// <summary>
+    /// V006 numbered field -> existing ALPHA edit surface.
+    /// This is a navigation classification, not authorization or permission to
+    /// edit immutable documents. Non-editable fields are explicitly identified.
+    /// </summary>
+    public static string EditSurface(int interfaceType, int fieldNumber)
+    {
+        if (interfaceType is not (12 or 13) || Find(interfaceType, fieldNumber) is null)
+            return "unknown";
+        return fieldNumber switch
+        {
+            >= 1 and <= 6 => "fileHeader",
+            >= 7 and <= 24 => "integrationIdentity",
+            >= 25 and <= 29 => "employerContact",
+            >= 30 and <= 56 => "reportTransfer",
+            >= 57 and <= 58 => "reportEvent",
+            >= 59 and <= 62 => "depositProduct",
+            >= 63 and <= 69 => "employeeProfile",
+            >= 70 and <= 78 => "depositEmployeeStatus",
+            >= 79 and <= 89 => "depositContributions",
+            >= 90 and <= 95 => "fileClosing",
+            _ => "unknown"
+        };
+    }
+
     public static int? Code18FieldNumber(decimal? errorAmount)
     {
         if (!errorAmount.HasValue || errorAmount.Value < 1 || errorAmount.Value != decimal.Truncate(errorAmount.Value)
