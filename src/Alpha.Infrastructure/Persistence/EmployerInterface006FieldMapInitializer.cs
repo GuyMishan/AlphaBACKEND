@@ -67,11 +67,14 @@ public static class EmployerInterface006FieldMapInitializer
                 xml_tag text NOT NULL,
                 xml_block text NOT NULL,
                 data_type text NOT NULL,
+                edit_surface text NOT NULL DEFAULT 'unknown',
                 source_row integer NOT NULL,
                 specification text NOT NULL DEFAULT 'Employer interface V 6.xlsx',
                 updated_at timestamptz NOT NULL DEFAULT now(),
                 PRIMARY KEY (interface_type, field_number)
             );
+            ALTER TABLE reference_data.employer_interface_006_fields
+                ADD COLUMN IF NOT EXISTS edit_surface text NOT NULL DEFAULT 'unknown';
             """;
         await db.Database.ExecuteSqlRawAsync(ddl, ct);
 
@@ -91,19 +94,20 @@ public static class EmployerInterface006FieldMapInitializer
             xml_tag = field.XmlTag,
             xml_block = field.XmlBlock,
             data_type = field.DataType,
+            edit_surface = EditSurface(field.InterfaceType, field.FieldNumber),
             source_row = field.SourceRow
         }));
         await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO reference_data.employer_interface_006_fields
-                (interface_type, field_number, field_name, xml_tag, xml_block, data_type, source_row)
-            SELECT interface_type, field_number, field_name, xml_tag, xml_block, data_type, source_row
+                (interface_type, field_number, field_name, xml_tag, xml_block, data_type, edit_surface, source_row)
+            SELECT interface_type, field_number, field_name, xml_tag, xml_block, data_type, edit_surface, source_row
             FROM jsonb_to_recordset(CAST({json} AS jsonb))
                 AS input(interface_type integer, field_number integer, field_name text,
-                    xml_tag text, xml_block text, data_type text, source_row integer)
+                    xml_tag text, xml_block text, data_type text, edit_surface text, source_row integer)
             ON CONFLICT (interface_type, field_number) DO UPDATE
                 SET field_name = EXCLUDED.field_name, xml_tag = EXCLUDED.xml_tag,
                     xml_block = EXCLUDED.xml_block, data_type = EXCLUDED.data_type,
-                    source_row = EXCLUDED.source_row, updated_at = now();
+                    edit_surface = EXCLUDED.edit_surface, source_row = EXCLUDED.source_row, updated_at = now();
             """, ct);
     }
 
