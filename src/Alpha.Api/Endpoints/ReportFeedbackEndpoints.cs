@@ -2577,7 +2577,7 @@ public static class ReportFeedbackEndpoints
                         "NetuneiGoremSholech" or "NetuneiGoremNimaan" or
                         "YeshutGoremPoneLemislaka" => FeedbackTreatmentTarget.Employer,
                         "PirteiOved" or "ChodeshMaskoretVestatusOved" =>
-                            FeedbackTreatmentTarget.Employee,
+                            FeedbackTreatmentTarget.Deposit,
                         "PirteiKupa" or "PizulHafrashotOvedBeKupa" or
                         "SachHafrashaLeKupaBechodeshMaskoretOved" or
                         "SachHafrashaLeOvedBekupa" => FeedbackTreatmentTarget.Deposit,
@@ -3131,7 +3131,7 @@ public static class ReportFeedbackEndpoints
                     "NetuneiGoremSholech" or "NetuneiGoremNimaan" or
                     "YeshutGoremPoneLemislaka" => FeedbackTreatmentTarget.Employer,
                     "PirteiOved" or "ChodeshMaskoretVestatusOved" =>
-                        FeedbackTreatmentTarget.Employee,
+                        FeedbackTreatmentTarget.Deposit,
                     "PirteiKupa" or "PizulHafrashotOvedBeKupa" or
                     "SachHafrashaLeKupaBechodeshMaskoretOved" or
                     "SachHafrashaLeOvedBekupa" => FeedbackTreatmentTarget.Deposit,
