@@ -252,7 +252,18 @@ public static class ReportValidationEndpoints
             }).ToArray();
 
             foreach (var error in ApiInputValidation.Products(inputs, limits, enforcePolicyPercentageLimits: true))
-                issues.Add(new("PRODUCT_VALIDATION", $"{employeeName}: {error}", ValidationScope.Contribution, employee.Id));
+            {
+                // Product validation messages carry a one-based product index. Preserve the
+                // corresponding persisted product ID so the editor can focus the actual row.
+                // Employee-wide findings (such as duplicate policies) remain employee-scoped.
+                Guid? affectedProductId = null;
+                var match = System.Text.RegularExpressions.Regex.Match(error, @"^מוצר ([1-9][0-9]*): ");
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var productIndex)
+                    && productIndex <= employeeProducts.Count)
+                    affectedProductId = employeeProducts[productIndex - 1].Id;
+                issues.Add(new("PRODUCT_VALIDATION", $"{employeeName}: {error}",
+                    ValidationScope.Contribution, employee.Id, affectedProductId));
+            }
 
             if (report.ReportKind == ManualReportKind.Current && stage is ValidationStage.Deposits or ValidationStage.Final)
             {
