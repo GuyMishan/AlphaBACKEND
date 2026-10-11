@@ -1,6 +1,8 @@
 using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Domain.Reporting;
+using Alpha.Domain.Employees;
+using Alpha.Domain.Employers;
 using Alpha.Api.Security;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,6 +19,8 @@ public static class ReportAttachmentEndpoints
             .RequireAuthorization().WithTags("Manual reporting");
 
         group.MapGet("/", ListAsync);
+        group.MapGet("/library-candidates", LibraryCandidatesAsync);
+        group.MapPost("/from-library", AttachFromLibraryAsync);
         group.MapPost("/", UploadAsync).DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(11 * 1024 * 1024));
         group.MapGet("/{attachmentId:guid}/file", DownloadAsync);
         group.MapDelete("/{attachmentId:guid}", DeleteAsync);
@@ -212,6 +216,141 @@ public static class ReportAttachmentEndpoints
         report.MarkDirty();
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
+    }
+
+    private sealed record FromLibraryRequest(Guid EmployerDocumentId, Guid? ReportProductId);
+    private sealed record ReportProductScope(ManualReportProduct Product, Guid EmploymentId);
+
+    // Match a saved employee product to the selected report line using strong fund/policy
+    // identifiers. Never assume that products from the same manufacturer are equivalent.
+    private static bool SamePensionProduct(ManualReportProduct reported, EmployeePensionProduct saved)
+    {
+        if (reported.ProductType != saved.ProductType ||
+            !string.Equals(reported.PolicyNumber?.Trim(), saved.PolicyNumber?.Trim(), StringComparison.OrdinalIgnoreCase))
+            return false;
+        var external = !string.IsNullOrWhiteSpace(reported.FundExternalKey) &&
+            string.Equals(reported.FundExternalKey.Trim(), saved.FundExternalKey?.Trim(), StringComparison.OrdinalIgnoreCase);
+        var code = !string.IsNullOrWhiteSpace(reported.FundCode) &&
+            string.Equals(reported.FundCode.Trim(), saved.FundCode?.Trim(), StringComparison.OrdinalIgnoreCase);
+        // If both sides have an external identifier it must not conflict with the fallback code.
+        if (!string.IsNullOrWhiteSpace(reported.FundExternalKey) &&
+            !string.IsNullOrWhiteSpace(saved.FundExternalKey) && !external)
+            return false;
+        return external || code;
+    }
+
+    private static async Task<ReportProductScope?> ResolveProductAsync(
+        IAlphaDbContext db, Guid reportId, Guid reportProductId, CancellationToken ct)
+    {
+        var scope = await (from product in db.ManualReportProducts.AsNoTracking()
+            join employee in db.ManualReportEmployees.AsNoTracking()
+                on product.ReportEmployeeId equals employee.Id
+            where product.Id == reportProductId && employee.ReportId == reportId
+            select new { Product = product, employee.EmploymentId }).SingleOrDefaultAsync(ct);
+        return scope is null ? null : new ReportProductScope(scope.Product, scope.EmploymentId);
+    }
+
+    private static async Task<Guid?> MatchSavedProductAsync(
+        IAlphaDbContext db, ReportProductScope scope, CancellationToken ct)
+    {
+        var saved = await db.EmployeePensionProducts.AsNoTracking()
+            .Where(x => x.EmploymentId == scope.EmploymentId).ToListAsync(ct);
+        var matches = saved.Where(x => SamePensionProduct(scope.Product, x)).Take(2).ToArray();
+        return matches.Length == 1 ? matches[0].Id : null;
+    }
+
+    private static async Task<IResult> LibraryCandidatesAsync(
+        Guid organizationId, Guid employerId, Guid reportId, Guid reportProductId,
+        IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (report.ReportKind == ManualReportKind.Differences) return Results.Ok(Array.Empty<object>());
+        var scope = await ResolveProductAsync(db, reportId, reportProductId, ct);
+        if (scope is null) return Results.NotFound();
+        var savedId = await MatchSavedProductAsync(db, scope, ct);
+        var negative = report.ReportKind == ManualReportKind.Negative;
+        var codes = negative ? new[] { 3, 4, 6 } : new[] { 5 };
+        var documents = await db.EmployerDocuments.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId &&
+                codes.Contains(x.DocumentTypeCode) &&
+                ((negative && x.DocumentTypeCode == 3 && x.EmploymentId == null) ||
+                 (savedId.HasValue && x.EmploymentId == scope.EmploymentId &&
+                  x.EmployeePensionProductId == savedId)))
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new { x.Id, x.DocumentTypeCode, x.OriginalFileName, x.SizeBytes, x.CreatedAt })
+            .ToListAsync(ct);
+        return Results.Ok(documents);
+    }
+
+    private static async Task<IResult> AttachFromLibraryAsync(
+        Guid organizationId, Guid employerId, Guid reportId, FromLibraryRequest request,
+        IAlphaDbContext db, OrganizationAccessService access, IDataProtectionService protector, CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var report = await db.ManualReports.SingleOrDefaultAsync(x =>
+            x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (!report.IsEditable) return Results.Conflict(new { error = "The report is no longer editable." });
+        if (report.ReportKind == ManualReportKind.Differences)
+            return Results.BadRequest(new { error = "Difference reports cannot carry 006 attachments." });
+        var source = await db.EmployerDocuments.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.Id == request.EmployerDocumentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (source is null) return Results.NotFound();
+        var negative = report.ReportKind == ManualReportKind.Negative;
+        if ((negative && source.DocumentTypeCode is not (3 or 4 or 6)) ||
+            (!negative && source.DocumentTypeCode != 5))
+            return Results.BadRequest(new { error = "Document type is incompatible with this report." });
+        Guid? reportProductId = null;
+        if (source.DocumentTypeCode == 3)
+        {
+            if (request.ReportProductId.HasValue || source.EmploymentId.HasValue || source.EmployeePensionProductId.HasValue)
+                return Results.BadRequest(new { error = "Employer affidavit is report-wide." });
+        }
+        else
+        {
+            if (!request.ReportProductId.HasValue)
+                return Results.BadRequest(new { error = "Select the exact report product for this document." });
+            var scope = await ResolveProductAsync(db, reportId, request.ReportProductId.Value, ct);
+            if (scope is null) return Results.NotFound();
+            var savedProductId = await MatchSavedProductAsync(db, scope, ct);
+            if (!savedProductId.HasValue || savedProductId != source.EmployeePensionProductId ||
+                scope.EmploymentId != source.EmploymentId)
+                return Results.BadRequest(new { error = "Document does not belong to the selected employee and pension product." });
+            if (source.DocumentTypeCode == 5)
+            {
+                if (scope.Product.ProductType != PensionProductType.PensionFund)
+                    return Results.BadRequest(new { error = "Type 5 is valid only for a pension fund." });
+                var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.ReportProductId == scope.Product.Id, ct);
+                if (metadata?.EmployeeStatus == 14)
+                    return Results.BadRequest(new { error = "Type 5 is not applicable to new employee status 14." });
+            }
+            reportProductId = scope.Product.Id;
+        }
+        if (await db.ManualReportAttachments.CountAsync(x => x.ReportId == reportId, ct) >= MaxAttachmentsPerReport)
+            return Results.BadRequest(new { error = "Maximum 20 documents per report." });
+        if (await db.ManualReportAttachments.AnyAsync(x => x.ReportId == reportId &&
+                x.DocumentTypeCode == source.DocumentTypeCode && x.ReportProductId == reportProductId, ct))
+            return Results.Conflict(new { error = "This document type is already attached to the selected report scope." });
+        if (source.SizeBytes > MaxAttachmentBytes)
+            return Results.BadRequest(new { error = "Document is too large for the report." });
+
+        // The uploaded library PDF was already scanned. Copy immutable plaintext evidence
+        // into the report's own purpose-bound encryption context, never link mutable records.
+        var plain = protector.UnprotectBytes(source.Content, $"employer-document:{organizationId}:{employerId}:{source.Id}");
+        var reportCopy = new ManualReportAttachment(reportId, reportProductId, source.DocumentTypeCode,
+            source.OriginalFileName, "application/pdf",
+            protector.ProtectBytes(plain, $"report-attachment:{reportId}:{reportProductId}:{source.DocumentTypeCode}"),
+            source.SizeBytes, source.Sha256);
+        db.ManualReportAttachments.Add(reportCopy);
+        report.MarkDirty();
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { reportCopy.Id, reportCopy.ReportProductId, reportCopy.DocumentTypeCode,
+            reportCopy.OriginalFileName, reportCopy.TransmissionFileName, reportCopy.ContentType,
+            reportCopy.SizeBytes, reportCopy.Sha256, reportCopy.CreatedAt });
     }
 
     private static async Task<bool> HasPreviouslySentAnnualAffidavitAsync(IAlphaDbContext db, ManualReport report, CancellationToken ct)
