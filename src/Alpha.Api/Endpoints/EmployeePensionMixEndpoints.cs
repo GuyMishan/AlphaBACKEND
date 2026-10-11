@@ -2,6 +2,7 @@ using Alpha.Application.Abstractions;
 using Alpha.Application.Authorization;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Reporting;
+using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Api.Endpoints;
@@ -65,7 +66,7 @@ public static class EmployeePensionMixEndpoints
     }
 
     private static async Task<IResult> SaveAsync(Guid organizationId, Guid employerId, Guid employmentId,
-        SaveEmployeePensionMixRequest request, IAlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+        SaveEmployeePensionMixRequest request, AlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (request.Products.Count > MaxProducts) return Results.BadRequest(new { error = $"Employee mix is limited to {MaxProducts} products." });
@@ -155,6 +156,7 @@ public static class EmployeePensionMixEndpoints
                 x.EmployerId == employerId && x.EmploymentId == employmentId &&
                 x.EmployeePensionProductId.HasValue && removedIds.Contains(x.EmployeePensionProductId.Value), ct))
             return Results.Conflict(new { error = "Remove product documents before deleting this pension product." });
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         employment.UpdateMonthlySalary(monthlySalary);
         var existingIds = existingProducts.Select(x => x.Id).ToArray();
         if (existingIds.Length > 0)
@@ -185,6 +187,7 @@ public static class EmployeePensionMixEndpoints
         }
 
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return Results.NoContent();
     }
 
