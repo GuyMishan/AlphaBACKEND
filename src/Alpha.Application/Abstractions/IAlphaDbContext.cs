@@ -28,6 +28,7 @@ public interface IAlphaDbContext
     DbSet<ReferentEmployerAssignment> ReferentEmployerAssignments { get; }
     DbSet<OrganizationMembership> OrganizationMemberships { get; }
     DbSet<OrganizationProfileSettings> OrganizationProfileSettings { get; }
+    DbSet<EmployerDocument> EmployerDocuments { get; }
     DbSet<Employer> Employers { get; }
     DbSet<EmployerUserAccess> EmployerUserAccesses { get; }
     DbSet<EmployerProfileSettings> EmployerProfileSettings { get; }
