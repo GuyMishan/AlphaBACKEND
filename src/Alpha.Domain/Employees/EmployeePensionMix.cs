@@ -12,8 +12,9 @@ public sealed class EmployeePensionProduct : Entity
         bool isActive, DateOnly effectiveFrom, DateOnly? effectiveTo, string institutionalBody, string manufacturer,
         string? fundExternalKey = null, string? fundCode = null, string? fundName = null, string? fundCompanyName = null,
         SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
-        int allocationOrder = 0, int? section14Code = null, string? fundClassification = null)
+        int allocationOrder = 0, int? section14Code = null, string? fundClassification = null, Guid? existingId = null)
     {
+        if (existingId.HasValue) Id = existingId.Value;
         EmploymentId = employmentId;
         Update(productType, policyNumber, salary, reportingType, salaryLayer, section14, section14StartDate,
             isActive, effectiveFrom, effectiveTo, institutionalBody, manufacturer, fundExternalKey, fundCode, fundName,
