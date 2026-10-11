@@ -2569,6 +2569,9 @@ public static class ReportFeedbackEndpoints
                 feedbackValues["missingFieldXmlBlock"] = missingField?.XmlBlock;
                 feedbackValues["missingFieldInterfaceType"] = sourceInterfaceType.ToString(CultureInfo.InvariantCulture);
                 feedbackValues["missingFieldMapped"] = (missingField is not null) ? "true" : "false";
+                feedbackValues["missingFieldEditSurface"] = missingFieldNumber.HasValue
+                    ? EmployerInterface006FieldMapInitializer.EditSurface(sourceInterfaceType, missingFieldNumber.Value)
+                    : "unknown";
                 if (missingField is not null)
                 {
                     // Prefer the actual XML block over a hardcoded classification by error code.
