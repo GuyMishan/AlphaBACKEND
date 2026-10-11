@@ -72,6 +72,7 @@ public sealed class EmployerInterface006OfficialWorkbookTests
         }
         Assert.Equal("employerContact", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 25));
         Assert.Equal("employeeProfile", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 65));
+        Assert.Equal("depositProduct", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 69));
         Assert.Equal("depositEmployeeStatus", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 74));
         Assert.Equal("fileClosing", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 95));
         Assert.Equal("integrationIdentity", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 15));
