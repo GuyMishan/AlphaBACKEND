@@ -14,6 +14,7 @@ public sealed class EmployeePensionProduct : Entity
         SalaryAllocationType salaryAllocationType = SalaryAllocationType.Fixed, decimal? salaryAllocationValue = null,
         int allocationOrder = 0, int? section14Code = null, string? fundClassification = null, Guid? existingId = null)
     {
+        if (existingId == Guid.Empty) throw new ArgumentException("Existing product ID must not be empty.", nameof(existingId));
         if (existingId.HasValue) Id = existingId.Value;
         EmploymentId = employmentId;
         Update(productType, policyNumber, salary, reportingType, salaryLayer, section14, section14StartDate,
