@@ -20,14 +20,14 @@ public static class ApiInputValidation
         if (registrationNumber.Trim().Length is < 5 or > 15) return "מספר חברה / עוסק אינו באורך תקין.";
         if (string.IsNullOrWhiteSpace(withholdingFileNumber) || !Digits.IsMatch(withholdingFileNumber.Trim())) return "מספר תיק ניכויים חייב להכיל ספרות בלבד.";
         if (withholdingFileNumber.Trim().Length is < 5 or > 9) return "מספר תיק ניכויים חייב להכיל 5-9 ספרות.";
-        if (string.IsNullOrWhiteSpace(contactFirstName)) return "שם פרטי של איש הקשר הוא שדה חובה.";
-        if (string.IsNullOrWhiteSpace(contactLastName)) return "שם משפחה של איש הקשר הוא שדה חובה.";
-        if (string.IsNullOrWhiteSpace(contactEmail) || !contactEmail.Contains('@')) return "כתובת האימייל של איש הקשר אינה תקינה.";
+        if ((contactFirstName?.Trim().Length ?? 0) is < 2 or > 20) return "שם פרטי של איש הקשר חייב להכיל 2–20 תווים.";
+        if ((contactLastName?.Trim().Length ?? 0) is < 2 or > 20) return "שם משפחה של איש הקשר חייב להכיל 2–20 תווים.";
+        if (string.IsNullOrWhiteSpace(contactEmail) || contactEmail.Trim().Length > 50 || !contactEmail.Contains('@')) return "כתובת האימייל של איש הקשר אינה תקינה.";
 
         var phone = new string((contactPhone ?? string.Empty).Where(char.IsDigit).ToArray());
         var mobile = new string((contactMobile ?? string.Empty).Where(char.IsDigit).ToArray());
         if (phone.Length == 0 && mobile.Length == 0) return "יש להזין לפחות טלפון או נייד אחד של איש הקשר.";
-        if (phone.Length > 11) return "טלפון איש הקשר יכול להכיל עד 11 ספרות.";
+        if (phone.Length > 0 && (phone.Length < 9 || phone.Length > 11)) return "טלפון איש הקשר חייב להכיל 9–11 ספרות.";
         if (mobile.Length > 0 && (mobile.Length != 10 || !mobile.StartsWith("05", StringComparison.Ordinal)))
             return "מספר הנייד של איש הקשר חייב להכיל 10 ספרות ולהתחיל ב-05.";
         return null;
