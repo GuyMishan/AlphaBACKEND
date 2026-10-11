@@ -157,6 +157,7 @@ public static class FeedbackResolutionWireProjection
             WireName(FeedbackResolverType.Payment),
             WireName(FeedbackResolverType.Documents),
             WireName(FeedbackResolverType.ReportCorrection),
+            WireName(FeedbackResolverType.ConditionalField),
             WireName(FeedbackResolverType.Refund)
         };
         if (!correctionResolvers.Contains(requestedResolver)
