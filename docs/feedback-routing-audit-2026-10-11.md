@@ -100,3 +100,8 @@ These values belong to generation, system/integration configuration, existing ma
 **Audit finding requiring additional fix:** `EditSurface` currently labels 70–78 as `depositEmployeeStatus`; however 70 comes from product salary month, 72 from salary layer, 73 from salary, and 78 from product policy number. The payment editor does not own all these source fields. Its current generic classification is too broad. Correct field-specific routing is needed for 70/72/73/78 before allowing automatic code-18 correction.
 
 This triage removes derived/integration/system fields from the **manual-edit-screen** backlog, not from validation or troubleshooting responsibilities.
+
+### Verification of fields 25–29 (employer contact)
+All five official requester-contact fields are already present in `AlphaFRONTEND/src/components/employer-form.tsx` and mapped by `feedback-code18-employer-editor.tsx`: field 25 => `contactFirstName`, 26 => `contactLastName`, 27 => `contactPhone`, 28 => `contactEmail`, 29 => `contactMobile`. `EmployerInterface006XmlBuilder.BuildRequester` maps these to the corresponding XML tags when sender code is not 5. **Remove 25–29 from the missing-editor backlog**; their actual editor already exists.
+
+Remaining validation/integration caveats: frontend contact names currently allow 1 character while the 006 builder requires 2–20; phone/mobile validation differs as well. When `SenderCode == 5`, the requester block deliberately emits these five fields as nil, so missing-field feedback must first check sender configuration and official conditional requirements instead of blindly editing the employer profile.
