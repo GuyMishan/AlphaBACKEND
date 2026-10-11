@@ -37,8 +37,8 @@ public static class EmployerInterface006FieldMapInitializer
             throw new FileNotFoundException("The official Employer Interface V6 workbook is required for field mapping.", workbookPath);
 
         var fields = ReadFields(workbookPath);
-        if (fields.Count != 321 || fields.GroupBy(row => row.InterfaceType).Any(group =>
-            group.Count() != (group.Key is 12 or 13 ? 95 : group.Key == 14 ? 72 : 59)))
+        if (fields.Count != 393 || fields.GroupBy(row => row.InterfaceType).Any(group =>
+            group.Count() != (group.Key is 12 or 13 ? 95 : group.Key is 14 or 18 ? 72 : 59)))
             throw new InvalidDataException("Unexpected official Employer Interface V6 field catalog; refuse partial seeding.");
 
         var json = JsonSerializer.Serialize(fields.Select(field => new {
@@ -99,9 +99,11 @@ public static class EmployerInterface006FieldMapInitializer
                     && char.IsLetter(element[0])) block = element;
                 if (!int.TryParse(numberText, out var number) || !values.TryGetValue("I", out var xmlTag)
                     || string.IsNullOrWhiteSpace(xmlTag)) continue;
-                result.Add(new FieldRow(type, number, values.GetValueOrDefault("D", ""),
+                var definition = new FieldRow(type, number, values.GetValueOrDefault("D", ""),
                     xmlTag, block, values.GetValueOrDefault("J", ""),
-                    int.Parse((string?)row.Attribute("r") ?? "0")));
+                    int.Parse((string?)row.Attribute("r") ?? "0"));
+                result.Add(definition);
+                if (type == 14) result.Add(definition with { InterfaceType = 18 });
             }
         }
         return result;
