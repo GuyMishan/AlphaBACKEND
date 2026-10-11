@@ -23,6 +23,12 @@ public sealed class EmployerDocument : Entity
         Sha256 = sha256;
     }
 
+    public void SetEncryptedContent(byte[] content)
+    {
+        if (content.Length == 0) throw new ArgumentException("Encrypted content required.");
+        Content = content;
+    }
+
     public Guid OrganizationId { get; private set; }
     public Guid EmployerId { get; private set; }
     public Guid? EmploymentId { get; private set; }
