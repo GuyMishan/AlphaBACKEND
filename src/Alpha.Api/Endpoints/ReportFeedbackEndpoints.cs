@@ -2616,7 +2616,7 @@ public static class ReportFeedbackEndpoints
                 // These values are actually fields of the scoped payment/006 metadata editor.
                 // 70 (salary month), 72 (salary layer), 73 (salary), 78 (policy)
                 // come from the report product, not the payment editor.
-                && missingFieldNumber is 71 or 74 or 75 or 76 or 77;
+                && EmployerInterface006FieldMapInitializer.Code18FieldNumber(row.ErrorAmount) is 71 or 74 or 75 or 76 or 77;
             var conditionalEmployeeProfile = playbook.Code == 18
                 && report.ReportKind == ManualReportKind.Current
                 && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
