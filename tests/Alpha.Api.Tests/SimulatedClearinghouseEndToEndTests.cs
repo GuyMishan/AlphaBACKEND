@@ -126,11 +126,11 @@ public sealed class SimulatedClearinghouseEndToEndTests
                 .Where(x => feedbackIds.Contains(x.FeedbackId))
                 .Select(x => new { x.ErrorCode, x.ErrorAmount, x.ErrorDate, x.ContributionAmount })
                 .ToListAsync(ct);
-            Assert.Equal(74m, Assert.Single(rowsWithDetails.Where(x => x.ErrorCode == 18)).ErrorAmount);
-            Assert.Null(Assert.Single(rowsWithDetails.Where(x => x.ErrorCode == 18)).ErrorDate);
-            Assert.Null(Assert.Single(rowsWithDetails.Where(x => x.ErrorCode == 116)).ErrorAmount);
-            Assert.Null(Assert.Single(rowsWithDetails.Where(x => x.ErrorCode == 100)).ErrorAmount);
-            Assert.Null(Assert.Single(rowsWithDetails.Where(x => x.ErrorCode == 102)).ErrorAmount);
+            Assert.Equal(74m, Assert.Single(rowsWithDetails, x => x.ErrorCode == 18).ErrorAmount);
+            Assert.Null(Assert.Single(rowsWithDetails, x => x.ErrorCode == 18).ErrorDate);
+            Assert.Null(Assert.Single(rowsWithDetails, x => x.ErrorCode == 116).ErrorAmount);
+            Assert.Null(Assert.Single(rowsWithDetails, x => x.ErrorCode == 100).ErrorAmount);
+            Assert.Null(Assert.Single(rowsWithDetails, x => x.ErrorCode == 102).ErrorAmount);
             Assert.All(rowsWithDetails.Where(x => x.ErrorCode != 18 && x.ErrorCode != 53),
                 row => Assert.Null(row.ErrorDate));
         });
