@@ -25,17 +25,19 @@ public static class EmployerDocumentEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> ListAsync(Guid organizationId, Guid employerId, Guid? employmentId, AlphaDbContext db,
+    private static async Task<IResult> ListAsync(Guid organizationId, Guid employerId, Guid? employmentId, Guid? employeePensionProductId, AlphaDbContext db,
         OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
             return Results.NotFound();
         if (employmentId.HasValue && !await db.Employments.AsNoTracking().AnyAsync(x => x.Id == employmentId && x.EmployerId == employerId && x.OrganizationId == organizationId, ct)) return Results.NotFound();
+        if (employeePensionProductId.HasValue && (!employmentId.HasValue ||
+            !await db.EmployeePensionProducts.AsNoTracking().AnyAsync(x => x.Id == employeePensionProductId && x.EmploymentId == employmentId, ct))) return Results.NotFound();
         var docs = await db.EmployerDocuments.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.EmploymentId == employmentId)
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.EmploymentId == employmentId && x.EmployeePensionProductId == employeePensionProductId)
             .OrderByDescending(x => x.CreatedAt)
-            .Select(x => new { x.Id, x.DocumentTypeCode, x.EmploymentId, x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAt })
+            .Select(x => new { x.Id, x.DocumentTypeCode, x.EmploymentId, x.EmployeePensionProductId, x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAt })
             .ToListAsync(ct);
         return Results.Ok(docs);
     }
@@ -59,8 +61,19 @@ public static class EmployerDocumentEndpoints
             if (!Guid.TryParse(employmentRaw, out var parsed)) return Results.BadRequest(new { error = "Invalid employment identifier." });
             employmentId = parsed;
         }
+        Guid? productId = null;
+        var productRaw = form["employeePensionProductId"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(productRaw))
+        {
+            if (!Guid.TryParse(productRaw, out var parsedProduct))
+                return Results.BadRequest(new { error = "Invalid pension product." });
+            productId = parsedProduct;
+        }
+        if (type != 3 && (!productId.HasValue || !await db.EmployeePensionProducts.AsNoTracking()
+            .AnyAsync(x => x.Id == productId.Value && x.EmploymentId == employmentId, ct)))
+            return Results.BadRequest(new { error = "Select a saved pension product of this employee." });
         if (type != 3 && !employmentId.HasValue) return Results.BadRequest(new { error = "This document requires an employee." });
-        if (type == 3 && employmentId.HasValue) return Results.BadRequest(new { error = "Employer affidavit is employer-wide." });
+        if (type == 3 && (employmentId.HasValue || productId.HasValue)) return Results.BadRequest(new { error = "Employer affidavit is employer-wide." });
         if (type == 3 && !await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (employmentId.HasValue && !await db.Employments.AsNoTracking()
                 .AnyAsync(x => x.Id == employmentId.Value && x.EmployerId == employerId, ct))
@@ -85,13 +98,13 @@ public static class EmployerDocumentEndpoints
         var scan = await scanner.ScanAsync(scanStream, file.FileName, ct);
         if (scan.Verdict == MalwareScanVerdict.Unavailable) return Results.StatusCode(503);
         if (scan.Verdict == MalwareScanVerdict.Infected) return Results.BadRequest(new { error = "Security scan rejected this document." });
-        var entry = new EmployerDocument(organizationId, employerId, employmentId, type,
+        var entry = new EmployerDocument(organizationId, employerId, employmentId, productId, type,
             Path.GetFileName(file.FileName), content, content.LongLength,
             Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant());
         entry.SetEncryptedContent(protector.ProtectBytes(content, $"employer-document:{organizationId}:{employerId}:{entry.Id}"));
         db.EmployerDocuments.Add(entry);
         await db.SaveChangesAsync(ct);
-        return Results.Ok(new { entry.Id, entry.DocumentTypeCode, entry.EmploymentId, entry.OriginalFileName, entry.SizeBytes, entry.Sha256, entry.CreatedAt });
+        return Results.Ok(new { entry.Id, entry.DocumentTypeCode, entry.EmploymentId, entry.EmployeePensionProductId, entry.OriginalFileName, entry.SizeBytes, entry.Sha256, entry.CreatedAt });
     }
 
     private static async Task<IResult> DownloadAsync(Guid organizationId, Guid employerId, Guid documentId,
