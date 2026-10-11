@@ -2580,7 +2580,11 @@ public static class ReportFeedbackEndpoints
                 ? FeedbackResolutionGroupStrategy.PerReport
                 : playbook.Code == 56 && treatmentTarget == FeedbackTreatmentTarget.Deposit
                     ? FeedbackResolutionGroupStrategy.PerTransfer : playbook.GroupStrategy;
-            var groupKey = treatmentTarget == FeedbackTreatmentTarget.Report
+            // Conditional missing-field errors must never group unrelated numbered
+            // fields or deposit identities under a single code-only workspace.
+            var groupKey = playbook.Code == 18
+                ? $"conditionalField:report:{row.ReportId:N}:field:{feedbackValues.GetValueOrDefault("missingFieldNumber") ?? "unknown"}:target:{treatmentTarget}:entity:{(treatmentTarget == FeedbackTreatmentTarget.Deposit ? row.ReportProductId.ToString("N") : "shared")}"
+                : treatmentTarget == FeedbackTreatmentTarget.Report
                 ? $"{FeedbackResolutionWireProjection.WireName(playbook.Resolver)}:report:{row.ReportId:N}:code:{playbook.Code}"
                 : playbook.Code == 56 && treatmentTarget == FeedbackTreatmentTarget.Deposit
                     ? $"payment:deposit:{row.ReportId:N}:{row.ReportProductId:N}"
