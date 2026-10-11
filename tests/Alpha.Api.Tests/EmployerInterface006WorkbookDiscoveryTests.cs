@@ -60,6 +60,23 @@ public sealed class EmployerInterface006OfficialWorkbookTests
         Assert.Equal("ReshumatSgira", summary.XmlBlock);
     }
 
+    [Theory]
+    [InlineData(12)]
+    [InlineData(13)]
+    public void All_95_numbered_report_fields_have_an_explicit_edit_surface(int interfaceType)
+    {
+        for (var number = 1; number <= 95; number++)
+        {
+            Assert.NotNull(EmployerInterface006FieldMapInitializer.Find(interfaceType, number));
+            Assert.NotEqual("unknown", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, number));
+        }
+        Assert.Equal("employerContact", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 25));
+        Assert.Equal("employeeProfile", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 65));
+        Assert.Equal("depositEmployeeStatus", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 74));
+        Assert.Equal("fileClosing", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 95));
+        Assert.Equal("integrationIdentity", EmployerInterface006FieldMapInitializer.EditSurface(interfaceType, 15));
+    }
+
     [Fact]
     public void Error_18_field_number_requires_positive_whole_number()
     {
