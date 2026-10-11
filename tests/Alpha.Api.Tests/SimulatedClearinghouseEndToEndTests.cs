@@ -119,6 +119,20 @@ public sealed class SimulatedClearinghouseEndToEndTests
                     EmployerInterfaceLineFeedbackParser.Description(item.ErrorCode),
                     item.ErrorDescription);
             }
+
+            // Error detail values must match the simulated error semantics.
+            // Field 74 is the employee status in salary month (official V6 workbook).
+            var rowsWithDetails = await db.EmployerInterfaceContributionFeedback.AsNoTracking()
+                .Where(x => feedbackIds.Contains(x.FeedbackId))
+                .Select(x => new { x.ErrorCode, x.ErrorAmount, x.ErrorDate, x.ContributionAmount })
+                .ToListAsync(ct);
+            Assert.Equal(74m, Assert.Single(rowsWithDetails.Where(x => x.ErrorCode == 18)).ErrorAmount);
+            Assert.Null(Assert.Single(rowsWithDetails.Where(x => x.ErrorCode == 18)).ErrorDate);
+            Assert.Null(Assert.Single(rowsWithDetails.Where(x => x.ErrorCode == 116)).ErrorAmount);
+            Assert.Null(Assert.Single(rowsWithDetails.Where(x => x.ErrorCode == 100)).ErrorAmount);
+            Assert.Null(Assert.Single(rowsWithDetails.Where(x => x.ErrorCode == 102)).ErrorAmount);
+            Assert.All(rowsWithDetails.Where(x => x.ErrorCode != 18 && x.ErrorCode != 53),
+                row => Assert.Null(row.ErrorDate));
         });
     }
 
@@ -199,7 +213,8 @@ public sealed class SimulatedClearinghouseEndToEndTests
             {
                 Assert.Equal(EmployerInterfaceLineFeedbackParser.Description(116), row.ErrorDescription);
                 Assert.Equal(2, row.IntakeStatus);
-                Assert.NotNull(row.ErrorAmount);
+                Assert.Null(row.ErrorAmount);
+                Assert.Null(row.ErrorDate);
             });
 
             Assert.Equal(
