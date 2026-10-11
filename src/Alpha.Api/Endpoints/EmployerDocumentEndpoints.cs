@@ -25,14 +25,15 @@ public static class EmployerDocumentEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> ListAsync(Guid organizationId, Guid employerId, AlphaDbContext db,
+    private static async Task<IResult> ListAsync(Guid organizationId, Guid employerId, Guid? employmentId, AlphaDbContext db,
         OrganizationAccessService access, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
             return Results.NotFound();
+        if (employmentId.HasValue && !await db.Employments.AsNoTracking().AnyAsync(x => x.Id == employmentId && x.EmployerId == employerId && x.OrganizationId == organizationId, ct)) return Results.NotFound();
         var docs = await db.EmployerDocuments.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId)
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.EmploymentId == employmentId)
             .OrderByDescending(x => x.CreatedAt)
             .Select(x => new { x.Id, x.DocumentTypeCode, x.EmploymentId, x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAt })
             .ToListAsync(ct);
@@ -43,7 +44,8 @@ public static class EmployerDocumentEndpoints
         AlphaDbContext db, OrganizationAccessService access, IMalwareScanner scanner,
         IDataProtectionService protector, IConfiguration config, CancellationToken ct)
     {
-        if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)
+            && !await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
             return Results.NotFound();
         if (!request.HasFormContentType) return Results.BadRequest(new { error = "multipart/form-data is required." });
@@ -59,6 +61,7 @@ public static class EmployerDocumentEndpoints
         }
         if (type != 3 && !employmentId.HasValue) return Results.BadRequest(new { error = "This document requires an employee." });
         if (type == 3 && employmentId.HasValue) return Results.BadRequest(new { error = "Employer affidavit is employer-wide." });
+        if (type == 3 && !await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (employmentId.HasValue && !await db.Employments.AsNoTracking()
                 .AnyAsync(x => x.Id == employmentId.Value && x.EmployerId == employerId, ct))
             return Results.BadRequest(new { error = "Employee does not belong to the employer." });
@@ -105,10 +108,12 @@ public static class EmployerDocumentEndpoints
     private static async Task<IResult> DeleteAsync(Guid organizationId, Guid employerId, Guid documentId,
         AlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)
+            && !await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
         var doc = await db.EmployerDocuments.SingleOrDefaultAsync(x =>
             x.Id == documentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (doc is null) return Results.NotFound();
+        if (doc.EmploymentId is null && !await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         db.EmployerDocuments.Remove(doc);
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
