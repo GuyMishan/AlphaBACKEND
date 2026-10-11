@@ -32,6 +32,7 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
     public DbSet<ReferentEmployerAssignment> ReferentEmployerAssignments => Set<ReferentEmployerAssignment>();
     public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
     public DbSet<OrganizationProfileSettings> OrganizationProfileSettings => Set<OrganizationProfileSettings>();
+    public DbSet<EmployerDocument> EmployerDocuments => Set<EmployerDocument>();
     public DbSet<Employer> Employers => Set<Employer>();
     public DbSet<EmployerUserAccess> EmployerUserAccesses => Set<EmployerUserAccess>();
     public DbSet<EmployerProfileSettings> EmployerProfileSettings => Set<EmployerProfileSettings>();
