@@ -141,6 +141,20 @@ public static class EmployeePensionMixEndpoints
         var allocationError = ValidateSalaryAllocations(monthlySalary, active);
         if (allocationError is not null) return Results.BadRequest(new { error = allocationError });
 
+        var reusedIds = resolved.Select(item => existingProducts.FirstOrDefault(x =>
+            x.ProductType == item.Input.ProductType &&
+            (!string.IsNullOrWhiteSpace(item.Input.PolicyNumber)
+                ? string.Equals(x.PolicyNumber.Trim(), item.Input.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase)
+                : !string.IsNullOrWhiteSpace(item.Input.FundExternalKey)
+                    && string.Equals(x.FundExternalKey, item.Input.FundExternalKey, StringComparison.OrdinalIgnoreCase)))?.Id)
+            .Where(id => id.HasValue).Select(id => id!.Value).ToArray();
+        if (reusedIds.Distinct().Count() != reusedIds.Length)
+            return Results.BadRequest(new { error = "Multiple pension products match the same saved product." });
+        var removedIds = existingProducts.Select(x => x.Id).Except(reusedIds).ToArray();
+        if (removedIds.Length > 0 && await db.EmployerDocuments.AnyAsync(x =>
+                x.EmployerId == employerId && x.EmploymentId == employmentId &&
+                x.EmployeePensionProductId.HasValue && removedIds.Contains(x.EmployeePensionProductId.Value), ct))
+            return Results.Conflict(new { error = "Remove product documents before deleting this pension product." });
         employment.UpdateMonthlySalary(monthlySalary);
         var existingIds = existingProducts.Select(x => x.Id).ToArray();
         if (existingIds.Length > 0)
@@ -159,7 +173,12 @@ public static class EmployeePensionMixEndpoints
                 Math.Max(legacySalary, 0), input.ReportingType, input.SalaryLayer, item.Section14Code is 1 or 2, input.Section14StartDate,
                 item.IsActive, item.EffectiveFrom, item.EffectiveTo, item.InstitutionalBody, item.Manufacturer,
                 item.FundExternalKey, item.FundCode, item.FundName, item.FundCompanyName,
-                item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder, item.Section14Code, item.FundClassification);
+                item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder, item.Section14Code, item.FundClassification,
+                existingProducts.FirstOrDefault(x => x.ProductType == input.ProductType &&
+                    (!string.IsNullOrWhiteSpace(input.PolicyNumber)
+                        ? string.Equals(x.PolicyNumber.Trim(), input.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase)
+                        : !string.IsNullOrWhiteSpace(input.FundExternalKey) &&
+                          string.Equals(x.FundExternalKey, input.FundExternalKey, StringComparison.OrdinalIgnoreCase)))?.Id);
             db.EmployeePensionProducts.Add(product);
             AddContributions(db, product.Id, ContributionParty.Employer, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, input.EmployeeContributions);
