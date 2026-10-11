@@ -799,8 +799,18 @@ public sealed class SimulatedClearinghouseFeedbackIngestor(
                     intakeStatus,
                     errorCode,
                     EmployerInterfaceLineFeedbackParser.Description(errorCode),
-                    errorCode == 1 ? null : contribution.Amount,
-                    errorCode == 1 ? null : DateOnly.FromDateTime(DateTime.UtcNow),
+                    // The error-detail amount has code-specific semantics: it is NOT
+                    // the contribution amount by default. For code 18, the official
+                    // workbook identifies field 74 as employee status in salary month.
+                    // Simulate that precise missing conditional field instead of
+                    // misrepresenting the contribution amount as a field number.
+                    errorCode switch
+                    {
+                        18 => 74m,
+                        53 => simulatedContributionAmount,
+                        _ => null
+                    },
+                    null,
                     null,
                     product.Salary,
                     product.SalaryMonth,
