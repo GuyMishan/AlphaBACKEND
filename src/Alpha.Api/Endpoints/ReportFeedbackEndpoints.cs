@@ -2601,6 +2601,8 @@ public static class ReportFeedbackEndpoints
             var depositConditionalEdit = playbook.Code == 18
                 && treatmentTarget == FeedbackTreatmentTarget.Deposit
                 && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true";
+            var conditionalEmployeeProfile = depositConditionalEdit
+                && feedbackValues.GetValueOrDefault("missingFieldEditSurface") == "employeeProfile";
 
             problems.Add(new FeedbackResolutionProblemDto(
                 ProblemId: FeedbackResolutionWireProjection.BuildProblemId(row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code),
@@ -2612,11 +2614,13 @@ public static class ReportFeedbackEndpoints
                 TargetScope: FeedbackResolutionWireProjection.WireName(treatmentTarget),
                 ResolutionType: FeedbackResolutionWireProjection.WireName(depositConditionalEdit ? FeedbackResolutionType.Edit : playbook.ResolutionType),
                 Family: FeedbackResolutionWireProjection.WireName(playbook.Family),
-                ResolverType: FeedbackResolutionWireProjection.WireName(playbook.Resolver),
+                ResolverType: FeedbackResolutionWireProjection.WireName(conditionalEmployeeProfile ? FeedbackResolverType.Employee : playbook.Resolver),
                 GroupStrategy: FeedbackResolutionWireProjection.WireName(effectiveStrategy),
                 GroupKey: groupKey,
                 CorrectionBehavior: FeedbackResolutionWireProjection.WireName(depositConditionalEdit ? FeedbackCorrectionBehavior.CorrectionWorkspace : playbook.CorrectionBehavior),
-                AvailableActions: FeedbackResolutionWireProjection.ActionNames(depositConditionalEdit ? FeedbackResolutionAction.PrepareCorrection : playbook.Actions),
+                AvailableActions: FeedbackResolutionWireProjection.ActionNames(conditionalEmployeeProfile
+                    ? FeedbackResolutionAction.EditEmployee | FeedbackResolutionAction.PrepareCorrection
+                    : depositConditionalEdit ? FeedbackResolutionAction.PrepareCorrection : playbook.Actions),
                 CanEscalateExternally: playbook.CanEscalateExternally,
                 FeedbackId: row.FeedbackId,
                 ReportId: row.ReportId,
