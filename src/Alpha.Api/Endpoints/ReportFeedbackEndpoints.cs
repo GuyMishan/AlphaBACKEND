@@ -2591,7 +2591,7 @@ public static class ReportFeedbackEndpoints
             // Conditional missing-field errors must never group unrelated numbered
             // fields or deposit identities under a single code-only workspace.
             var groupKey = playbook.Code == 18
-                ? $"conditionalField:report:{row.ReportId:N}:field:{feedbackValues.GetValueOrDefault("missingFieldNumber") ?? "unknown"}:target:{treatmentTarget}:entity:{(treatmentTarget == FeedbackTreatmentTarget.Deposit ? row.ReportProductId.ToString("N") : "shared")}"
+                ? $"conditionalField:report:{row.ReportId:N}:field:{feedbackValues.GetValueOrDefault("missingFieldNumber") ?? "unknown"}:target:{treatmentTarget}:entity:{(treatmentTarget == FeedbackTreatmentTarget.Deposit || feedbackValues.GetValueOrDefault("missingFieldEditSurface") == "reportTransfer" ? row.ReportProductId.ToString("N") : "shared")}"
                 : treatmentTarget == FeedbackTreatmentTarget.Report
                 ? $"{FeedbackResolutionWireProjection.WireName(playbook.Resolver)}:report:{row.ReportId:N}:code:{playbook.Code}"
                 : playbook.Code == 56 && treatmentTarget == FeedbackTreatmentTarget.Deposit
@@ -2604,8 +2604,10 @@ public static class ReportFeedbackEndpoints
             // immutable correction workspace. Header/integration fields never
             // receive deposit write permissions just because their code is 18.
             var depositConditionalEdit = playbook.Code == 18
-                && treatmentTarget == FeedbackTreatmentTarget.Deposit
-                && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true";
+                && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
+                && (treatmentTarget == FeedbackTreatmentTarget.Deposit
+                    || (treatmentTarget == FeedbackTreatmentTarget.Report
+                        && feedbackValues.GetValueOrDefault("missingFieldEditSurface") == "reportTransfer"));
             var conditionalEmployeeProfile = depositConditionalEdit
                 && feedbackValues.GetValueOrDefault("missingFieldEditSurface") == "employeeProfile";
 
