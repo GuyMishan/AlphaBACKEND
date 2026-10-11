@@ -30,6 +30,17 @@ public sealed class EmployerDocument : Entity
         Content = content;
     }
 
+    public void AssignProduct(Guid productId)
+    {
+        if (EmploymentId is null || DocumentTypeCode == 3)
+            throw new InvalidOperationException("Employer-wide documents cannot be assigned to pension products.");
+        if (productId == Guid.Empty) throw new ArgumentException("Product ID is required.", nameof(productId));
+        if (EmployeePensionProductId.HasValue)
+            throw new InvalidOperationException("A product-linked document cannot be reassigned.");
+        EmployeePensionProductId = productId;
+        Touch();
+    }
+
     public Guid OrganizationId { get; private set; }
     public Guid EmployerId { get; private set; }
     public Guid? EmploymentId { get; private set; }
