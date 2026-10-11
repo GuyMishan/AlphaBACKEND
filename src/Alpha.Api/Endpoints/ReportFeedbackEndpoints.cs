@@ -2572,17 +2572,7 @@ public static class ReportFeedbackEndpoints
                 if (missingField is not null)
                 {
                     // Prefer the actual XML block over a hardcoded classification by error code.
-                    treatmentTarget = missingField.XmlBlock switch
-                    {
-                        "NetuneiGoremSholech" or "NetuneiGoremNimaan" or
-                        "YeshutGoremPoneLemislaka" => FeedbackTreatmentTarget.Employer,
-                        "PirteiOved" or "ChodeshMaskoretVestatusOved" =>
-                            FeedbackTreatmentTarget.Deposit,
-                        "PirteiKupa" or "PizulHafrashotOvedBeKupa" or
-                        "SachHafrashaLeKupaBechodeshMaskoretOved" or
-                        "SachHafrashaLeOvedBekupa" => FeedbackTreatmentTarget.Deposit,
-                        _ => FeedbackTreatmentTarget.Report
-                    };
+                    treatmentTarget = Code18TargetForField(missingField);
                 }
                 // Missing/non-integer/unmapped field numbers keep the safe original scope.
             }
@@ -3126,17 +3116,7 @@ public static class ReportFeedbackEndpoints
                 var type = report.ReportKind == ManualReportKind.Negative ? 13 : 12;
                 var field = EmployerInterface006FieldMapInitializer.Find(type, number.Value);
                 if (field is null) continue;
-                result[row.Id] = field.XmlBlock switch
-                {
-                    "NetuneiGoremSholech" or "NetuneiGoremNimaan" or
-                    "YeshutGoremPoneLemislaka" => FeedbackTreatmentTarget.Employer,
-                    "PirteiOved" or "ChodeshMaskoretVestatusOved" =>
-                        FeedbackTreatmentTarget.Deposit,
-                    "PirteiKupa" or "PizulHafrashotOvedBeKupa" or
-                    "SachHafrashaLeKupaBechodeshMaskoretOved" or
-                    "SachHafrashaLeOvedBekupa" => FeedbackTreatmentTarget.Deposit,
-                    _ => FeedbackTreatmentTarget.Report
-                };
+                result[row.Id] = Code18TargetForField(field);
             }
         }
         var bankRows = rows.Where(row => row.ErrorCode == 56).ToArray();
@@ -3164,6 +3144,25 @@ public static class ReportFeedbackEndpoints
         }
         return result;
     }
+
+    // V006 blocks describe document ownership. The report/deposit distinction
+    // refers to where the error is resolved, not where its XML element is nested.
+    private static FeedbackTreatmentTarget Code18TargetForField(
+        EmployerInterface006FieldMapInitializer.FieldRow field) => field.XmlBlock switch
+    {
+        // Sender/recipient/contact values are maintained outside individual deposits.
+        "NetuneiGoremSholech" or "NetuneiGoremNimaan" or
+        "YeshutGoremPoneLemislaka" => FeedbackTreatmentTarget.Employer,
+        // Fund, employee and contribution values are scoped to the relevant
+        // employee/product deposit; employee profile fixes remain in that flow.
+        "PirteiKupa" or "PirteiOved" or "ChodeshMaskoretVestatusOved" or
+        "PizulHafrashotOvedBeKupa" or "SachHafrashaLeKupaBechodeshMaskoretOved" or
+        "SachHafrashaLeOvedBekupa" or "SachHafrashaLeKupaMaasik" =>
+            FeedbackTreatmentTarget.Deposit,
+        // File headers, transfer details, event-level details and closing totals
+        // belong to the report, not to an individual employee.
+        _ => FeedbackTreatmentTarget.Report
+    };
 
     private static FeedbackTreatmentTarget TreatmentTargetFor(
         EmployerInterfaceContributionFeedback row,
