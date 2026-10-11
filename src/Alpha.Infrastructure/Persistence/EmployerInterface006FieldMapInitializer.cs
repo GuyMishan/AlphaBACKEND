@@ -10,8 +10,26 @@ namespace Alpha.Infrastructure.Persistence;
 /// field number without the error-code-specific workbook rule (e.g. code 18).</summary>
 public static class EmployerInterface006FieldMapInitializer
 {
-    private sealed record FieldRow(int InterfaceType, int FieldNumber, string FieldName,
+    public sealed record FieldRow(int InterfaceType, int FieldNumber, string FieldName,
         string XmlTag, string XmlBlock, string DataType, int SourceRow);
+
+    private static readonly Lazy<IReadOnlyDictionary<(int, int), FieldRow>> Catalog =
+        new(() => ReadFields(OfficialWorkbookPath()).ToDictionary(
+            field => (field.InterfaceType, field.FieldNumber)));
+
+    public static FieldRow? Find(int interfaceType, int fieldNumber) =>
+        Catalog.Value.GetValueOrDefault((interfaceType, fieldNumber));
+
+    public static int? Code18FieldNumber(decimal? errorAmount)
+    {
+        if (!errorAmount.HasValue || errorAmount.Value < 1 || errorAmount.Value != decimal.Truncate(errorAmount.Value)
+            || errorAmount.Value > int.MaxValue) return null;
+        return (int)errorAmount.Value;
+    }
+
+    private static string OfficialWorkbookPath() =>
+        Path.Combine(AppContext.BaseDirectory, "Specifications", "EmployerInterface", "006",
+            "Employer interface V 6.xlsx");
 
     public static async Task EnsureUpdatedAsync(AlphaDbContext db, CancellationToken ct = default)
     {
@@ -31,13 +49,12 @@ public static class EmployerInterface006FieldMapInitializer
             """;
         await db.Database.ExecuteSqlRawAsync(ddl, ct);
 
-        var workbookPath = Path.Combine(AppContext.BaseDirectory, "Specifications", "EmployerInterface", "006",
-            "Employer interface V 6.xlsx");
+        var workbookPath = OfficialWorkbookPath();
         if (!File.Exists(workbookPath))
             throw new FileNotFoundException("The official Employer Interface V6 workbook is required for field mapping.", workbookPath);
 
         var fields = ReadFields(workbookPath);
-        if (fields.Count != 393 || fields.GroupBy(row => row.InterfaceType).Any(group =>
+        if (fields.Count != 393 || fields.Select(x => (x.InterfaceType, x.FieldNumber)).Distinct().Count() != 393 || fields.GroupBy(row => row.InterfaceType).Any(group =>
             group.Count() != (group.Key is 12 or 13 ? 95 : group.Key is 14 or 18 ? 72 : 59)))
             throw new InvalidDataException("Unexpected official Employer Interface V6 field catalog; refuse partial seeding.");
 
