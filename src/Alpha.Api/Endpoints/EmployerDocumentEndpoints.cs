@@ -22,6 +22,7 @@ public static class EmployerDocumentEndpoints
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(11 * 1024 * 1024));
         group.MapGet("/{documentId:guid}/file", DownloadAsync);
         group.MapDelete("/{documentId:guid}", DeleteAsync);
+        group.MapPatch("/{documentId:guid}/product", AssignProductAsync);
         return endpoints;
     }
 
@@ -35,7 +36,7 @@ public static class EmployerDocumentEndpoints
         if (employeePensionProductId.HasValue && (!employmentId.HasValue ||
             !await db.EmployeePensionProducts.AsNoTracking().AnyAsync(x => x.Id == employeePensionProductId && x.EmploymentId == employmentId, ct))) return Results.NotFound();
         var docs = await db.EmployerDocuments.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.EmploymentId == employmentId && x.EmployeePensionProductId == employeePensionProductId)
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId && x.EmploymentId == employmentId && (!employeePensionProductId.HasValue || x.EmployeePensionProductId == employeePensionProductId))
             .OrderByDescending(x => x.CreatedAt)
             .Select(x => new { x.Id, x.DocumentTypeCode, x.EmploymentId, x.EmployeePensionProductId, x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAt })
             .ToListAsync(ct);
@@ -72,6 +73,9 @@ public static class EmployerDocumentEndpoints
         if (type != 3 && (!productId.HasValue || !await db.EmployeePensionProducts.AsNoTracking()
             .AnyAsync(x => x.Id == productId.Value && x.EmploymentId == employmentId, ct)))
             return Results.BadRequest(new { error = "Select a saved pension product of this employee." });
+        if (type == 5 && !await db.EmployeePensionProducts.AsNoTracking()
+            .AnyAsync(x => x.Id == productId && x.ProductType == Alpha.Domain.Reporting.PensionProductType.PensionFund, ct))
+            return Results.BadRequest(new { error = "Default pension fund joining request requires a pension fund." });
         if (type != 3 && !employmentId.HasValue) return Results.BadRequest(new { error = "This document requires an employee." });
         if (type == 3 && (employmentId.HasValue || productId.HasValue)) return Results.BadRequest(new { error = "Employer affidavit is employer-wide." });
         if (type == 3 && !await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
@@ -105,6 +109,27 @@ public static class EmployerDocumentEndpoints
         db.EmployerDocuments.Add(entry);
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { entry.Id, entry.DocumentTypeCode, entry.EmploymentId, entry.EmployeePensionProductId, entry.OriginalFileName, entry.SizeBytes, entry.Sha256, entry.CreatedAt });
+    }
+
+    private sealed record AssignProductRequest(Guid EmployeePensionProductId);
+
+    private static async Task<IResult> AssignProductAsync(Guid organizationId, Guid employerId, Guid documentId,
+        AssignProductRequest request, AlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
+    {
+        if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var doc = await db.EmployerDocuments.SingleOrDefaultAsync(x =>
+            x.Id == documentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (doc is null) return Results.NotFound();
+        if (doc.EmploymentId is null || doc.EmployeePensionProductId.HasValue)
+            return Results.Conflict(new { error = "Only unassigned legacy employee documents can be linked to a product." });
+        var product = await db.EmployeePensionProducts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == request.EmployeePensionProductId && x.EmploymentId == doc.EmploymentId, ct);
+        if (product is null) return Results.BadRequest(new { error = "Pension product does not belong to the document's employee." });
+        if (doc.DocumentTypeCode == 5 && product.ProductType != Alpha.Domain.Reporting.PensionProductType.PensionFund)
+            return Results.BadRequest(new { error = "Type 5 documents require a pension fund." });
+        doc.AssignProduct(product.Id);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { doc.Id, doc.EmployeePensionProductId });
     }
 
     private static async Task<IResult> DownloadAsync(Guid organizationId, Guid employerId, Guid documentId,
