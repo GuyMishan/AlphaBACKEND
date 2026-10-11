@@ -3111,6 +3111,34 @@ public static class ReportFeedbackEndpoints
         IAlphaDbContext db, IDataProtectionService protector, CancellationToken ct)
     {
         var result = new Dictionary<Guid, FeedbackTreatmentTarget>();
+        var missingFieldRows = rows.Where(row => row.ErrorCode == 18).ToArray();
+        if (missingFieldRows.Length > 0)
+        {
+            var affectedReportIds = missingFieldRows.Select(row => row.ReportId).Distinct().ToArray();
+            var reportKinds = await db.ManualReports.AsNoTracking()
+                .Where(report => affectedReportIds.Contains(report.Id) && report.EmployerId == employerId)
+                .Select(report => new { report.Id, report.ReportKind })
+                .ToDictionaryAsync(report => report.Id, ct);
+            foreach (var row in missingFieldRows)
+            {
+                var number = EmployerInterface006FieldMapInitializer.Code18FieldNumber(row.ErrorAmount);
+                if (!number.HasValue || !reportKinds.TryGetValue(row.ReportId, out var report)) continue;
+                var type = report.ReportKind == ManualReportKind.Negative ? 13 : 12;
+                var field = EmployerInterface006FieldMapInitializer.Find(type, number.Value);
+                if (field is null) continue;
+                result[row.Id] = field.XmlBlock switch
+                {
+                    "NetuneiGoremSholech" or "NetuneiGoremNimaan" or
+                    "YeshutGoremPoneLemislaka" => FeedbackTreatmentTarget.Employer,
+                    "PirteiOved" or "ChodeshMaskoretVestatusOved" =>
+                        FeedbackTreatmentTarget.Employee,
+                    "PirteiKupa" or "PizulHafrashotOvedBeKupa" or
+                    "SachHafrashaLeKupaBechodeshMaskoretOved" or
+                    "SachHafrashaLeOvedBekupa" => FeedbackTreatmentTarget.Deposit,
+                    _ => FeedbackTreatmentTarget.Report
+                };
+            }
+        }
         var bankRows = rows.Where(row => row.ErrorCode == 56).ToArray();
         if (bankRows.Length == 0) return result;
         var effective = await new ReportPaymentAccountService(db)
