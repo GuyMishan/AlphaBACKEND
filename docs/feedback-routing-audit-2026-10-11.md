@@ -50,3 +50,53 @@ Incoming interfaces 14, 16 and 18 (203 field entries) currently map to `unknown`
 - Before production sign-off, add a table-driven executable matrix for every supported `(interfaceType, fieldNumber)` and playbook `code`, testing ownership, authorization, edit-surface availability, correct entity targeting, validation, save, and correction-workspace immutability.
 
 **Audit conclusion:** The routing catalog is comprehensive as classification, but universal correct-screen coverage is **not** currently true; unsupported cases must remain non-editable instead of opening an incorrect form.
+
+
+## Source-aware triage: remove non-user-editable fields from the missing-editor backlog
+
+Verified against `src/Alpha.Api/Services/EmployerInterface006XmlBuilder.cs`, in particular `BuildHeader`, `BuildRequester`, `BuildFund`, `BuildEmployee`, and the `ReshumatSgira` calculations. The following classification applies to the common numbered fields of outgoing types 12/13. Conditional fields differ by report kind; eligibility remains subject to official XSD and workbook.
+
+### A. Exclude from the per-error manual editor backlog
+These values belong to generation, system/integration configuration, existing master records or aggregation. Fix invalid source/config or exporter logic; do not offer an arbitrary XML-value text box.
+
+| Field numbers | Source / reasoning |
+| --- | --- |
+| 1–6 | `SUG-MIMSHAK`, XML version, generated timestamp, environment configuration, file number and sequence |
+| 7–19 | sender and recipient configuration; sender contact from resolved sender settings; recipient IDs/codes from integration options |
+| 20–24 | requester/operator identity resolved from sender/employer configuration; direct-employer sender intentionally emits null requester identity |
+| 30–34, 36 | fund identifier, depositor and employer identifier type/number and employer legal name from reference/master/settings; verify master records instead |
+| 39 | total reported deposit by transfer group, derived |
+| 43 | transfer identifier, generated/persisted report identity; must be corrected through lifecycle logic if wrong |
+| 47–48 | `SUG-CHESHBON` emitted as nil; card-type field is not emitted by this builder. Verify XSD conditional requirements rather than adding editor |
+| 61–62 | internal employer fund name/number emitted nil, no stored source currently; add data support only if required by a real obligation |
+| 69 | employer-at-manufacturer identifier emitted nil in current builder |
+| 70 | salary month copied from report product — edit at product/report source rather than adding a dedicated field-70 screen |
+| 83 | stable current contribution record identifier, generated/persisted by correction lineage |
+| 85–89 | employee/transfer contribution totals and member counts derived from emitted product/contribution rows |
+| 90–95 | closing counts and totals computed on emission |
+
+**Important:** 'exclude from direct-field editor' does not mean 'valid to emit null' or 'never user-changeable at the source'. If real feedback identifies a problem with source values (e.g. employer ID, salary month) route to existing source settings/master screen or exporter diagnostics, not a synthetic field editor.
+
+### B. Keep as user-correctable source fields; connect to existing form, not an arbitrary field form
+| Field numbers | Recommended source UI |
+| --- | --- |
+| 25–29 | employer/contact form (verify all five XML-tag bindings) |
+| 35 | MASAV sender code inside payment editor, when payment method 7 applies |
+| 37–38, 40–42 | operation, payment method, value dates, reference in payment editor |
+| 44–46, 49–53 | employer/receiving bank accounts and account types, payment settings + scoped deposit payment editor |
+| 57–58 | report-event document attachment and document type; attachment flow |
+| 59–60 | pension product type/old fund pension subtype; pension product plus 006 metadata editor |
+| 63–68 | employee identity/name/birthdate/internal employee number in employee form |
+| 71–78 | deposit status, salary layer, reported salary, employee status, start date, work fraction, work days and policy number; **split routing**: 71/74–77 deposit metadata, 72/73/78 report product editor (do not claim payment form edits all nine) |
+| 79–82 | contribution type/rate/amount/exempt payments — pension contribution editor |
+
+### C. Validate conditional/document linkage before removing or adding direct editors
+| Numbers | Reason |
+| --- | --- |
+| 54–56 | previous IDs/clearinghouse IDs currently emitted nil by this builder; conditional correction lineage may require values |
+| 84 | previous contribution record identifier; source is correction lineage, not an arbitrary text value |
+| 47–48, 61–62, 69 | optional/nil/unemitted only as currently implemented; validate official obligation per operation and provider feedback |
+
+**Audit finding requiring additional fix:** `EditSurface` currently labels 70–78 as `depositEmployeeStatus`; however 70 comes from product salary month, 72 from salary layer, 73 from salary, and 78 from product policy number. The payment editor does not own all these source fields. Its current generic classification is too broad. Correct field-specific routing is needed for 70/72/73/78 before allowing automatic code-18 correction.
+
+This triage removes derived/integration/system fields from the **manual-edit-screen** backlog, not from validation or troubleshooting responsibilities.
