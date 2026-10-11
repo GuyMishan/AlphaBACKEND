@@ -3333,7 +3333,8 @@ public static class ReportFeedbackEndpoints
         var issues = rows
             .Where(row => TreatmentTargetFor(row, selectedTargets) == FeedbackTreatmentTarget.Employer)
             .GroupBy(row => row.ErrorCode)
-            .Select(group => FeedbackIssue(group.OrderByDescending(row => row.ReceivedAt).First(),
+            .Select(group => FeedbackIssue(group.OrderByDescending(row => row.ErrorAmount.HasValue || row.ErrorDate.HasValue)
+                .ThenByDescending(row => row.ReceivedAt).First(),
                 FeedbackTreatmentTarget.Employer, group.Select(row => row.ReportId).Distinct().ToArray())).ToArray();
 
         return Results.Ok(new
@@ -3375,7 +3376,7 @@ public static class ReportFeedbackEndpoints
         var scopedIssues = rows
             .Where(row => TreatmentTargetFor(row, selectedTargets) == FeedbackTreatmentTarget.Report)
             .GroupBy(row => new { row.ErrorCode, row.ErrorDescription })
-            .Select(group => FeedbackIssue(group.First(), FeedbackTreatmentTarget.Report))
+            .Select(group => FeedbackIssue(group.OrderByDescending(row => row.ErrorAmount.HasValue || row.ErrorDate.HasValue).ThenByDescending(row => row.ReceivedAt).First(), FeedbackTreatmentTarget.Report))
             .ToList<object>();
 
         var latestTransmission = await db.ReportTransmissions.AsNoTracking()
