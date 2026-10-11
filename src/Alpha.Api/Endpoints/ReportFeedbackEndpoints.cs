@@ -2539,8 +2539,13 @@ public static class ReportFeedbackEndpoints
                 x.ReportId == row.ReportId
                 && string.Equals(x.TransferIdentifier, transferIdentifier, StringComparison.OrdinalIgnoreCase));
 
-            var reportedValues = ReportedValues(playbook.Resolver, report, reportEmployee, product, contribution, productMetadata, payment, protector);
-            var currentValues = CurrentValues(playbook.Resolver, employment, person, liveProduct, liveContribution, currentPaymentAccount, protector);
+            var contextResolver = playbook.Code == 18
+                && EmployerInterface006FieldMapInitializer.Code18FieldNumber(row.ErrorAmount) is int missingNumber
+                && EmployerInterface006FieldMapInitializer.EditSurface(
+                    report.ReportKind == ManualReportKind.Negative ? 13 : 12, missingNumber) == "employeeProfile"
+                ? FeedbackResolverType.Employee : playbook.Resolver;
+            var reportedValues = ReportedValues(contextResolver, report, reportEmployee, product, contribution, productMetadata, payment, protector);
+            var currentValues = CurrentValues(contextResolver, employment, person, liveProduct, liveContribution, currentPaymentAccount, protector);
             var feedbackValues = FeedbackValues(row, transfer)
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
             var feedbackProblemId = FeedbackResolutionWireProjection.BuildProblemId(
