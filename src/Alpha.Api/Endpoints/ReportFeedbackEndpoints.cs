@@ -2592,6 +2592,13 @@ public static class ReportFeedbackEndpoints
                     playbook, employerId, row.ReportId, row.ReportProductId, row.ContributionId,
                     reportEmployee.EmploymentId, transferIdentifier, previousRecordIdentifier, row.FeedbackId, row.Sequence);
 
+            // Only mapped deposit-scoped conditional fields can enter the
+            // immutable correction workspace. Header/integration fields never
+            // receive deposit write permissions just because their code is 18.
+            var depositConditionalEdit = playbook.Code == 18
+                && treatmentTarget == FeedbackTreatmentTarget.Deposit
+                && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true";
+
             problems.Add(new FeedbackResolutionProblemDto(
                 ProblemId: FeedbackResolutionWireProjection.BuildProblemId(row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code),
                 Code: playbook.Code,
@@ -2600,13 +2607,13 @@ public static class ReportFeedbackEndpoints
                     : row.ErrorDescription,
                 Scope: FeedbackResolutionWireProjection.WireName(playbook.Scope),
                 TargetScope: FeedbackResolutionWireProjection.WireName(treatmentTarget),
-                ResolutionType: FeedbackResolutionWireProjection.WireName(playbook.ResolutionType),
+                ResolutionType: FeedbackResolutionWireProjection.WireName(depositConditionalEdit ? FeedbackResolutionType.Edit : playbook.ResolutionType),
                 Family: FeedbackResolutionWireProjection.WireName(playbook.Family),
                 ResolverType: FeedbackResolutionWireProjection.WireName(playbook.Resolver),
                 GroupStrategy: FeedbackResolutionWireProjection.WireName(effectiveStrategy),
                 GroupKey: groupKey,
-                CorrectionBehavior: FeedbackResolutionWireProjection.WireName(playbook.CorrectionBehavior),
-                AvailableActions: FeedbackResolutionWireProjection.ActionNames(playbook.Actions),
+                CorrectionBehavior: FeedbackResolutionWireProjection.WireName(depositConditionalEdit ? FeedbackCorrectionBehavior.CorrectionWorkspace : playbook.CorrectionBehavior),
+                AvailableActions: FeedbackResolutionWireProjection.ActionNames(depositConditionalEdit ? FeedbackResolutionAction.PrepareCorrection : playbook.Actions),
                 CanEscalateExternally: playbook.CanEscalateExternally,
                 FeedbackId: row.FeedbackId,
                 ReportId: row.ReportId,
