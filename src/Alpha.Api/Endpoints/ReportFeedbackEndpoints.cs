@@ -2624,13 +2624,18 @@ public static class ReportFeedbackEndpoints
                 && report.ReportKind == ManualReportKind.Current
                 && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
                 && treatmentTarget == FeedbackTreatmentTarget.Deposit
-                && code18Field is 59 or 60 or 70 or 72 or 73 or 78 or 79 or 80 or 81 or 82;
+                && code18Field is 59 or 70 or 72 or 73 or 78 or 79 or 80 or 81 or 82;
             var transferConditionalEdit = playbook.Code == 18
                 && report.ReportKind == ManualReportKind.Current
                 && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
                 && editSurface == "reportTransfer"
                 && code18Field is 35 or 37 or 38 or 40 or 41 or 42 or 44 or 45 or 46 or 49 or 50 or 51 or 52 or 53;
-            var supportedConditionalEdit = depositConditionalEdit || productConditionalEdit || transferConditionalEdit;
+            var oldPensionConditionalEdit = playbook.Code == 18
+                && report.ReportKind == ManualReportKind.Current
+                && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
+                && treatmentTarget == FeedbackTreatmentTarget.Deposit
+                && code18Field == 60;
+            var supportedConditionalEdit = depositConditionalEdit || productConditionalEdit || transferConditionalEdit || oldPensionConditionalEdit;
             var conditionalEmployeeProfile = playbook.Code == 18
                 && report.ReportKind == ManualReportKind.Current
                 && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
