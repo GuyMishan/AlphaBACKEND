@@ -2604,14 +2604,20 @@ public static class ReportFeedbackEndpoints
             // Only mapped deposit-scoped conditional fields can enter the
             // immutable correction workspace. Header/integration fields never
             // receive deposit write permissions just because their code is 18.
+            // Field classification is not proof the corresponding editor can actually edit it.
+            // The embedded deposit editor currently edits payment + employee-status metadata,
+            // not product identity, contribution rows, or arbitrary report-transfer fields.
+            var editSurface = feedbackValues.GetValueOrDefault("missingFieldEditSurface");
             var depositConditionalEdit = playbook.Code == 18
                 && report.ReportKind == ManualReportKind.Current
                 && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
-                && (treatmentTarget == FeedbackTreatmentTarget.Deposit
-                    || (treatmentTarget == FeedbackTreatmentTarget.Report
-                        && feedbackValues.GetValueOrDefault("missingFieldEditSurface") == "reportTransfer"));
-            var conditionalEmployeeProfile = depositConditionalEdit
-                && feedbackValues.GetValueOrDefault("missingFieldEditSurface") == "employeeProfile";
+                && treatmentTarget == FeedbackTreatmentTarget.Deposit
+                && editSurface == "depositEmployeeStatus";
+            var conditionalEmployeeProfile = playbook.Code == 18
+                && report.ReportKind == ManualReportKind.Current
+                && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
+                && treatmentTarget == FeedbackTreatmentTarget.Deposit
+                && editSurface == "employeeProfile";
 
             problems.Add(new FeedbackResolutionProblemDto(
                 ProblemId: FeedbackResolutionWireProjection.BuildProblemId(row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code),
@@ -2621,12 +2627,12 @@ public static class ReportFeedbackEndpoints
                     : row.ErrorDescription,
                 Scope: FeedbackResolutionWireProjection.WireName(playbook.Scope),
                 TargetScope: FeedbackResolutionWireProjection.WireName(treatmentTarget),
-                ResolutionType: FeedbackResolutionWireProjection.WireName(depositConditionalEdit ? FeedbackResolutionType.Edit : playbook.ResolutionType),
+                ResolutionType: FeedbackResolutionWireProjection.WireName(depositConditionalEdit || conditionalEmployeeProfile ? FeedbackResolutionType.Edit : playbook.ResolutionType),
                 Family: FeedbackResolutionWireProjection.WireName(playbook.Family),
                 ResolverType: FeedbackResolutionWireProjection.WireName(conditionalEmployeeProfile ? FeedbackResolverType.Employee : playbook.Resolver),
                 GroupStrategy: FeedbackResolutionWireProjection.WireName(effectiveStrategy),
                 GroupKey: groupKey,
-                CorrectionBehavior: FeedbackResolutionWireProjection.WireName(depositConditionalEdit ? FeedbackCorrectionBehavior.CorrectionWorkspace : playbook.CorrectionBehavior),
+                CorrectionBehavior: FeedbackResolutionWireProjection.WireName(depositConditionalEdit || conditionalEmployeeProfile ? FeedbackCorrectionBehavior.CorrectionWorkspace : playbook.CorrectionBehavior),
                 AvailableActions: FeedbackResolutionWireProjection.ActionNames(conditionalEmployeeProfile
                     ? FeedbackResolutionAction.EditEmployee | FeedbackResolutionAction.PrepareCorrection
                     : depositConditionalEdit ? FeedbackResolutionAction.PrepareCorrection : playbook.Actions),
