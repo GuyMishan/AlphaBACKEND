@@ -6,6 +6,28 @@ namespace Alpha.Api.Tests;
 public sealed class FeedbackResolutionAuditRegressionTests
 {
     [Fact]
+    public void Report_badge_count_uses_exactly_the_same_active_issue_grouping_as_the_details_modal()
+    {
+        var endpointSourcePath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "../../../../src/Alpha.Api/Endpoints/ReportFeedbackEndpoints.cs"));
+        // Search the repository from the test assembly, regardless of test runner layout.
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            !File.Exists(endpointSourcePath) && dir is not null; dir = dir.Parent)
+        {
+            endpointSourcePath = Path.Combine(dir.FullName,
+                "src/Alpha.Api/Endpoints/ReportFeedbackEndpoints.cs");
+        }
+        Assert.True(File.Exists(endpointSourcePath));
+        var source = File.ReadAllText(endpointSourcePath);
+
+        Assert.Contains("var pageActionableRows = await ActiveActionableFeedbackAsync(pageIds, db, ct);", source);
+        Assert.Contains("TreatmentTargetsAsync(\n            pageActionableRows, employerId, db, protector, ct)", source);
+        Assert.Contains("group.Select(row => (row.ErrorCode, row.ErrorDescription)).Distinct().Count()", source);
+        Assert.Contains("reportIssueCount = pageReportIssueCounts.GetValueOrDefault(report.Id)", source);
+        Assert.DoesNotContain("reportIssueCount = reportIssueCounts.GetValueOrDefault(report.Id)", source);
+    }
+
+    [Fact]
     public void Resolver_is_part_of_resolution_group_key()
     {
         var employerId = Guid.NewGuid();
