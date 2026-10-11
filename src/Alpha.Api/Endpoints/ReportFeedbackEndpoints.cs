@@ -2617,6 +2617,20 @@ public static class ReportFeedbackEndpoints
                 // 70 (salary month), 72 (salary layer), 73 (salary), 78 (policy)
                 // come from the report product, not the payment editor.
                 && EmployerInterface006FieldMapInitializer.Code18FieldNumber(row.ErrorAmount) is 71 or 74 or 75 or 76 or 77;
+            // Only exact product/contribution and payment fields may enter the workspace.
+            // Route source-owned product rows to their report-product editor, not payment.
+            var code18Field = EmployerInterface006FieldMapInitializer.Code18FieldNumber(row.ErrorAmount);
+            var productConditionalEdit = playbook.Code == 18
+                && report.ReportKind == ManualReportKind.Current
+                && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
+                && treatmentTarget == FeedbackTreatmentTarget.Deposit
+                && code18Field is 59 or 60 or 70 or 72 or 73 or 78 or 79 or 80 or 81 or 82;
+            var transferConditionalEdit = playbook.Code == 18
+                && report.ReportKind == ManualReportKind.Current
+                && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
+                && editSurface == "reportTransfer"
+                && code18Field is 35 or 37 or 38 or 40 or 41 or 42 or 44 or 45 or 46 or 49 or 50 or 51 or 52 or 53;
+            var supportedConditionalEdit = depositConditionalEdit || productConditionalEdit || transferConditionalEdit;
             var conditionalEmployeeProfile = playbook.Code == 18
                 && report.ReportKind == ManualReportKind.Current
                 && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
@@ -2631,15 +2645,15 @@ public static class ReportFeedbackEndpoints
                     : row.ErrorDescription,
                 Scope: FeedbackResolutionWireProjection.WireName(playbook.Scope),
                 TargetScope: FeedbackResolutionWireProjection.WireName(treatmentTarget),
-                ResolutionType: FeedbackResolutionWireProjection.WireName(depositConditionalEdit || conditionalEmployeeProfile ? FeedbackResolutionType.Edit : playbook.ResolutionType),
+                ResolutionType: FeedbackResolutionWireProjection.WireName(supportedConditionalEdit || conditionalEmployeeProfile ? FeedbackResolutionType.Edit : playbook.ResolutionType),
                 Family: FeedbackResolutionWireProjection.WireName(playbook.Family),
                 ResolverType: FeedbackResolutionWireProjection.WireName(conditionalEmployeeProfile ? FeedbackResolverType.Employee : playbook.Resolver),
                 GroupStrategy: FeedbackResolutionWireProjection.WireName(effectiveStrategy),
                 GroupKey: groupKey,
-                CorrectionBehavior: FeedbackResolutionWireProjection.WireName(depositConditionalEdit || conditionalEmployeeProfile ? FeedbackCorrectionBehavior.CorrectionWorkspace : playbook.CorrectionBehavior),
+                CorrectionBehavior: FeedbackResolutionWireProjection.WireName(supportedConditionalEdit || conditionalEmployeeProfile ? FeedbackCorrectionBehavior.CorrectionWorkspace : playbook.CorrectionBehavior),
                 AvailableActions: FeedbackResolutionWireProjection.ActionNames(conditionalEmployeeProfile
                     ? FeedbackResolutionAction.EditEmployee | FeedbackResolutionAction.PrepareCorrection
-                    : depositConditionalEdit ? FeedbackResolutionAction.PrepareCorrection : playbook.Actions),
+                    : supportedConditionalEdit ? FeedbackResolutionAction.PrepareCorrection : playbook.Actions),
                 CanEscalateExternally: playbook.CanEscalateExternally,
                 FeedbackId: row.FeedbackId,
                 ReportId: row.ReportId,
