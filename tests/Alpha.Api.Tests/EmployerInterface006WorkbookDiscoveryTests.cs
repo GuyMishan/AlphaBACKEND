@@ -41,16 +41,15 @@ public sealed class EmployerInterface006OfficialWorkbookTests
         AssertRowContains(workbook, CurrentSheet, "MISPAR-MISLAKA-KODEM", "דיווח מתוקן");
     }
 
-    [Theory]
-    [InlineData(null, null)]
-    [InlineData(0, null)]
-    [InlineData(-1, null)]
-    [InlineData(74.5, null)]
-    [InlineData(100000000000m, null)]
-    [InlineData(74, 74)]
-    public void Error_18_field_number_requires_positive_whole_number(decimal? amount, int? expected)
+    [Fact]
+    public void Error_18_field_number_requires_positive_whole_number()
     {
-        Assert.Equal(expected, EmployerInterface006FieldMapInitializer.Code18FieldNumber(amount));
+        Assert.Null(EmployerInterface006FieldMapInitializer.Code18FieldNumber(null));
+        Assert.Null(EmployerInterface006FieldMapInitializer.Code18FieldNumber(0m));
+        Assert.Null(EmployerInterface006FieldMapInitializer.Code18FieldNumber(-1m));
+        Assert.Null(EmployerInterface006FieldMapInitializer.Code18FieldNumber(74.5m));
+        Assert.Null(EmployerInterface006FieldMapInitializer.Code18FieldNumber(decimal.MaxValue));
+        Assert.Equal(74, EmployerInterface006FieldMapInitializer.Code18FieldNumber(74m));
     }
 
     [Fact]
