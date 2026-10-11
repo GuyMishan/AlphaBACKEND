@@ -2563,12 +2563,12 @@ public static class ReportFeedbackEndpoints
                 var missingField = missingFieldNumber.HasValue
                     ? EmployerInterface006FieldMapInitializer.Find(sourceInterfaceType, missingFieldNumber.Value)
                     : null;
-                feedbackValues["missingFieldNumber"] = missingFieldNumber;
+                feedbackValues["missingFieldNumber"] = missingFieldNumber?.ToString(CultureInfo.InvariantCulture);
                 feedbackValues["missingFieldName"] = missingField?.FieldName;
                 feedbackValues["missingFieldXmlTag"] = missingField?.XmlTag;
                 feedbackValues["missingFieldXmlBlock"] = missingField?.XmlBlock;
-                feedbackValues["missingFieldInterfaceType"] = sourceInterfaceType;
-                feedbackValues["missingFieldMapped"] = missingField is not null;
+                feedbackValues["missingFieldInterfaceType"] = sourceInterfaceType.ToString(CultureInfo.InvariantCulture);
+                feedbackValues["missingFieldMapped"] = (missingField is not null) ? "true" : "false";
                 if (missingField is not null)
                 {
                     // Prefer the actual XML block over a hardcoded classification by error code.
