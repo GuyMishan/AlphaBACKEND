@@ -16,5 +16,6 @@ public sealed class EmployerDocumentConfiguration : IEntityTypeConfiguration<Emp
         b.Ignore(x => x.UpdatedAt);
         b.HasIndex(x => new { x.OrganizationId, x.EmployerId, x.CreatedAt });
         b.HasIndex(x => new { x.EmployerId, x.EmploymentId, x.DocumentTypeCode });
+        b.HasIndex(x => x.EmployeePensionProductId);
     }
 }
