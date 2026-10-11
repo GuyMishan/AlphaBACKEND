@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Xml.Linq;
 using Alpha.Api.Services;
+using Alpha.Infrastructure.Persistence;
 using Xunit;
 
 namespace Alpha.Api.Tests;
@@ -38,6 +39,18 @@ public sealed class EmployerInterface006OfficialWorkbookTests
         AssertRowContains(workbook, CurrentSheet, "MISPAR-MEZAHE-RESHUMA-KODEM", "קודים", "2, 3", "רשות בלבד");
         AssertRowContains(workbook, CurrentSheet, "MISPAR-ZIHUI-KODEM", "GUID", "גרסה 4");
         AssertRowContains(workbook, CurrentSheet, "MISPAR-MISLAKA-KODEM", "דיווח מתוקן");
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(0, null)]
+    [InlineData(-1, null)]
+    [InlineData(74.5, null)]
+    [InlineData(100000000000m, null)]
+    [InlineData(74, 74)]
+    public void Error_18_field_number_requires_positive_whole_number(decimal? amount, int? expected)
+    {
+        Assert.Equal(expected, EmployerInterface006FieldMapInitializer.Code18FieldNumber(amount));
     }
 
     [Fact]
