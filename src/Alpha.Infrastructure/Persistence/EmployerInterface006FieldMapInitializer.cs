@@ -53,9 +53,22 @@ public static class EmployerInterface006FieldMapInitializer
         return (int)errorAmount.Value;
     }
 
-    private static string OfficialWorkbookPath() =>
-        Path.Combine(AppContext.BaseDirectory, "Specifications", "EmployerInterface", "006",
+    private static string OfficialWorkbookPath()
+    {
+        var published = Path.Combine(AppContext.BaseDirectory, "Specifications", "EmployerInterface", "006",
             "Employer interface V 6.xlsx");
+        if (File.Exists(published)) return published;
+
+        // Test host build outputs do not necessarily copy API content files.
+        // Search only ancestors of the actual test/process base directory.
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var source = Path.Combine(dir.FullName, "docs", "specifications",
+                "employer-interface", "006", "Employer interface V 6.xlsx");
+            if (File.Exists(source)) return source;
+        }
+        return published;
+    }
 
     public static async Task EnsureUpdatedAsync(AlphaDbContext db, CancellationToken ct = default)
     {
