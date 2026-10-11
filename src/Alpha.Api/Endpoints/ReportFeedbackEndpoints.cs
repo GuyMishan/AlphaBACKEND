@@ -248,14 +248,6 @@ public static class ReportFeedbackEndpoints
             .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
             .GroupBy(x => x.ReportId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ReportProductId).Distinct().Count());
-        // The report grid must use the same persisted target choices as the context modal.
-        // Selecting a different treatment destination must immediately affect the count.
-        var reportIssueCounts = unresolvedLatestFeedback
-            .Where(x => ReportFeedbackStatusResolver.IsActionableFeedbackError(x.ErrorCode))
-            .Where(x => FeedbackTreatmentTargetCatalog.Resolve(x.ErrorCode) == FeedbackTreatmentTarget.Report)
-            .GroupBy(x => x.ReportId)
-            .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorCode).Distinct().Count());
-
         var completedRevisionIds = await db.ManualReports.AsNoTracking()
             .Where(x => candidateIds.Contains(x.Id) && x.IsRevisionSnapshot
                 && x.Status == ManualReportStatus.Completed)
@@ -303,6 +295,20 @@ public static class ReportFeedbackEndpoints
             .Skip(skip).Take(take + 1).ToListAsync(ct);
         var hasMore = page.Count > take; if (hasMore) page.RemoveAt(page.Count - 1);
         var pageIds = page.Select(x => x.Id).ToArray();
+
+        // The report badge is the number of actual entries in ReportContextAsync.
+        // Both endpoints must use the SAME active feedback, persisted target choices,
+        // and (error code, description) grouping. Counting distinct codes alone can
+        // show fewer/more errors than the details modal.
+        var pageActionableRows = await ActiveActionableFeedbackAsync(pageIds, db, ct);
+        var pageTargetSelections = await TreatmentTargetsAsync(
+            pageActionableRows, employerId, db, protector, ct);
+        var pageReportIssueCounts = pageActionableRows
+            .Where(row => TreatmentTargetFor(row, pageTargetSelections) == FeedbackTreatmentTarget.Report)
+            .GroupBy(row => row.ReportId)
+            .ToDictionary(group => group.Key,
+                group => group.Select(row => (row.ErrorCode, row.ErrorDescription)).Distinct().Count());
+
 
         var correctionWorkspaces = await db.ManualReports.AsNoTracking()
             .Where(x => x.IsCorrectionWorkspace && x.SourceReportId.HasValue
@@ -482,7 +488,7 @@ public static class ReportFeedbackEndpoints
                 correctionResolutionStatus = correctionStatusesByReport.GetValueOrDefault(report.Id, "needs-treatment"),
                 hasFeedback = officialCounts.GetValueOrDefault(report.Id) > 0,
                 issueCount = issues, requiresAttentionCount = attentionProductCounts.GetValueOrDefault(report.Id),
-                reportIssueCount = reportIssueCounts.GetValueOrDefault(report.Id)
+                reportIssueCount = pageReportIssueCounts.GetValueOrDefault(report.Id)
                     + (string.IsNullOrWhiteSpace(report.ValidationError) ? 0 : 1)
                     + (tx is null || string.IsNullOrWhiteSpace(tx.ErrorMessage) ? 0 : 1),
                 employeeCount = employeeCounts.GetValueOrDefault(report.Id), totalAmount = total, payoffRate,
