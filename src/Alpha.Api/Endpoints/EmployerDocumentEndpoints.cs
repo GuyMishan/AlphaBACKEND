@@ -43,7 +43,7 @@ public static class EmployerDocumentEndpoints
         AlphaDbContext db, OrganizationAccessService access, IMalwareScanner scanner,
         IDataProtectionService protector, IConfiguration config, CancellationToken ct)
     {
-        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (!await db.Employers.AsNoTracking().AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
             return Results.NotFound();
         if (!request.HasFormContentType) return Results.BadRequest(new { error = "multipart/form-data is required." });
@@ -67,6 +67,8 @@ public static class EmployerDocumentEndpoints
         var file = form.Files.GetFile("file");
         if (file is null || file.Length == 0 || file.Length > MaxBytes || !file.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
             return Results.BadRequest(new { error = "Please upload a PDF up to 10 MB." });
+        if (Path.GetFileName(file.FileName).Length > 255)
+            return Results.BadRequest(new { error = "PDF file name must be at most 255 characters." });
         var scannerLimit = config.GetValue<long?>("Security:MalwareScanner:MaxFileBytes") ?? ConfiguredMalwareScanner.FreeTierSafeMaxBytes;
         if (string.Equals(config["Security:MalwareScanner:Provider"], "Cloudmersive", StringComparison.OrdinalIgnoreCase) && file.Length > scannerLimit)
             return Results.BadRequest(new { error = "PDF exceeds the configured scan size limit." });
@@ -103,7 +105,7 @@ public static class EmployerDocumentEndpoints
     private static async Task<IResult> DeleteAsync(Guid organizationId, Guid employerId, Guid documentId,
         AlphaDbContext db, OrganizationAccessService access, CancellationToken ct)
     {
-        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var doc = await db.EmployerDocuments.SingleOrDefaultAsync(x =>
             x.Id == documentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (doc is null) return Results.NotFound();
