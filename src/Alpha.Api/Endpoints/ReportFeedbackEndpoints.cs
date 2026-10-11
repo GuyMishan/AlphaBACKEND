@@ -3063,6 +3063,8 @@ public static class ReportFeedbackEndpoints
         row.ReportId,
         row.ReportProductId,
         row.ContributionId,
+        row.ErrorAmount,
+        row.ErrorDate,
         row.ReceivedAt
     };
 
