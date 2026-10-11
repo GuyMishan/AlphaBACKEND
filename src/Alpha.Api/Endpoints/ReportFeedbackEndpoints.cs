@@ -2574,6 +2574,7 @@ public static class ReportFeedbackEndpoints
                 feedbackValues["missingFieldXmlBlock"] = missingField?.XmlBlock;
                 feedbackValues["missingFieldInterfaceType"] = sourceInterfaceType.ToString(CultureInfo.InvariantCulture);
                 feedbackValues["missingFieldMapped"] = (missingField is not null) ? "true" : "false";
+                feedbackValues["missingFieldCorrectionSupported"] = report.ReportKind == ManualReportKind.Current ? "true" : "false";
                 feedbackValues["missingFieldEditSurface"] = missingFieldNumber.HasValue
                     ? EmployerInterface006FieldMapInitializer.EditSurface(sourceInterfaceType, missingFieldNumber.Value)
                     : "unknown";
@@ -2604,6 +2605,7 @@ public static class ReportFeedbackEndpoints
             // immutable correction workspace. Header/integration fields never
             // receive deposit write permissions just because their code is 18.
             var depositConditionalEdit = playbook.Code == 18
+                && report.ReportKind == ManualReportKind.Current
                 && feedbackValues.GetValueOrDefault("missingFieldMapped") == "true"
                 && (treatmentTarget == FeedbackTreatmentTarget.Deposit
                     || (treatmentTarget == FeedbackTreatmentTarget.Report
