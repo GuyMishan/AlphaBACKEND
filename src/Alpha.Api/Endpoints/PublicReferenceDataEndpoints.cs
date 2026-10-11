@@ -325,17 +325,19 @@ public static class PublicReferenceDataEndpoints
                 salaryLayers.Add(new { code = reader.GetInt32(0), name = reader.GetString(1) });
             await reader.DisposeAsync();
 
-            var contributionLimits = await db.ContributionPercentageLimits.AsNoTracking()
+            // These enums are stored as strings. Cast only after materialization so EF does not
+            // emit invalid PostgreSQL casts such as CAST('PensionFund' AS integer).
+            var contributionLimitRows = await db.ContributionPercentageLimits.AsNoTracking()
                 .OrderBy(x => x.Year).ThenBy(x => x.ProductType).ThenBy(x => x.Party).ThenBy(x => x.Component)
-                .Select(x => new
-                {
-                    year = x.Year,
-                    productType = (int)x.ProductType,
-                    party = (int)x.Party,
-                    component = (int)x.Component,
-                    maxPercentage = x.MaxPercentage
-                })
                 .ToListAsync(ct);
+            var contributionLimits = contributionLimitRows.Select(x => new
+            {
+                year = x.Year,
+                productType = (int)x.ProductType,
+                party = (int)x.Party,
+                component = (int)x.Component,
+                maxPercentage = x.MaxPercentage
+            }).ToArray();
 
             return Results.Ok(new { referenceOptions, interfaceOptions, salaryLayers, contributionLimits });
         });

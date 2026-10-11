@@ -399,18 +399,21 @@ public static class ManualReportEndpoints
             .GroupBy(x => x.ReportProductId)
             .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
         var salaryYears = page.Select(x => x.Product.SalaryMonth.Year).Distinct().ToArray();
-        var contributionLimits = await db.ContributionPercentageLimits.AsNoTracking()
+        // ProductType/Party/Component are persisted with string value converters.
+        // Materialize entities before casting enums to ints; otherwise EF translates the casts
+        // to PostgreSQL integer casts (for example CAST('PensionFund' AS integer)) and the request fails.
+        var contributionLimitRows = await db.ContributionPercentageLimits.AsNoTracking()
             .Where(x => salaryYears.Contains(x.Year))
             .OrderBy(x => x.Year).ThenBy(x => x.ProductType).ThenBy(x => x.Party).ThenBy(x => x.Component)
-            .Select(x => new
-            {
-                year = x.Year,
-                productType = (int)x.ProductType,
-                party = (int)x.Party,
-                component = (int)x.Component,
-                maxPercentage = x.MaxPercentage
-            })
             .ToListAsync(ct);
+        var contributionLimits = contributionLimitRows.Select(x => new
+        {
+            year = x.Year,
+            productType = (int)x.ProductType,
+            party = (int)x.Party,
+            component = (int)x.Component,
+            maxPercentage = x.MaxPercentage
+        }).ToArray();
         var payments = await db.ManualReportPayments.AsNoTracking()
             .Where(x => productIds.Contains(x.ReportProductId))
             .ToDictionaryAsync(x => x.ReportProductId, ct);
