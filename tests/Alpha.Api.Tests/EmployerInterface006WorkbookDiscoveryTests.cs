@@ -41,6 +41,25 @@ public sealed class EmployerInterface006OfficialWorkbookTests
         AssertRowContains(workbook, CurrentSheet, "MISPAR-MISLAKA-KODEM", "דיווח מתוקן");
     }
 
+    [Theory]
+    [InlineData(12)]
+    [InlineData(13)]
+    public void Official_code_18_fields_are_addressable_in_each_original_report_type(int interfaceType)
+    {
+        var employeeStatus = EmployerInterface006FieldMapInitializer.Find(interfaceType, 74);
+        Assert.NotNull(employeeStatus);
+        Assert.Equal("STATUS-OVED-BECHODESH-MASKORET", employeeStatus.XmlTag);
+        Assert.Equal("ChodeshMaskoretVestatusOved", employeeStatus.XmlBlock);
+
+        var sender = EmployerInterface006FieldMapInitializer.Find(interfaceType, 15);
+        Assert.NotNull(sender);
+        Assert.Equal("NetuneiGoremSholech", sender.XmlBlock);
+
+        var summary = EmployerInterface006FieldMapInitializer.Find(interfaceType, 95);
+        Assert.NotNull(summary);
+        Assert.Equal("ReshumatSgira", summary.XmlBlock);
+    }
+
     [Fact]
     public void Error_18_field_number_requires_positive_whole_number()
     {
