@@ -94,10 +94,12 @@ public sealed class EmployerInterface006OfficialWorkbookTests
     {
         using var workbook = OpenWorkbook();
         var candidates = workbook.FindRowsWithExactCell("74");
+        // The committed official workbook spells this label "סטאטוס עובד בחודש משכורת"
+        // (not "סטטוס עובד בחודש משכורתו"). Pin the canonical XML tag and field number.
         Assert.Contains(candidates, row =>
-            row.Contains("סטטוס עובד בחודש משכורתו", StringComparison.Ordinal)
-            || (row.Contains("STATUS-OVED", StringComparison.OrdinalIgnoreCase)
-                && row.Contains("סטטוס עובד", StringComparison.Ordinal)));
+            row.Contains("STATUS-OVED-BECHODESH-MASKORET", StringComparison.OrdinalIgnoreCase)
+            && (row.Contains("סטאטוס עובד", StringComparison.Ordinal)
+                || row.Contains("סטטוס עובד", StringComparison.Ordinal)));
     }
 
     [Fact]
