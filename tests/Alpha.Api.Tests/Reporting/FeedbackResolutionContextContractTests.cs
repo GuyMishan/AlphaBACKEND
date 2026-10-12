@@ -80,6 +80,34 @@ public sealed class FeedbackResolutionContextContractTests
     }
 
     [Fact]
+    public void Code_102_document_groups_are_isolated_per_employee_product()
+    {
+        var playbook = FeedbackResolutionPlaybookCatalog.Get(102);
+        var employerId = Guid.NewGuid();
+        var reportId = Guid.NewGuid();
+        var feedbackId = Guid.NewGuid();
+        var employmentOne = Guid.NewGuid();
+        var employmentTwo = Guid.NewGuid();
+        var productOne = Guid.NewGuid();
+        var productTwo = Guid.NewGuid();
+
+        var first = FeedbackResolutionWireProjection.BuildResolutionGroupKey(
+            playbook, employerId, reportId, productOne, Guid.NewGuid(), employmentOne,
+            null, null, feedbackId, 1);
+        var sameEmployeeProduct = FeedbackResolutionWireProjection.BuildResolutionGroupKey(
+            playbook, employerId, reportId, productOne, Guid.NewGuid(), employmentOne,
+            null, null, feedbackId, 2);
+        var otherEmployeeProduct = FeedbackResolutionWireProjection.BuildResolutionGroupKey(
+            playbook, employerId, reportId, productTwo, Guid.NewGuid(), employmentTwo,
+            null, null, feedbackId, 3);
+
+        Assert.Equal(sameEmployeeProduct, first);
+        Assert.NotEqual(first, otherEmployeeProduct);
+        Assert.Contains(employmentOne.ToString("N"), first, StringComparison.Ordinal);
+        Assert.Contains(productOne.ToString("N"), first, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Problem_id_is_stable_and_distinguishes_individual_feedback_errors()
     {
         var feedbackId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");

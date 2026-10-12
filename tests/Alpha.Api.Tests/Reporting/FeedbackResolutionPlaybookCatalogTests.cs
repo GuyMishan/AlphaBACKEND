@@ -96,7 +96,7 @@ public sealed class FeedbackResolutionPlaybookCatalogTests
         Assert.Throws<ArgumentOutOfRangeException>(() => FeedbackResolutionPlaybookCatalog.Get(999));
     }
     [Theory]
-    [InlineData(102, FeedbackResolutionGroupStrategy.PerReport)]
+    [InlineData(102, FeedbackResolutionGroupStrategy.PerDocumentRequirement)]
     [InlineData(103, FeedbackResolutionGroupStrategy.PerReport)]
     [InlineData(109, FeedbackResolutionGroupStrategy.PerEmployee)]
     [InlineData(110, FeedbackResolutionGroupStrategy.PerEmployee)]
@@ -117,7 +117,7 @@ public sealed class FeedbackResolutionPlaybookCatalogTests
     [InlineData(85, FeedbackTreatmentTarget.Deposit)]
     [InlineData(18, FeedbackTreatmentTarget.Report)]
     [InlineData(100, FeedbackTreatmentTarget.Report)]
-    [InlineData(102, FeedbackTreatmentTarget.Report)]
+    [InlineData(102, FeedbackTreatmentTarget.Deposit)]
     [InlineData(4, FeedbackTreatmentTarget.Employee)]
     [InlineData(53, FeedbackTreatmentTarget.Deposit)]
     [InlineData(1, FeedbackTreatmentTarget.Informational)]

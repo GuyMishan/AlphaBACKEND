@@ -240,7 +240,7 @@ public static class EmployerInterfaceLineFeedbackParser
             [99] = FeedbackErrorScope.Contribution,
             [100] = FeedbackErrorScope.Report,
             [101] = FeedbackErrorScope.Report,
-            [102] = FeedbackErrorScope.Report,
+            [102] = FeedbackErrorScope.Deposit,
             [103] = FeedbackErrorScope.Report,
             [104] = FeedbackErrorScope.Contribution,
             [105] = FeedbackErrorScope.Contribution,
