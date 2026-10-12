@@ -1161,7 +1161,8 @@ public sealed class EmployerInterface006XmlBuilderTests
         metadata.Update(operationCode ?? (negative ? 5 : 1), 1, 1, new DateOnly(2026, 9, 1), employmentPercentage, null, 2,
             negative ? 1 : null, paymentMethodCode, 1, 1,
             previousReferenceExceptionCode: (negative || (operationCode is 2 or 3 or 7)) ? previousExceptionCode : null,
-            oldPensionTypeCode: oldPensionTypeCode);
+            oldPensionTypeCode: oldPensionTypeCode,
+            collectiveAgreementRefund: negative && resolvedOperation == 5 ? false : null);
         var options = new EmployerInterface006Options
         {
             EnvironmentCode = 2,
