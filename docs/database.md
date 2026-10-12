@@ -35,6 +35,8 @@ The A12 tree was ported onto `origin/main` `90c7ba6` (the code production runs; 
 | Route declarations | 245, identical set |
 | Initializer order | identical (31) |
 
+**Port of `main` up to `46202eb` (2026-10-12).** `main` commits after `90c7ba6` were merged into the module layout. The only schema change among them is `main`'s own `678240b`: `reporting.employer_interface_report_product_data."CollectiveAgreementRefund" boolean NULL` (`ADD COLUMN IF NOT EXISTS` in `EmployerInterface006SchemaInitializer`, nullable, no default, no backfill, no lock beyond a catalog-only `ALTER`). It is already part of the code `main` deploys, so it is expected to exist in production before this release. The EF `GenerateCreateScript()` of this tree is byte-identical to `46202eb`; `EfModelBaselineTests` and the initializer fingerprint were updated for this column only.
+
 The A12/A12.1 initializer edits do not change the resulting schema: the `to_regclass` guard above, and the removal of a one-time data statement from `IdentitySchemaInitializer` that rewrote every user's e-mail on any database without its 2026-09-21 marker (dangerous on restored backups; already applied in production). **No migration is required.**
 
 ### Production schema verification

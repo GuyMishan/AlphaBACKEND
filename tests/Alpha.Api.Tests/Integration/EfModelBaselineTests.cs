@@ -12,8 +12,9 @@ namespace Alpha.Api.Tests.Integration;
 /// </summary>
 public sealed class EfModelBaselineTests
 {
-    // SHA-256 of GenerateCreateScript() with LF line endings. Verified identical to origin/main dc5c609; unchanged up to 90c7ba6.
-    private const string ModelBaseline = "1963863a9fd373963e81d0d4cfe8854e801f207796902735fb240eb68c7c28f8";
+    // SHA-256 of GenerateCreateScript() with LF line endings. Identical to origin/main 46202eb (only change since dc5c609:
+    // nullable employer_interface_report_product_data."CollectiveAgreementRefund", ported from main 678240b).
+    private const string ModelBaseline = "ab496a7790d841bd263858584bc04a2804e4543190ab96f5bf3e095486198dbd";
 
     [Fact]
     public void Ef_model_matches_the_reviewed_baseline()

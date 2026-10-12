@@ -1138,6 +1138,18 @@ public static partial class ReportFeedbackEndpoints
             .Where(x => reportEmployeeIds.Contains(x.Id)
                 && x.OrganizationId == organizationId && x.EmployerId == employerId)
             .ToDictionaryAsync(x => x.Id, ct);
+        var negativeSourceReportIds = reports.Values
+            .Where(report => report.ReportKind == ManualReportKind.Negative && report.SourceReportId.HasValue)
+            .Select(report => report.SourceReportId!.Value).Distinct().ToArray();
+        var sourceReportProducts = await (
+            from candidate in db.ManualReportProducts.AsNoTracking()
+            join sourceEmployee in db.ManualReportEmployees.AsNoTracking()
+                on candidate.ReportEmployeeId equals sourceEmployee.Id
+            where negativeSourceReportIds.Contains(sourceEmployee.ReportId)
+                && sourceEmployee.OrganizationId == organizationId && sourceEmployee.EmployerId == employerId
+            select new { candidate.Id, sourceEmployee.ReportId, sourceEmployee.EmploymentId,
+                candidate.ProductType, candidate.FundCode, candidate.PolicyNumber,
+                candidate.SalaryMonth, candidate.AllocationOrder }).ToListAsync(ct);
         var contributions = await db.ManualContributions.AsNoTracking()
             .Where(x => contributionIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, ct);
@@ -1166,6 +1178,18 @@ public static partial class ReportFeedbackEndpoints
             : await db.EmployeePensionContributions.AsNoTracking()
                 .Where(x => currentProductIds.Contains(x.EmployeePensionProductId))
                 .ToArrayAsync(ct);
+
+        // Re-evaluate local document evidence whenever a feedback context is requested.
+        // A newer library document is a pending report correction, never manufacturer approval.
+        var employerDocuments = await db.EmployerDocuments.AsNoTracking()
+            .Where(doc => doc.OrganizationId == organizationId && doc.EmployerId == employerId)
+            .Select(doc => new { doc.DocumentTypeCode, doc.EmploymentId, doc.EmployeePensionProductId, doc.CreatedAt })
+            .ToListAsync(ct);
+
+        var currentEmployerUpdatedAt = await db.Employers.AsNoTracking()
+            .Where(x => x.Id == employerId && x.OrganizationId == organizationId)
+            .Select(x => (DateTimeOffset?)x.UpdatedAt)
+            .SingleOrDefaultAsync(ct);
 
         var currentPaymentAccount = await new ReportPaymentAccountService(db)
             .ResolveForReportAsync(employerId, null, ct);
@@ -1267,6 +1291,26 @@ public static partial class ReportFeedbackEndpoints
             var currentValues = CurrentValues(contextResolver, employment, person, liveProduct, liveContribution, currentPaymentAccount, protector);
             var feedbackValues = FeedbackValues(row, transfer)
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            if (playbook.Code is 102 or 103 && report.ReportKind == ManualReportKind.Negative
+                && report.SourceReportId.HasValue)
+            {
+                var matchingSources = sourceReportProducts.Where(candidate =>
+                    candidate.ReportId == report.SourceReportId.Value
+                    && candidate.EmploymentId == reportEmployee.EmploymentId
+                    && candidate.ProductType == product.ProductType
+                    && candidate.FundCode == product.FundCode
+                    && candidate.PolicyNumber == product.PolicyNumber
+                    && candidate.SalaryMonth == product.SalaryMonth
+                    && candidate.AllocationOrder == product.AllocationOrder).ToArray();
+                var sourceProductId = product.SourceReportProductId
+                    ?? (matchingSources.Length == 1 ? matchingSources[0].Id : (Guid?)null);
+                if (sourceProductId.HasValue)
+                {
+                    feedbackValues["negativeCorrectionSourceReportId"] = report.SourceReportId.Value.ToString("D");
+                    feedbackValues["negativeCorrectionSourceProductId"] = sourceProductId.Value.ToString("D");
+                    feedbackValues["negativeCorrectionSourceMonth"] = report.ReportingMonth.ToString("yyyy-MM");
+                }
+            }
             var feedbackProblemId = FeedbackResolutionWireProjection.BuildProblemId(
                 row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code);
             feedbackValues["resolutionWorkflowStatus"] = returnedProblemIds.Contains(feedbackProblemId)
@@ -1276,8 +1320,46 @@ public static partial class ReportFeedbackEndpoints
                     : pendingResolutionIds.Contains(feedbackProblemId)
                     ? "correction-in-progress"
                     : "needs-treatment";
+            // Type 3 is employer-wide. Type 6 (collective agreement) belongs to
+            // the affected employee pension product in the current official 006 flow.
+            // Merely uploading type 3 cannot satisfy code 102/103.
+            var requiredDocumentType = playbook.Code switch
+            {
+                102 or 103 => 6,
+                111 or 112 => 3,
+                _ => 0
+            };
+            if (requiredDocumentType != 0
+                && employerDocuments.Any(doc => doc.DocumentTypeCode == requiredDocumentType
+                    && doc.CreatedAt > row.ReceivedAt
+                    && (requiredDocumentType == 3 && doc.EmploymentId == null
+                        || requiredDocumentType == 6 && liveProduct is not null
+                            && doc.EmploymentId == reportEmployee.EmploymentId
+                            && doc.EmployeePensionProductId == liveProduct.Id))
+                && feedbackValues["resolutionWorkflowStatus"] == "needs-treatment")
+                feedbackValues["resolutionWorkflowStatus"] = "document-updated-awaiting-report";
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
             var treatmentTarget = TreatmentTargetFor(row, targetSelections);
+            // Re-check the freshness of the source profile for every affected
+            // historical report on read, regardless of which screen saved it.
+            // This is a local change signal, never a substitute for official feedback.
+            if (feedbackValues["resolutionWorkflowStatus"] == "needs-treatment"
+                && playbook.ResolutionType == FeedbackResolutionType.Edit)
+            {
+                var sourceUpdatedAt = treatmentTarget switch
+                {
+                    FeedbackTreatmentTarget.Employer => currentEmployerUpdatedAt,
+                    FeedbackTreatmentTarget.Employee => new DateTimeOffset?[]
+                    {
+                        employment?.UpdatedAt, person?.UpdatedAt
+                    }.Max(),
+                    FeedbackTreatmentTarget.Deposit => liveProduct?.UpdatedAt,
+                    _ => null
+                };
+                if (sourceUpdatedAt > row.ReceivedAt)
+                    feedbackValues["resolutionWorkflowStatus"] = "source-data-updated-awaiting-report";
+            }
+
             if (playbook.Code == 18)
             {
                 var missingFieldNumber = EmployerInterface006FieldMapInitializer.Code18FieldNumber(row.ErrorAmount);

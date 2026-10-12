@@ -149,6 +149,7 @@ public static class EmployerInterfaceProfileEndpoints
             workDaysInMonth = item?.WorkDaysInMonth,
             lastDeposit = item?.LastDeposit ?? (current ? (endedByMonth ? 1 : 2) : null),
             refundReason = item?.RefundReason,
+            collectiveAgreementRefund = item?.CollectiveAgreementRefund,
             paymentMethodCode = item?.PaymentMethodCode,
             employerAccountType = item?.EmployerAccountType,
             receiverAccountType = item?.ReceiverAccountType,
@@ -210,7 +211,7 @@ public static class EmployerInterfaceProfileEndpoints
                 request.EmploymentPercentage, request.WorkDaysInMonth, request.LastDeposit, request.RefundReason,
                 request.PaymentMethodCode, request.EmployerAccountType, request.ReceiverAccountType,
                 request.PreviousIdentifier, request.PreviousClearingIdentifier, request.PreviousReferenceExceptionCode,
-                request.OldPensionTypeCode);
+                request.OldPensionTypeCode, request.CollectiveAgreementRefund);
         }
         catch (Exception ex) when (ex is ArgumentOutOfRangeException or ArgumentException)
         {
@@ -229,6 +230,7 @@ public static class EmployerInterfaceProfileEndpoints
             item.WorkDaysInMonth,
             item.LastDeposit,
             item.RefundReason,
+            item.CollectiveAgreementRefund,
             item.PaymentMethodCode,
             item.EmployerAccountType,
             item.ReceiverAccountType,
@@ -247,4 +249,5 @@ public sealed record EmployerInterfaceEmployeeProfileRequest(DateOnly? BirthDate
 public sealed record EmployerInterfaceProductMetadataRequest(int? OperationCode, int? DepositStatus, int? EmployeeStatus, DateOnly? StatusStartDate,
     decimal? EmploymentPercentage, int? WorkDaysInMonth, int? LastDeposit, int? RefundReason,
     int? PaymentMethodCode, int? EmployerAccountType, int? ReceiverAccountType, int? OldPensionTypeCode = null,
-    string? PreviousIdentifier = null, string? PreviousClearingIdentifier = null, int? PreviousReferenceExceptionCode = null);
+    string? PreviousIdentifier = null, string? PreviousClearingIdentifier = null, int? PreviousReferenceExceptionCode = null,
+    bool? CollectiveAgreementRefund = null);

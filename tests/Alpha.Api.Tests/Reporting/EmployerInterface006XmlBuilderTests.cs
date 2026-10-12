@@ -106,6 +106,32 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
+    public void Collective_refund_requires_type_6_on_matching_report_product()
+    {
+        var fixture = CreateFixture(true, operationCode: 5);
+        fixture.Context.ProductMetadata[0].Update(5, 1, 1, new DateOnly(2026, 9, 1), null, null,
+            2, 1, 1, 1, 1, collectiveAgreementRefund: true);
+        var missing = EmployerInterface006XmlBuilder.BuildNegative(fixture.Context);
+        Assert.Null(missing.Document);
+        Assert.Contains(missing.Issues, issue => issue.Contains("document type 6", StringComparison.OrdinalIgnoreCase));
+
+        var declaration = new ManualReportAttachment(Guid.NewGuid(), fixture.Product.Id, 6,
+            "collective.pdf", "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.4\ncollective"));
+        var complete = fixture.Context with { Attachments = [.. fixture.Context.Attachments, declaration] };
+        Assert.Empty(EmployerInterface006XmlBuilder.BuildNegative(complete).Issues);
+    }
+
+    [Fact]
+    public void Negative_refund_without_collective_answer_fails_preflight()
+    {
+        var fixture = CreateFixture(true, operationCode: 5);
+        fixture.Context.ProductMetadata[0].Update(5, 1, 1, new DateOnly(2026, 9, 1), null, null,
+            2, 1, 1, 1, 1);
+        var result = EmployerInterface006XmlBuilder.BuildNegative(fixture.Context);
+        Assert.Contains(result.Issues, issue => issue.Contains("specify whether refund", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Negative_report_matches_official_006_xsd()
     {
         var fixture = CreateFixture(true);
@@ -1230,7 +1256,8 @@ public sealed class EmployerInterface006XmlBuilderTests
         metadata.Update(operationCode ?? (negative ? 5 : 1), 1, 1, new DateOnly(2026, 9, 1), employmentPercentage, null, 2,
             negative ? 1 : null, paymentMethodCode, 1, 1,
             previousReferenceExceptionCode: (negative || (operationCode is 2 or 3 or 7)) ? previousExceptionCode : null,
-            oldPensionTypeCode: oldPensionTypeCode);
+            oldPensionTypeCode: oldPensionTypeCode,
+            collectiveAgreementRefund: negative && resolvedOperation == 5 ? false : null);
         var options = new EmployerInterface006Options
         {
             EnvironmentCode = 2,

@@ -35,11 +35,11 @@ A deliberate change to any of these needs its own approval, a compatibility note
 | Dockerfile restores every module project and ships the V6 workbook | Deployment | Previous Dockerfile could not build the modular solution |
 | EF SQL command logging lowered to Warning in `appsettings.json` | Operators reading logs | Errors still logged; fewer SQL statements in production logs |
 
-No database schema change and no migration (verified against `dc5c609`; no schema-relevant change up to `90c7ba6`, see [database.md](database.md#schema-verification)).
+No database schema change relative to production `main` and no migration (EF model identical to `46202eb`; the one nullable column added on `main` after `90c7ba6` is already deployed by `main`, see [database.md](database.md#schema-verification)).
 
 ## Release blockers (go / no-go)
 
-1. **`main` must be frozen and fully ported.** This tree contains `origin/main` up to `90c7ba6` (121 commits ported into the module layout and verified: same 245 routes, same EF model, same applied schema, all 328 `main` test methods pass). Any later commit on `main` must be ported the same way before release; freeze `main` until the release merge.
+1. **`main` must be frozen and fully ported.** This tree contains `origin/main` up to `46202eb` (121 commits ported into the module layout up to `90c7ba6`, then 16 more merged on 2026-10-12: collective-agreement refund preflight, negative product lineage, local document/source-change feedback signals; same 245 routes, EF model identical to `46202eb`). Any later commit on `main` must be ported the same way before release; freeze `main` until the release merge.
 2. **Build and tests:** Release build with 0 warnings; full suite with `ALPHA_TEST_POSTGRES` set: 0 failed, 0 skipped; `docker build .` succeeds and the container starts against a scratch database.
 3. **Production read-only verification** ([procedure](#production-read-only-verification)), after explicit approval: no Blocking schema result, every Review item explained, data checks reviewed.
 4. **Backup:** a restorable production backup exists and a restore into an isolated environment has been rehearsed.
