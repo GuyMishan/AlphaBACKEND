@@ -2566,6 +2566,13 @@ public static class ReportFeedbackEndpoints
             var currentValues = CurrentValues(contextResolver, employment, person, liveProduct, liveContribution, currentPaymentAccount, protector);
             var feedbackValues = FeedbackValues(row, transfer)
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            if (playbook.Code is 102 or 103 && report.ReportKind == ManualReportKind.Negative
+                && report.SourceReportId.HasValue && product.SourceReportProductId.HasValue)
+            {
+                feedbackValues["negativeCorrectionSourceReportId"] = report.SourceReportId.Value.ToString("D");
+                feedbackValues["negativeCorrectionSourceProductId"] = product.SourceReportProductId.Value.ToString("D");
+                feedbackValues["negativeCorrectionSourceMonth"] = report.ReportingMonth.ToString("yyyy-MM-dd");
+            }
             var feedbackProblemId = FeedbackResolutionWireProjection.BuildProblemId(
                 row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code);
             feedbackValues["resolutionWorkflowStatus"] = returnedProblemIds.Contains(feedbackProblemId)
