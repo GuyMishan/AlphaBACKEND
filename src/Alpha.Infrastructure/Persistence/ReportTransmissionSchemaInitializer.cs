@@ -37,6 +37,11 @@ public static class ReportTransmissionSchemaInitializer
             ALTER TABLE reporting.report_transmissions ADD COLUMN IF NOT EXISTS "PayloadFileName" varchar(100) NOT NULL DEFAULT '';
             ALTER TABLE reporting.report_transmissions ADD COLUMN IF NOT EXISTS "Payload" bytea NOT NULL DEFAULT decode('', 'hex');
             ALTER TABLE reporting.report_transmissions ADD COLUMN IF NOT EXISTS "AttachmentManifestJson" text NOT NULL DEFAULT '[]';
+            ALTER TABLE reporting.report_transmissions ALTER COLUMN "RoutingKey" SET DEFAULT '';
+            ALTER TABLE reporting.report_transmissions ALTER COLUMN "RoutedProductIdsJson" SET DEFAULT '[]';
+            ALTER TABLE reporting.report_transmissions ALTER COLUMN "PayloadFileName" SET DEFAULT '';
+            ALTER TABLE reporting.report_transmissions ALTER COLUMN "Payload" SET DEFAULT decode('', 'hex');
+            ALTER TABLE reporting.report_transmissions ALTER COLUMN "AttachmentManifestJson" SET DEFAULT '[]';
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_report_transmissions_ReportId_AttemptNumber"
                 ON reporting.report_transmissions ("ReportId", "AttemptNumber");
             CREATE INDEX IF NOT EXISTS "IX_report_transmissions_OrganizationId_EmployerId_ReportId"

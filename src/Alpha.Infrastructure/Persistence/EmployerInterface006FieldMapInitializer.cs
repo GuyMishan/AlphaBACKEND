@@ -1,0 +1,171 @@
+using System.IO.Compression;
+using System.Text.Json;
+using System.Xml.Linq;
+using Microsoft.EntityFrameworkCore;
+
+namespace Alpha.Infrastructure.Persistence;
+
+/// <summary>Version 006 numbered fields, keyed by interface type and field number.
+/// Populated from the committed official workbook; never use an error amount as a
+/// field number without the error-code-specific workbook rule (e.g. code 18).</summary>
+public static class EmployerInterface006FieldMapInitializer
+{
+    public sealed record FieldRow(int InterfaceType, int FieldNumber, string FieldName,
+        string XmlTag, string XmlBlock, string DataType, int SourceRow);
+
+    private static readonly Lazy<IReadOnlyDictionary<(int, int), FieldRow>> Catalog =
+        new(() => ReadFields(OfficialWorkbookPath()).ToDictionary(
+            field => (field.InterfaceType, field.FieldNumber)));
+
+    public static FieldRow? Find(int interfaceType, int fieldNumber) =>
+        Catalog.Value.GetValueOrDefault((interfaceType, fieldNumber));
+
+    /// <summary>
+    /// V006 numbered field -> existing ALPHA edit surface.
+    /// This is a navigation classification, not authorization or permission to
+    /// edit immutable documents. Non-editable fields are explicitly identified.
+    /// </summary>
+    public static string EditSurface(int interfaceType, int fieldNumber)
+    {
+        if (interfaceType is not (12 or 13) || Find(interfaceType, fieldNumber) is null)
+            return "unknown";
+        return fieldNumber switch
+        {
+            >= 1 and <= 6 => "fileHeader",
+            >= 7 and <= 24 => "integrationIdentity",
+            >= 25 and <= 29 => "employerContact",
+            >= 30 and <= 56 => "reportTransfer",
+            >= 57 and <= 58 => "reportEvent",
+            >= 59 and <= 62 => "depositProduct",
+            >= 63 and <= 68 => "employeeProfile",
+            69 => "depositProduct",
+            >= 70 and <= 78 => "depositEmployeeStatus",
+            >= 79 and <= 89 => "depositContributions",
+            >= 90 and <= 95 => "fileClosing",
+            _ => "unknown"
+        };
+    }
+
+    public static int? Code18FieldNumber(decimal? errorAmount)
+    {
+        if (!errorAmount.HasValue || errorAmount.Value < 1 || errorAmount.Value != decimal.Truncate(errorAmount.Value)
+            || errorAmount.Value > int.MaxValue) return null;
+        return (int)errorAmount.Value;
+    }
+
+    private static string OfficialWorkbookPath()
+    {
+        var published = Path.Combine(AppContext.BaseDirectory, "Specifications", "EmployerInterface", "006",
+            "Employer interface V 6.xlsx");
+        if (File.Exists(published)) return published;
+
+        // Test host build outputs do not necessarily copy API content files.
+        // Search only ancestors of the actual test/process base directory.
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var source = Path.Combine(dir.FullName, "docs", "specifications",
+                "employer-interface", "006", "Employer interface V 6.xlsx");
+            if (File.Exists(source)) return source;
+        }
+        return published;
+    }
+
+    public static async Task EnsureUpdatedAsync(AlphaDbContext db, CancellationToken ct = default)
+    {
+        const string ddl = """
+            CREATE TABLE IF NOT EXISTS reference_data.employer_interface_006_fields (
+                interface_type integer NOT NULL,
+                field_number integer NOT NULL,
+                field_name text NOT NULL,
+                xml_tag text NOT NULL,
+                xml_block text NOT NULL,
+                data_type text NOT NULL,
+                edit_surface text NOT NULL DEFAULT 'unknown',
+                source_row integer NOT NULL,
+                specification text NOT NULL DEFAULT 'Employer interface V 6.xlsx',
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (interface_type, field_number)
+            );
+            ALTER TABLE reference_data.employer_interface_006_fields
+                ADD COLUMN IF NOT EXISTS edit_surface text NOT NULL DEFAULT 'unknown';
+            """;
+        await db.Database.ExecuteSqlRawAsync(ddl, ct);
+
+        var workbookPath = OfficialWorkbookPath();
+        if (!File.Exists(workbookPath))
+            throw new FileNotFoundException("The official Employer Interface V6 workbook is required for field mapping.", workbookPath);
+
+        var fields = ReadFields(workbookPath);
+        if (fields.Count != 393 || fields.Select(x => (x.InterfaceType, x.FieldNumber)).Distinct().Count() != 393 || fields.GroupBy(row => row.InterfaceType).Any(group =>
+            group.Count() != (group.Key is 12 or 13 ? 95 : group.Key is 14 or 18 ? 72 : 59)))
+            throw new InvalidDataException("Unexpected official Employer Interface V6 field catalog; refuse partial seeding.");
+
+        var json = JsonSerializer.Serialize(fields.Select(field => new {
+            interface_type = field.InterfaceType,
+            field_number = field.FieldNumber,
+            field_name = field.FieldName,
+            xml_tag = field.XmlTag,
+            xml_block = field.XmlBlock,
+            data_type = field.DataType,
+            edit_surface = EditSurface(field.InterfaceType, field.FieldNumber),
+            source_row = field.SourceRow
+        }));
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO reference_data.employer_interface_006_fields
+                (interface_type, field_number, field_name, xml_tag, xml_block, data_type, edit_surface, source_row)
+            SELECT interface_type, field_number, field_name, xml_tag, xml_block, data_type, edit_surface, source_row
+            FROM jsonb_to_recordset(CAST({json} AS jsonb))
+                AS input(interface_type integer, field_number integer, field_name text,
+                    xml_tag text, xml_block text, data_type text, edit_surface text, source_row integer)
+            ON CONFLICT (interface_type, field_number) DO UPDATE
+                SET field_name = EXCLUDED.field_name, xml_tag = EXCLUDED.xml_tag,
+                    xml_block = EXCLUDED.xml_block, data_type = EXCLUDED.data_type,
+                    edit_surface = EXCLUDED.edit_surface, source_row = EXCLUDED.source_row, updated_at = now();
+            """, ct);
+    }
+
+    private static List<FieldRow> ReadFields(string path)
+    {
+        using var zip = ZipFile.OpenRead(path);
+        XNamespace m = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        var sharedEntry = zip.GetEntry("xl/sharedStrings.xml");
+        var strings = sharedEntry is null ? Array.Empty<string>() :
+            XDocument.Load(sharedEntry.Open()).Descendants(m + "si")
+                .Select(si => string.Concat(si.Descendants(m + "t").Select(t => t.Value))).ToArray();
+        var sheets = new (int Index, int Type)[] { (2, 12), (3, 13), (5, 14), (6, 16) };
+        var result = new List<FieldRow>();
+        foreach (var (index, type) in sheets)
+        {
+            var entry = zip.GetEntry($"xl/worksheets/sheet{index}.xml")
+                ?? throw new InvalidDataException($"Missing official worksheet {index}");
+            var block = "";
+            foreach (var row in XDocument.Load(entry.Open()).Descendants(m + "sheetData").Elements(m + "row"))
+            {
+                var values = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var cell in row.Elements(m + "c"))
+                {
+                    var cellRef = (string?)cell.Attribute("r") ?? "";
+                    var column = new string(cellRef.TakeWhile(char.IsLetter).ToArray());
+                    var raw = (string?)cell.Element(m + "v") ?? "";
+                    if ((string?)cell.Attribute("t") == "s" && int.TryParse(raw, out var stringIndex))
+                        raw = strings[stringIndex];
+                    else if ((string?)cell.Attribute("t") == "inlineStr")
+                        raw = string.Concat(cell.Descendants(m + "t").Select(t => t.Value));
+                    values[column] = raw.Trim();
+                }
+                values.TryGetValue("A", out var numberText);
+                values.TryGetValue("B", out var element);
+                if (string.IsNullOrWhiteSpace(numberText) && !string.IsNullOrWhiteSpace(element)
+                    && char.IsLetter(element[0])) block = element;
+                if (!int.TryParse(numberText, out var number) || !values.TryGetValue("I", out var xmlTag)
+                    || string.IsNullOrWhiteSpace(xmlTag)) continue;
+                var definition = new FieldRow(type, number, values.GetValueOrDefault("D", ""),
+                    xmlTag, block, values.GetValueOrDefault("J", ""),
+                    int.Parse((string?)row.Attribute("r") ?? "0"));
+                result.Add(definition);
+                if (type == 14) result.Add(definition with { InterfaceType = 18 });
+            }
+        }
+        return result;
+    }
+}

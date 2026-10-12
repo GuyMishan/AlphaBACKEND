@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Read-only production schema verification. See docs/database.md#production-schema-verification. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Alpha.Infrastructure/Alpha.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

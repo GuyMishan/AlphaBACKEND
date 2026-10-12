@@ -77,7 +77,7 @@ Section 14 is represented by the official `SEIF-ARBA-ESRE-LAOVED` code rather th
 
 Employer Interface report-product metadata includes operation/status fields, official payment method, account types and previous-report reference information where applicable.
 
-Recipient/provider identity remains externally configured under `EmployerInterface006` settings. A real clearinghouse transport is intentionally not connected yet; the current transmission provider remains the mock provider until production integration is required.
+Recipient/provider identity remains externally configured under `EmployerInterface006` settings. A real clearinghouse transport is intentionally not connected yet; `EmployerInterface006:ClearinghouseProvider` selects the TEST simulator (default), the mock or no delivery ([reporting.md](../../../reporting.md#clearinghouse-provider-simulated-or-real)).
 
 ## Reference-data implementation
 
@@ -113,7 +113,7 @@ Initial feedback is intentionally separate from summary feedback. `FEDBKA` is th
 
 ## Testing
 
-`tests/Alpha.Api.Tests/EmployerInterface006XmlBuilderTests.cs` builds representative current and negative XML documents, applies workbook-derived business rules, and validates the results against these exact official XSD files. The tests run in CI.
+`tests/Alpha.Api.Tests/Reporting/EmployerInterface006XmlBuilderTests.cs` builds representative current and negative XML documents, applies workbook-derived business rules, and validates the results against these exact official XSD files. The tests run in CI.
 
 ## Rules
 

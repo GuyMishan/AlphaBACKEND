@@ -11,5 +11,5 @@ Runtime folders are created automatically and are ignored by Git:
 - `failed/{EmployerId}` — feedback that failed routing/validation/ingestion.
 - `responded/{EmployerId}` — auto-responder markers.
 
-The simulator is active only when `EmployerInterface006:EnvironmentCode=1` and `EmployerInterface006:SimulatedVault:Enabled=true`.
+The simulator is active only when `EmployerInterface006:ClearinghouseProvider=Simulated` (which requires `EmployerInterface006:EnvironmentCode=1`); see `docs/reporting.md`.
 Do not commit runtime report or feedback files from this directory.

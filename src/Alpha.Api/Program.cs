@@ -1,119 +1,111 @@
-using System.Text;
-using System.Security.Claims;
 using Alpha.Api.Authentication;
-using Alpha.Api.Endpoints;
-using Alpha.Api.Services;
+using Alpha.Api.Payments;
+using Alpha.Api.Errors;
 using Alpha.Api.Security;
-using Alpha.Api.Validation;
-using Alpha.Application.Abstractions;
-using Alpha.Application.Authorization;
-using Alpha.Application.Billing;
-using Alpha.Application.Entitlements;
-using Alpha.Application.Identity;
-using Alpha.Application.Reporting;
 using Alpha.Infrastructure;
 using Alpha.Infrastructure.Persistence;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Alpha.Modules.Auditing;
+using Alpha.Modules.Auditing.Middleware;
+using Alpha.Modules.Billing;
+using Alpha.Modules.IdentityAccess;
+using Alpha.Modules.Organizations;
+using Alpha.Modules.ReferenceData;
+using Alpha.Modules.Reporting;
+using Alpha.Modules.Workforce;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentUser, CurrentUser>();
-builder.Services.AddScoped<OrganizationAccessService>();
-builder.Services.AddScoped<BillingInheritanceService>();
-builder.Services.AddScoped<EmployerTransferService>();
-builder.Services.AddScoped<BillingGateService>();
-builder.Services.AddScoped<FakePaymentProvider>();
-builder.Services.AddScoped<CardComPaymentProvider>();
-builder.Services.AddScoped<PayPlusPaymentProvider>();
-builder.Services.AddScoped<PaymentProviderResolver>();
-builder.Services.AddScoped<IPaymentProviderResolver>(sp => sp.GetRequiredService<PaymentProviderResolver>());
-builder.Services.AddScoped<IPaymentProvider>(sp => sp.GetRequiredService<PaymentProviderResolver>());
-builder.Services.AddScoped<IBillingCalculator, BillingCalculator>();
-builder.Services.AddScoped<IBillingUsageCollector, BillingUsageCollector>();
-builder.Services.AddScoped<IBillingCycleService, BillingCycleService>();
-builder.Services.AddHostedService<BillingCycleHostedService>();
-builder.Services.AddHttpClient("cardcom", c => c.Timeout = TimeSpan.FromSeconds(30));
-builder.Services.AddHttpClient("payplus", c => c.Timeout = TimeSpan.FromSeconds(30));
-builder.Services.AddScoped<EntitlementService>();
-builder.Services.AddScoped<OrganizationEntitlementLock>();
-builder.Services.AddScoped<InvitationService>();
-builder.Services.AddScoped<ReportPaymentAccountService>();
-builder.Services.Configure<EmployerInterface006Options>(builder.Configuration.GetSection(EmployerInterface006Options.SectionName));
-builder.Services.Configure<SimulatedClearinghouseVaultOptions>(builder.Configuration.GetSection(SimulatedClearinghouseVaultOptions.SectionName));
-builder.Services.AddSingleton<EmployerInterfaceSchemaRegistry>();
-builder.Services.AddScoped<EmployerInterfaceService>();
-builder.Services.AddScoped<EmployerInterface006ExportService>();
-builder.Services.AddScoped<EmployerInterfaceFileSequenceService>();
-var simulatedVaultEnabled = builder.Configuration.GetValue<bool>("EmployerInterface006:SimulatedVault:Enabled")
-    && builder.Configuration.GetValue<int>("EmployerInterface006:EnvironmentCode") == 1;
-var allowMockTransmission = builder.Environment.IsDevelopment()
-    || builder.Configuration.GetValue<bool>("EmployerInterface006:AllowMockTransmission");
-if (simulatedVaultEnabled)
-{
-    builder.Services.AddScoped<IReportTransmissionProvider, SimulatedVaultReportTransmissionProvider>();
-    builder.Services.AddScoped<SimulatedClearinghouseFeedbackIngestor>();
-    builder.Services.AddScoped<SimulatedClearinghouseTechnicalFeedbackHandler>();
-    builder.Services.AddHostedService<SimulatedClearinghouseResponder>();
-    builder.Services.AddHostedService<SimulatedClearinghouseVaultWorker>();
-    // Opt-in TEST-only manufacturer vaults. Every configured manufacturer
-    // receives a separate provider identity, outbox, inbox and responder.
-    foreach (var manufacturerSection in builder.Configuration
-        .GetSection("EmployerInterface006:SimulatedVault:Manufacturers").GetChildren())
-    {
-        if (!manufacturerSection.GetValue<bool>("Enabled")) continue;
-        var manufacturer = SimulatedManufacturerVaultReportTransmissionProvider
-            .ValidateKey(manufacturerSection.Key);
-        builder.Services.AddScoped<IReportTransmissionProvider>(sp =>
-            new SimulatedManufacturerVaultReportTransmissionProvider(
-                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SimulatedClearinghouseVaultOptions>>(),
-                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EmployerInterface006Options>>(),
-                manufacturer, sp.GetRequiredService<IConfiguration>()));
-        builder.Services.AddSingleton<IHostedService>(sp =>
-            new SimulatedManufacturerVaultHostedService(
-                sp.GetRequiredService<IServiceScopeFactory>(),
-                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SimulatedClearinghouseVaultOptions>>(),
-                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EmployerInterface006Options>>(),
-                sp.GetRequiredService<ILoggerFactory>(), manufacturer,
-                sp.GetRequiredService<IConfiguration>()));
-    }
-}
-else if (allowMockTransmission)
-    builder.Services.AddScoped<IReportTransmissionProvider, MockReportTransmissionProvider>();
-else
-    builder.Services.AddScoped<IReportTransmissionProvider, UnavailableReportTransmissionProvider>();
-builder.Services.AddHttpClient("otp-sms", c => c.Timeout = TimeSpan.FromSeconds(10));
-builder.Services.AddHttpClient("otp-email", c => c.Timeout = TimeSpan.FromSeconds(25));
-builder.Services.AddScoped<OtpDelivery>();
-builder.Services.AddHttpClient<ReferenceDataSyncService>(client => { client.Timeout = TimeSpan.FromMinutes(5); client.DefaultRequestHeaders.UserAgent.ParseAdd("AlphaReferenceDataSync/1.0"); });
-builder.Services.AddExceptionHandler<DbConcurrencyExceptionHandler>();
-builder.Services.AddProblemDetails(); builder.Services.AddOpenApi(); builder.Services.AddEndpointsApiExplorer(); builder.Services.AddSwaggerGen(); builder.Services.AddHealthChecks();
-builder.Services.AddHostedService<SecurityRetentionHostedService>();
-builder.Services.AddHostedService<SensitiveDataBackfillHostedService>();
-builder.Services.AddSingleton<IDataProtectionService, AesDataProtectionService>();
-builder.Services.AddHttpClient("malware-scanner", client => client.Timeout = TimeSpan.FromSeconds(30))
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
-builder.Services.AddHttpClient("payment-evidence-storage", client => client.Timeout = TimeSpan.FromSeconds(60));
-builder.Services.AddScoped<PaymentEvidenceStorage>();
-builder.Services.AddScoped<IMalwareScanner, ConfiguredMalwareScanner>();
-builder.Services.AddRateLimiter(options => { options.RejectionStatusCode = StatusCodes.Status429TooManyRequests; options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context => { var isAuth = context.Request.Path.StartsWithSegments("/api/auth"); var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown"; var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? context.User.FindFirst("sub")?.Value; var partitionKey = isAuth ? $"auth:{ip}" : !string.IsNullOrWhiteSpace(userId) ? $"user:{userId}" : $"anon:{ip}"; return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions { PermitLimit = isAuth ? 20 : 1200, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }); }); });
+var configuration = builder.Configuration;
 
-if (builder.Environment.IsDevelopment()) builder.Services.AddAuthentication("DevelopmentHeaders").AddScheme<AuthenticationSchemeOptions, DevelopmentHeaderAuthenticationHandler>("DevelopmentHeaders", null);
-else builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => { var key = builder.Configuration["PrototypeAuth:SigningKey"]; if (!string.IsNullOrWhiteSpace(key)) options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer = true, ValidIssuer = "alpha-prototype", ValidateAudience = true, ValidAudience = "alpha-frontend", ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), ValidateLifetime = true, ClockSkew = TimeSpan.FromMinutes(1) }; else { options.Authority = builder.Configuration["Authentication:Authority"]; options.Audience = builder.Configuration["Authentication:Audience"]; } });
-builder.Services.AddAuthorization();
+// Shared persistence, host security and provider adapters.
+builder.Services.AddInfrastructure(configuration);
+builder.Services.AddAlphaAuthentication(configuration, builder.Environment);
+builder.Services.AddAlphaRateLimiting();
+builder.Services.AddSingleton<IDataProtectionService, AesDataProtectionService>();
+builder.Services.AddScoped<SensitiveDataBackfill>();
+builder.Services.AddHostedService<SensitiveDataBackfillHostedService>();
+builder.Services.AddPaymentProviders();
+
+// Business modules.
+builder.Services.AddIdentityAccessModule();
+builder.Services.AddOrganizationsModule();
+builder.Services.AddBillingModule();
+builder.Services.AddReportingModule(configuration, builder.Environment);
+builder.Services.AddReferenceDataModule();
+
+builder.Services.AddAlphaErrorHandling();
+builder.Services.AddOpenApi();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
-if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations")) { await using var scope = app.Services.CreateAsyncScope(); var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await db.Database.MigrateAsync(); }
-await using (var scope = app.Services.CreateAsyncScope()) { var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await IdentitySchemaInitializer.EnsureUpdatedAsync(db); await ReferentSchemaInitializer.EnsureUpdatedAsync(db); await EmployeeIdentitySchemaInitializer.EnsureUpdatedAsync(db); await EmployerAccessSchemaInitializer.EnsureUpdatedAsync(db); await AccessPermissionsSchemaInitializer.EnsureUpdatedAsync(db); await EmployerProfileSchemaInitializer.EnsureCreatedAsync(db); await OrganizationProfileSchemaInitializer.EnsureCreatedAsync(db); await BillingSchemaInitializer.EnsureCreatedAsync(db); await BillingInheritanceSchemaInitializer.EnsureUpdatedAsync(db); await BillingV2SchemaInitializer.EnsureUpdatedAsync(db); await OtpSchemaInitializer.EnsureCreatedAsync(db); await RegistrationOtpSchemaInitializer.EnsureCreatedAsync(db); await InvitationSchemaInitializer.EnsureCreatedAsync(db); await ReportingSchemaInitializer.EnsureCreatedAsync(db); await Section14SchemaInitializer.EnsureUpdatedAsync(db); await SalaryAllocationSchemaInitializer.EnsureUpdatedAsync(db); await PensionFundSnapshotSchemaInitializer.EnsureUpdatedAsync(db); await ReportLifecycleSchemaInitializer.EnsureUpdatedAsync(db); await PaymentConfirmationSchemaInitializer.EnsureUpdatedAsync(db); await ReportTransmissionSchemaInitializer.EnsureUpdatedAsync(db); await EmployerInterfaceFeedbackSchemaInitializer.EnsureCreatedAsync(db); await ReportFeedbackOperationsSchemaInitializer.EnsureUpdatedAsync(db); await EmployerInterface006SchemaInitializer.EnsureUpdatedAsync(db); await ReferenceDataSchemaInitializer.EnsureCreatedAsync(db); await SelectOptionsSchemaInitializer.EnsureCreatedAsync(db); await EmployerInterface006CodebookInitializer.EnsureUpdatedAsync(db); await EmployerInterface006ReferenceRulesInitializer.EnsureUpdatedAsync(db); await EmployerInterface006ErrorCodeInitializer.EnsureUpdatedAsync(db); await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db); var feedbackNormalizer = scope.ServiceProvider.GetRequiredService<EmployerInterfaceService>(); await feedbackNormalizer.NormalizeExistingFeedbackAsync(CancellationToken.None); }
-var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["PrototypeAuth:SigningKey"]); var demoDataEnabled = builder.Environment.IsDevelopment() && builder.Configuration.GetValue("DemoData:Enabled", false);
-if (prototypeAuthEnabled && demoDataEnabled) { await using var scope = app.Services.CreateAsyncScope(); var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>(); await DemoDataSeeder.SeedAsync(db); }
-app.UseExceptionHandler(); if (!app.Environment.IsDevelopment()) app.UseHsts(); app.UseHttpsRedirection(); app.UseMiddleware<SecurityHeadersMiddleware>(); app.UseAuthentication(); app.UseMiddleware<SessionActivityMiddleware>(); app.UseRateLimiter(); app.UseAuthorization(); app.UseMiddleware<SecurityAuditMiddleware>(); app.UseReportingInputValidation();
-if (app.Environment.IsDevelopment()) { app.MapOpenApi(); app.UseSwagger(); app.UseSwaggerUI(); }
+StartupConfiguration.EnsureValid(app.Configuration, app.Environment);
+
+// Idempotent schema initialization in the production-pinned order. Empty-database bootstrap
+// (EF EnsureCreated, a no-op when any table exists) defaults to on only in Development.
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
+    var bootstrapEmptyDatabase = configuration.GetValue("Database:BootstrapEmptyDatabase", app.Environment.IsDevelopment());
+    await AlphaDatabaseInitializer.InitializeAsync(db, bootstrapEmptyDatabase);
+    await scope.ServiceProvider.InitializeReportingAsync(CancellationToken.None);
+}
+
+var prototypeAuthEnabled = !string.IsNullOrWhiteSpace(configuration["PrototypeAuth:SigningKey"]);
+var demoDataEnabled = app.Environment.IsDevelopment() && configuration.GetValue("DemoData:Enabled", false);
+if (prototypeAuthEnabled && demoDataEnabled)
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    await DemoDataSeeder.SeedAsync(scope.ServiceProvider.GetRequiredService<AlphaDbContext>());
+}
+
+// Security middleware order is a pinned compatibility constraint (see docs/security.md).
+app.UseAlphaReverseProxy(configuration, app.Logger);
+app.UseExceptionHandler();
+app.UseStatusCodePages();
+if (!app.Environment.IsDevelopment()) app.UseHsts();
+app.UseHttpsRedirection();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseAuthentication();
+app.UseMiddleware<SessionActivityMiddleware>();
+app.UseRateLimiter();
+app.UseAuthorization();
+app.UseMiddleware<SecurityAuditMiddleware>();
+app.UseReportingModule();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi().AllowAnonymous();
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
 app.MapHealthChecks("/health", new HealthCheckOptions { AllowCachingResponses = false }).AllowAnonymous();
-app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) => await db.Database.CanConnectAsync(ct) ? Results.Ok(new { status = "healthy", database = "postgresql" }) : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable)).AllowAnonymous().WithTags("Health");
-app.MapAuthEndpoints(); app.MapScopeEndpoints(); app.MapDashboardEndpoints(); app.MapInvitationEndpoints(); app.MapOnboardingEndpoints(); app.MapPlatformEndpoints(); app.MapReferentEndpoints(); app.MapBillingManagementEndpoints(); app.MapReferenceDataEndpoints(); app.MapPublicReferenceDataEndpoints(); app.MapOrganizationEndpoints(); app.MapOrganizationProfileEndpoints(); app.MapBillingAccountEndpoints(); app.MapPaymentProviderEndpoints(); app.MapEmployerEndpoints(); app.MapAccessEndpoints(); app.MapUserPreferencesEndpoints(); app.MapEmployeePensionMixEndpoints(); app.MapManualReportEndpoints(); app.MapReportAttachmentEndpoints(); app.MapPaymentConfirmationEndpoints(); app.MapDerivedReportEndpoints(); app.MapReportValidationEndpoints(); app.MapEmployerInterfaceEndpoints(); app.MapEmployerInterfaceProfileEndpoints(); app.MapEmployerProfileCenterEndpoints(); app.MapEmployerPaymentAccountEndpoints(); app.MapOrganizationPaymentAccountEndpoints(); app.MapEmployerInterfacePreviousReferenceEndpoints(); app.MapReportTransmissionEndpoints(); app.MapReportFeedbackEndpoints(); app.Run();
+app.MapGet("/health/db", async (AlphaDbContext db, CancellationToken ct) => await db.Database.CanConnectAsync(ct)
+        ? Results.Ok(new { status = "healthy", database = "postgresql" })
+        : Results.Json(new { status = "unhealthy", database = "postgresql" }, statusCode: StatusCodes.Status503ServiceUnavailable))
+    .AllowAnonymous().WithTags("Health");
+
+// Every API endpoint is mapped under one root group so the single error contract applies uniformly.
+var api = app.MapGroup(string.Empty).AddEndpointFilter<ApiErrorResultFilter>();
+
+// Route groups shared by more than one module are owned by the host.
+var platform = api.MapGroup("/api/platform").RequireAuthorization().WithTags("Platform");
+platform.MapAuditingPlatformEndpoints();
+platform.MapIdentityAccessPlatformEndpoints();
+
+var referenceData = api.MapGroup("/api/reference-data").RequireAuthorization().WithTags("Reference Data");
+referenceData.MapGeneralReferenceData();
+referenceData.MapReportingReferenceData();
+
+api.MapIdentityAccessModule();
+api.MapOrganizationsModule();
+api.MapWorkforceModule();
+api.MapBillingModule();
+api.MapReportingModule();
+api.MapReferenceDataModule();
+
+app.Run();
+
 public partial class Program;

@@ -1,0 +1,16 @@
+services:
+  postgres-tests:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: alpha_tests
+      POSTGRES_USER: alpha_test
+      POSTGRES_PASSWORD: alpha_test_only
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alpha_test -d alpha_tests"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    tmpfs:
+      - /var/lib/postgresql/data

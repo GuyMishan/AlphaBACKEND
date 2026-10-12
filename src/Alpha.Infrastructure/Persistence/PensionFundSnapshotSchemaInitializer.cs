@@ -22,17 +22,26 @@ ALTER TABLE reporting.manual_report_products
     ADD COLUMN IF NOT EXISTS fund_company_name varchar(300) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS fund_classification varchar(200) NOT NULL DEFAULT '';
 
-UPDATE employees.employee_pension_products e
-SET fund_classification = COALESCE(p.classification, '')
-FROM reference_data.pension_products p
-WHERE e.fund_external_key = p.external_key
-  AND e.fund_classification = '';
+-- The classification backfill reads the ReferenceData catalog, which ReferenceDataSchemaInitializer
+-- creates later in the pinned order. On a blank database the catalog does not exist yet and there
+-- are no snapshot rows to backfill, so the backfill is skipped instead of failing the startup.
+DO $backfill$
+BEGIN
+    IF to_regclass('reference_data.pension_products') IS NOT NULL THEN
+        UPDATE employees.employee_pension_products e
+        SET fund_classification = COALESCE(p.classification, '')
+        FROM reference_data.pension_products p
+        WHERE e.fund_external_key = p.external_key
+          AND e.fund_classification = '';
 
-UPDATE reporting.manual_report_products r
-SET fund_classification = COALESCE(p.classification, '')
-FROM reference_data.pension_products p
-WHERE r.fund_external_key = p.external_key
-  AND r.fund_classification = '';
+        UPDATE reporting.manual_report_products r
+        SET fund_classification = COALESCE(p.classification, '')
+        FROM reference_data.pension_products p
+        WHERE r.fund_external_key = p.external_key
+          AND r.fund_classification = '';
+    END IF;
+END
+$backfill$;
 
 -- Report products are seeded explicitly by ManualReportEndpoints. The older database trigger
 -- also seeded the same employee mix and could create duplicate report products.

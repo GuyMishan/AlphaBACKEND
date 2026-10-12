@@ -1,4 +1,3 @@
-using Alpha.Application.Abstractions;
 using Alpha.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -16,7 +15,7 @@ public static class DependencyInjection
 
         var connectionString = NormalizePostgresConnectionString(configuredConnectionString);
         services.AddDbContext<AlphaDbContext>(options => options.UseNpgsql(connectionString));
-        services.AddScoped<IAlphaDbContext>(provider => provider.GetRequiredService<AlphaDbContext>());
+        services.AddScoped<OrganizationEntitlementLock>();
         return services;
     }
 

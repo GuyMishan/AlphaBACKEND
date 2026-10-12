@@ -27,21 +27,14 @@ public static class IdentitySchemaInitializer
             CREATE INDEX IF NOT EXISTS "IX_user_sessions_UserId" ON identity.user_sessions ("UserId");
             CREATE INDEX IF NOT EXISTS "IX_user_sessions_ExpiresAt" ON identity.user_sessions ("ExpiresAt");
 
+            -- Bookkeeping for keyed one-time data fixes (for example the sensitive-data backfill marker).
+            -- The former "set all user emails" fix (applied 2026-09-21) was removed: it rewrote every user's
+            -- e-mail on any database without its marker, including restored backups and copies.
             CREATE TABLE IF NOT EXISTS identity.data_fixes
             (
                 "Key" character varying(200) PRIMARY KEY,
                 "AppliedAt" timestamp with time zone NOT NULL DEFAULT now()
             );
-
-            WITH applied AS (
-                INSERT INTO identity.data_fixes ("Key")
-                VALUES ('set-all-existing-user-emails-gaiu01999-20260921')
-                ON CONFLICT ("Key") DO NOTHING
-                RETURNING 1
-            )
-            UPDATE identity.users
-            SET "Email" = 'gaiu01999@gmail.com'
-            WHERE EXISTS (SELECT 1 FROM applied);
             """;
 
         await db.Database.ExecuteSqlRawAsync(sql, ct);

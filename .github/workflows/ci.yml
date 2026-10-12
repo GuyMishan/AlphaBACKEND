@@ -17,16 +17,16 @@ jobs:
         env:
           POSTGRES_USER: alpha_test
           POSTGRES_PASSWORD: alpha_test
-          POSTGRES_DB: alpha_test
+          POSTGRES_DB: alpha_tests
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U alpha_test -d alpha_test"
+          --health-cmd "pg_isready -U alpha_test -d alpha_tests"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      ALPHA_TEST_POSTGRES: Host=localhost;Port=5432;Database=alpha_test;Username=alpha_test;Password=alpha_test
+      ALPHA_TEST_POSTGRES: Host=localhost;Port=5432;Database=alpha_tests;Username=alpha_test;Password=alpha_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v5

@@ -1,0 +1,166 @@
+using Alpha.Domain.Billing;
+using Alpha.Domain.Employees;
+using Alpha.Domain.Employers;
+using Alpha.Infrastructure.Persistence;
+using Alpha.Modules.Billing.Contracts;
+using Microsoft.EntityFrameworkCore;
+
+namespace Alpha.Modules.Billing.Application;
+
+public sealed class EntitlementService(AlphaDbContext db) : IEntitlementService
+{
+    public const string ReportTransmissionFeature = "report_transmission";
+
+    public async Task<int?> GetEmployerLimit(Guid organizationId, CancellationToken ct = default)
+    {
+        var billing = await GetOrganizationBillingTierAsync(organizationId, ct);
+        return billing.IsPaid ? null : 1;
+    }
+
+    public async Task<int?> GetEmployeeLimit(Guid organizationId, CancellationToken ct = default)
+    {
+        var billing = await GetOrganizationBillingTierAsync(organizationId, ct);
+        return billing.IsPaid ? null : 3;
+    }
+
+    public async Task<int?> GetUserLimit(Guid organizationId, CancellationToken ct = default)
+    {
+        var billing = await GetOrganizationBillingTierAsync(organizationId, ct);
+        return billing.IsPaid ? null : 1;
+    }
+
+    public async Task<EntitlementDecision> CanCreateEmployer(Guid organizationId, CancellationToken ct = default)
+    {
+        var limit = await GetEmployerLimit(organizationId, ct);
+        if (!limit.HasValue) return EntitlementDecision.Allow();
+        var current = await db.Employers.AsNoTracking()
+            .CountAsync(x => x.OrganizationId == organizationId && x.Status != EmployerStatus.Closed, ct);
+        return current < limit.Value
+            ? EntitlementDecision.Allow()
+            : EntitlementDecision.LimitReached("employers", current, limit.Value);
+    }
+
+    public async Task<EntitlementDecision> CanCreateEmployee(Guid organizationId, CancellationToken ct = default)
+    {
+        var limit = await GetEmployeeLimit(organizationId, ct);
+        if (!limit.HasValue) return EntitlementDecision.Allow();
+        var current = await db.Employments.AsNoTracking()
+            .CountAsync(x => x.OrganizationId == organizationId && x.Status == EmploymentStatus.Active, ct);
+        return current < limit.Value
+            ? EntitlementDecision.Allow()
+            : EntitlementDecision.LimitReached("employees", current, limit.Value);
+    }
+
+    public async Task<EntitlementDecision> CanInviteNewUser(Guid organizationId, CancellationToken ct = default)
+    {
+        var limit = await GetUserLimit(organizationId, ct);
+        if (!limit.HasValue) return EntitlementDecision.Allow();
+        var current = await CountUsersAsync(organizationId, ct);
+        var pendingInvites = await CountPendingInvitesAsync(organizationId, ct);
+        return current + pendingInvites < limit.Value
+            ? EntitlementDecision.Allow()
+            : EntitlementDecision.LimitReached("users", current + pendingInvites, limit.Value);
+    }
+
+    public async Task<EntitlementDecision> CanInviteUser(Guid organizationId, Guid userId, CancellationToken ct = default)
+    {
+        var alreadyCounted = await db.OrganizationMemberships.AsNoTracking().AnyAsync(x =>
+                x.OrganizationId == organizationId && x.UserId == userId && x.IsActive &&
+                (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow), ct)
+            || await db.EmployerUserAccesses.AsNoTracking().AnyAsync(x =>
+                x.OrganizationId == organizationId && x.UserId == userId, ct);
+        if (alreadyCounted) return EntitlementDecision.Allow();
+
+        var limit = await GetUserLimit(organizationId, ct);
+        if (!limit.HasValue) return EntitlementDecision.Allow();
+        var reserved = await CountUsersAsync(organizationId, ct) + await CountPendingInvitesAsync(organizationId, ct);
+        return reserved < limit.Value
+            ? EntitlementDecision.Allow()
+            : EntitlementDecision.LimitReached("users", reserved, limit.Value);
+    }
+
+    public async Task<EntitlementDecision> CanAcceptInvitation(Guid organizationId, CancellationToken ct = default)
+    {
+        var limit = await GetUserLimit(organizationId, ct);
+        if (!limit.HasValue) return EntitlementDecision.Allow();
+        var current = await CountUsersAsync(organizationId, ct);
+        return current < limit.Value
+            ? EntitlementDecision.Allow()
+            : EntitlementDecision.LimitReached("users", current, limit.Value);
+    }
+
+    public async Task<EntitlementDecision> CanUseFeature(Guid organizationId, string feature, CancellationToken ct = default)
+    {
+        if (feature != ReportTransmissionFeature)
+            return EntitlementDecision.FeatureUnavailable(feature);
+        var exists = await db.Organizations.AsNoTracking().AnyAsync(x => x.Id == organizationId, ct);
+        return exists ? EntitlementDecision.Allow() : EntitlementDecision.FeatureUnavailable(feature);
+    }
+
+    public Task<EntitlementDecision> CanTransmitReport(Guid organizationId, CancellationToken ct = default) =>
+        CanUseFeature(organizationId, ReportTransmissionFeature, ct);
+
+    public async Task<EntitlementSnapshot> GetSnapshot(Guid organizationId, CancellationToken ct = default)
+    {
+        var billing = await GetOrganizationBillingTierAsync(organizationId, ct);
+        var employerLimit = billing.IsPaid ? (int?)null : 1;
+        var employeeLimit = billing.IsPaid ? (int?)null : 3;
+        var userLimit = billing.IsPaid ? (int?)null : 1;
+        var employers = await db.Employers.AsNoTracking()
+            .CountAsync(x => x.OrganizationId == organizationId && x.Status != EmployerStatus.Closed, ct);
+        var employees = await db.Employments.AsNoTracking()
+            .CountAsync(x => x.OrganizationId == organizationId && x.Status == EmploymentStatus.Active, ct);
+        var users = await CountUsersAsync(organizationId, ct);
+
+        return new EntitlementSnapshot(
+            new EntitlementPlan(null, billing.Code, billing.Name),
+            new EntitlementUsage(employers, employerLimit),
+            new EntitlementUsage(employees, employeeLimit),
+            new EntitlementUsage(users, userLimit));
+    }
+
+    private async Task<int> CountUsersAsync(Guid organizationId, CancellationToken ct)
+    {
+        var membershipUserIds = db.OrganizationMemberships.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.IsActive &&
+                        (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow))
+            .Select(x => x.UserId);
+        var employerUserIds = db.EmployerUserAccesses.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId)
+            .Select(x => x.UserId);
+        return await membershipUserIds.Union(employerUserIds).CountAsync(ct);
+    }
+
+    private Task<int> CountPendingInvitesAsync(Guid organizationId, CancellationToken ct) =>
+        db.UserInvitations.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId &&
+                        x.Status == Alpha.Domain.Identity.UserInvitationStatus.Pending &&
+                        x.ExpiresAt > DateTimeOffset.UtcNow)
+            .Select(x => x.Email)
+            .Distinct()
+            .CountAsync(ct);
+
+    private async Task<(bool IsPaid, string Code, string Name)> GetOrganizationBillingTierAsync(
+        Guid organizationId, CancellationToken ct)
+    {
+        var accountId = await db.BillingAccounts.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EmployerId == null)
+            .Select(x => (Guid?)x.Id)
+            .SingleOrDefaultAsync(ct);
+        if (!accountId.HasValue) return (false, "FREE", "Free");
+
+        var component = await db.BillingAccountPricingComponents.AsNoTracking()
+            .Where(x => x.BillingAccountId == accountId.Value && x.EffectiveTo == null && x.IsEnabled &&
+                        (x.MetricType == BillingMetricType.Employee || x.MetricType == BillingMetricType.ReportRow) &&
+                        x.UnitPrice > 0)
+            .OrderBy(x => x.MetricType)
+            .FirstOrDefaultAsync(ct);
+
+        return component?.MetricType switch
+        {
+            BillingMetricType.Employee => (true, "PER_EMPLOYEE", "פר עובד"),
+            BillingMetricType.ReportRow => (true, "PER_REPORT_ROW", "פר שורה"),
+            _ => (false, "FREE", "Free")
+        };
+    }
+}

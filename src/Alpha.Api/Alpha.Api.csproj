@@ -1,8 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
-    <ProjectReference Include="../Alpha.Application/Alpha.Application.csproj" />
-    <ProjectReference Include="../Alpha.Domain/Alpha.Domain.csproj" />
     <ProjectReference Include="../Alpha.Infrastructure/Alpha.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Auditing/Alpha.Modules.Auditing/Alpha.Modules.Auditing.csproj" />
+    <ProjectReference Include="../Modules/Billing/Alpha.Modules.Billing.Contracts/Alpha.Modules.Billing.Contracts.csproj" />
+    <ProjectReference Include="../Modules/Billing/Alpha.Modules.Billing/Alpha.Modules.Billing.csproj" />
+    <ProjectReference Include="../Modules/IdentityAccess/Alpha.Modules.IdentityAccess.Contracts/Alpha.Modules.IdentityAccess.Contracts.csproj" />
+    <ProjectReference Include="../Modules/IdentityAccess/Alpha.Modules.IdentityAccess/Alpha.Modules.IdentityAccess.csproj" />
+    <ProjectReference Include="../Modules/Organizations/Alpha.Modules.Organizations/Alpha.Modules.Organizations.csproj" />
+    <ProjectReference Include="../Modules/ReferenceData/Alpha.Modules.ReferenceData/Alpha.Modules.ReferenceData.csproj" />
+    <ProjectReference Include="../Modules/Reporting/Alpha.Modules.Reporting.Contracts/Alpha.Modules.Reporting.Contracts.csproj" />
+    <ProjectReference Include="../Modules/Reporting/Alpha.Modules.Reporting/Alpha.Modules.Reporting.csproj" />
+    <ProjectReference Include="../Modules/Workforce/Alpha.Modules.Workforce/Alpha.Modules.Workforce.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
@@ -10,6 +18,12 @@
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="../../docs/specifications/employer-interface/006/Employer interface V 6.xlsx">
+      <TargetPath>Specifications/EmployerInterface/006/Employer interface V 6.xlsx</TargetPath>
+      <Link>Specifications/EmployerInterface/006/Employer interface V 6.xlsx</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <Content Include="../../docs/specifications/employer-interface/006/*.xsd.xml">
       <TargetPath>Specifications/EmployerInterface/006/%(Filename)%(Extension)</TargetPath>
       <Link>Specifications/EmployerInterface/006/%(Filename)%(Extension)</Link>

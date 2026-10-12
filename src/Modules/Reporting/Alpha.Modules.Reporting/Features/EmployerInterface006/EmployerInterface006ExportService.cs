@@ -1,0 +1,260 @@
+using Alpha.Infrastructure.Persistence;
+using Alpha.Domain.Reporting;
+using Alpha.Modules.IdentityAccess.Contracts;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+
+namespace Alpha.Modules.Reporting.Features.EmployerInterface006;
+
+public sealed class EmployerInterface006ExportService(
+    AlphaDbContext db,
+    EmployerInterfaceSchemaRegistry schemas,
+    IOptions<EmployerInterface006Options> options,
+    IDataProtectionService protector)
+{
+    public async Task<EmployerInterface006GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct,
+        int fileSequence = 1, DateTimeOffset? preparedAtOverride = null,
+        IReadOnlyCollection<Guid>? includedProductIds = null)
+    {
+        if (report.ReportKind == ManualReportKind.Differences)
+            return Invalid(EmployerInterfaceDocumentType.CurrentReport,
+                "Difference reports cannot be transmitted directly. Materialize the difference as a current or negative report first.");
+
+        var documentType = report.ReportKind == ManualReportKind.Negative
+            ? EmployerInterfaceDocumentType.NegativeReport
+            : EmployerInterfaceDocumentType.CurrentReport;
+
+        var employer = new Alpha.Domain.Employers.Employer(report.OrganizationId,
+            report.EmployerLegalNameSnapshot, protector.Unprotect(report.EmployerRegistrationNumberSnapshot, $"report-employer-registration:{report.Id}"),
+            protector.Unprotect(report.EmployerWithholdingFileNumberSnapshot, $"report-employer-withholding:{report.Id}"), report.EmployerContactFirstNameSnapshot,
+            report.EmployerContactLastNameSnapshot, protector.Unprotect(report.EmployerContactPhoneSnapshot, $"report-employer-phone:{report.Id}"),
+            protector.Unprotect(report.EmployerContactEmailSnapshot, $"report-employer-email:{report.Id}"), protector.Unprotect(report.EmployerContactMobileSnapshot, $"report-employer-mobile:{report.Id}"));
+        var employees = await db.ManualReportEmployees.AsNoTracking()
+            .Where(x => x.ReportId == report.Id).OrderBy(x => x.EmployeeNumber).ToListAsync(ct);
+        foreach (var employee in employees)
+        {
+            db.Entry(employee).Property(x => x.NationalId).CurrentValue =
+                protector.Unprotect(employee.NationalId, $"report-employee-national-id:{employee.Id}");
+            db.Entry(employee).Property(x => x.InterfaceIdentifier).CurrentValue =
+                protector.Unprotect(employee.InterfaceIdentifier, $"report-employee-interface-id:{employee.Id}");
+            db.Entry(employee).Property(x => x.EmailSnapshot).CurrentValue =
+                protector.Unprotect(employee.EmailSnapshot, $"report-employee-email:{employee.Id}");
+            db.Entry(employee).Property(x => x.MobileSnapshot).CurrentValue =
+                protector.Unprotect(employee.MobileSnapshot, $"report-employee-mobile:{employee.Id}");
+        }
+        var people = new Dictionary<Guid, Alpha.Domain.Employees.Person>();
+        var employments = new Dictionary<Guid, Alpha.Domain.Employees.Employment>();
+        var employeeIds = employees.Select(x => x.Id).ToArray();
+        var products = await db.ManualReportProducts.AsNoTracking()
+            .Where(x => employeeIds.Contains(x.ReportEmployeeId))
+            .OrderBy(x => x.AllocationOrder).ThenBy(x => x.CreatedAt).ToListAsync(ct);
+        if (includedProductIds is not null)
+        {
+            var included = includedProductIds.ToHashSet();
+            if (included.Count == 0 || products.Count(product => included.Contains(product.Id)) != included.Count)
+                return Invalid(documentType, "Recipient transmission product scope is missing or contains products outside this report.");
+            products = products.Where(product => included.Contains(product.Id)).ToList();
+            var selectedEmployeeIds = products.Select(product => product.ReportEmployeeId).ToHashSet();
+            employees = employees.Where(employee => selectedEmployeeIds.Contains(employee.Id)).ToList();
+        }
+        var productIds = products.Select(x => x.Id).ToArray();
+        var contributions = await db.ManualContributions.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var payments = await db.ManualReportPayments.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        foreach (var payment in payments)
+        {
+            var plainAccount = protector.Unprotect(payment.EmployerAccount, $"report-payment-account:{payment.ReportProductId}");
+            db.Entry(payment).Property(x => x.EmployerAccount).CurrentValue = plainAccount;
+        }
+        var metadata = await db.EmployerInterfaceReportProductData.AsNoTracking().Where(x => productIds.Contains(x.ReportProductId)).ToListAsync(ct);
+        var interfaceFundCodes = await ResolveInterfaceFundCodesAsync(db, products, ct);
+
+        // Complete standard current-report metadata in memory so a normal deposit row does not
+        // require opening/saving its payment modal before final validation or transmission.
+        if (report.ReportKind == ManualReportKind.Current)
+        {
+            var employmentIds = employees.Select(x => x.EmploymentId).Distinct().ToArray();
+            var employmentRows = await db.Employments.AsNoTracking()
+                .Where(x => employmentIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+            var mandate = report.PaymentAccountId.HasValue
+                ? await db.BankDebitMandates.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.EmployerPaymentAccountId == report.PaymentAccountId.Value, ct)
+                : null;
+            var managedDebit = mandate?.IsActive == true;
+            var byProduct = metadata.ToDictionary(x => x.ReportProductId);
+
+            foreach (var product in products)
+            {
+                var employee = employees.First(x => x.Id == product.ReportEmployeeId);
+                employmentRows.TryGetValue(employee.EmploymentId, out var employment);
+                var monthEnd = report.ReportingMonth.AddMonths(1).AddDays(-1);
+                var endedByMonth = employment?.EndDate is DateOnly endDate && endDate <= monthEnd;
+                var startedInMonth = employee.EmploymentStartDateSnapshot is DateOnly startDate
+                    && startDate.Year == report.ReportingMonth.Year && startDate.Month == report.ReportingMonth.Month;
+
+                if (!byProduct.TryGetValue(product.Id, out var item))
+                {
+                    item = new EmployerInterfaceReportProductData(product.Id);
+                    metadata.Add(item);
+                    byProduct[product.Id] = item;
+                }
+
+                item.Update(item.OperationCode ?? 1, item.DepositStatus ?? 1,
+                    item.EmployeeStatus ?? (startedInMonth ? 14 : endedByMonth ? 2 : 1),
+                    item.StatusStartDate ?? (endedByMonth ? employment!.EndDate : employee.EmploymentStartDateSnapshot ?? report.ReportingMonth),
+                    item.EmploymentPercentage, item.WorkDaysInMonth, item.LastDeposit ?? (endedByMonth ? 1 : 2),
+                    item.RefundReason, item.PaymentMethodCode ?? (managedDebit ? 6 : null),
+                    item.EmployerAccountType ?? (managedDebit ? 1 : null), item.ReceiverAccountType ?? (managedDebit ? 1 : null),
+                    item.PreviousIdentifier, item.PreviousClearingIdentifier, item.PreviousReferenceExceptionCode, item.OldPensionTypeCode);
+            }
+        }
+
+        var attachments = await db.ManualReportAttachments.AsNoTracking()
+            .Where(x => x.ReportId == report.Id
+                && (includedProductIds == null || x.ReportProductId == null
+                    || productIds.Contains(x.ReportProductId.Value)))
+            .ToListAsync(ct);
+
+        var annualEmployerAffidavitSatisfied = attachments.Any(x => x.DocumentTypeCode == 3);
+        if (!annualEmployerAffidavitSatisfied && report.ReportKind == ManualReportKind.Negative)
+        {
+            var yearStart = new DateOnly(report.ReportingMonth.Year, 1, 1);
+            var yearEnd = yearStart.AddYears(1);
+            annualEmployerAffidavitSatisfied = await (
+                from attachment in db.ManualReportAttachments.AsNoTracking()
+                join previousReport in db.ManualReports.AsNoTracking() on attachment.ReportId equals previousReport.Id
+                where attachment.DocumentTypeCode == 3
+                      && previousReport.Id != report.Id
+                      && previousReport.EmployerId == report.EmployerId
+                      && previousReport.ReportingMonth >= yearStart
+                      && previousReport.ReportingMonth < yearEnd
+                      && (previousReport.Status == ManualReportStatus.Sent || previousReport.Status == ManualReportStatus.Completed)
+                select attachment.Id).AnyAsync(ct);
+        }
+
+        var preparedAt = preparedAtOverride ?? IsraelNow();
+        var senderIdentifier = string.IsNullOrWhiteSpace(options.Value.SenderIdentifier) && options.Value.SenderCode == 5
+            ? new string(employer.RegistrationNumber.Where(char.IsDigit).ToArray())
+            : options.Value.SenderIdentifier.Trim();
+        if (string.IsNullOrWhiteSpace(senderIdentifier))
+            return Invalid(documentType, "Employer Interface sender identity is not configured. Configure the actual vault/sender identifier before generating a transmission package.");
+
+        EmployerInterface006FileNaming.PackageName packageName;
+        Dictionary<Guid, string> attachmentNames;
+        try
+        {
+            packageName = EmployerInterface006FileNaming.Build(senderIdentifier, options.Value.FileDirectionCode,
+                documentType == EmployerInterfaceDocumentType.NegativeReport, preparedAt, fileSequence,
+                testFile: options.Value.EnvironmentCode == 1);
+            attachmentNames = attachments
+                .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ThenBy(x => x.Id)
+                .Select((attachment, index) => new
+                {
+                    attachment.Id,
+                    FileName = EmployerInterface006FileNaming.BuildAttachmentFileName(packageName.BaseName, index + 1,
+                        Path.GetExtension(attachment.OriginalFileName).TrimStart('.'))
+                })
+                .ToDictionary(x => x.Id, x => x.FileName);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return Invalid(documentType, $"Employer Interface transmission package naming is invalid: {ex.Message}");
+        }
+
+        var context = new EmployerInterface006XmlBuilder.BuildContext(employer, employees, people, employments,
+            products, contributions, payments, metadata, options.Value,
+            report.DepositorTypeCodeSnapshot,
+            report.EmployerIdentifierTypeCodeSnapshot,
+            attachments, annualEmployerAffidavitSatisfied, preparedAt, attachmentNames, fileSequence, interfaceFundCodes);
+        var negative = documentType == EmployerInterfaceDocumentType.NegativeReport;
+        var built = negative
+            ? EmployerInterface006XmlBuilder.BuildNegative(context)
+            : EmployerInterface006XmlBuilder.BuildCurrent(context);
+        if (built.Document is null)
+            return new([], new(false, documentType, EmployerInterfaceSchemaRegistry.Version, null, built.Issues));
+
+        var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(built.Document, context, negative);
+        if (workbookIssues.Count > 0)
+            return new([], new(false, documentType, EmployerInterfaceSchemaRegistry.Version, null, workbookIssues));
+
+        var bytes = EmployerInterface006XmlSerializer.Serialize(built.Document);
+        var validation = schemas.Validate(bytes, documentType);
+        var attachmentFiles = attachments
+            .OrderBy(x => x.DocumentTypeCode).ThenBy(x => x.CreatedAt).ThenBy(x => x.Id)
+            .Select(x => new EmployerInterface006GeneratedAttachment(
+                attachmentNames[x.Id], x.ContentType,
+                protector.UnprotectBytes(x.Content, $"report-attachment:{x.ReportId}:{x.ReportProductId}:{x.DocumentTypeCode}"), x.Sha256))
+            .ToArray();
+        return new(bytes, new(validation.IsValid, documentType, EmployerInterfaceSchemaRegistry.Version,
+            validation.SchemaFileName, validation.Issues), packageName.PayloadFileName, attachmentFiles);
+    }
+
+    private static async Task<IReadOnlyDictionary<Guid, string>> ResolveInterfaceFundCodesAsync(
+        AlphaDbContext db, IReadOnlyList<ManualReportProduct> products, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, string>();
+        var externalKeys = products
+            .Select(x => x.FundExternalKey?.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (externalKeys.Length == 0) return result;
+
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open) await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        var parameterNames = new string[externalKeys.Length];
+        for (var i = 0; i < externalKeys.Length; i++)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = $"external_key_{i}";
+            parameter.Value = externalKeys[i];
+            command.Parameters.Add(parameter);
+            parameterNames[i] = "@" + parameter.ParameterName;
+        }
+
+        command.CommandText = $"""
+            SELECT external_key, company_legal_id, fund_code
+            FROM reference_data.pension_products
+            WHERE is_active = true
+              AND external_key IN ({string.Join(", ", parameterNames)})
+            """;
+
+        var resolvedByExternalKey = new Dictionary<string, string>(StringComparer.Ordinal);
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                var externalKey = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+                var companyId = reader.IsDBNull(1) ? string.Empty : new string(reader.GetString(1).Where(char.IsDigit).ToArray());
+                var fundCode = reader.IsDBNull(2) ? string.Empty : new string(reader.GetString(2).Where(char.IsDigit).ToArray());
+                if (externalKey.Length == 0 || companyId.Length != 9 || fundCode.Length is 0 or > 14) continue;
+                resolvedByExternalKey.TryAdd(externalKey, companyId + fundCode.PadLeft(14, '0') + "0000000");
+            }
+        }
+
+        foreach (var product in products)
+        {
+            if (!string.IsNullOrWhiteSpace(product.FundExternalKey)
+                && resolvedByExternalKey.TryGetValue(product.FundExternalKey.Trim(), out var interfaceFundCode))
+                result[product.Id] = interfaceFundCode;
+        }
+
+        return result;
+    }
+
+    private static DateTimeOffset IsraelNow()
+    {
+        try
+        {
+            return TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Jerusalem"));
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return DateTimeOffset.UtcNow;
+        }
+    }
+
+    private static EmployerInterface006GeneratedDocument Invalid(EmployerInterfaceDocumentType type, string issue) =>
+        new([], new(false, type, EmployerInterfaceSchemaRegistry.Version, null, [issue]));
+}

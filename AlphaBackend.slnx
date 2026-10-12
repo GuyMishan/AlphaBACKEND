@@ -1,12 +1,38 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Alpha.Api/Alpha.Api.csproj" />
-    <Project Path="src/Alpha.Application/Alpha.Application.csproj" />
     <Project Path="src/Alpha.Domain/Alpha.Domain.csproj" />
     <Project Path="src/Alpha.Infrastructure/Alpha.Infrastructure.csproj" />
-    <Project Path="src/Alpha.Worker/Alpha.Worker.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Billing/">
+    <Project Path="src/Modules/Billing/Alpha.Modules.Billing.Contracts/Alpha.Modules.Billing.Contracts.csproj" />
+    <Project Path="src/Modules/Billing/Alpha.Modules.Billing/Alpha.Modules.Billing.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Auditing/">
+    <Project Path="src/Modules/Auditing/Alpha.Modules.Auditing/Alpha.Modules.Auditing.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/IdentityAccess/">
+    <Project Path="src/Modules/IdentityAccess/Alpha.Modules.IdentityAccess.Contracts/Alpha.Modules.IdentityAccess.Contracts.csproj" />
+    <Project Path="src/Modules/IdentityAccess/Alpha.Modules.IdentityAccess/Alpha.Modules.IdentityAccess.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Organizations/">
+    <Project Path="src/Modules/Organizations/Alpha.Modules.Organizations/Alpha.Modules.Organizations.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Reporting/">
+    <Project Path="src/Modules/Reporting/Alpha.Modules.Reporting.Contracts/Alpha.Modules.Reporting.Contracts.csproj" />
+    <Project Path="src/Modules/Reporting/Alpha.Modules.Reporting/Alpha.Modules.Reporting.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Workforce/">
+    <Project Path="src/Modules/Workforce/Alpha.Modules.Workforce/Alpha.Modules.Workforce.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/ReferenceData/">
+    <Project Path="src/Modules/ReferenceData/Alpha.Modules.ReferenceData/Alpha.Modules.ReferenceData.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Alpha.SchemaVerifier/Alpha.SchemaVerifier.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Alpha.Architecture.Tests/Alpha.Architecture.Tests.csproj" />
     <Project Path="tests/Alpha.Api.Tests/Alpha.Api.Tests.csproj" />
     <Project Path="tests/Alpha.Domain.Tests/Alpha.Domain.Tests.csproj" />
   </Folder>

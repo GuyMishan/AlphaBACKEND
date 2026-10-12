@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Alpha.Modules.IdentityAccess.Contracts;
 
 namespace Alpha.Api.Security;
 

@@ -1,3 +1,4 @@
+using Alpha.Domain.Common;
 using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Alpha.Domain.Identity;
@@ -165,22 +166,9 @@ public static class DemoDataSeeder
         while (candidate <= 999999999)
         {
             var value = candidate++.ToString("000000000");
-            if (IsIsraeliId(value)) return value;
+            if (IsraeliNationalId.IsValid(value)) return value;
         }
 
         throw new InvalidOperationException("Could not generate a valid Israeli national ID for demo data.");
-    }
-
-    private static bool IsIsraeliId(string value)
-    {
-        if (value.Length is < 1 or > 9 || !value.All(char.IsDigit)) return false;
-        var id = value.PadLeft(9, '0');
-        var sum = 0;
-        for (var i = 0; i < id.Length; i++)
-        {
-            var number = (id[i] - '0') * (i % 2 == 0 ? 1 : 2);
-            sum += number > 9 ? number - 9 : number;
-        }
-        return sum % 10 == 0;
     }
 }
