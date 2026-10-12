@@ -1,0 +1,147 @@
+using Alpha.Infrastructure.Persistence;
+using Alpha.Domain.Reporting;
+using Alpha.Modules.IdentityAccess.Contracts;
+using Alpha.Modules.Reporting.Features.EmployerInterface006;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
+
+namespace Alpha.Modules.Reporting.Features.Validation;
+
+public static class EmployerInterfaceValidationExportEndpoints
+{
+    public static RouteGroupBuilder MapEmployerInterfaceValidationEndpoint(this RouteGroupBuilder group)
+    {
+        group.MapPost("/validate", ValidateAsync).DisableAntiforgery()
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(21 * 1024 * 1024));
+        return group;
+    }
+
+    public static RouteGroupBuilder MapEmployerInterfaceValidationExportEndpoints(this RouteGroupBuilder group)
+    {
+        group.MapGet("/schemas/status", SchemaStatusAsync);
+        group.MapGet("/reports/{reportId:guid}/preflight", PreflightAsync);
+        group.MapGet("/reports/{reportId:guid}/xml", ExportAsync);
+        return group;
+    }
+
+    private static async Task<IResult> ValidateAsync(Guid organizationId, Guid employerId, HttpRequest request,
+        IOrganizationAuthorization access, EmployerInterfaceIncomingValidator validator, CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var read = await EmployerInterfaceUploadReader.ReadAsync(request, ct);
+        if (read.Error is not null) return Results.BadRequest(new { error = read.Error });
+        var validation = validator.Validate(read.Bytes!);
+        return Results.Ok(new
+        {
+            validation.IsValid,
+            documentType = validation.DocumentType?.ToString(),
+            validation.Version,
+            validation.SchemaFileName,
+            validation.Issues,
+            fileName = read.FileName,
+            fileHash = EmployerInterfacePayload.Hash(read.Bytes!)
+        });
+    }
+
+    private static async Task<IResult> SchemaStatusAsync(Guid organizationId, Guid employerId,
+        IOrganizationAuthorization access, EmployerInterfaceSchemaRegistry schemas, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var missing = schemas.MissingSchemas();
+        return Results.Ok(new { version = EmployerInterfaceSchemaRegistry.Version, ready = missing.Count == 0, missing, runtimeDirectory = schemas.SchemaDirectory });
+    }
+
+    private static async Task<IResult> PreflightAsync(Guid organizationId, Guid employerId, Guid reportId,
+        AlphaDbContext db, IOrganizationAuthorization access, EmployerInterface006ExportService exporter, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var report = await db.ManualReports.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (report.ReportKind == ManualReportKind.Differences)
+            return Results.Ok(new { isValid = true, reportKind = report.ReportKind, transmittable = false, issues = Array.Empty<string>() });
+        var generated = await exporter.ExportAsync(report, ct);
+        return Results.Ok(new
+        {
+            isValid = generated.Validation.IsValid,
+            reportKind = report.ReportKind,
+            transmittable = true,
+            documentType = generated.Validation.DocumentType?.ToString(),
+            generated.Validation.Version,
+            generated.Validation.SchemaFileName,
+            issues = generated.Validation.Issues
+        });
+    }
+
+    private static async Task<IResult> ExportAsync(Guid organizationId, Guid employerId, Guid reportId,
+        AlphaDbContext db, IOrganizationAuthorization access, EmployerInterface006ExportService exporter,
+        IDataProtectionService protector, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var report = await db.ManualReports.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (report.Status is not ManualReportStatus.Validated and not ManualReportStatus.Processing and not ManualReportStatus.Sent and not ManualReportStatus.Completed)
+            return Results.Conflict(new { error = "Employer Interface XML can only be exported after final Alpha report validation." });
+
+        if (report.Status is ManualReportStatus.Processing or ManualReportStatus.Sent or ManualReportStatus.Completed)
+        {
+            var transmission = await db.ReportTransmissions.AsNoTracking()
+                .Where(x => x.ReportId == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId
+                    && x.Payload.Length > 0)
+                .OrderByDescending(x => x.AttemptNumber)
+                .FirstOrDefaultAsync(ct);
+            if (transmission is null)
+                return Results.Conflict(new
+                {
+                    error = "transmission_evidence_not_available",
+                    detail = "The report has entered transmission state but its immutable payload evidence is not yet available."
+                });
+
+            var payload = protector.UnprotectBytes(transmission.Payload, $"report-transmission:{transmission.Id}");
+            return Results.File(payload, "application/xml", transmission.PayloadFileName);
+        }
+
+        var generated = await exporter.ExportAsync(report, ct);
+        if (!generated.Validation.IsValid)
+            return Results.BadRequest(new { error = "Generated Employer Interface XML does not validate against its official report-type-specific 006 XSD.", generated.Validation });
+        return Results.File(generated.Bytes, "application/xml", generated.PayloadFileName);
+    }
+
+}
+
+public static class EmployerInterfaceUploadReader
+{
+    public static async Task<(byte[]? Bytes, string? FileName, Guid? PaymentAccountId, DateOnly? SalaryPaymentDate, string? Error)> ReadAsync(HttpRequest request, CancellationToken ct)
+    {
+        if (!request.HasFormContentType) return (null, null, null, null, "multipart/form-data is required.");
+        var form = await request.ReadFormAsync(ct);
+        var file = form.Files.GetFile("file");
+        if (file is null || file.Length == 0) return (null, null, null, null, "No XML file was selected.");
+        if (file.Length > 20 * 1024 * 1024) return (null, null, null, null, "The maximum Employer Interface XML size is 20MB.");
+        if (!file.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) && !file.FileName.EndsWith(".dat", StringComparison.OrdinalIgnoreCase) && !file.FileName.EndsWith(".tst", StringComparison.OrdinalIgnoreCase))
+            return (null, null, null, null, "Employer Interface uploads must be XML/DAT/TST files containing XML.");
+        Guid? paymentAccountId = null;
+        var paymentAccountRaw = form["paymentAccountId"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(paymentAccountRaw))
+        {
+            if (!Guid.TryParse(paymentAccountRaw, out var parsedPaymentAccountId))
+                return (null, null, null, null, "payment_account_invalid");
+            paymentAccountId = parsedPaymentAccountId;
+        }
+
+        DateOnly? salaryPaymentDate = null;
+        var salaryPaymentDateRaw = form["salaryPaymentDate"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(salaryPaymentDateRaw))
+        {
+            if (!DateOnly.TryParse(salaryPaymentDateRaw, out var parsedSalaryPaymentDate))
+                return (null, null, null, null, "salary_payment_date_invalid");
+            salaryPaymentDate = parsedSalaryPaymentDate;
+        }
+
+        await using var stream = file.OpenReadStream();
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory, ct);
+        return (memory.ToArray(), Path.GetFileName(file.FileName), paymentAccountId, salaryPaymentDate, null);
+    }}
+

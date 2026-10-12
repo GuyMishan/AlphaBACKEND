@@ -5,8 +5,14 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Alpha.Api/Alpha.Api.csproj" />
+    <ProjectReference Include="../../src/Modules/Billing/Alpha.Modules.Billing.Contracts/Alpha.Modules.Billing.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/IdentityAccess/Alpha.Modules.IdentityAccess.Contracts/Alpha.Modules.IdentityAccess.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/Reporting/Alpha.Modules.Reporting.Contracts/Alpha.Modules.Reporting.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/Reporting/Alpha.Modules.Reporting/Alpha.Modules.Reporting.csproj" />
+    <ProjectReference Include="../../tools/Alpha.SchemaVerifier/Alpha.SchemaVerifier.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio">

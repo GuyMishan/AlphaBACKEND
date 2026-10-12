@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../../Alpha.Infrastructure/Alpha.Infrastructure.csproj" />
+    <ProjectReference Include="../../IdentityAccess/Alpha.Modules.IdentityAccess.Contracts/Alpha.Modules.IdentityAccess.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

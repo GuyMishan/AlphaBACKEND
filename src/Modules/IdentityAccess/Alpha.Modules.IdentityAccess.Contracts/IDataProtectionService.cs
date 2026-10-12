@@ -1,0 +1,10 @@
+namespace Alpha.Modules.IdentityAccess.Contracts;
+
+public interface IDataProtectionService
+{
+    string Protect(string plaintext, string purpose);
+    string Unprotect(string protectedValue, string purpose);
+    string LookupHash(string value, string purpose);
+    byte[] ProtectBytes(byte[] plaintext, string purpose);
+    byte[] UnprotectBytes(byte[] protectedValue, string purpose);
+}

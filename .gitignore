@@ -12,3 +12,16 @@ TestResults/
 coverage/
 
 
+
+# Generated build, publish and verification outputs
+.artifacts/
+artifacts/
+publish/
+out/
+*.schema.json
+
+# TEST-only simulated clearinghouse runtime files (payloads, feedback); keep only the placeholders
+simulated-clearinghouse-vault/**
+!simulated-clearinghouse-vault/**/
+!simulated-clearinghouse-vault/**/.gitkeep
+!simulated-clearinghouse-vault/**/README.md

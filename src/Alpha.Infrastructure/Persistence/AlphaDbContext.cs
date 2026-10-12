@@ -1,4 +1,3 @@
-using Alpha.Application.Abstractions;
 using Alpha.Domain.Auditing;
 using Alpha.Domain.Billing;
 using Alpha.Domain.Employees;
@@ -10,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Alpha.Infrastructure.Persistence;
 
-public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : DbContext(options), IAlphaDbContext
+public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : DbContext(options)
 {
     public DbSet<BillingAccount> BillingAccounts => Set<BillingAccount>();
     public DbSet<BillingAccountPricingComponent> BillingAccountPricingComponents => Set<BillingAccountPricingComponent>();
@@ -103,10 +102,22 @@ public sealed class AlphaDbContext(DbContextOptions<AlphaDbContext> options) : D
         base.OnModelCreating(modelBuilder);
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    // Every SaveChanges/SaveChangesAsync overload funnels into these two.
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        EnsureAuditIsAppendOnly();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        EnsureAuditIsAppendOnly();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void EnsureAuditIsAppendOnly()
     {
         var invalidAuditMutation = ChangeTracker.Entries<AuditEvent>().Any(x => x.State is EntityState.Modified or EntityState.Deleted);
         if (invalidAuditMutation) throw new InvalidOperationException("Audit events are append-only and cannot be changed or deleted.");
-        return base.SaveChangesAsync(cancellationToken);
     }
 }

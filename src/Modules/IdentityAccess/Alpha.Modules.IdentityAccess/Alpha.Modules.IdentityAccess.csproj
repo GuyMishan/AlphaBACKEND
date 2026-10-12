@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../../Alpha.Domain/Alpha.Domain.csproj" />
+    <ProjectReference Include="../../../Alpha.Infrastructure/Alpha.Infrastructure.csproj" />
+    <ProjectReference Include="../../Billing/Alpha.Modules.Billing.Contracts/Alpha.Modules.Billing.Contracts.csproj" />
+    <ProjectReference Include="../Alpha.Modules.IdentityAccess.Contracts/Alpha.Modules.IdentityAccess.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+</Project>

@@ -8,3 +8,5 @@ end_of_line = lf
 insert_final_newline = true
 dotnet_sort_system_directives_first = true
 csharp_style_namespace_declarations = file_scoped:suggestion
+# Forward CancellationToken to every async call that accepts one (enforced: warnings are errors).
+dotnet_diagnostic.CA2016.severity = warning

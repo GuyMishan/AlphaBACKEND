@@ -1,0 +1,266 @@
+using System.Text.Json;
+using Alpha.Infrastructure.Persistence;
+using Alpha.Modules.Billing.Contracts;
+using Alpha.Domain.Auditing;
+using Alpha.Modules.Billing.Application;
+using Alpha.Modules.IdentityAccess.Contracts;
+using Alpha.Domain.Billing;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
+
+namespace Alpha.Modules.Billing.Features.Accounts;
+
+public sealed record BillingAccountDetailsRequest(
+    string? BillingName,
+    string? TaxId,
+    string? InvoiceEmail,
+    string? BillingAddress,
+    BillingPaymentMethodType PaymentMethodType);
+
+public static class BillingAccountEndpoints
+{
+    public static IEndpointRouteBuilder MapBillingAccountEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var org = endpoints.MapGroup("/api/organizations/{organizationId:guid}/billing-account")
+            .RequireAuthorization().WithTags("Alpha Billing");
+        org.MapGet("/", GetOrganizationBillingAsync);
+        org.MapPut("/", UpsertOrganizationBillingAsync);
+
+        var employer = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/billing-account")
+            .RequireAuthorization().WithTags("Alpha Billing");
+        employer.MapGet("/", GetEmployerBillingAsync);
+        employer.MapGet("/resolution", GetEmployerBillingResolutionAsync);
+        employer.MapGet("/gate", GetEmployerBillingGateAsync);
+        employer.MapPut("/", UpsertEmployerBillingAsync);
+
+        return endpoints;
+    }
+
+    private static async Task<IResult> GetOrganizationBillingAsync(Guid organizationId, AlphaDbContext db,
+        IOrganizationAuthorization access, CancellationToken ct)
+    {
+        if (!await access.CanViewOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        var exists = await db.Organizations.AsNoTracking().AnyAsync(x => x.Id == organizationId, ct);
+        if (!exists) return Results.NotFound();
+
+        var account = await db.BillingAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == null, ct);
+        return Results.Ok(ToResponse(account, organizationId, null));
+    }
+
+    private static async Task<IResult> UpsertOrganizationBillingAsync(Guid organizationId, BillingAccountDetailsRequest request,
+        AlphaDbContext db, ICurrentUser currentUser, IOrganizationAuthorization access,
+        HttpContext http, CancellationToken ct)
+    {
+        if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        var validationError = ValidateBillingDetails(request);
+        if (validationError is not null) return Results.BadRequest(new { error = validationError });
+        if (!await db.Organizations.AnyAsync(x => x.Id == organizationId, ct)) return Results.NotFound();
+
+        var account = await db.BillingAccounts
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == null, ct);
+        if (account is null)
+        {
+            account = new BillingAccount(organizationId, null);
+            db.BillingAccounts.Add(account);
+        }
+
+        if (account.PaymentMethodType != request.PaymentMethodType &&
+            (account.DefaultPaymentMethodId.HasValue ||
+             account.PaymentMethodStatus == BillingPaymentMethodStatus.Active ||
+             !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId) ||
+             !string.IsNullOrWhiteSpace(account.BankDebitMandateReference)))
+            return Results.Conflict(new { error = "payment_method_type_change_requires_cancel" });
+
+        account.UpdateBillingDetails(request.BillingName, request.TaxId, request.InvoiceEmail,
+            request.BillingAddress, request.PaymentMethodType);
+        AddAudit(db, currentUser, http, "billing.organization.updated", account, organizationId, null);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(ToResponse(account, organizationId, null));
+    }
+
+    private static async Task<IResult> GetEmployerBillingAsync(Guid organizationId, Guid employerId, AlphaDbContext db,
+        IOrganizationAuthorization access, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var exists = await db.Employers.AsNoTracking()
+            .AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct);
+        if (!exists) return Results.NotFound();
+
+        var account = await db.BillingAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.EmployerId == employerId && x.OrganizationId == null, ct);
+        return Results.Ok(ToResponse(account, null, employerId));
+    }
+
+    private static async Task<IResult> GetEmployerBillingResolutionAsync(Guid organizationId, Guid employerId,
+        AlphaDbContext db, IOrganizationAuthorization access, BillingInheritanceService inheritance, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var resolution = await inheritance.ResolveBillingAccountAsync(employerId, ct);
+        if (resolution is null || resolution.OrganizationId != organizationId) return Results.NotFound();
+
+        var organizationAccount = await db.BillingAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == resolution.OrganizationId && x.EmployerId == null, ct);
+        var employerAccount = await db.BillingAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.EmployerId == resolution.EmployerId && x.OrganizationId == null, ct);
+
+        return Results.Ok(new
+        {
+            resolution.EmployerId,
+            resolution.OrganizationId,
+            resolution.BillingMode,
+            resolution.Source,
+            resolution.BilledThroughName,
+            effectiveAccount = ToResponse(resolution.Account,
+                resolution.Source == "Organization" ? resolution.OrganizationId : null,
+                resolution.Source == "Employer" ? resolution.EmployerId : null),
+            organizationAccount = ToResponse(organizationAccount, resolution.OrganizationId, null),
+            employerAccount = ToResponse(employerAccount, null, resolution.EmployerId)
+        });
+    }
+
+    private static async Task<IResult> GetEmployerBillingGateAsync(Guid organizationId, Guid employerId,
+        IOrganizationAuthorization access, BillingGateService billingGate, CancellationToken ct)
+    {
+        if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+
+        var decision = await billingGate.CanTransmitAsync(employerId, ct);
+        return Results.Ok(new
+        {
+            canTransmit = decision.Allowed,
+            error = decision.Error,
+            decision.BillingMode,
+            decision.Source,
+            decision.BilledThroughName,
+            decision.PaymentMethodType,
+            decision.PaymentMethodStatus,
+            decision.Configured
+        });
+    }
+
+    private static async Task<IResult> UpsertEmployerBillingAsync(Guid organizationId, Guid employerId,
+        BillingAccountDetailsRequest request, AlphaDbContext db, ICurrentUser currentUser,
+        IOrganizationAuthorization access, HttpContext http, CancellationToken ct)
+    {
+        if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var validationError = ValidateBillingDetails(request);
+        if (validationError is not null) return Results.BadRequest(new { error = validationError });
+        if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
+            return Results.NotFound();
+
+        var account = await db.BillingAccounts
+            .SingleOrDefaultAsync(x => x.EmployerId == employerId && x.OrganizationId == null, ct);
+        if (account is null)
+        {
+            account = new BillingAccount(null, employerId);
+            db.BillingAccounts.Add(account);
+        }
+
+        if (account.PaymentMethodType != request.PaymentMethodType &&
+            (account.DefaultPaymentMethodId.HasValue ||
+             account.PaymentMethodStatus == BillingPaymentMethodStatus.Active ||
+             !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId) ||
+             !string.IsNullOrWhiteSpace(account.BankDebitMandateReference)))
+            return Results.Conflict(new { error = "payment_method_type_change_requires_cancel" });
+
+        account.UpdateBillingDetails(request.BillingName, request.TaxId, request.InvoiceEmail,
+            request.BillingAddress, request.PaymentMethodType);
+        AddAudit(db, currentUser, http, "billing.employer.updated", account, organizationId, employerId);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(ToResponse(account, null, employerId));
+    }
+
+    private static string? ValidateBillingDetails(BillingAccountDetailsRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.BillingName)) return "billing_name_required";
+        if (string.IsNullOrWhiteSpace(request.TaxId)) return "tax_id_required";
+        if (string.IsNullOrWhiteSpace(request.InvoiceEmail)) return "invoice_email_required";
+        if (!System.Net.Mail.MailAddress.TryCreate(request.InvoiceEmail.Trim(), out _)) return "invoice_email_invalid";
+        if (string.IsNullOrWhiteSpace(request.BillingAddress)) return "billing_address_required";
+        if (!Enum.IsDefined(request.PaymentMethodType)) return "invalid_payment_method_type";
+        return null;
+    }
+
+    private static object ToResponse(BillingAccount? account, Guid? organizationId, Guid? employerId)
+    {
+        if (account is null)
+        {
+            return new
+            {
+                id = (Guid?)null,
+                organizationId,
+                employerId,
+                billingName = string.Empty,
+                taxId = string.Empty,
+                invoiceEmail = string.Empty,
+                billingAddress = string.Empty,
+                paymentMethodType = BillingPaymentMethodType.CreditCard,
+                paymentMethodStatus = BillingPaymentMethodStatus.NotConfigured,
+                hasProviderPaymentMethod = false,
+                cardBrand = string.Empty,
+                cardLast4 = string.Empty,
+                cardExpiryMonth = (int?)null,
+                cardExpiryYear = (int?)null,
+                hasBankDebitMandate = false,
+                billingMode = organizationId.HasValue ? BillingMode.OrganizationBilling : BillingMode.IndependentEmployerBilling,
+                status = BillingAccountStatus.PendingSetup,
+                defaultPaymentMethodId = (Guid?)null,
+                configured = false
+            };
+        }
+
+        return new
+        {
+            account.Id,
+            account.OrganizationId,
+            account.EmployerId,
+            account.BillingName,
+            account.TaxId,
+            account.InvoiceEmail,
+            account.BillingAddress,
+            account.PaymentMethodType,
+            account.PaymentMethodStatus,
+            hasProviderPaymentMethod = !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId),
+            account.CardBrand,
+            account.CardLast4,
+            account.CardExpiryMonth,
+            account.CardExpiryYear,
+            hasBankDebitMandate = !string.IsNullOrWhiteSpace(account.BankDebitMandateReference),
+            account.BillingMode,
+            account.Status,
+            account.DefaultPaymentMethodId,
+            configured = !string.IsNullOrWhiteSpace(account.BillingName)
+                || !string.IsNullOrWhiteSpace(account.TaxId)
+                || !string.IsNullOrWhiteSpace(account.InvoiceEmail)
+                || !string.IsNullOrWhiteSpace(account.BillingAddress)
+                || account.PaymentMethodStatus != BillingPaymentMethodStatus.NotConfigured
+                || account.DefaultPaymentMethodId.HasValue,
+            account.CreatedAt,
+            account.UpdatedAt
+        };
+    }
+
+    private static void AddAudit(AlphaDbContext db, ICurrentUser currentUser, HttpContext http,
+        string action, BillingAccount account, Guid organizationId, Guid? employerId)
+    {
+        db.AuditEvents.Add(new AuditEvent(currentUser.UserId, action, nameof(BillingAccount), account.Id,
+            organizationId, employerId,
+            JsonSerializer.Serialize(new
+            {
+                account.BillingName,
+                account.TaxId,
+                hasInvoiceEmail = !string.IsNullOrWhiteSpace(account.InvoiceEmail),
+                account.PaymentMethodType,
+                account.PaymentMethodStatus,
+                hasProviderCustomerId = !string.IsNullOrWhiteSpace(account.ProviderCustomerId),
+                hasProviderPaymentMethodId = !string.IsNullOrWhiteSpace(account.ProviderPaymentMethodId),
+                account.CardBrand,
+                account.CardLast4,
+                account.CardExpiryMonth,
+                account.CardExpiryYear,
+                hasBankDebitMandateReference = !string.IsNullOrWhiteSpace(account.BankDebitMandateReference)
+            }), http.TraceIdentifier));
+    }
+}

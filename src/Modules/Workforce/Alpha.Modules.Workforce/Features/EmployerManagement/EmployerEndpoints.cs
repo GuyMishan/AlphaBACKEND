@@ -1,0 +1,377 @@
+using System.Text.Json;
+using Alpha.Infrastructure.Persistence;
+using Alpha.Modules.Billing.Contracts;
+using Alpha.Domain.Auditing;
+using Alpha.Domain.Employees;
+using Alpha.Domain.Employers;
+using Alpha.Domain.Organizations;
+using Alpha.Domain.Validation;
+using Alpha.Modules.IdentityAccess.Contracts;
+using Alpha.Modules.Reporting.Contracts;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
+
+namespace Alpha.Modules.Workforce.Features.EmployerManagement;
+
+public static class EmployerEndpoints
+{
+    public static IEndpointRouteBuilder MapEmployerEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers")
+            .RequireAuthorization().WithTags("Employers");
+
+        group.MapGet("/", async (Guid organizationId, AlphaDbContext db, ICurrentUser user,
+            IOrganizationAuthorization access, CancellationToken ct) =>
+        {
+            if (!await access.CanAccessOrganizationScopeAsync(organizationId, ct)) return Results.Forbid();
+            var query = ApplyEmployerAccess(db.Employers.AsNoTracking().Where(x => x.OrganizationId == organizationId), organizationId, db, user, await access.HasFullOrganizationEmployerScopeAsync(organizationId, ct));
+            return Results.Ok(await query.OrderBy(x => x.LegalName).Take(500).ToListAsync(ct));
+        });
+
+        group.MapGet("/search", async (Guid organizationId, string? search, int skip, int take,
+            AlphaDbContext db, ICurrentUser user, IOrganizationAuthorization access, CancellationToken ct) =>
+        {
+            if (!await access.CanAccessOrganizationScopeAsync(organizationId, ct)) return Results.Forbid();
+            skip = Math.Max(0, skip);
+            take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
+            var query = ApplyEmployerAccess(db.Employers.AsNoTracking().Where(x => x.OrganizationId == organizationId), organizationId, db, user, await access.HasFullOrganizationEmployerScopeAsync(organizationId, ct));
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim().ToLower();
+                query = query.Where(x => x.LegalName.ToLower().Contains(term)
+                    || x.RegistrationNumber.Contains(term)
+                    || x.WithholdingFileNumber.Contains(term));
+            }
+            var page = await query.OrderBy(x => x.LegalName).Skip(skip).Take(take + 1).ToListAsync(ct);
+            var hasMore = page.Count > take;
+            if (hasMore) page.RemoveAt(page.Count - 1);
+            return Results.Ok(new { items = page, hasMore });
+        });
+
+        group.MapPost("/", async (Guid organizationId, CreateEmployerRequest request, AlphaDbContext db,
+            ICurrentUser user, IOrganizationAuthorization access, IEntitlementService entitlements, OrganizationEntitlementLock entitlementLock,
+            IBillingInheritanceService billingInheritance, HttpContext http, CancellationToken ct) =>
+        {
+            if (!await access.CanCreateEmployerAsync(organizationId, ct)) return Results.Forbid();
+            await using var entitlementLease = await entitlementLock.AcquireAsync(organizationId, ct);
+            // A small organization can contain exactly one employer, irrespective of subscription quota.
+            var organizationType = await db.Organizations.AsNoTracking()
+                .Where(x => x.Id == organizationId).Select(x => x.Type).SingleOrDefaultAsync(ct);
+            if (organizationType == OrganizationType.SmallOrganization &&
+                await db.Employers.AnyAsync(x => x.OrganizationId == organizationId, ct))
+                return Results.Conflict(new { error = "small_organization_employer_limit", detail = "ארגון קטן יכול להכיל מעסיק אחד בלבד." });
+            var entitlement = await entitlements.CanCreateEmployer(organizationId, ct);
+            if (!entitlement.Allowed) return EntitlementError(entitlement);
+            var validationError = WorkforceInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber, request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
+            if (validationError is not null) return Results.BadRequest(new { error = validationError });
+            var item = new Employer(organizationId, request.LegalName.Trim(), request.RegistrationNumber.Trim(), request.WithholdingFileNumber.Trim(), request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
+            db.Employers.Add(item);
+            await billingInheritance.ApplyDefaultsForNewEmployerAsync(organizationId, item.Id, ct);
+            db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.created", nameof(Employer), item.Id,
+                organizationId, item.Id, JsonSerializer.Serialize(request), http.TraceIdentifier));
+            await db.SaveChangesAsync(ct);
+            await entitlementLease.CommitAsync(ct);
+            return Results.Created($"/api/organizations/{organizationId}/employers/{item.Id}", item);
+        });
+
+        group.MapGet("/{employerId:guid}", async (Guid organizationId, Guid employerId, AlphaDbContext db,
+            IOrganizationAuthorization access, CancellationToken ct) =>
+        {
+            if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var item = await db.Employers.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.Id == employerId && x.OrganizationId == organizationId, ct);
+            return item is null ? Results.NotFound() : Results.Ok(item);
+        });
+
+        group.MapGet("/{employerId:guid}/capabilities", async (Guid organizationId, Guid employerId,
+            IOrganizationAuthorization access, CancellationToken ct) =>
+        {
+            if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            return Results.Ok(new
+            {
+                canManageEmployer = await access.CanManageEmployerAsync(organizationId, employerId, ct),
+                canEditEmployer = await access.CanEditEmployerAsync(organizationId, employerId, ct),
+                canCreateEmployee = await access.CanCreateEmployeeAsync(organizationId, employerId, ct),
+                canEditEmployee = await access.CanEditEmployeeAsync(organizationId, employerId, ct),
+                canCreateReport = await access.CanCreateReportAsync(organizationId, employerId, ct),
+                canTransmitReport = await access.CanTransmitReportAsync(organizationId, employerId, ct)
+            });
+        });
+
+        group.MapPut("/{employerId:guid}", async (Guid organizationId, Guid employerId,
+            UpdateEmployerRequest request, AlphaDbContext db, ICurrentUser user, IOrganizationAuthorization access,
+            HttpContext http, CancellationToken ct) =>
+        {
+            if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var validationError = WorkforceInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber, request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
+            if (validationError is not null) return Results.BadRequest(new { error = validationError });
+            var item = await db.Employers.SingleOrDefaultAsync(x =>
+                x.Id == employerId && x.OrganizationId == organizationId, ct);
+            if (item is null) return Results.NotFound();
+            item.Update(request.LegalName.Trim(), request.RegistrationNumber.Trim(), request.WithholdingFileNumber.Trim());
+            item.UpdateInterfaceContact(request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
+            db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.updated", nameof(Employer), item.Id,
+                organizationId, item.Id, JsonSerializer.Serialize(request), http.TraceIdentifier));
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(item);
+        });
+
+        group.MapPut("/{employerId:guid}/status", async (Guid organizationId, Guid employerId,
+            UpdateEmployerStatusRequest request, AlphaDbContext db, ICurrentUser user, IOrganizationAuthorization access,
+            HttpContext http, CancellationToken ct) =>
+        {
+            if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            if (request.Status is not (EmployerStatus.Active or EmployerStatus.Closed))
+                return Results.BadRequest(new { error = "Employer status must be Active or Closed." });
+
+            var item = await db.Employers.SingleOrDefaultAsync(x =>
+                x.Id == employerId && x.OrganizationId == organizationId, ct);
+            if (item is null) return Results.NotFound();
+
+            var previousStatus = item.Status;
+            if (previousStatus != request.Status)
+            {
+                item.UpdateStatus(request.Status);
+                db.AuditEvents.Add(new AuditEvent(user.UserId, "employer.status_changed", nameof(Employer), item.Id,
+                    organizationId, item.Id, JsonSerializer.Serialize(new { previousStatus, status = request.Status }), http.TraceIdentifier));
+                await db.SaveChangesAsync(ct);
+            }
+
+            return Results.Ok(item);
+        });
+
+        group.MapGet("/{employerId:guid}/employees", async (Guid organizationId, Guid employerId, AlphaDbContext db,
+            IOrganizationAuthorization access, IDataProtectionService protector, CancellationToken ct) =>
+        {
+            if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var items = await EmployeeQuery(db, organizationId, employerId).OrderBy(x => x.LastName).ThenBy(x => x.FirstName).Take(500).ToListAsync(ct);
+            DecryptNationalIds(items, protector);
+            return Results.Ok(items);
+        });
+
+        group.MapGet("/{employerId:guid}/employees/search", async (Guid organizationId, Guid employerId,
+            string? search, int skip, int take, AlphaDbContext db, IOrganizationAuthorization access, IDataProtectionService protector, CancellationToken ct) =>
+        {
+            if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            skip = Math.Max(0, skip);
+            take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
+            var query = EmployeeQuery(db, organizationId, employerId);
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim().ToLower();
+                var identifierHash = protector.LookupHash(search.Trim(), "person-national-id-lookup");
+                query = query.Where(x => x.FirstName.ToLower().Contains(term)
+                    || x.LastName.ToLower().Contains(term)
+                    || x.NationalIdLookupHash == identifierHash
+                    || x.EmployeeNumber.Contains(term));
+            }
+            var page = await query.OrderBy(x => x.LastName).ThenBy(x => x.FirstName).Skip(skip).Take(take + 1).ToListAsync(ct);
+            var hasMore = page.Count > take;
+            if (hasMore) page.RemoveAt(page.Count - 1);
+            DecryptNationalIds(page, protector);
+            return Results.Ok(new { items = page, hasMore });
+        });
+
+        group.MapPost("/{employerId:guid}/employees", async (Guid organizationId, Guid employerId,
+            CreateEmployeeRequest request, AlphaDbContext db, ICurrentUser user, IOrganizationAuthorization access,
+            IEntitlementService entitlements, OrganizationEntitlementLock entitlementLock, IDataProtectionService protector, HttpContext http, CancellationToken ct) =>
+        {
+            if (!await access.CanCreateEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+            await using var entitlementLease = await entitlementLock.AcquireAsync(organizationId, ct);
+            var entitlement = await entitlements.CanCreateEmployee(organizationId, ct);
+            if (!entitlement.Allowed) return EntitlementError(entitlement);
+            var validationError = WorkforceInputValidation.Employee(request.IdentifierType, request.Identifier ?? request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate)
+                ?? ValidateEmployeeProfile(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City, request.Street,
+                    request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
+            if (validationError is not null) return Results.BadRequest(new { error = validationError });
+            if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative." });
+            if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct)) return Results.NotFound();
+            var identifier = (request.Identifier ?? request.NationalId).Trim();
+            var identifierHash = protector.LookupHash(identifier, "person-national-id-lookup");
+            var person = await db.People.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.IdentifierType == request.IdentifierType && x.NationalIdLookupHash == identifierHash, ct);
+            if (person is null)
+            {
+                person = new Person(organizationId, identifier, request.FirstName.Trim(), request.LastName.Trim(),
+                    request.BirthDate, request.Gender, request.Email, request.Mobile, request.City, request.Street,
+                    request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
+                person.SetProtectedIdentifier(request.IdentifierType, protector.Protect(identifier, "person-national-id"), identifierHash);
+                db.People.Add(person);
+            }
+            else
+            {
+                person.Update(identifier, request.FirstName, request.LastName);
+                person.SetProtectedIdentifier(request.IdentifierType, protector.Protect(identifier, "person-national-id"), identifierHash);
+                person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City,
+                    request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
+            }
+            var employeeNumber = request.EmployeeNumber.Trim();
+            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.PersonId == person.Id, ct)) return Results.Conflict(new { error = "Employee identifier already exists for this employer." });
+            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
+            var employment = new Employment(organizationId, employerId, person.Id, request.StartDate, employeeNumber, request.MonthlySalary);
+            db.Employments.Add(employment);
+            db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.created", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(new { employment.EmployeeNumber, person.FirstName, person.LastName }), http.TraceIdentifier));
+            await db.SaveChangesAsync(ct);
+            await entitlementLease.CommitAsync(ct);
+            return Results.Created($"/api/organizations/{organizationId}/employers/{employerId}/employees/{employment.Id}", new { employment.Id, PersonId = person.Id, employment.MonthlySalary });
+        });
+
+        group.MapGet("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId, Guid employerId, Guid employmentId, AlphaDbContext db, IOrganizationAuthorization access, IDataProtectionService protector, CancellationToken ct) =>
+        {
+            if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var item = await EmployeeQuery(db, organizationId, employerId).SingleOrDefaultAsync(x => x.Id == employmentId, ct);
+            if (item is not null) DecryptNationalIds(new[] { item }, protector);
+            return item is null ? Results.NotFound() : Results.Ok(item);
+        });
+
+        group.MapPut("/{employerId:guid}/employees/{employmentId:guid}", async (Guid organizationId, Guid employerId, Guid employmentId, UpdateEmployeeRequest request, AlphaDbContext db, ICurrentUser user, IOrganizationAuthorization access, IDataProtectionService protector, IEmployeeDraftSnapshotSynchronizer snapshotSync, HttpContext http, CancellationToken ct) =>
+        {
+            if (!await access.CanEditEmployeeAsync(organizationId, employerId, ct)) return Results.Forbid();
+            var validationError = WorkforceInputValidation.Employee(request.IdentifierType, request.Identifier ?? request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate)
+                ?? ValidateEmployeeProfile(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City, request.Street,
+                    request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
+            if (validationError is not null) return Results.BadRequest(new { error = validationError });
+            if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative." });
+            var employment = await db.Employments.SingleOrDefaultAsync(x => x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+            if (employment is null) return Results.NotFound();
+            var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
+            var identifier = (request.Identifier ?? request.NationalId).Trim();
+            var employeeNumber = request.EmployeeNumber.Trim();
+            var identifierHash = protector.LookupHash(identifier, "person-national-id-lookup");
+            if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.IdentifierType == request.IdentifierType && x.NationalIdLookupHash == identifierHash && x.Id != person.Id, ct)) return Results.Conflict(new { error = "Employee identifier already exists in this organization." });
+            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber && x.Id != employmentId, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
+            var previousPostalCode = person.PostalCode;
+            var previousPostOfficeBox = person.PostOfficeBox;
+            person.Update(identifier, request.FirstName.Trim(), request.LastName.Trim());
+            person.SetProtectedIdentifier(request.IdentifierType, protector.Protect(identifier, "person-national-id"), identifierHash);
+            person.UpdateInterfaceDetails(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City,
+                request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
+            employment.Update(employeeNumber, request.StartDate, request.MonthlySalary);
+            await snapshotSync.SyncPostalAddressAsync(
+                organizationId, employerId, employmentId,
+                previousPostalCode, previousPostOfficeBox, person.PostalCode, person.PostOfficeBox, ct);
+            db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.updated", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(new { employment.EmployeeNumber, person.FirstName, person.LastName }), http.TraceIdentifier));
+            await db.SaveChangesAsync(ct);
+            var updated = await EmployeeQuery(db, organizationId, employerId).SingleAsync(x => x.Id == employmentId, ct);
+            DecryptNationalIds(new[] { updated }, protector);
+            return Results.Ok(updated);
+        });
+        return endpoints;
+    }
+
+    private static IResult EntitlementError(EntitlementDecision decision) =>
+        Results.Json(new
+        {
+            error = decision.Error,
+            limit = decision.Limit,
+            current = decision.Current,
+            maximum = decision.Maximum,
+            feature = decision.Feature
+        }, statusCode: StatusCodes.Status409Conflict);
+
+    private static string? ValidateEmployeeProfile(DateOnly birthDate, PersonGender gender, string? email, string? mobile,
+        string? city, string? street, string? houseNumber, string? apartment, string? postalCode, string? postOfficeBox)
+    {
+        if (birthDate >= DateOnly.FromDateTime(DateTime.UtcNow)) return "תאריך הלידה חייב להיות בעבר.";
+        if (!Enum.IsDefined(gender)) return "מין העובד אינו תקין.";
+
+        var normalizedEmail = email?.Trim() ?? string.Empty;
+        if (normalizedEmail.Length == 0 || normalizedEmail.Length > 50
+            || !normalizedEmail.Contains('@') || normalizedEmail.StartsWith('@') || normalizedEmail.EndsWith('@'))
+            return "יש להזין כתובת אימייל תקינה לעובד, עד 50 תווים.";
+
+        var normalizedMobile = new string((mobile ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (normalizedMobile.Length is < 7 or > 15)
+            return "יש להזין מספר נייד אמיתי לעובד, 7-15 ספרות.";
+
+        var hasPostOfficeBox = !string.IsNullOrWhiteSpace(postOfficeBox)
+            && new string(postOfficeBox.Where(char.IsDigit).ToArray()).Length > 0;
+        var normalizedPostalCode = new string((postalCode ?? string.Empty).Where(char.IsDigit).ToArray());
+        var hasStreetAddress = !string.IsNullOrWhiteSpace(city)
+            && !string.IsNullOrWhiteSpace(street)
+            && !string.IsNullOrWhiteSpace(houseNumber)
+            && normalizedPostalCode.Length > 0;
+
+        if (!hasPostOfficeBox && !hasStreetAddress)
+            return "יש להזין כתובת מלאה (יישוב, רחוב, מספר בית ומיקוד) או תא דואר. דירה היא שדה אופציונלי.";
+        return null;
+    }
+
+    private static IQueryable<Employer> ApplyEmployerAccess(IQueryable<Employer> query, Guid organizationId, AlphaDbContext db, ICurrentUser user, bool hasFullOrganizationScope)
+    {
+        if (user.IsPlatformAdmin || hasFullOrganizationScope) return query;
+
+        var ids = db.EmployerUserAccesses
+            .Where(x => x.UserId == user.UserId && x.OrganizationId == organizationId)
+            .Select(x => x.EmployerId);
+        var referentIds = db.ReferentEmployerAssignments
+            .Where(x => x.UserId == user.UserId && db.Users.Any(u =>
+                u.Id == user.UserId && u.IsActive && u.IsReferent)).Select(x => x.EmployerId);
+        return query.Where(x => ids.Contains(x.Id) || referentIds.Contains(x.Id));
+    }
+
+    private static IQueryable<EmployeeListRow> EmployeeQuery(AlphaDbContext db, Guid organizationId, Guid employerId) =>
+        from employment in db.Employments.AsNoTracking()
+        join person in db.People.AsNoTracking() on employment.PersonId equals person.Id
+        where employment.OrganizationId == organizationId && employment.EmployerId == employerId
+        select new EmployeeListRow
+        {
+            Id = employment.Id,
+            EmployeeNumber = employment.EmployeeNumber,
+            Status = employment.Status,
+            StartDate = employment.StartDate,
+            EndDate = employment.EndDate,
+            MonthlySalary = employment.MonthlySalary,
+            PersonId = person.Id,
+            NationalIdEncrypted = person.NationalIdEncrypted,
+            NationalIdLookupHash = person.NationalIdLookupHash,
+            IdentifierType = person.IdentifierType,
+            FirstName = person.FirstName,
+            LastName = person.LastName,
+            BirthDate = person.BirthDate,
+            Gender = person.Gender,
+            Email = person.Email,
+            Mobile = person.Mobile,
+            City = person.City,
+            Street = person.Street,
+            HouseNumber = person.HouseNumber,
+            Apartment = person.Apartment,
+            PostalCode = person.PostalCode,
+            PostOfficeBox = person.PostOfficeBox
+        };
+
+    private static void DecryptNationalIds(IEnumerable<EmployeeListRow> rows, IDataProtectionService protector)
+    {
+        foreach (var row in rows)
+            row.NationalId = protector.Unprotect(row.NationalIdEncrypted ?? throw new InvalidOperationException("Encrypted national ID missing."), "person-national-id");
+    }
+
+    private sealed class EmployeeListRow
+    {
+        public Guid Id { get; init; }
+        public string EmployeeNumber { get; init; } = string.Empty;
+        public EmploymentStatus Status { get; init; }
+        public DateOnly StartDate { get; init; }
+        public DateOnly? EndDate { get; init; }
+        public decimal MonthlySalary { get; init; }
+        public Guid PersonId { get; init; }
+        public string NationalId { get; set; } = string.Empty;
+        public string? NationalIdEncrypted { get; init; }
+        public string? NationalIdLookupHash { get; init; }
+        public PersonIdentifierType IdentifierType { get; init; }
+        public string Identifier => NationalId;
+        public string FirstName { get; init; } = string.Empty;
+        public string LastName { get; init; } = string.Empty;
+        public DateOnly? BirthDate { get; init; }
+        public PersonGender? Gender { get; init; }
+        public string Email { get; init; } = string.Empty;
+        public string Mobile { get; init; } = string.Empty;
+        public string City { get; init; } = string.Empty;
+        public string Street { get; init; } = string.Empty;
+        public string HouseNumber { get; init; } = string.Empty;
+        public string Apartment { get; init; } = string.Empty;
+        public string PostalCode { get; init; } = string.Empty;
+        public string PostOfficeBox { get; init; } = string.Empty;
+    }
+}

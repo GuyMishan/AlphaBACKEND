@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using Alpha.Application.Abstractions;
+using Alpha.Infrastructure.Persistence;
 
 namespace Alpha.Api.Authentication;
 

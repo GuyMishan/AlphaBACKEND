@@ -1,135 +1,80 @@
 # Alpha Backend
 
-Backend foundation for a multi-tenant pension operations platform.
+Alpha is a multi-tenant pension-operations backend for the hierarchy Platform → Organization → Employer → Employee/Employment: identity and access, workforce data, billing, pension reporting, Employer Interface 006, transmissions, clearinghouse feedback and audit.
 
-## Architecture
+It is a .NET 10 feature-first modular monolith: one ASP.NET Core API, one deployment unit, one PostgreSQL database accessed through a single `AlphaDbContext`.
 
-- .NET 10 modular monolith
-- ASP.NET Core REST API with OpenAPI
-- PostgreSQL through Entity Framework Core
-- Platform -> Organization -> Employer authorization hierarchy
-- Internal referents assigned to full organizations and/or selected employers across different organizations, without platform-admin or billing privileges
-- Immutable audit events for material changes
-- Background worker boundary for imports, reports, payments, and feedback
+## Technology
 
-The current milestone intentionally implements the platform, organization, employer, employee,
-membership, and audit foundations. Pension reporting/payment integrations are represented as
-module boundaries and are not connected to real providers yet.
+- .NET 10, ASP.NET Core Minimal APIs
+- EF Core 10 with PostgreSQL (Npgsql); schema maintained by idempotent startup initializers (no EF migrations)
+- JWT outside Development, with server-side sessions
+- xUnit v3; PostgreSQL integration tests on an isolated container
 
-## Run locally
+## Repository
 
-1. Install the .NET 10 SDK and Docker.
-2. Run `docker compose up -d postgres`.
-3. Run `dotnet tool restore` and `dotnet restore`.
-4. Create the first migration with:
+```text
+src/
+├── Alpha.Api/              HTTP host and composition root (auth, sessions, middleware, error contract, payment adapters)
+├── Alpha.Domain/           shared domain model
+├── Alpha.Infrastructure/   AlphaDbContext, EF mappings, schema initializers, advisory lock
+└── Modules/
+    ├── IdentityAccess/     + .Contracts
+    ├── Organizations/
+    ├── Workforce/
+    ├── Billing/            + .Contracts
+    ├── Reporting/          + .Contracts
+    ├── ReferenceData/
+    └── Auditing/
+tests/
+├── Alpha.Api.Tests/           behavior, HTTP, security and PostgreSQL integration tests
+├── Alpha.Architecture.Tests/  dependency, ownership and production-baseline gates
+└── Alpha.Domain.Tests/        domain invariants
+docs/                             architecture, security, database, reporting, development, release, specifications
+tools/Alpha.SchemaVerifier/       read-only production schema verification
+tools/production-readonly/        read-only production data checks (run only after approval)
+integrations/google-apps-script/  mail gateway: login codes and invitation links (deployed by hand)
+```
 
-   `dotnet ef migrations add InitialCreate --project src/Alpha.Infrastructure --startup-project src/Alpha.Api --output-dir Persistence/Migrations`
+## Quick start
 
-5. Apply it with:
+```powershell
+docker compose up -d postgres
+dotnet user-secrets --project src/Alpha.Api set "Security:DataProtectionKey" "<32-byte base64 key>"
+dotnet run --project src/Alpha.Api       # Swagger: http://localhost:5080/swagger
+```
 
-   `dotnet ef database update --project src/Alpha.Infrastructure --startup-project src/Alpha.Api`
-
-6. Run `dotnet run --project src/Alpha.Api`.
-
-Swagger is available at `http://localhost:5080/swagger` in Development.
-
-### Development authentication
-
-Development uses a deliberately isolated header authentication scheme:
-
-- `X-User-Id`: a UUID identifying the current user
-- `X-Platform-Admin: true`: grants platform administration for local development only
-
-This scheme is not registered outside Development. Production is configured for an external
-OIDC/JWT authority through `Authentication:Authority` and `Authentication:Audience`.
+An empty development database is bootstrapped automatically on first start. Details, configuration and Development authentication: [docs/development.md](docs/development.md).
 
 ## Verify
 
-Run `dotnet build AlphaBackend.slnx` and `dotnet test AlphaBackend.slnx`.
+```powershell
+docker compose -f docker-compose.test.yml up -d --wait
+$env:ALPHA_TEST_POSTGRES = "Host=127.0.0.1;Port=55432;Database=alpha_tests;Username=alpha_test;Password=alpha_test_only"
+dotnet restore AlphaBackend.slnx
+dotnet build AlphaBackend.slnx --no-restore --configuration Release
+dotnet test --solution AlphaBackend.slnx --no-build --configuration Release
+```
 
-## Internal referents
+Without `ALPHA_TEST_POSTGRES` the PostgreSQL tests are reported as skipped; that is not a full verification. The test database guard accepts only a loopback host and the database `alpha_tests`.
 
-Platform administrators create a regular identity with national ID, phone and email, then designate it a referent through `/api/platform/referents/{userId}`. Assignments are separate from customer memberships and do not consume customer seats. Full-organization assignments permit general profile editing and operational employer management; employer-only assignments permit managing only the selected employers across any organization. Subscription billing and permission administration are excluded. Deactivation revokes all referent assignments. New referents require at least one assignment.
+## Documentation
 
-## Important domain rules
+| Document | Read it for |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | Modules, dependency rules, data ownership, request flow, transactions, adding a feature |
+| [docs/CODEMAP.md](docs/CODEMAP.md) | Where each feature and file lives |
+| [docs/security.md](docs/security.md) | Threat model, authentication, authorization, tenant isolation, sensitive data, findings and open risks |
+| [docs/reporting.md](docs/reporting.md) | Employer Interface 006 business rules: feedback resolution, code 18, documents, manufacturer routing, TEST simulation |
+| [docs/database.md](docs/database.md) | Table inventory and ownership, schema initialization, change policy |
+| [docs/development.md](docs/development.md) | Local setup, configuration, testing, troubleshooting |
+| [docs/release.md](docs/release.md) | Production compatibility, release gates, rollback |
+| [docs/SERVICE_PROVIDERS.md](docs/SERVICE_PROVIDERS.md) | External providers and their status |
+| [docs/specifications/employer-interface/006/README.md](docs/specifications/employer-interface/006/README.md) | Employer Interface 006 sources and rules |
 
-- A user receives access through an active organization membership.
-- Membership roles and platform roles are separate.
-- Employer access can cover all employers or selected employers only.
-- Every organization-owned row carries `OrganizationId`.
-- Approved pension reports will be immutable snapshots in the reporting milestone.
-- The application will orchestrate payments; it will not custody employer funds.
+## Ground rules
 
-### One-time login codes
-
-Login requests `POST /api/auth/otp/request` with `{ "nationalId": "...", "phone": "...", "channel": "email" }`, then verifies `{ "challengeId": "...", "code": "123456" }` at `POST /api/auth/otp/verify`. Only verification issues a JWT. Codes expire after five minutes, accept at most five attempts, can be used once, and may be resent after 60 seconds. The prototype login endpoint has been removed.
-
-Configure a JWT signing key of at least 32 characters in `PrototypeAuth__SigningKey` and real delivery providers before using login:
-
-- SMS is disabled by default. To enable later, set `Otp__Sms__Enabled=true`, plus `Otp__Sms__Url` (provider HTTPS endpoint), `Otp__Sms__Token` (Bearer token). The server posts JSON `{ "to": "05...", "message": "..." }`; use an adapter if your SMS provider has a different contract.
-- Email using a personal Gmail account with no domain: deploy `integrations/google-apps-script/Code.gs` under the Gmail account, configure the shared secret as described below, and set `Otp__Email__AppsScript__Url` and `Otp__Email__AppsScript__Secret` in Render. This HTTPS route takes precedence over other configured email transports and works on Render Free. Google currently limits consumer Apps Script accounts to 100 email recipients per day.
-- Optional alternative with a verified domain: set `Otp__Email__ResendApiKey` and `Otp__Email__From`. SMTP is also supported via `Otp__Email__Host`, `Otp__Email__Port` (default 587), `Otp__Email__From`, `Otp__Email__Username`, `Otp__Email__Password`, and `Otp__Email__EnableSsl` (default true); Render Free blocks standard SMTP ports.
-- To retain the prototype platform administrator, explicitly set `PrototypeAuth__NationalId`, `PrototypeAuth__Phone`, and `PrototypeAuth__AdminEmail` to real, controlled destinations. Otherwise that account cannot log in. Existing ordinary users need a registered phone for lookup and a registered email for delivery.
-
-The email-only login UI has no SMS option. The API rejects SMS requests and verification while `Otp__Sms__Enabled` is false, regardless of clients sending their own HTTP requests.
-
-Delivery failures return 503 and invalidate the challenge. Keep the signing key and delivery credentials in environment secrets. The SMS provider contract must be adapted to the provider selected for production.
-
-#### Personal Gmail setup (Google Apps Script)
-
-1. Sign in to [script.google.com](https://script.google.com/) with the Gmail account that will send login codes. Create a new project and replace `Code.gs` with the contents of [`integrations/google-apps-script/Code.gs`](integrations/google-apps-script/Code.gs).
-2. Generate a unique random secret of at least 32 characters using a password manager. In **Project Settings → Script Properties**, add `ALPHA_OTP_SECRET` with that value. Do not put the secret in source control or chat.
-3. **Deploy → New deployment → Web app**. Choose **Execute as: Me** and **Who has access: Anyone**. Authorize sending email with this account, deploy, and copy the `/exec` URL. Only requests presenting the secret may trigger mail. Do not share the secret; the web app URL alone cannot send a code.
-4. In Render **AlphaBACKEND → Environment**, add `Otp__Email__AppsScript__Url` (the `/exec` URL) and `Otp__Email__AppsScript__Secret` (the same secret as step 2). Save the values without triggering a deploy until the backend code is ready. Do not expose either value in the frontend.
-5. For the prototype platform administrator, set `PrototypeAuth__AdminEmail` to the account that should receive the code and set `PrototypeAuth__NationalId`/`PrototypeAuth__Phone` to the matching login identity (the existing prototype credentials are supported once an admin email is configured). Verify a real email delivery and successful login before deploying the new frontend.
-
-If you edit the Apps Script code, deploy a **new version** of the web app. On a personal Gmail account, this uses your own mailbox and its daily send quota. The backend stores hashed, expiring codes; the script only delivers them.
-
-
-## External providers
-
-See [ALPHA external service provider register](docs/SERVICE_PROVIDERS.md) for active infrastructure, payment adapters, clearinghouse status, and Cloudmersive (selected for file malware scanning, with integration pending).
-
-## Secure pension-payment confirmations
-
-Payment confirmations (PDF/JPEG/PNG, up to 10 MB) are operational evidence, separate from official Employer Interface 006 documents. The authenticated Backend scans uploads, writes immutable versioned files to the private `alpha-payment-evidence` bucket in Supabase Storage and keeps only metadata/SHA-256 and the opaque object path in `reporting.payment_confirmations`. Download authorization is always rechecked against the report's organization and employer. Do not expose the service-role key or create public Storage policies.
-
-In **Render → AlphaBACKEND → Environment**, configure these server-only settings (never commit credentials):
-
-- `Storage__SupabaseUrl`: the project API URL, e.g. `https://<project-ref>.supabase.co`.
-- `Storage__ServiceRoleKey`: the private server service-role key (or compatible key permitting private Storage operations); never use an anon/publishable key.
-- `Storage__PaymentEvidenceBucket`: `alpha-payment-evidence` (default).
-- Cloudmersive is the selected scanner: `Security__MalwareScanner__Provider=Cloudmersive`, `Security__MalwareScanner__Endpoint=https://api.cloudmersive.com/virus/scan/file` (official host only), `Security__MalwareScanner__ApiKey` (private API key), `Security__MalwareScanner__MaxFileBytes=3000000` (free-tier-safe ceiling). The adapter uses documented multipart form `inputFile` and `Apikey` header and requires an unambiguous `CleanResult=true`. Non-2xx, timeouts, ambiguous payloads and missing keys fail closed. Never log the API key or uploaded document. Cloudmersive's free plan is evaluation-only, has a 3.5 MB maximum and US-region processing; validate commercial usage eligibility and cross-border financial-data processing before using real customer documents.
-
-The private bucket must have `public=false`, allowed MIME types PDF/JPEG/PNG and a 10 MB size limit. Existing evidence remains versioned when replaced; do not delete files behind submitted financial records. After configuring Render, verify an actual authorized upload/download and an unauthorized cross-employer read (403/404) before declaring production ready.
-
-## Automatic ALPHA billing
-
-ALPHA billing is provider-agnostic. Plans, usage, billing periods, payments, retries and suspension are handled by the ALPHA billing domain; the selected payment provider only executes payment operations.
-
-Automatic monthly billing is disabled by default. Configure it with environment variables (double underscore notation on hosted environments):
-
-- `Billing__AutomaticBillingEnabled=true` enables the hosted billing cycle.
-- `Billing__JobIntervalMinutes=60` controls how often the worker checks for work.
-- `Billing__CatchUpMonths=3` makes the worker also create missing completed monthly periods after downtime.
-- `Billing__RetryDelayHours=24` controls the delay between failed-payment retries.
-- `Billing__MaxPaymentAttempts=4` caps automatic attempts for one payment.
-- `Billing__GracePeriodDays=7` suspends an unpaid billing account after the grace period.
-
-The worker only bills completed calendar months. Existing billing-period, payment and payment-attempt unique indexes provide idempotency/concurrency guards. Historical periods use only pricing components whose effective dates cover that period; current pricing is never retroactively substituted.
-
-
-## TEST-only manufacturer vault simulation
-
-The 006 hybrid routing subsystem can simulate distinct filesystem vaults for the clearinghouse and any configured manufacturers (for example Menora) without contacting external financial institutions. It remains disabled for actual mixed-recipient dispatch unless explicitly opted in.
-
-Configure the backend in **TEST** (`EmployerInterface006:EnvironmentCode=1`):
-
-- `EmployerInterface006:SimulatedVault:Enabled=true`
-- `EmployerInterface006:SimulatedVault:Manufacturers:Menora:Enabled=true`
-- `Reporting:ManufacturerRouting:EnableHybridDispatch=true`
-- `Reporting:ManufacturerRouting:Funds:<actual-test-Menora-fund-code>=SimulatedVault-Menora`
-
-Use the **exact `FundCode` from the selected report product**, not a guessed brand-to-fund mapping. Other funds route to `SimulatedVault` (clearinghouse test vault). Additional manufacturers can be declared under `SimulatedVault:Manufacturers:<key>:Enabled` and use the provider name `SimulatedVault-<key>`. Each test vault owns an isolated `manufacturers/<lowercase-key>/{outbox,inbox,processed,failed,responded}` hierarchy. Simulation feedback is associated with the transmission and products of its own vault.
-
-See `docs/menora-vault-simulation.md` for the complete later acceptance scenario (mixed employer products, separate 006 XSD checks, dual mock dispatch, positive/error feedback, amendment and safe recovery). These are simulations only; live manufacturer vault protocols, credentials and response format require official onboarding.
+- A push or merge to `main` deploys to production (Render). Follow [docs/release.md](docs/release.md).
+- Never run tests, DDL or tools against production, staging or shared databases.
+- Never commit secrets; `appsettings.json` holds placeholders only.
+- Never log national IDs, bank data, report payloads, credentials or tokens.

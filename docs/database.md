@@ -1,0 +1,156 @@
+# Alpha database
+
+One PostgreSQL database, one `AlphaDbContext`, eight schemas, 67 tables. This document covers ownership, how the schema is created and changed, and the rules for changing it safely while production is live.
+
+## How the schema is built
+
+There are **no EF Core migrations**. The schema is the EF model plus 31 idempotent compatibility initializers (`src/Alpha.Infrastructure/Persistence/*SchemaInitializer.cs`, `*Initializer.cs`), executed on every startup by `AlphaDatabaseInitializer` in a fixed order:
+
+1. If `Database:BootstrapEmptyDatabase` is true (default: Development only), `EnsureCreatedAsync()` creates the EF model. It is a no-op when the database already has any table.
+2. The 31 initializers run in the production order (`ALTER ... ADD COLUMN IF NOT EXISTS`, `CREATE ... IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION`, idempotent seed/upsert of codebooks).
+3. Reporting runs `LegacyFeedbackNormalization`: a one-time normalization of feedback stored before ingestion normalized it. It holds one payload at a time, never fails startup because of one row, and records `legacy-feedback-normalization-v1` after a clean pass; later starts skip it.
+
+Production never runs `EnsureCreated` unless the flag is set explicitly; a production database therefore only receives the idempotent initializer DDL on deploy.
+
+The order is pinned by `CompatibilityBaselineTests.Schema_initializers_run_from_one_owner_in_the_production_order`, the initializer SQL by `Schema_initializer_sql_changes_are_reviewed`, the table set by `Database_table_definitions_match_the_baseline` and the EF model by `EfModelBaselineTests` (SHA-256 of the generated DDL).
+
+### Blank-database bootstrap (fixed in A12)
+
+Before A12 a blank database could not start: `PensionFundSnapshotSchemaInitializer` backfilled from `reference_data.pension_products`, which `ReferenceDataSchemaInitializer` creates seven steps later, and nothing created the base tables because no migrations exist. Test fixtures worked around it by pre-creating the schema.
+
+Fix, without reordering production: the backfill now runs only when `to_regclass('reference_data.pension_products')` exists (on a blank database there are no rows to backfill), and `AlphaDatabaseInitializer` can bootstrap the EF model first. Reordering was rejected because the column types each initializer creates differ and production was built in the current order.
+
+Evidence: `DatabaseBootstrapIntegrationTests` (blank database succeeds; without bootstrap it fails instead of half-creating; re-running on a populated database preserves row counts and still runs the backfill). The blank-database test fails with `42P01 relation "reference_data.pension_products" does not exist` when the guard is removed.
+
+## Schema verification
+
+### Release candidate versus production code
+
+The A12 tree was ported onto `origin/main` `90c7ba6` (the code production runs; schema-relevant code unchanged since `dc5c609`) and compared on isolated PostgreSQL 17:
+
+| Check | Result |
+|---|---|
+| EF `GenerateCreateScript()` | identical to `dc5c609` (no Domain/Infrastructure change up to `90c7ba6`) |
+| Applied schema (EF model + 31 initializers) | identical: 851 columns, 273 indexes, 151 constraints, 4 triggers, 5 functions, 67 tables, identical seeded rows |
+| Route declarations | 245, identical set |
+| Initializer order | identical (31) |
+
+**Port of `main` up to `46202eb` (2026-10-12).** `main` commits after `90c7ba6` were merged into the module layout. The only schema change among them is `main`'s own `678240b`: `reporting.employer_interface_report_product_data."CollectiveAgreementRefund" boolean NULL` (`ADD COLUMN IF NOT EXISTS` in `EmployerInterface006SchemaInitializer`, nullable, no default, no backfill, no lock beyond a catalog-only `ALTER`). It is already part of the code `main` deploys, so it is expected to exist in production before this release. The EF `GenerateCreateScript()` of this tree is byte-identical to `46202eb`; `EfModelBaselineTests` and the initializer fingerprint were updated for this column only.
+
+The A12/A12.1 initializer edits do not change the resulting schema: the `to_regclass` guard above, and the removal of a one-time data statement from `IdentitySchemaInitializer` that rewrote every user's e-mail on any database without its 2026-09-21 marker (dangerous on restored backups; already applied in production). **No migration is required.**
+
+### Production schema verification
+
+A fresh database is built from the EF model first, while production was built over time by initializers, earlier model versions and at least one manual Supabase migration. Production can therefore differ physically from a fresh bootstrap. `tools/Alpha.SchemaVerifier` checks that safely:
+
+- It reads **only `pg_catalog`** (tables, columns with type/nullability/default, constraints and non-constraint indexes keyed by definition, triggers, functions, sequences, views, enums, extensions) in the eight application schemas. `pg_catalog` is visible with `CONNECT` alone, so the capture role needs no access to any table data.
+- The session runs with `default_transaction_read_only=on` inside an explicit `READ ONLY` transaction and refuses to continue if the server does not confirm read-only mode. Connection strings come from environment variables and are never printed.
+- Differences are classified: **Blocking** (a required object is missing, a column type differs, a column is NOT NULL where the application may write NULL, an extra NOT NULL column without default), **Review** (extra constraint, unique index or trigger; missing non-unique index; nullability or default difference), **Info** (production-only objects, names, extensions). Exit code 2/1/0.
+
+The production procedure (logins, exact commands, expected output and stop criteria) is in [release.md](release.md#production-read-only-verification) and runs only after explicit approval; locally, `SchemaVerifierTests` exercise the same `expected`/`capture`/`compare` steps.
+
+Expected production-only results (Info/Review, not blocking): `reference_data.manufacturer_company_groups` and the view `reference_data.pension_products_by_manufacturer` (manual Supabase migration, 2026-10-08), and possibly initializer-era constraints such as a foreign key on `identity.user_sessions`. Any **Blocking** result stops the release. The `*.schema.json` outputs contain only catalog metadata but should still be kept out of the repository (they are git-ignored).
+
+`SchemaVerifierTests` prove determinism, the classification of simulated historical drift (including the `user_sessions` foreign key) and that capture works with a `CONNECT`-only role that cannot read data or write.
+
+## Inventory and ownership
+
+Owner = the module that defines the invariants and is the primary writer (also enforced for `DbSet` access in `ModuleOwnershipTests`). Tenant scope: **O/E** = row carries `OrganizationId`/`EmployerId`; **parent** = reached only through a tenant-scoped parent; **user** = per user; **global** = shared catalog. Sensitive: encrypted (enc), lookup hash (hash) or document/payload content.
+
+| Table | Owner | Purpose | Tenant scope | Sensitive |
+|---|---|---|---|---|
+| audit.audit_events | Auditing | Append-only audit trail (no FKs by design) | O/E optional | client IP, user agent |
+| billing.billing_accounts | Billing | Organization or employer billing account | O/E | — |
+| billing.billing_account_pricing_components | Billing | Per-account pricing overrides | parent | — |
+| billing.billing_account_pricing_tiers | Billing | Tiered pricing | parent | — |
+| billing.billing_periods | Billing | Billed periods (unique per account/period) | parent | — |
+| billing.billing_usage | Billing | Usage lines per period | parent, E | — |
+| billing.payments | Billing | Charges with idempotency keys | parent | — |
+| billing.payment_attempts | Billing | Provider attempts | parent | — |
+| billing.payment_methods | Billing | Provider tokens and card metadata | parent | provider token |
+| billing.refunds | Billing | Refunds with idempotency keys | parent | — |
+| billing.provider_webhook_events | Billing | Webhook dedup and status | global | payload hash |
+| employees.people | Workforce | Persons | O | national ID (enc, hash) |
+| employees.employments | Workforce | Employment of a person at an employer | O/E | salary |
+| employees.employee_pension_products | Workforce | Employee pension mix products | parent | — |
+| employees.employee_pension_contributions | Workforce | Mix contribution percentages | parent | — |
+| employers.employers | Workforce | Employers | O | — |
+| employers.employer_profile_settings | Workforce | Employer settings incl. billing inheritance | E | — |
+| employers.employer_user_access | IdentityAccess | Per-employer user grants | O/E | — |
+| employers.employer_documents | Reporting | 006 document library (types 3–6), reusable PDF evidence | O/E | content (enc) |
+| employers.employer_payment_accounts | Reporting | Pension payment bank accounts | O/E | account number and holder ID (enc, hash) |
+| employers.bank_debit_mandates | Reporting | Bank debit mandates | parent | — |
+| identity.users | IdentityAccess | Users | user | national ID, phone (enc, hash) |
+| identity.user_sessions | IdentityAccess | Server-side sessions | user | — |
+| identity.otp_challenges | IdentityAccess | Login OTP (retention 24 h) | user | code hash |
+| identity.registration_otp_challenges | IdentityAccess | Registration OTP | user | national ID, phone (enc, hash), token hash |
+| identity.user_invitations | IdentityAccess | Invitations (token hash) | O/E | token hash |
+| identity.referent_organization_assignments | IdentityAccess | Referent scope | O | — |
+| identity.referent_employer_assignments | IdentityAccess | Referent scope | E | — |
+| identity.data_fixes | Infrastructure (`DataFixMarkers`) | Completion markers of one-time jobs: `sensitive-data-backfill-v1`, `legacy-feedback-normalization-v1` (and the historical 2026-09-21 e-mail fix) | global | — |
+| organizations.organizations | Organizations | Tenants | — | — |
+| organizations.organization_profile_settings | Organizations | Organization profile | O | — |
+| organizations.organization_memberships | IdentityAccess | Memberships, roles, permissions | O | — |
+| reference_data.banks, bank_branches, cities, streets | ReferenceData | Public catalogs (synchronized) | global | — |
+| reference_data.pension_products | ReferenceData | Pension product catalog | global | — |
+| reference_data.sync_runs | ReferenceData | Synchronization log | global | — |
+| reference_data.select_options, salary_layers | ReferenceData | Seeded option lists | global | — |
+| reference_data.employer_interface_006_options, employer_interface_006_error_codes, employer_interface_006_fields | Reporting | Seeded 006 codebooks and the V6 field map (from the official workbook) | global | — |
+| reporting.contribution_percentage_limits | Reporting | Seeded statutory limits | global | — |
+| reporting.manual_reports | Reporting | Reports and lifecycle | O/E | employer identifiers/contacts (enc), masked account |
+| reporting.manual_report_employees | Reporting | Employee snapshot per report | O/E | national/interface ID (enc, hash), contacts (enc) |
+| reporting.manual_report_products | Reporting | Product lines | parent | — |
+| reporting.manual_contributions | Reporting | Contribution lines | parent | — |
+| reporting.manual_report_payments | Reporting | Deposit details | parent | employer account (enc) |
+| reporting.manual_report_attachments | Reporting | Report documents | parent | content (enc) |
+| reporting.payment_confirmations | Reporting | Payment evidence metadata | parent | — |
+| reporting.report_transmissions | Reporting | Transmission attempts | O/E | payload and response (enc) |
+| reporting.employer_interface_file_sequences | Reporting | 006 file sequence numbers | global | — |
+| reporting.employer_interface_feedback | Reporting | Clearinghouse feedback files | O/E | raw XML (enc) |
+| reporting.employer_interface_contribution_feedback, employer_interface_transfer_feedback | Reporting | Parsed feedback lines | parent | — |
+| reporting.employer_interface_report_product_data | Reporting | 006 product metadata | parent | — |
+| reporting.report_product_treatments, report_product_treatment_history | Reporting | Feedback treatment status | parent | — |
+| reporting.feedback_problem_resolutions, feedback_problem_decisions, feedback_correction_resolution_links | Reporting | Feedback resolution | parent | — |
+| reporting.feedback_resolution_documents | Reporting | Resolution documents | parent | content (enc) |
+| reporting.feedback_external_cases | Reporting | External cases (no FK on tenant columns) | O/E | — |
+| reporting.feedback_external_case_problems, feedback_external_case_events | Reporting | Case details | parent | — |
+| reporting.feedback_external_case_attachments | Reporting | Case attachments | parent | content (enc) |
+
+`reference_data.manufacturer_company_groups` is read by manufacturer routing but is not created by this codebase; it must be provisioned in each environment that enables manufacturer routing.
+
+Retention: `SecurityRetentionHostedService` deletes only OTP challenges older than `Security:OtpRetentionHours` and expired, non-pending invitations older than `Security:ExpiredInvitationRetentionDays`. Business, reporting, financial and audit rows are never deleted by jobs.
+
+## Data-model observations (not changed in A12)
+
+Each item failed the change-necessity gate below for now: none is a proven defect in current code paths, and each needs production data to be checked first.
+
+| Observation | Risk | Recommendation |
+|---|---|---|
+| Tenant consistency between child and parent rows (for example `employments.OrganizationId` vs `employers.OrganizationId`) is code-enforced only | A coding error could create cross-tenant inconsistency | Count mismatches on a sanitized production copy; if zero, add composite foreign keys `(Id, OrganizationId)` in an expand/validate rollout |
+| `reporting.feedback_external_cases` has no FK on `OrganizationId`/`EmployerId` | Orphans after deletions/transfers | Same: measure, then add FK `NOT VALID` → `VALIDATE` |
+| No row-level security | Isolation depends on application checks | Evaluate RLS only together with a least-privilege runtime role |
+| `audit.audit_events` append-only only in the application | Raw SQL could rewrite audit | Revoke `UPDATE/DELETE` from the runtime role once a separate migration role exists |
+| Fresh bootstrap vs historical production schema may differ (see caveat above) | Behavior differences between environments | Schema-dump comparison as a release gate |
+
+## Change policy
+
+A schema change is allowed only when there is a proven business, security, operational or correctness need. For each change record, in the pull request and in this file:
+
+1. The defect or need, and the evidence (code, data, failing test).
+2. Why a code-only fix is insufficient, the alternatives, and the simplest option.
+3. How existing data and relationships are preserved.
+4. Lock, downtime, backfill, uniqueness and large-table risks.
+5. The upgrade, compatibility and rollback/roll-forward strategy.
+6. The test that proves it on an empty **and** a populated database.
+
+Mechanics:
+
+- Express the change as idempotent DDL in a new or existing initializer (or introduce reviewed EF migrations as a deliberate, documented switch). Never edit a destructive statement into an initializer that runs on every start.
+- Prefer expand → backfill → validate → contract across separate releases. Add constraints `NOT VALID` first, validate later. Create large indexes `CONCURRENTLY` outside the startup path.
+- Update the EF model, `EfModelBaselineTests`, the initializer fingerprint and, if tables change, the table baseline in the same change.
+- Verify on the isolated database ([development.md](development.md#postgresql-test-database)). Never run DDL, migrations or tests against production, staging or a shared database.
+
+## Local databases
+
+- Development: `docker compose up -d postgres` (port 5432, database `alpha`, persistent volume) — `dotnet run` bootstraps it when empty.
+- Tests: `docker-compose.test.yml` (loopback port 55432, database `alpha_tests`, tmpfs). `PostgresTestEnvironment` refuses any non-loopback host or other database name; integration tests create and drop their own databases on that server.
