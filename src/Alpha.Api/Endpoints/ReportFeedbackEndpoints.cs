@@ -2571,7 +2571,7 @@ public static class ReportFeedbackEndpoints
             {
                 feedbackValues["negativeCorrectionSourceReportId"] = report.SourceReportId.Value.ToString("D");
                 feedbackValues["negativeCorrectionSourceProductId"] = product.SourceReportProductId.Value.ToString("D");
-                feedbackValues["negativeCorrectionSourceMonth"] = report.ReportingMonth.ToString("yyyy-MM-dd");
+                feedbackValues["negativeCorrectionSourceMonth"] = report.ReportingMonth.ToString("yyyy-MM");
             }
             var feedbackProblemId = FeedbackResolutionWireProjection.BuildProblemId(
                 row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code);
