@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS reporting.employer_interface_report_product_data (
     CONSTRAINT "UX_employer_interface_report_product_data_product" UNIQUE ("ReportProductId")
 );
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "OperationCode" integer NULL;
+ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "CollectiveAgreementRefund" boolean NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "OldPensionTypeCode" integer NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "InterfaceTransferIdentifier" varchar(36) NULL;
 ALTER TABLE reporting.employer_interface_report_product_data ADD COLUMN IF NOT EXISTS "ClearingIdentifier" varchar(36) NULL;
