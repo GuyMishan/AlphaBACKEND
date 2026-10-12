@@ -2461,6 +2461,11 @@ public static class ReportFeedbackEndpoints
             .Select(doc => new { doc.DocumentTypeCode, doc.EmploymentId, doc.EmployeePensionProductId, doc.CreatedAt })
             .ToListAsync(ct);
 
+        var currentEmployerUpdatedAt = await db.Employers.AsNoTracking()
+            .Where(x => x.Id == employerId && x.OrganizationId == organizationId)
+            .Select(x => (DateTimeOffset?)x.UpdatedAt)
+            .SingleOrDefaultAsync(ct);
+
         var currentPaymentAccount = await new ReportPaymentAccountService(db)
             .ResolveForReportAsync(employerId, null, ct);
 
@@ -2590,6 +2595,26 @@ public static class ReportFeedbackEndpoints
                 feedbackValues["resolutionWorkflowStatus"] = "document-updated-awaiting-report";
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
             var treatmentTarget = TreatmentTargetFor(row, targetSelections);
+            // Re-check the freshness of the source profile for every affected
+            // historical report on read, regardless of which screen saved it.
+            // This is a local change signal, never a substitute for official feedback.
+            if (feedbackValues["resolutionWorkflowStatus"] == "needs-treatment"
+                && playbook.ResolutionType == FeedbackResolutionType.Edit)
+            {
+                var sourceUpdatedAt = treatmentTarget switch
+                {
+                    FeedbackTreatmentTarget.Employer => currentEmployerUpdatedAt,
+                    FeedbackTreatmentTarget.Employee => new DateTimeOffset?[]
+                    {
+                        employment?.UpdatedAt, person?.UpdatedAt
+                    }.Max(),
+                    FeedbackTreatmentTarget.Deposit => liveProduct?.UpdatedAt,
+                    _ => null
+                };
+                if (sourceUpdatedAt > row.ReceivedAt)
+                    feedbackValues["resolutionWorkflowStatus"] = "source-data-updated-awaiting-report";
+            }
+
             if (playbook.Code == 18)
             {
                 var missingFieldNumber = EmployerInterface006FieldMapInitializer.Code18FieldNumber(row.ErrorAmount);
