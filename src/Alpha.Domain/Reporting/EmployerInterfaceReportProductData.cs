@@ -20,6 +20,7 @@ public sealed class EmployerInterfaceReportProductData : Entity
     public int? WorkDaysInMonth { get; private set; }
     public int? LastDeposit { get; private set; }
     public int? RefundReason { get; private set; }
+    public bool? CollectiveAgreementRefund { get; private set; }
     public int? PaymentMethodCode { get; private set; }
     public int? EmployerAccountType { get; private set; }
     public int? ReceiverAccountType { get; private set; }
@@ -46,7 +47,7 @@ public sealed class EmployerInterfaceReportProductData : Entity
         decimal? employmentPercentage, int? workDaysInMonth, int? lastDeposit, int? refundReason,
         int? paymentMethodCode, int? employerAccountType, int? receiverAccountType,
         string? previousIdentifier = null, string? previousClearingIdentifier = null,
-        int? previousReferenceExceptionCode = null, int? oldPensionTypeCode = null)
+        int? previousReferenceExceptionCode = null, int? oldPensionTypeCode = null, bool? collectiveAgreementRefund = null)
     {
         OperationCode = Allowed(operationCode, [1, 2, 3, 5, 6, 7], nameof(operationCode));
         DepositStatus = Allowed(depositStatus, [1, 2, 3], nameof(depositStatus));
@@ -58,6 +59,7 @@ public sealed class EmployerInterfaceReportProductData : Entity
         StatusStartDate = statusStartDate;
         LastDeposit = Allowed(lastDeposit, [1, 2], nameof(lastDeposit));
         RefundReason = Allowed(refundReason, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], nameof(refundReason));
+        CollectiveAgreementRefund = operationCode == 5 ? collectiveAgreementRefund : null;
         PaymentMethodCode = Allowed(paymentMethodCode, [1, 3, 4, 5, 6, 7, 9], nameof(paymentMethodCode));
         EmployerAccountType = Allowed(employerAccountType, [1, 2], nameof(employerAccountType));
         ReceiverAccountType = Allowed(receiverAccountType, [1, 2], nameof(receiverAccountType));
