@@ -2454,6 +2454,13 @@ public static class ReportFeedbackEndpoints
                 .Where(x => currentProductIds.Contains(x.EmployeePensionProductId))
                 .ToArrayAsync(ct);
 
+        // Re-evaluate local document evidence whenever a feedback context is requested.
+        // A newer library document is a pending report correction, never manufacturer approval.
+        var employerDocuments = await db.EmployerDocuments.AsNoTracking()
+            .Where(doc => doc.OrganizationId == organizationId && doc.EmployerId == employerId)
+            .Select(doc => new { doc.DocumentTypeCode, doc.EmploymentId, doc.EmployeePensionProductId, doc.CreatedAt })
+            .ToListAsync(ct);
+
         var currentPaymentAccount = await new ReportPaymentAccountService(db)
             .ResolveForReportAsync(employerId, null, ct);
 
@@ -2563,6 +2570,24 @@ public static class ReportFeedbackEndpoints
                     : pendingResolutionIds.Contains(feedbackProblemId)
                     ? "correction-in-progress"
                     : "needs-treatment";
+            // Type 3 is employer-wide. Type 6 (collective agreement) belongs to
+            // the affected employee pension product in the current official 006 flow.
+            // Merely uploading type 3 cannot satisfy code 102/103.
+            var requiredDocumentType = playbook.Code switch
+            {
+                102 or 103 => 6,
+                111 or 112 => 3,
+                _ => 0
+            };
+            if (requiredDocumentType != 0
+                && employerDocuments.Any(doc => doc.DocumentTypeCode == requiredDocumentType
+                    && doc.CreatedAt > row.ReceivedAt
+                    && (requiredDocumentType == 3 && doc.EmploymentId == null
+                        || requiredDocumentType == 6 && liveProduct is not null
+                            && doc.EmploymentId == reportEmployee.EmploymentId
+                            && doc.EmployeePensionProductId == liveProduct.Id))
+                && feedbackValues["resolutionWorkflowStatus"] == "needs-treatment")
+                feedbackValues["resolutionWorkflowStatus"] = "document-updated-awaiting-report";
             var previousRecordIdentifier = contribution?.PreviousRecordIdentifier;
             var treatmentTarget = TreatmentTargetFor(row, targetSelections);
             if (playbook.Code == 18)
