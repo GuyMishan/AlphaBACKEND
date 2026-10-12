@@ -2425,6 +2425,18 @@ public static class ReportFeedbackEndpoints
             .Where(x => reportEmployeeIds.Contains(x.Id)
                 && x.OrganizationId == organizationId && x.EmployerId == employerId)
             .ToDictionaryAsync(x => x.Id, ct);
+        var negativeSourceReportIds = reports.Values
+            .Where(report => report.ReportKind == ManualReportKind.Negative && report.SourceReportId.HasValue)
+            .Select(report => report.SourceReportId!.Value).Distinct().ToArray();
+        var sourceReportProducts = await (
+            from candidate in db.ManualReportProducts.AsNoTracking()
+            join sourceEmployee in db.ManualReportEmployees.AsNoTracking()
+                on candidate.ReportEmployeeId equals sourceEmployee.Id
+            where negativeSourceReportIds.Contains(sourceEmployee.ReportId)
+                && sourceEmployee.OrganizationId == organizationId && sourceEmployee.EmployerId == employerId
+            select new { candidate.Id, sourceEmployee.ReportId, sourceEmployee.EmploymentId,
+                candidate.ProductType, candidate.FundCode, candidate.PolicyNumber,
+                candidate.SalaryMonth, candidate.AllocationOrder }).ToListAsync(ct);
         var contributions = await db.ManualContributions.AsNoTracking()
             .Where(x => contributionIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, ct);
@@ -2567,11 +2579,24 @@ public static class ReportFeedbackEndpoints
             var feedbackValues = FeedbackValues(row, transfer)
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
             if (playbook.Code is 102 or 103 && report.ReportKind == ManualReportKind.Negative
-                && report.SourceReportId.HasValue && product.SourceReportProductId.HasValue)
+                && report.SourceReportId.HasValue)
             {
-                feedbackValues["negativeCorrectionSourceReportId"] = report.SourceReportId.Value.ToString("D");
-                feedbackValues["negativeCorrectionSourceProductId"] = product.SourceReportProductId.Value.ToString("D");
-                feedbackValues["negativeCorrectionSourceMonth"] = report.ReportingMonth.ToString("yyyy-MM");
+                var matchingSources = sourceReportProducts.Where(candidate =>
+                    candidate.ReportId == report.SourceReportId.Value
+                    && candidate.EmploymentId == reportEmployee.EmploymentId
+                    && candidate.ProductType == product.ProductType
+                    && candidate.FundCode == product.FundCode
+                    && candidate.PolicyNumber == product.PolicyNumber
+                    && candidate.SalaryMonth == product.SalaryMonth
+                    && candidate.AllocationOrder == product.AllocationOrder).ToArray();
+                var sourceProductId = product.SourceReportProductId
+                    ?? (matchingSources.Length == 1 ? matchingSources[0].Id : (Guid?)null);
+                if (sourceProductId.HasValue)
+                {
+                    feedbackValues["negativeCorrectionSourceReportId"] = report.SourceReportId.Value.ToString("D");
+                    feedbackValues["negativeCorrectionSourceProductId"] = sourceProductId.Value.ToString("D");
+                    feedbackValues["negativeCorrectionSourceMonth"] = report.ReportingMonth.ToString("yyyy-MM");
+                }
             }
             var feedbackProblemId = FeedbackResolutionWireProjection.BuildProblemId(
                 row.FeedbackId, row.ContributionId, row.Sequence, playbook.Code);
