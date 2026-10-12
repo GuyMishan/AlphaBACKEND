@@ -375,6 +375,8 @@ public static class DerivedReportEndpoints
                 oldProduct.FundExternalKey, oldProduct.FundCode, oldProduct.FundName, oldProduct.FundCompanyName,
                 oldProduct.SalaryAllocationType, oldProduct.SalaryAllocationValue, oldProduct.AllocationOrder,
                 oldProduct.Section14Code, oldProduct.FundClassification);
+            if (request.ReportKind == ManualReportKind.Negative)
+                clone.SetSourceVersion(oldProduct.Id);
             db.ManualReportProducts.Add(clone);
             productMap[oldProduct.Id] = clone;
 
