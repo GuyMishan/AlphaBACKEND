@@ -7,7 +7,7 @@ public enum FeedbackTreatmentTarget { Employer, Report, Employee, Deposit, Infor
 
 public static class FeedbackTreatmentTargetCatalog
 {
-    private static readonly HashSet<int> ReportCodes = [18, 100, 101, 102, 103, 111, 112];
+    private static readonly HashSet<int> ReportCodes = [18, 100, 101, 103, 111, 112];
     private static readonly HashSet<int> EmployeeCodes =
         [4, 11, 19, 33, 34, 44, 47, 48, 49, 62, 78, 80, 86, 109, 110];
 
@@ -241,7 +241,7 @@ public static class FeedbackResolutionPlaybookCatalog
         P(99, FeedbackResolutionType.Decision, FeedbackResolutionFamily.Payment, FeedbackResolverType.Payment, FeedbackResolutionGroupStrategy.PerOriginalMovement, FeedbackCorrectionBehavior.PaymentReconciliation, FeedbackResolutionAction.Review | FeedbackResolutionAction.Reconcile),
         P(100, FeedbackResolutionType.Edit, FeedbackResolutionFamily.ReportCorrection, FeedbackResolverType.ReportCorrection, FeedbackResolutionGroupStrategy.PerReport, FeedbackCorrectionBehavior.CorrectionWorkspace, FeedbackResolutionAction.PrepareCorrection | FeedbackResolutionAction.PrepareNegative),
         P(101, FeedbackResolutionType.Edit, FeedbackResolutionFamily.ReportCorrection, FeedbackResolverType.ReportCorrection, FeedbackResolutionGroupStrategy.PerReport, FeedbackCorrectionBehavior.CorrectionWorkspace, FeedbackResolutionAction.PrepareCorrection | FeedbackResolutionAction.PrepareNegative),
-        P(102, FeedbackResolutionType.Edit, FeedbackResolutionFamily.Documents, FeedbackResolverType.Documents, FeedbackResolutionGroupStrategy.PerReport, FeedbackCorrectionBehavior.ExternalFollowUp, FeedbackResolutionAction.UploadDocument | FeedbackResolutionAction.OpenExternalCase | FeedbackResolutionAction.RetryAfterResolution, true),
+        P(102, FeedbackResolutionType.Edit, FeedbackResolutionFamily.Documents, FeedbackResolverType.Documents, FeedbackResolutionGroupStrategy.PerDocumentRequirement, FeedbackCorrectionBehavior.ExternalFollowUp, FeedbackResolutionAction.UploadDocument | FeedbackResolutionAction.OpenExternalCase | FeedbackResolutionAction.RetryAfterResolution, true),
         P(103, FeedbackResolutionType.Edit, FeedbackResolutionFamily.Documents, FeedbackResolverType.Documents, FeedbackResolutionGroupStrategy.PerReport, FeedbackCorrectionBehavior.ExternalFollowUp, FeedbackResolutionAction.UploadDocument | FeedbackResolutionAction.OpenExternalCase | FeedbackResolutionAction.RetryAfterResolution, true),
         P(104, FeedbackResolutionType.Edit, FeedbackResolutionFamily.Contribution, FeedbackResolverType.Contribution, FeedbackResolutionGroupStrategy.PerContribution, FeedbackCorrectionBehavior.CorrectionWorkspace, FeedbackResolutionAction.EditContribution | FeedbackResolutionAction.PrepareCorrection),
         P(105, FeedbackResolutionType.Edit, FeedbackResolutionFamily.Contribution, FeedbackResolverType.Contribution, FeedbackResolutionGroupStrategy.PerContribution, FeedbackCorrectionBehavior.CorrectionWorkspace, FeedbackResolutionAction.EditContribution | FeedbackResolutionAction.PrepareCorrection),
@@ -275,7 +275,7 @@ public static class FeedbackResolutionPlaybookCatalog
         4 or 11 or 19 or 33 or 34 or 44 or 47 or 48 or 49 or 62 or 78 or 80 or 86 or 109 or 110 => FeedbackResolutionScope.Employee,
         6 or 7 or 16 or 17 or 20 or 21 or 23 or 53 or 59 or 63 or 64 or 74 or 81 or 82 or 99 or 104 or 105 or 106 or 107 or 108 or 113 or 114 => FeedbackResolutionScope.Contribution,
         45 or 50 or 56 or 79 or 83 or 84 or 85 => FeedbackResolutionScope.Money,
-        18 or 100 or 101 or 102 or 103 or 111 or 112 => FeedbackResolutionScope.Report,
+        18 or 100 or 101 or 103 or 111 or 112 => FeedbackResolutionScope.Report,
         _ => FeedbackResolutionScope.Deposit
     };
 }
