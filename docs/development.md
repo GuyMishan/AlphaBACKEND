@@ -39,6 +39,7 @@ Use environment variables (`Section__Key`) or user-secrets; never commit secrets
 | `Database:BootstrapEmptyDatabase` | Create the EF model on an empty database (default: Development only) |
 | `Security:EnableSensitiveDataBackfill`, `Security:SensitiveDataBackfill:BatchSize`/`BlobBatchSize` | Background legacy-plaintext encryption pass (default on; stops after a clean pass; see [security.md](security.md#sensitive-data)) |
 | `ReverseProxy:Enabled`, `KnownNetworks`, `KnownProxies`, `ForwardLimit`, `DiagnosticRequestCount` | Trusted forwarded headers behind a proxy (default off; see [release.md](release.md#client-ip-behind-render)) |
+| `FrontendProxy:SharedSecret` | Secret (at least 32 bytes) shared with the Next.js server; when set, its `X-Alpha-Client-IP` header is the client address for rate limits and audit (default off; see [release.md](release.md#client-ip-through-the-frontend)) |
 | `Payments:*` | Provider selection (`DefaultProvider`), CardCom/PayPlus credentials, `AllowFakeProvider` |
 | `Billing:*` | Automatic billing job (`AutomaticBillingEnabled` default false) and retry policy |
 | `EmployerInterface006:ClearinghouseProvider` | `Simulated` (default), `Mock` (Development), `Disabled` or `Real` (not implemented); validated at startup, see [reporting.md](reporting.md#clearinghouse-provider-simulated-or-real) |

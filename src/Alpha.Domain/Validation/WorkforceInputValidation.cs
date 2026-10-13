@@ -4,29 +4,32 @@ using Alpha.Domain.Employees;
 
 namespace Alpha.Domain.Validation;
 
+/// <summary>A rejected input value: <see cref="Field"/> is the request property (camelCase JSON name).</summary>
+public sealed record InputError(string Field, string Message);
+
 public static class WorkforceInputValidation
 {
     private static readonly Regex Digits = new("^[0-9]+$", RegexOptions.Compiled);
 
-    public static string? Employer(string legalName, string registrationNumber, string withholdingFileNumber,
+    public static InputError? Employer(string legalName, string registrationNumber, string withholdingFileNumber,
         string? contactFirstName, string? contactLastName, string? contactPhone, string? contactEmail, string? contactMobile)
     {
-        if (string.IsNullOrWhiteSpace(legalName)) return "שם משפטי הוא שדה חובה.";
-        if (legalName.Trim().Length is < 2 or > 200) return "שם משפטי חייב להכיל בין 2 ל-200 תווים.";
-        if (string.IsNullOrWhiteSpace(registrationNumber) || !Digits.IsMatch(registrationNumber.Trim())) return "מספר חברה / עוסק חייב להכיל ספרות בלבד.";
-        if (registrationNumber.Trim().Length is < 5 or > 15) return "מספר חברה / עוסק אינו באורך תקין.";
-        if (string.IsNullOrWhiteSpace(withholdingFileNumber) || !Digits.IsMatch(withholdingFileNumber.Trim())) return "מספר תיק ניכויים חייב להכיל ספרות בלבד.";
-        if (withholdingFileNumber.Trim().Length is < 5 or > 9) return "מספר תיק ניכויים חייב להכיל 5-9 ספרות.";
-        if ((contactFirstName?.Trim().Length ?? 0) is < 2 or > 20) return "שם פרטי של איש הקשר חייב להכיל 2–20 תווים.";
-        if ((contactLastName?.Trim().Length ?? 0) is < 2 or > 20) return "שם משפחה של איש הקשר חייב להכיל 2–20 תווים.";
-        if (string.IsNullOrWhiteSpace(contactEmail) || contactEmail.Trim().Length > 50 || !contactEmail.Contains('@')) return "כתובת האימייל של איש הקשר אינה תקינה.";
+        if (string.IsNullOrWhiteSpace(legalName)) return new("legalName", "שם משפטי הוא שדה חובה.");
+        if (legalName.Trim().Length is < 2 or > 200) return new("legalName", "שם משפטי חייב להכיל בין 2 ל-200 תווים.");
+        if (string.IsNullOrWhiteSpace(registrationNumber) || !Digits.IsMatch(registrationNumber.Trim())) return new("registrationNumber", "מספר חברה / עוסק חייב להכיל ספרות בלבד.");
+        if (registrationNumber.Trim().Length is < 5 or > 15) return new("registrationNumber", "מספר חברה / עוסק אינו באורך תקין.");
+        if (string.IsNullOrWhiteSpace(withholdingFileNumber) || !Digits.IsMatch(withholdingFileNumber.Trim())) return new("withholdingFileNumber", "מספר תיק ניכויים חייב להכיל ספרות בלבד.");
+        if (withholdingFileNumber.Trim().Length is < 5 or > 9) return new("withholdingFileNumber", "מספר תיק ניכויים חייב להכיל 5-9 ספרות.");
+        if ((contactFirstName?.Trim().Length ?? 0) is < 2 or > 20) return new("contactFirstName", "שם פרטי של איש הקשר חייב להכיל 2–20 תווים.");
+        if ((contactLastName?.Trim().Length ?? 0) is < 2 or > 20) return new("contactLastName", "שם משפחה של איש הקשר חייב להכיל 2–20 תווים.");
+        if (string.IsNullOrWhiteSpace(contactEmail) || contactEmail.Trim().Length > 50 || !contactEmail.Contains('@')) return new("contactEmail", "כתובת האימייל של איש הקשר אינה תקינה.");
 
         var phone = new string((contactPhone ?? string.Empty).Where(char.IsDigit).ToArray());
         var mobile = new string((contactMobile ?? string.Empty).Where(char.IsDigit).ToArray());
-        if (phone.Length == 0 && mobile.Length == 0) return "יש להזין לפחות טלפון או נייד אחד של איש הקשר.";
-        if (phone.Length > 0 && (phone.Length < 9 || phone.Length > 11)) return "טלפון איש הקשר חייב להכיל 9–11 ספרות.";
+        if (phone.Length == 0 && mobile.Length == 0) return new("contactPhone", "יש להזין לפחות טלפון או נייד אחד של איש הקשר.");
+        if (phone.Length > 0 && (phone.Length < 9 || phone.Length > 11)) return new("contactPhone", "טלפון איש הקשר חייב להכיל 9–11 ספרות.");
         if (mobile.Length > 0 && (mobile.Length != 10 || !mobile.StartsWith("05", StringComparison.Ordinal)))
-            return "מספר הנייד של איש הקשר חייב להכיל 10 ספרות ולהתחיל ב-05.";
+            return new("contactMobile", "מספר הנייד של איש הקשר חייב להכיל 10 ספרות ולהתחיל ב-05.");
         return null;
     }
 
@@ -65,21 +68,21 @@ public static class WorkforceInputValidation
         return null;
     }
 
-    public static string? Employee(PersonIdentifierType identifierType, string identifier, string firstName, string lastName, string employeeNumber, DateOnly startDate)
+    public static InputError? Employee(PersonIdentifierType identifierType, string identifier, string firstName, string lastName, string employeeNumber, DateOnly startDate)
     {
-        if (string.IsNullOrWhiteSpace(firstName) || firstName.Trim().Length is < 2 or > 100) return "שם פרטי הוא שדה חובה ובאורך 2-100 תווים.";
-        if (string.IsNullOrWhiteSpace(lastName) || lastName.Trim().Length is < 2 or > 100) return "שם משפחה הוא שדה חובה ובאורך 2-100 תווים.";
-        if (!Enum.IsDefined(identifierType)) return "סוג המזהה של העובד אינו תקין.";
+        if (string.IsNullOrWhiteSpace(firstName) || firstName.Trim().Length is < 2 or > 100) return new("firstName", "שם פרטי הוא שדה חובה ובאורך 2-100 תווים.");
+        if (string.IsNullOrWhiteSpace(lastName) || lastName.Trim().Length is < 2 or > 100) return new("lastName", "שם משפחה הוא שדה חובה ובאורך 2-100 תווים.");
+        if (!Enum.IsDefined(identifierType)) return new("identifierType", "סוג המזהה של העובד אינו תקין.");
         var normalizedIdentifier = identifier.Trim();
-        if (identifierType == PersonIdentifierType.IsraeliId && !IsraeliNationalId.IsValid(normalizedIdentifier)) return "תעודת הזהות אינה תקינה.";
+        if (identifierType == PersonIdentifierType.IsraeliId && !IsraeliNationalId.IsValid(normalizedIdentifier)) return new("identifier", "תעודת הזהות אינה תקינה.");
         if (identifierType == PersonIdentifierType.Passport
             && (normalizedIdentifier.Length is < 1 or > 16 || normalizedIdentifier.Any(char.IsWhiteSpace) || normalizedIdentifier.Any(char.IsControl)))
-            return "מספר הדרכון הוא שדה חובה ויכול להכיל עד 16 תווים ללא רווחים.";
-        if (string.IsNullOrWhiteSpace(employeeNumber) || employeeNumber.Trim().Length > 50) return "מספר עובד הוא שדה חובה ועד 50 תווים.";
-        if (startDate < new DateOnly(1950, 1, 1) || startDate > DateOnly.FromDateTime(DateTime.UtcNow.AddYears(1))) return "תאריך תחילת העבודה אינו הגיוני.";
+            return new("identifier", "מספר הדרכון הוא שדה חובה ויכול להכיל עד 16 תווים ללא רווחים.");
+        if (string.IsNullOrWhiteSpace(employeeNumber) || employeeNumber.Trim().Length > 50) return new("employeeNumber", "מספר עובד הוא שדה חובה ועד 50 תווים.");
+        if (startDate < new DateOnly(1950, 1, 1) || startDate > DateOnly.FromDateTime(DateTime.UtcNow.AddYears(1))) return new("startDate", "תאריך תחילת העבודה אינו הגיוני.");
         return null;
     }
 
-    public static string? Employee(string nationalId, string firstName, string lastName, string employeeNumber, DateOnly startDate) =>
+    public static InputError? Employee(string nationalId, string firstName, string lastName, string employeeNumber, DateOnly startDate) =>
         Employee(PersonIdentifierType.IsraeliId, nationalId, firstName, lastName, employeeNumber, startDate);
 }

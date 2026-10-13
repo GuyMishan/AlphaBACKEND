@@ -179,14 +179,19 @@ public sealed class IdentityAccessHttpIntegrationTests
             await using var factory = new IdentityWebApplicationFactory(connectionString, useTestAuthentication: true);
             using var client = CreateClient(factory);
 
+            Task<HttpResponseMessage> Verify() => client.PostAsJsonAsync("/api/auth/otp/verify", new { challengeId = Guid.NewGuid(), code = "x" }, ct);
             for (var requestNumber = 1; requestNumber <= 20; requestNumber++)
             {
-                using var response = await client.GetAsync("/api/auth/session", ct);
-                Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+                using var response = await Verify();
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
             }
 
-            using var limited = await client.GetAsync("/api/auth/session", ct);
+            using var limited = await Verify();
             Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+            Assert.True(limited.Headers.RetryAfter?.Delta > TimeSpan.Zero);
+            // The session check and logout need a session and are limited per user, not by the credential bucket.
+            using var session = await client.GetAsync("/api/auth/session", ct);
+            Assert.Equal(HttpStatusCode.Unauthorized, session.StatusCode);
         });
     }
 

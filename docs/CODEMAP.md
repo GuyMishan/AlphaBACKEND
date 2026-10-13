@@ -23,6 +23,7 @@ Where to find things. Paths are relative to the repository root. For the rules b
 | `Authentication/AuthenticationSetup.cs` | JWT / Development scheme, `ICurrentUser`, fallback authorization policy |
 | `Authentication/CurrentUser.cs`, `DevelopmentHeaderAuthentication.cs` | Claims → `ICurrentUser`; Development-only header identity |
 | `Security/ReverseProxySetup.cs` | Opt-in trusted forwarded headers (client IP, scheme); first middleware |
+| `Security/FrontendProxyClientAddress.cs` | Client IP attested by the Next.js frontend server with `FrontendProxy:SharedSecret` (applied inside `UseAlphaReverseProxy`) |
 | `Security/SessionActivityMiddleware.cs` | Server-side session, active user and admin-claim validation |
 | `Security/SecurityHeadersMiddleware.cs`, `RateLimitingSetup.cs` | Response headers; rate-limit partitions |
 | `Security/AesDataProtectionService.cs` | `IDataProtectionService` (AES-GCM + HMAC lookup hashes) |

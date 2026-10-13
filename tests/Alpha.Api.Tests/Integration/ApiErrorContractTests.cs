@@ -77,9 +77,9 @@ public sealed class ApiErrorContractTests
             for (var i = 0; i < 21; i++)
             {
                 limited?.Dispose();
-                limited = await client.GetAsync("/api/auth/session", ct);
+                limited = await client.PostAsJsonAsync("/api/auth/otp/verify", new { challengeId = Guid.NewGuid(), code = "x" }, ct);
             }
-            await AssertContractAsync(limited!, HttpStatusCode.TooManyRequests, ApiErrors.RateLimitExceeded, "/api/auth/session", ct);
+            await AssertContractAsync(limited!, HttpStatusCode.TooManyRequests, ApiErrors.RateLimitExceeded, "/api/auth/otp/verify", ct);
             limited!.Dispose();
         });
     }
@@ -106,7 +106,7 @@ public sealed class ApiErrorContractTests
             {
                 var body = await AssertContractAsync(response, HttpStatusCode.BadRequest, ApiErrors.ValidationFailed, "/api/platform/users", ct);
                 Assert.Equal("Email is invalid.", body.GetProperty("detail").GetString());
-                Assert.Equal("Email is invalid.", body.GetProperty("errors").GetProperty("request")[0].GetString());
+                Assert.Equal("Email is invalid.", body.GetProperty("errors").GetProperty("email")[0].GetString());
                 Assert.Equal("Email is invalid.", body.GetProperty("error").GetString()); // deprecated alias
             }
             using (var response = await client.GetAsync("/api/invitations/unknown-token", ct))
@@ -204,6 +204,11 @@ public sealed class ApiErrorContractTests
         var withDetail = ApiErrorResultFilter.ToProblem(400, new { error = "invalid_assignments", detail = "רשימת השיוכים אינה תקינה." });
         Assert.Equal("רשימת השיוכים אינה תקינה.", withDetail.ProblemDetails.Detail);
         Assert.Equal("INVALID_ASSIGNMENTS", withDetail.ProblemDetails.Extensions["errorCode"]);
+
+        var fieldError = ApiErrorResultFilter.ToProblem(400, new { error = "שם משפטי הוא שדה חובה.", field = "LegalName" });
+        Assert.Equal("שם משפטי הוא שדה חובה.", fieldError.ProblemDetails.Detail);
+        Assert.Equal(["שם משפטי הוא שדה חובה."], ((Dictionary<string, string[]>)fieldError.ProblemDetails.Extensions["errors"]!)["legalName"]);
+        Assert.False(fieldError.ProblemDetails.Extensions.ContainsKey("field"));
 
         var message = ApiErrorResultFilter.ToProblem(409, new { error = "A user with this email already exists." });
         Assert.Equal("A user with this email already exists.", message.ProblemDetails.Detail);

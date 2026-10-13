@@ -55,7 +55,7 @@ public static class OnboardingEndpoints
             var validationError = WorkforceInputValidation.Employer(
                 request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber,
                 request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
-            if (validationError is not null) return Results.BadRequest(new { error = validationError });
+            if (validationError is not null) return Results.BadRequest(new { error = validationError.Message, field = validationError.Field });
 
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             await db.Database.ExecuteSqlInterpolatedAsync(
