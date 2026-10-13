@@ -117,7 +117,7 @@ public static class AccessEndpoints
             if (await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsReferent, ct))
                 return Results.Conflict(new { error = "referent_cannot_receive_customer_access" });
             if (!await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsActive, ct))
-                return Results.BadRequest(new { error = "User does not exist or is inactive." });
+                return Results.BadRequest(new { error = "user_not_found_or_inactive", detail = "User does not exist or is inactive." });
 
             var membership = await db.OrganizationMemberships.SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.UserId == request.UserId, ct);
@@ -129,7 +129,7 @@ public static class AccessEndpoints
             }
             else if (membership.IsActive)
             {
-                return Results.Conflict(new { error = "User already has access to this organization." });
+                return Results.Conflict(new { error = "membership_exists", detail = "User already has access to this organization." });
             }
             else
             {
@@ -183,7 +183,7 @@ public static class AccessEndpoints
         {
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
             if (currentUser.UserId == userId && !currentUser.IsPlatformAdmin)
-                return Results.BadRequest(new { error = "You cannot remove your own organization access." });
+                return Results.BadRequest(new { error = "cannot_remove_own_access", detail = "You cannot remove your own organization access." });
             await using var lease = await organizationLock.AcquireAsync(organizationId, ct);
 
             var membership = await db.OrganizationMemberships.SingleOrDefaultAsync(x =>
@@ -259,11 +259,11 @@ public static class AccessEndpoints
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
             var membership = await db.OrganizationMemberships.AsNoTracking().SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.UserId == userId && x.IsActive, ct);
-            if (membership is null) return Results.NotFound(new { error = "Membership was not found." });
+            if (membership is null) return Results.NotFound(new { error = "membership_not_found", detail = "Membership was not found." });
             if (membership.EmployerAccessMode != EmployerAccessMode.SelectedEmployers)
-                return Results.Conflict(new { error = "User already has access to every employer." });
+                return Results.Conflict(new { error = "membership_has_all_employers", detail = "User already has access to every employer." });
             if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
-                return Results.NotFound(new { error = "Employer was not found in this organization." });
+                return Results.NotFound(new { error = "employer_not_found", detail = "Employer was not found in this organization." });
             if (await db.EmployerUserAccesses.AnyAsync(x => x.OrganizationId == organizationId &&
                 x.UserId == userId && x.EmployerId == employerId, ct)) return Results.NoContent();
 
@@ -282,7 +282,7 @@ public static class AccessEndpoints
             IOrganizationAuthorization access, HttpContext http, CancellationToken ct) =>
         {
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
-            if (!Enum.IsDefined(request.Role)) return Results.BadRequest(new { error = "Invalid employer role." });
+            if (!Enum.IsDefined(request.Role)) return Results.BadRequest(new { error = "Invalid employer role.", field = "role" });
 
             var grant = await db.EmployerUserAccesses.SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.UserId == userId && x.EmployerId == employerId, ct);

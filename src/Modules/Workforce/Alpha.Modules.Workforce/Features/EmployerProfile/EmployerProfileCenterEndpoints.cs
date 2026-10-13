@@ -167,7 +167,8 @@ public static class EmployerProfileCenterEndpoints
         }
         catch (ArgumentOutOfRangeException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            // The exception message would end with "(Parameter '...')"; report the domain message under the field instead.
+            return Results.BadRequest(new { error = ex.Message.Replace($" (Parameter '{ex.ParamName}')", "", StringComparison.Ordinal), field = ex.ParamName });
         }
 
         AddAudit(db, currentUser, http, "employer.reporting-settings.updated", settings.Id, organizationId, employerId, request);

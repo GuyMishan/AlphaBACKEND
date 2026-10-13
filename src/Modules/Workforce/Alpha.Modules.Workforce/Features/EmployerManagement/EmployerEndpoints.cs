@@ -65,7 +65,7 @@ public static class EmployerEndpoints
             var entitlement = await entitlements.CanCreateEmployer(organizationId, ct);
             if (!entitlement.Allowed) return EntitlementError(entitlement);
             var validationError = WorkforceInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber, request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
-            if (validationError is not null) return Results.BadRequest(new { error = validationError });
+            if (validationError is not null) return Results.BadRequest(new { error = validationError.Message, field = validationError.Field });
             var item = new Employer(organizationId, request.LegalName.Trim(), request.RegistrationNumber.Trim(), request.WithholdingFileNumber.Trim(), request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
             db.Employers.Add(item);
             await billingInheritance.ApplyDefaultsForNewEmployerAsync(organizationId, item.Id, ct);
@@ -106,7 +106,7 @@ public static class EmployerEndpoints
         {
             if (!await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
             var validationError = WorkforceInputValidation.Employer(request.LegalName, request.RegistrationNumber, request.WithholdingFileNumber, request.ContactFirstName, request.ContactLastName, request.ContactPhone, request.ContactEmail, request.ContactMobile);
-            if (validationError is not null) return Results.BadRequest(new { error = validationError });
+            if (validationError is not null) return Results.BadRequest(new { error = validationError.Message, field = validationError.Field });
             var item = await db.Employers.SingleOrDefaultAsync(x =>
                 x.Id == employerId && x.OrganizationId == organizationId, ct);
             if (item is null) return Results.NotFound();
@@ -124,7 +124,7 @@ public static class EmployerEndpoints
         {
             if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
             if (request.Status is not (EmployerStatus.Active or EmployerStatus.Closed))
-                return Results.BadRequest(new { error = "Employer status must be Active or Closed." });
+                return Results.BadRequest(new { error = "Employer status must be Active or Closed.", field = "status" });
 
             var item = await db.Employers.SingleOrDefaultAsync(x =>
                 x.Id == employerId && x.OrganizationId == organizationId, ct);
@@ -185,8 +185,8 @@ public static class EmployerEndpoints
             var validationError = WorkforceInputValidation.Employee(request.IdentifierType, request.Identifier ?? request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate)
                 ?? ValidateEmployeeProfile(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City, request.Street,
                     request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
-            if (validationError is not null) return Results.BadRequest(new { error = validationError });
-            if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative." });
+            if (validationError is not null) return EmployeeValidationError(validationError, request.Identifier);
+            if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative.", field = "monthlySalary" });
             if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct)) return Results.NotFound();
             var identifier = (request.Identifier ?? request.NationalId).Trim();
             var identifierHash = protector.LookupHash(identifier, "person-national-id-lookup");
@@ -207,8 +207,8 @@ public static class EmployerEndpoints
                     request.Street, request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
             }
             var employeeNumber = request.EmployeeNumber.Trim();
-            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.PersonId == person.Id, ct)) return Results.Conflict(new { error = "Employee identifier already exists for this employer." });
-            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
+            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.PersonId == person.Id, ct)) return Results.Conflict(new { error = "employee_identifier_exists", detail = "Employee identifier already exists for this employer." });
+            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber, ct)) return Results.Conflict(new { error = "employee_number_exists", detail = "Employee number already exists for this employer." });
             var employment = new Employment(organizationId, employerId, person.Id, request.StartDate, employeeNumber, request.MonthlySalary);
             db.Employments.Add(employment);
             db.AuditEvents.Add(new AuditEvent(user.UserId, "employment.created", nameof(Employment), employment.Id, organizationId, employerId, JsonSerializer.Serialize(new { employment.EmployeeNumber, person.FirstName, person.LastName }), http.TraceIdentifier));
@@ -231,16 +231,16 @@ public static class EmployerEndpoints
             var validationError = WorkforceInputValidation.Employee(request.IdentifierType, request.Identifier ?? request.NationalId, request.FirstName, request.LastName, request.EmployeeNumber, request.StartDate)
                 ?? ValidateEmployeeProfile(request.BirthDate, request.Gender, request.Email, request.Mobile, request.City, request.Street,
                     request.HouseNumber, request.Apartment, request.PostalCode, request.PostOfficeBox);
-            if (validationError is not null) return Results.BadRequest(new { error = validationError });
-            if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative." });
+            if (validationError is not null) return EmployeeValidationError(validationError, request.Identifier);
+            if (request.MonthlySalary < 0) return Results.BadRequest(new { error = "Monthly salary cannot be negative.", field = "monthlySalary" });
             var employment = await db.Employments.SingleOrDefaultAsync(x => x.Id == employmentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
             if (employment is null) return Results.NotFound();
             var person = await db.People.SingleAsync(x => x.Id == employment.PersonId, ct);
             var identifier = (request.Identifier ?? request.NationalId).Trim();
             var employeeNumber = request.EmployeeNumber.Trim();
             var identifierHash = protector.LookupHash(identifier, "person-national-id-lookup");
-            if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.IdentifierType == request.IdentifierType && x.NationalIdLookupHash == identifierHash && x.Id != person.Id, ct)) return Results.Conflict(new { error = "Employee identifier already exists in this organization." });
-            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber && x.Id != employmentId, ct)) return Results.Conflict(new { error = "Employee number already exists for this employer." });
+            if (await db.People.AnyAsync(x => x.OrganizationId == organizationId && x.IdentifierType == request.IdentifierType && x.NationalIdLookupHash == identifierHash && x.Id != person.Id, ct)) return Results.Conflict(new { error = "employee_identifier_exists", detail = "Employee identifier already exists in this organization." });
+            if (await db.Employments.AnyAsync(x => x.EmployerId == employerId && x.EmployeeNumber == employeeNumber && x.Id != employmentId, ct)) return Results.Conflict(new { error = "employee_number_exists", detail = "Employee number already exists for this employer." });
             var previousPostalCode = person.PostalCode;
             var previousPostOfficeBox = person.PostOfficeBox;
             person.Update(identifier, request.FirstName.Trim(), request.LastName.Trim());
@@ -270,20 +270,24 @@ public static class EmployerEndpoints
             feature = decision.Feature
         }, statusCode: StatusCodes.Status409Conflict);
 
-    private static string? ValidateEmployeeProfile(DateOnly birthDate, PersonGender gender, string? email, string? mobile,
+    /// <summary>The identifier is sent as <c>identifier</c> or, by older clients, as <c>nationalId</c>.</summary>
+    private static IResult EmployeeValidationError(InputError error, string? identifier) =>
+        Results.BadRequest(new { error = error.Message, field = error.Field == "identifier" && identifier is null ? "nationalId" : error.Field });
+
+    private static InputError? ValidateEmployeeProfile(DateOnly birthDate, PersonGender gender, string? email, string? mobile,
         string? city, string? street, string? houseNumber, string? apartment, string? postalCode, string? postOfficeBox)
     {
-        if (birthDate >= DateOnly.FromDateTime(DateTime.UtcNow)) return "תאריך הלידה חייב להיות בעבר.";
-        if (!Enum.IsDefined(gender)) return "מין העובד אינו תקין.";
+        if (birthDate >= DateOnly.FromDateTime(DateTime.UtcNow)) return new("birthDate", "תאריך הלידה חייב להיות בעבר.");
+        if (!Enum.IsDefined(gender)) return new("gender", "מין העובד אינו תקין.");
 
         var normalizedEmail = email?.Trim() ?? string.Empty;
         if (normalizedEmail.Length == 0 || normalizedEmail.Length > 50
             || !normalizedEmail.Contains('@') || normalizedEmail.StartsWith('@') || normalizedEmail.EndsWith('@'))
-            return "יש להזין כתובת אימייל תקינה לעובד, עד 50 תווים.";
+            return new("email", "יש להזין כתובת אימייל תקינה לעובד, עד 50 תווים.");
 
         var normalizedMobile = new string((mobile ?? string.Empty).Where(char.IsDigit).ToArray());
         if (normalizedMobile.Length is < 7 or > 15)
-            return "יש להזין מספר נייד אמיתי לעובד, 7-15 ספרות.";
+            return new("mobile", "יש להזין מספר נייד אמיתי לעובד, 7-15 ספרות.");
 
         var hasPostOfficeBox = !string.IsNullOrWhiteSpace(postOfficeBox)
             && new string(postOfficeBox.Where(char.IsDigit).ToArray()).Length > 0;
@@ -294,7 +298,7 @@ public static class EmployerEndpoints
             && normalizedPostalCode.Length > 0;
 
         if (!hasPostOfficeBox && !hasStreetAddress)
-            return "יש להזין כתובת מלאה (יישוב, רחוב, מספר בית ומיקוד) או תא דואר. דירה היא שדה אופציונלי.";
+            return new("city", "יש להזין כתובת מלאה (יישוב, רחוב, מספר בית ומיקוד) או תא דואר. דירה היא שדה אופציונלי.");
         return null;
     }
 

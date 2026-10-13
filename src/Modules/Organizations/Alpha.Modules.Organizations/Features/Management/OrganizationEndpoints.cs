@@ -91,9 +91,9 @@ public static class OrganizationEndpoints
             if (await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsReferent, ct))
                 return Results.Conflict(new { error = "referent_cannot_receive_customer_access" });
             if (!await db.Users.AnyAsync(x => x.Id == request.UserId && x.IsActive, ct))
-                return Results.BadRequest(new { error = "User does not exist or is inactive." });
+                return Results.BadRequest(new { error = "user_not_found_or_inactive", detail = "User does not exist or is inactive." });
             if (await db.OrganizationMemberships.AnyAsync(x => x.UserId == request.UserId && x.OrganizationId == organizationId, ct))
-                return Results.Conflict(new { error = "Membership already exists." });
+                return Results.Conflict(new { error = "membership_exists", detail = "Membership already exists." });
             await using var entitlementLease = await entitlementLock.AcquireAsync(organizationId, ct);
             var entitlement = await entitlements.CanInviteUser(organizationId, request.UserId, ct);
             if (!entitlement.Allowed)
@@ -115,11 +115,11 @@ public static class OrganizationEndpoints
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
             var membership = await db.OrganizationMemberships.SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.UserId == userId && x.IsActive, ct);
-            if (membership is null) return Results.NotFound(new { error = "Active organization membership was not found." });
+            if (membership is null) return Results.NotFound(new { error = "membership_not_found", detail = "Active organization membership was not found." });
             if (membership.EmployerAccessMode != EmployerAccessMode.SelectedEmployers)
-                return Results.Conflict(new { error = "Membership already grants access to every employer." });
+                return Results.Conflict(new { error = "membership_has_all_employers", detail = "Membership already grants access to every employer." });
             if (!await db.Employers.AnyAsync(x => x.Id == employerId && x.OrganizationId == organizationId, ct))
-                return Results.NotFound(new { error = "Employer was not found in this organization." });
+                return Results.NotFound(new { error = "employer_not_found", detail = "Employer was not found in this organization." });
             if (await db.EmployerUserAccesses.AnyAsync(x => x.UserId == userId && x.EmployerId == employerId, ct))
                 return Results.NoContent();
 

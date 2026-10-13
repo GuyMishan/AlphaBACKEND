@@ -31,6 +31,9 @@ A deliberate change to any of these needs its own approval, a compatibility note
 | Startup encryption backfill is bounded, background, coordinated, never stops the host, and stops running after a clean pass | Operators (log lines) | Same encryption formats |
 | `IdentitySchemaInitializer` no longer contains the 2026-09-21 "set all user e-mails" statement | Nobody (already applied in production) | Verify the marker read-only (below) |
 | `ReverseProxy:*` settings added, off by default | Operators | Enable only after the topology check |
+| Only the anonymous credential endpoints (`/api/auth/otp/*`, `/api/auth/register/*`) use the 20/min per-client bucket; `/api/auth/session` and `/api/auth/logout` use the per-user bucket. IPv6 clients are grouped by /64. A 429 carries `Retry-After` | Users | Session checks no longer exhaust the login limit |
+| `FrontendProxy:SharedSecret` added, off by default: with it, the frontend server's `X-Alpha-Client-IP` is the client address for rate limits and audit | Operators, frontend | [Procedure](#client-ip-through-the-frontend); without it behavior is unchanged |
+| Field validation messages are under `errors.<field>` instead of `errors.request` at the listed sites; free-text business errors in IdentityAccess, Organizations and Workforce have specific codes, same `detail` | Frontend forms | [Table](architecture.md#migration-from-the-previous-error-formats); the deprecated `error` alias of those business errors is now the code |
 | `Database:ApplyMigrations` removed; `Database:BootstrapEmptyDatabase` added (off outside Development) | Operators | Remove/leave unset in production |
 | Dockerfile restores every module project and ships the V6 workbook | Deployment | Previous Dockerfile could not build the modular solution |
 | EF SQL command logging lowered to Warning in `appsettings.json` | Operators reading logs | Errors still logged; fewer SQL statements in production logs |
@@ -59,6 +62,7 @@ Values the release depends on (double underscores replace `:`). Check them in th
 | `ConnectionStrings__AlphaDatabase` | Unchanged. Keyword form or a `postgres://` URL (the URL form always requires SSL). `DATABASE_URL` is not read |
 | `Security__DataProtectionKey`, `PrototypeAuth__SigningKey`, `Otp__Email__AppsScript__Url`, `Otp__Email__AppsScript__Secret` | Unchanged; startup now stops if the data-protection key is not 32-byte Base64 or the signing key is under 32 bytes |
 | `Frontend__BaseUrl` | Public frontend URL (invitation links, payment return pages) |
+| `FrontendProxy__SharedSecret` | Optional: a random value of at least 32 bytes, identical to the frontend's `ALPHA_PROXY_SECRET` ([procedure](#client-ip-through-the-frontend)). Shorter values stop startup |
 | `Payments__PublicApiBaseUrl` | Optional on Render: when unset, Render's own `RENDER_EXTERNAL_URL` is used. An invalid explicit value makes payment-method setup return 503 |
 | `EmployerInterface006__ClearinghouseProvider` | `Simulated` (the intended mode now; also the `appsettings.json` default, but set it explicitly) |
 | `EmployerInterface006__EnvironmentCode` | Unset or `1`; any other value stops startup while `Simulated` is selected |
@@ -142,6 +146,27 @@ Render does not document its proxy addresses or hop count. Establish them before
 4. Set `DiagnosticRequestCount=0`, redeploy, and confirm: your real IP appears in a new audit row; the fake value never does.
 
 Until this is done, leave `ReverseProxy:Enabled=false` (current behavior: per-proxy rate limits and audit IPs).
+
+### Client IP through the frontend
+
+Browser requests reach the API from the Next.js route handler (`src/app/api/backend/[...path]/route.ts`), so the API sees Vercel's shared egress addresses whatever `ReverseProxy` says. The frontend server attests the client address instead:
+
+1. Generate a secret: `openssl rand -base64 48`. Store it as `FrontendProxy__SharedSecret` on Render and as `ALPHA_PROXY_SECRET` (server-only: never `NEXT_PUBLIC_`) on Vercel, Production and Preview environments that call this backend.
+2. Frontend change in the proxy route, when building the outgoing `headers` (the route already builds them from scratch, so incoming `X-Alpha-*` headers are never copied):
+
+   ```ts
+   const proxySecret = process.env.ALPHA_PROXY_SECRET;
+   // On Vercel, x-real-ip is set by the platform edge from the TCP connection and cannot be supplied by the browser.
+   const clientIp = request.headers.get("x-real-ip")?.trim();
+   if (proxySecret && clientIp) {
+     headers.set("X-Alpha-Proxy-Secret", proxySecret);
+     headers.set("X-Alpha-Client-IP", clientIp);
+   }
+   ```
+
+   Do not use the leftmost `X-Forwarded-For` value, and do not send the headers when hosting outside Vercel unless that platform also overwrites `x-real-ip`. The API accepts the address only with the exact secret, exactly one header value and a valid IP; otherwise it falls back to the peer address.
+3. Deploy the backend first (the headers are ignored until the secret is set), then set both variables and deploy the frontend. Confirm in a new audit row (`ip`) that your real address appears.
+4. Rotation: set the new value on both sides and redeploy both. While the values differ, frontend traffic falls back to the shared Vercel buckets (degraded limits, no outage).
 
 ## Mail gateway redeployment (Apps Script)
 

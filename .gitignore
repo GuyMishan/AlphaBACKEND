@@ -25,3 +25,5 @@ simulated-clearinghouse-vault/**
 !simulated-clearinghouse-vault/**/
 !simulated-clearinghouse-vault/**/.gitkeep
 !simulated-clearinghouse-vault/**/README.md
+
+docs/learning

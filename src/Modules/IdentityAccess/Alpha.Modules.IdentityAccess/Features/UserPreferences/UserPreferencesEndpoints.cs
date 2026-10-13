@@ -29,7 +29,7 @@ public static class UserPreferencesEndpoints
         }
         catch (ArgumentException)
         {
-            return Results.BadRequest(new { error = "העדפת תצוגה לא תקינה." });
+            return Results.BadRequest(new { error = "העדפת תצוגה לא תקינה.", field = "appearance" });
         }
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { appearance = user.Appearance });

@@ -13,8 +13,17 @@ public static class ReverseProxySetup
 {
     public const string SectionName = "ReverseProxy";
 
-    /// <summary>Must run before every middleware that reads the client address or scheme.</summary>
+    /// <summary>
+    /// Must run before every middleware that reads the client address or scheme. Applies trusted forwarded headers,
+    /// then the frontend-attested client address (<see cref="FrontendProxyClientAddress"/>), which takes precedence.
+    /// </summary>
     public static IApplicationBuilder UseAlphaReverseProxy(this IApplicationBuilder app, IConfiguration configuration, ILogger logger)
+    {
+        UseForwardedHeaders(app, configuration, logger);
+        return app.UseAlphaFrontendProxyClientAddress(configuration);
+    }
+
+    private static void UseForwardedHeaders(IApplicationBuilder app, IConfiguration configuration, ILogger logger)
     {
         // ASPNETCORE_FORWARDEDHEADERS_ENABLED makes the framework trust forwarded headers from every address.
         if (configuration.GetValue("FORWARDEDHEADERS_ENABLED", false))
@@ -22,7 +31,7 @@ public static class ReverseProxySetup
                                "Remove it and configure the ReverseProxy section instead.");
 
         var section = configuration.GetSection(SectionName);
-        if (!section.GetValue("Enabled", false)) return app;
+        if (!section.GetValue("Enabled", false)) return;
 
         var options = BuildOptions(section);
         var diagnosticRequests = Math.Clamp(section.GetValue("DiagnosticRequestCount", 0), 0, 100);
@@ -42,7 +51,7 @@ public static class ReverseProxySetup
             });
         }
 
-        return app.UseForwardedHeaders(options);
+        app.UseForwardedHeaders(options);
     }
 
     internal static ForwardedHeadersOptions BuildOptions(IConfigurationSection section)

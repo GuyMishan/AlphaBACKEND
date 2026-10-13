@@ -44,13 +44,13 @@ public static class PlatformEndpoints
             var phone = request.Phone.Trim();
 
             if (displayName.Length is < 2 or > 120)
-                return Results.BadRequest(new { error = "Display name must contain 2-120 characters." });
+                return Results.BadRequest(new { error = "Display name must contain 2-120 characters.", field = "displayName" });
             if (!email.Contains('@') || email.Length > 320)
-                return Results.BadRequest(new { error = "Email is invalid." });
+                return Results.BadRequest(new { error = "Email is invalid.", field = "email" });
             if (!IsraeliNationalId.IsValid(nationalId))
-                return Results.BadRequest(new { error = "National ID is invalid." });
+                return Results.BadRequest(new { error = "National ID is invalid.", field = "nationalId" });
             if (phone.Length != 10 || !phone.StartsWith("05", StringComparison.Ordinal) || !phone.All(char.IsDigit))
-                return Results.BadRequest(new { error = "Phone must be a 10-digit Israeli mobile number." });
+                return Results.BadRequest(new { error = "Phone must be a 10-digit Israeli mobile number.", field = "phone" });
 
             var nationalIdHash = protector.LookupHash(nationalId, "auth-national-id-lookup");
             var phoneHash = protector.LookupHash(phone, "auth-phone-lookup");
@@ -58,7 +58,7 @@ public static class PlatformEndpoints
             if (await db.Users.AnyAsync(x =>
                     x.NationalIdLookupHash == nationalIdHash && x.PhoneLookupHash == phoneHash,
                 ct))
-                return Results.Conflict(new { error = "A user with this national ID and phone already exists." });
+                return Results.Conflict(new { error = "user_identity_exists", detail = "A user with this national ID and phone already exists." });
 
             var user = new User(externalSubject, email, displayName, nationalId, phone);
             user.SetProtectedIdentity(protector.Protect(nationalId, "auth-national-id"), nationalIdHash,
@@ -78,13 +78,13 @@ public static class PlatformEndpoints
             var displayName = request.DisplayName.Trim();
             var email = request.Email.Trim().ToLowerInvariant();
             if (displayName.Length is < 2 or > 120)
-                return Results.BadRequest(new { error = "Display name must contain 2-120 characters." });
+                return Results.BadRequest(new { error = "Display name must contain 2-120 characters.", field = "displayName" });
             if (!email.Contains('@') || email.Length > 320)
-                return Results.BadRequest(new { error = "Email is invalid." });
+                return Results.BadRequest(new { error = "Email is invalid.", field = "email" });
             if (await db.Users.AnyAsync(x => x.Id != userId && x.Email == email, ct))
-                return Results.Conflict(new { error = "A user with this email already exists." });
+                return Results.Conflict(new { error = "user_email_exists", detail = "A user with this email already exists." });
             if (currentUser.UserId == userId && (!request.IsActive || !request.IsPlatformAdmin))
-                return Results.BadRequest(new { error = "You cannot remove your own platform admin access or deactivate yourself." });
+                return Results.BadRequest(new { error = "cannot_change_own_platform_access", detail = "You cannot remove your own platform admin access or deactivate yourself." });
 
             user.UpdateProfile(displayName, email);
             user.SetActive(request.IsActive);

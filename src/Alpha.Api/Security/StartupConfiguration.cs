@@ -27,6 +27,11 @@ public static class StartupConfiguration
                 errors.Add("PrototypeAuth:SigningKey must be at least 32 bytes (HMAC-SHA256).");
         }
 
+        // A short shared secret could be guessed, and then any caller could choose its rate-limit bucket and audit IP.
+        var proxySecret = configuration[$"{FrontendProxyClientAddress.SectionName}:SharedSecret"];
+        if (!string.IsNullOrEmpty(proxySecret) && System.Text.Encoding.UTF8.GetByteCount(proxySecret) < FrontendProxyClientAddress.MinimumSecretBytes)
+            errors.Add($"FrontendProxy:SharedSecret must be at least {FrontendProxyClientAddress.MinimumSecretBytes} bytes when set.");
+
         return errors;
     }
 

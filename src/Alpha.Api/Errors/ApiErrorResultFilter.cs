@@ -8,9 +8,14 @@ namespace Alpha.Api.Errors;
 /// Converts every error result a module endpoint returns with a body (<c>Results.BadRequest(new { error, ... })</c>,
 /// <c>Results.Conflict(...)</c>, <c>Results.NotFound(...)</c>, <c>Results.Json(..., statusCode)</c>) into the single
 /// Problem Details contract. Modules keep describing *what* failed; the host owns *how* errors are serialized.
+/// A 400 validation message may name the request's JSON property with <c>field</c>
+/// (<c>new { error = "&lt;message&gt;", field = "legalName" }</c>); the message is then reported under that key in
+/// <c>errors</c> instead of <c>request</c>.
 /// </summary>
 public sealed class ApiErrorResultFilter : IEndpointFilter
 {
+    internal const string FieldMember = "field";
+
     private static readonly HashSet<string> ReservedMembers =
         new(["type", "title", "status", "detail", "instance", ApiErrors.ErrorCodeMember, ApiErrors.TraceIdMember, ApiErrors.ErrorsMember],
             StringComparer.OrdinalIgnoreCase);
@@ -33,10 +38,13 @@ public sealed class ApiErrorResultFilter : IEndpointFilter
             return TypedResults.Problem(problem);
 
         string? legacyError = null;
+        string? field = null;
         foreach (var member in element.EnumerateObject())
         {
             if (member.NameEquals(ApiErrors.DeprecatedErrorMember) && member.Value.ValueKind == JsonValueKind.String)
                 legacyError = member.Value.GetString();
+            else if (member.NameEquals(FieldMember) && member.Value.ValueKind == JsonValueKind.String)
+                field = member.Value.GetString();
             else if (member.NameEquals("detail") && member.Value.ValueKind == JsonValueKind.String)
                 problem.Detail = member.Value.GetString();
             else
@@ -54,11 +62,15 @@ public sealed class ApiErrorResultFilter : IEndpointFilter
         {
             // A human-readable message: it becomes the detail (unless one was given) under the status' generic code.
             problem.Detail ??= legacyError;
-            if (status == StatusCodes.Status400BadRequest && problem.Detail != legacyError)
-                problem.Extensions[ApiErrors.ErrorsMember] = new Dictionary<string, string[]> { [ApiErrors.RequestErrorsKey] = [legacyError] };
+            if (status == StatusCodes.Status400BadRequest && (problem.Detail != legacyError || !string.IsNullOrWhiteSpace(field)))
+                problem.Extensions[ApiErrors.ErrorsMember] = new Dictionary<string, string[]> { [ErrorKey(field)] = [legacyError] };
         }
 
         if (legacyError is not null) problem.Extensions[ApiErrors.DeprecatedErrorMember] = legacyError;
         return TypedResults.Problem(problem);
     }
+
+    /// <summary>JSON property names are camelCase on the wire (<c>LegalName</c> → <c>legalName</c>).</summary>
+    private static string ErrorKey(string? field) =>
+        string.IsNullOrWhiteSpace(field) ? ApiErrors.RequestErrorsKey : char.ToLowerInvariant(field[0]) + field[1..];
 }
