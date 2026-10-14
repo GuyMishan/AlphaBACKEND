@@ -230,7 +230,7 @@ public static class AccessEndpoints
                 x.OrganizationId == organizationId && x.UserId == userId, ct);
             var hasGrants = await db.EmployerUserAccesses.AsNoTracking().AnyAsync(x =>
                 x.OrganizationId == organizationId && x.UserId == userId, ct);
-            if (membership is null && !hasGrants) return Results.NotFound();
+            if (membership is null && !hasGrants && !user.IsPlatformAdmin) return Results.NotFound();
 
             if (membership?.IsActive == true && membership.Role == OrganizationRole.Admin &&
                 (type == "employer" || (type == "organization" && request.Role != OrganizationRole.Admin)))
