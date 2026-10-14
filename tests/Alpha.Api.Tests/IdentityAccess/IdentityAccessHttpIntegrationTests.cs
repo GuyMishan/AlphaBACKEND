@@ -8,6 +8,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Alpha.Infrastructure.Persistence;
 using Alpha.Domain.Identity;
+using Alpha.Domain.Employers;
 using Alpha.Domain.Organizations;
 using Alpha.Modules.ReferenceData.Application;
 using Microsoft.AspNetCore.Authentication;
@@ -100,6 +101,70 @@ public sealed class IdentityAccessHttpIntegrationTests
                 $"/api/organizations/{organization.Id}/access/users", admin.Id, adminSession.Id);
             using var adminResponse = await client.SendAsync(adminRequest, ct);
             Assert.Equal(HttpStatusCode.OK, adminResponse.StatusCode);
+        });
+    }
+
+    [Fact]
+    public async Task Organization_admin_can_switch_user_to_employer_but_cannot_grant_platform_admin()
+    {
+        await InIsolatedDatabase(async (connectionString, ct) =>
+        {
+            await using var factory = new IdentityWebApplicationFactory(connectionString, useTestAuthentication: true);
+            using var client = CreateClient(factory);
+            var admin = new User("access-type-admin", "access-type-admin@test.invalid", "Access Admin");
+            var member = new User("access-type-member", "access-type-member@test.invalid", "Access Member");
+            var org = new Organization("Access Type Organization", OrganizationType.RegularOrganization);
+            var employer = new Employer(org.Id, "Access Test Employer", "111111111", "999999999");
+            var adminMembership = new OrganizationMembership(admin.Id, org.Id, OrganizationRole.Admin,
+                EmployerAccessMode.AllEmployers, admin.Id);
+            var memberMembership = new OrganizationMembership(member.Id, org.Id, OrganizationRole.Viewer,
+                EmployerAccessMode.AllEmployers, admin.Id);
+            var now = DateTime.UtcNow;
+            var session = new UserSession(admin.Id, now, now.AddHours(1));
+
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
+                db.AddRange(admin, member, org, employer, adminMembership, memberMembership, session);
+                await db.SaveChangesAsync(ct);
+            }
+
+            var route = $"/api/organizations/{org.Id}/access/users/{member.Id}/type";
+            using (var escalation = NewRequest(HttpMethod.Put, route, admin.Id, session.Id))
+            {
+                escalation.Content = JsonContent.Create(new
+                {
+                    type = "platform", role = 4, employerAccessMode = 2,
+                    canCreateEmployer = false, canEditEmployer = false,
+                    canCreateEmployee = false, canEditEmployee = false,
+                    canCreateReport = false, canTransmitReport = false,
+                    employers = Array.Empty<object>()
+                });
+                using var denied = await client.SendAsync(escalation, ct);
+                Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+            }
+
+            using (var change = NewRequest(HttpMethod.Put, route, admin.Id, session.Id))
+            {
+                change.Content = JsonContent.Create(new
+                {
+                    type = "employer", role = 4, employerAccessMode = 2,
+                    canCreateEmployer = false, canEditEmployer = false,
+                    canCreateEmployee = false, canEditEmployee = false,
+                    canCreateReport = false, canTransmitReport = false,
+                    employers = new[] { new { employerId = employer.Id, role = 2 } }
+                });
+                using var response = await client.SendAsync(change, ct);
+                Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+            }
+
+            await using var verify = factory.Services.CreateAsyncScope();
+            var data = verify.ServiceProvider.GetRequiredService<AlphaDbContext>();
+            Assert.False((await data.OrganizationMemberships.SingleAsync(x =>
+                x.UserId == member.Id && x.OrganizationId == org.Id, ct)).IsActive);
+            Assert.Equal(EmployerRole.Admin, (await data.EmployerUserAccesses.SingleAsync(x =>
+                x.UserId == member.Id && x.OrganizationId == org.Id, ct)).Role);
+            Assert.False((await data.Users.SingleAsync(x => x.Id == member.Id, ct)).IsPlatformAdmin);
         });
     }
 
