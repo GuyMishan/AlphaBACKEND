@@ -21,7 +21,7 @@ public sealed class CompatibilityBaselineTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        Assert.True(routes.Length == 245 && Fingerprint(routes) == RouteBaseline,
+        Assert.True(routes.Length == 246 && Fingerprint(routes) == RouteBaseline,
             $"Route baseline changed: {routes.Length} routes, fingerprint {Fingerprint(routes)}. Update only for a reviewed API change.");
     }
 
@@ -102,7 +102,7 @@ public sealed class CompatibilityBaselineTests
             Assert.DoesNotMatch(@"Database\.(EnsureCreated|EnsureDeleted|Migrate)(Async)?\(", File.ReadAllText(file));
     }
 
-    internal const string RouteBaseline = "babcccf82bd3bfe2f14ccfd0373c0371ba5abb3d5426e32abe2eabfaf2ca085f";
+    internal const string RouteBaseline = "5ea7fca4409c1a7bbf63bf373df964269e8cdad9fb9fea1c6ac79fc885bb65e6";
     internal const string TableBaseline = "cf1d402e5a2a8aa29b39821298684b2826e204535c97dea04d46735673994b53";
     internal const string SchemaInitializerBaseline = "a93d298edd90b2a7fe3171ee2b78c8a9d5393e63d546e624963e8633b40ff7b3";
 }
