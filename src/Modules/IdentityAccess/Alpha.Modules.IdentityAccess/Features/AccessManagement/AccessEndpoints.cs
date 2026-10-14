@@ -3,6 +3,7 @@ using Alpha.Infrastructure.Persistence;
 using Alpha.Modules.Billing.Contracts;
 using Alpha.Domain.Auditing;
 using Alpha.Domain.Employers;
+using Alpha.Domain.Identity;
 using Alpha.Domain.Organizations;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +20,13 @@ public sealed record UpdateAccessUserRequest(
     bool? CanCreateReport = null,
     bool? CanTransmitReport = null);
 public sealed record UpdateEmployerAccessRoleRequest(EmployerRole Role);
+public sealed record UpdateUserAccessTypeEmployer(Guid EmployerId, EmployerRole Role);
+public sealed record UpdateUserAccessTypeRequest(
+    string Type, OrganizationRole Role, EmployerAccessMode EmployerAccessMode,
+    bool CanCreateEmployer, bool CanEditEmployer, bool CanCreateEmployee, bool CanEditEmployee,
+    bool CanCreateReport, bool CanTransmitReport,
+    List<UpdateUserAccessTypeEmployer>? Employers);
+
 
 public static class AccessEndpoints
 {
@@ -55,6 +63,7 @@ public static class AccessEndpoints
                             user.DisplayName,
                             user.Email,
                             user.IsActive,
+                            user.IsPlatformAdmin,
                             Role = membership == null ? (OrganizationRole?)null : membership.Role,
                             EmployerAccessMode = membership == null ? EmployerAccessMode.SelectedEmployers : membership.EmployerAccessMode,
                             CanCreateEmployer = membership != null && membership.CanCreateEmployer,
@@ -172,6 +181,106 @@ public static class AccessEndpoints
 
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "membership.updated", nameof(OrganizationMembership),
                 membership.Id, organizationId, null, JsonSerializer.Serialize(request), http.TraceIdentifier));
+            await db.SaveChangesAsync(ct);
+            await lease.CommitAsync(ct);
+            return Results.NoContent();
+        });
+
+        // Change the user's effective type in this organization. Platform status is global;
+        // membership and employer grants are scoped to the selected organization.
+        group.MapPut("/users/{userId:guid}/type", async (Guid organizationId, Guid userId,
+            UpdateUserAccessTypeRequest request, AlphaDbContext db, ICurrentUser currentUser,
+            IOrganizationAuthorization access, IEntitlementService entitlements,
+            OrganizationEntitlementLock organizationLock, HttpContext http, CancellationToken ct) =>
+        {
+            if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+            var type = request.Type?.Trim().ToLowerInvariant();
+            if (type is not ("platform" or "organization" or "employer"))
+                return Results.BadRequest(new { error = "invalid_user_type" });
+            if (type == "platform" && !currentUser.IsPlatformAdmin) return Results.Forbid();
+            if (type != "platform" && (!Enum.IsDefined(request.Role) || !Enum.IsDefined(request.EmployerAccessMode)))
+                return Results.BadRequest(new { error = "invalid_access_role" });
+
+            var grants = request.Employers ?? new List<UpdateUserAccessTypeEmployer>();
+            if (type != "platform" && (grants.Count > 200 || grants.Select(x => x.EmployerId).Distinct().Count() != grants.Count ||
+                grants.Any(x => !Enum.IsDefined(x.Role))))
+                return Results.BadRequest(new { error = "invalid_employer_assignments" });
+            if (type == "employer" && grants.Count == 0)
+                return Results.BadRequest(new { error = "employer_assignment_required" });
+            if (type == "organization" && request.EmployerAccessMode == EmployerAccessMode.SelectedEmployers && grants.Count == 0)
+                return Results.BadRequest(new { error = "employer_assignment_required" });
+
+            await using var lease = await organizationLock.AcquireAsync(organizationId, ct);
+            var user = await db.Users.SingleOrDefaultAsync(x => x.Id == userId, ct);
+            if (user is null || !user.IsActive) return Results.NotFound();
+            if (user.IsReferent) return Results.Conflict(new { error = "referent_cannot_receive_customer_access" });
+            if (user.IsPlatformAdmin && !currentUser.IsPlatformAdmin) return Results.Forbid();
+            if (currentUser.UserId == userId && user.IsPlatformAdmin && type != "platform")
+                return Results.BadRequest(new { error = "cannot_change_own_platform_access" });
+
+            var membership = await db.OrganizationMemberships.SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId && x.UserId == userId, ct);
+            var hasGrants = await db.EmployerUserAccesses.AsNoTracking().AnyAsync(x =>
+                x.OrganizationId == organizationId && x.UserId == userId, ct);
+            if (membership is null && !hasGrants) return Results.NotFound();
+
+            if (membership?.IsActive == true && membership.Role == OrganizationRole.Admin &&
+                (type == "employer" || (type == "organization" && request.Role != OrganizationRole.Admin)))
+            {
+                var anotherAdmin = await db.OrganizationMemberships.AsNoTracking().AnyAsync(x =>
+                    x.OrganizationId == organizationId && x.UserId != userId && x.IsActive &&
+                    (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow) &&
+                    x.Role == OrganizationRole.Admin, ct);
+                if (!anotherAdmin) return Results.Conflict(new { error = "last_organization_admin" });
+            }
+
+            if (type != "platform" && grants.Count > 0)
+            {
+                var ids = grants.Select(x => x.EmployerId).ToArray();
+                var count = await db.Employers.AsNoTracking().CountAsync(x =>
+                    x.OrganizationId == organizationId && ids.Contains(x.Id), ct);
+                if (count != ids.Length) return Results.BadRequest(new { error = "employer_not_in_organization" });
+            }
+
+            if (type == "organization")
+            {
+                if (membership is null || !membership.IsActive || !membership.IsValidAt(DateTimeOffset.UtcNow))
+                {
+                    var entitlement = await entitlements.CanInviteUser(organizationId, userId, ct);
+                    if (!entitlement.Allowed) return EntitlementError(entitlement);
+                    if (membership is null)
+                    {
+                        membership = new OrganizationMembership(userId, organizationId, request.Role,
+                            request.EmployerAccessMode, currentUser.UserId);
+                        db.OrganizationMemberships.Add(membership);
+                    }
+                    else membership.Reactivate(request.Role, request.EmployerAccessMode);
+                }
+                else membership.ChangeAccess(request.Role, request.EmployerAccessMode);
+                membership.ChangePermissions(request.CanCreateEmployer, request.CanEditEmployer,
+                    request.CanCreateEmployee, request.CanEditEmployee, request.CanCreateReport, request.CanTransmitReport);
+            }
+            else if (type == "employer")
+            {
+                membership?.Deactivate();
+            }
+
+            if (type != "platform")
+            {
+                // Replace this organization's grants atomically, never touch other organizations.
+                await db.EmployerUserAccesses.Where(x =>
+                    x.OrganizationId == organizationId && x.UserId == userId).ExecuteDeleteAsync(ct);
+                if (type == "employer" || request.EmployerAccessMode == EmployerAccessMode.SelectedEmployers)
+                    foreach (var item in grants)
+                        db.EmployerUserAccesses.Add(new EmployerUserAccess(userId, organizationId, item.EmployerId, item.Role));
+                user.SetPlatformAdmin(false);
+            }
+            else user.SetPlatformAdmin(true);
+
+            db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "user.access-type.updated",
+                nameof(User), userId, organizationId, null,
+                JsonSerializer.Serialize(new { type, request.Role, request.EmployerAccessMode,
+                    employers = grants.Select(x => new { x.EmployerId, x.Role }).ToArray() }), http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
             await lease.CommitAsync(ct);
             return Results.NoContent();
