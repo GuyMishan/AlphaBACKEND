@@ -35,13 +35,16 @@ public static class AccessEndpoints
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/access")
             .RequireAuthorization().WithTags("Access");
 
-        group.MapGet("/users", async (Guid organizationId, Guid? employerId, string? search, int? skip, int? take,
+        group.MapGet("/users", async (Guid organizationId, Guid? employerId, string? search, int? skip, int? take, string? userType,
             AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct) =>
         {
             if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
             var safeTake = Math.Clamp(take ?? 30, 1, 50);
             var safeSkip = Math.Max(skip ?? 0, 0);
             var term = search?.Trim();
+            var filterType = userType?.Trim().ToLowerInvariant() ?? "all";
+            if (filterType is not ("all" or "organization" or "employer"))
+                return Results.BadRequest(new { error = "invalid_user_type_filter" });
 
             var memberships = db.OrganizationMemberships.AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId && x.IsActive &&
@@ -53,7 +56,7 @@ public static class AccessEndpoints
             var accessibleUserIds = organizationUserIds.Union(employerUserIds);
 
             var query = from user in db.Users.AsNoTracking()
-                        where accessibleUserIds.Contains(user.Id)
+                        where accessibleUserIds.Contains(user.Id) && !user.IsPlatformAdmin
                         join membership in memberships on user.Id equals membership.UserId into membershipRows
                         from membership in membershipRows.DefaultIfEmpty()
                         select new
@@ -75,13 +78,18 @@ public static class AccessEndpoints
                             DirectEmployerOnly = membership == null
                         };
 
+            // Employer filtering means DIRECT employer users only, not organization members
+            // (even when those members have grants to the selected employer).
             if (employerId.HasValue)
-                query = query.Where(x =>
-                    x.EmployerAccessMode == EmployerAccessMode.AllEmployers ||
+                query = query.Where(x => x.DirectEmployerOnly &&
                     db.EmployerUserAccesses.Any(grant =>
                         grant.OrganizationId == organizationId &&
                         grant.UserId == x.UserId &&
                         grant.EmployerId == employerId.Value));
+            else if (filterType == "organization")
+                query = query.Where(x => !x.DirectEmployerOnly);
+            else if (filterType == "employer")
+                query = query.Where(x => x.DirectEmployerOnly);
 
             if (!string.IsNullOrWhiteSpace(term))
                 query = query.Where(x => x.Email.StartsWith(term.ToLower()) || x.DisplayName.StartsWith(term));
