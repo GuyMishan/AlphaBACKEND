@@ -122,7 +122,8 @@ public static class EmployerEndpoints
             UpdateEmployerStatusRequest request, AlphaDbContext db, ICurrentUser user, IOrganizationAuthorization access,
             HttpContext http, CancellationToken ct) =>
         {
-            if (!await access.CanManageEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+            // Status changes are available to users with employer access; all other employer edits retain stronger permissions.
+            if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
             if (request.Status is not (EmployerStatus.Active or EmployerStatus.Closed))
                 return Results.BadRequest(new { error = "Employer status must be Active or Closed.", field = "status" });
 
