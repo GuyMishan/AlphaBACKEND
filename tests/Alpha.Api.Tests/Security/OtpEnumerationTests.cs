@@ -13,8 +13,8 @@ using static Alpha.Api.Tests.TestInfrastructure.AlphaApiTestHost;
 namespace Alpha.Api.Tests.Security;
 
 /// <summary>
-/// The login OTP request must answer identically whether or not the national ID and phone belong to an account.
-/// Resend cooldown and the hourly cap previously returned 429 only for real accounts, which made them an oracle.
+/// Login rejects an unknown national ID/phone pair with a generic error, without identifying the incorrect field.
+/// Known accounts still receive the same neutral success response during resend cooldown and hourly limits.
 /// </summary>
 public sealed class OtpEnumerationTests
 {
@@ -27,7 +27,7 @@ public sealed class OtpEnumerationTests
     };
 
     [Fact]
-    public async Task Resend_within_the_cooldown_answers_like_an_unknown_account_and_sends_nothing()
+    public async Task Resend_within_the_cooldown_returns_success_and_unknown_account_is_rejected()
     {
         var mail = new RecordingMailGateway();
         await RunAsync(async (factory, client, ct) =>
@@ -38,15 +38,16 @@ public sealed class OtpEnumerationTests
             var resend = await RequestOtpAsync(client, NationalId, Phone, "10.1.0.2", ct);
             var unknown = await RequestOtpAsync(client, "987654324", "0539876543", "10.1.0.3", ct);
 
-            Assert.All(new[] { first, resend, unknown }, r => Assert.Equal(HttpStatusCode.OK, r.Status));
-            Assert.Equal(unknown.Members, resend.Members);
+            Assert.Equal(HttpStatusCode.OK, first.Status);
+            Assert.Equal(HttpStatusCode.OK, resend.Status);
+            Assert.Equal(HttpStatusCode.BadRequest, unknown.Status);
             Assert.Equal(first.ChallengeId, resend.ChallengeId);
             Assert.Equal(1, mail.Deliveries);
         }, OtpSettings, mail.Install);
     }
 
     [Fact]
-    public async Task Hourly_cap_answers_like_an_unknown_account_and_sends_nothing()
+    public async Task Hourly_cap_returns_success_but_unknown_account_is_rejected()
     {
         var mail = new RecordingMailGateway();
         await RunAsync(async (factory, client, ct) =>
@@ -68,7 +69,7 @@ public sealed class OtpEnumerationTests
             var unknown = await RequestOtpAsync(client, "987654324", "0539876543", "10.2.0.2", ct);
 
             Assert.Equal(HttpStatusCode.OK, capped.Status);
-            Assert.Equal(unknown.Members, capped.Members);
+            Assert.Equal(HttpStatusCode.BadRequest, unknown.Status);
             Assert.Equal(0, mail.Deliveries);
         }, OtpSettings, mail.Install);
     }
