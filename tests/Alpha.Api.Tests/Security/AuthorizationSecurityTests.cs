@@ -338,6 +338,43 @@ public sealed class AuthorizationSecurityTests
     }
 
     [Fact]
+    public async Task Employer_viewer_can_change_status_but_cannot_change_employer_profile_or_foreign_status()
+    {
+        await RunAsync(async (factory, client, ct) =>
+        {
+            var own = await SeedTenantAsync(factory, "status-own");
+            var foreign = await SeedTenantAsync(factory, "status-foreign");
+            var (viewer, session) = await SeedUserAsync(factory, "status-viewer", platformAdmin: false);
+            await factory.WithDbAsync(async db =>
+            {
+                db.Add(new OrganizationMembership(viewer.Id, own.Organization.Id, OrganizationRole.Viewer,
+                    EmployerAccessMode.AllEmployers, own.Admin.Id));
+                await db.SaveChangesAsync(ct);
+            });
+
+            var route = $"/api/organizations/{own.Organization.Id}/employers/{own.Employer.Id}";
+            using var status = await client.SendAsync(Request(HttpMethod.Put, $"{route}/status", viewer.Id, session.Id,
+                json: new { status = 4 }), ct);
+            Assert.Equal(HttpStatusCode.OK, status.StatusCode);
+
+            using var edit = await client.SendAsync(Request(HttpMethod.Put, route, viewer.Id, session.Id,
+                json: new { legalName = "Not Allowed", registrationNumber = "12345678", withholdingFileNumber = "123456789" }), ct);
+            Assert.Equal(HttpStatusCode.Forbidden, edit.StatusCode);
+
+            using var outside = await client.SendAsync(Request(HttpMethod.Put,
+                $"/api/organizations/{foreign.Organization.Id}/employers/{foreign.Employer.Id}/status",
+                viewer.Id, session.Id, json: new { status = 4 }), ct);
+            Assert.Equal(HttpStatusCode.Forbidden, outside.StatusCode);
+
+            await factory.WithDbAsync(async db =>
+            {
+                Assert.Equal(EmployerStatus.Closed, (await db.Employers.SingleAsync(x => x.Id == own.Employer.Id, ct)).Status);
+                Assert.NotEqual(EmployerStatus.Closed, (await db.Employers.SingleAsync(x => x.Id == foreign.Employer.Id, ct)).Status);
+            });
+        });
+    }
+
+    [Fact]
     public async Task Viewer_cannot_perform_administrative_or_mutating_actions()
     {
         await RunAsync(async (factory, client, ct) =>
