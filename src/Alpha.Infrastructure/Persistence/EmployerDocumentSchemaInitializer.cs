@@ -21,6 +21,7 @@ public static class EmployerDocumentSchemaInitializer
                 "CreatedAt" timestamptz NOT NULL
             );
             ALTER TABLE employers.employer_documents DROP CONSTRAINT IF EXISTS "employer_documents_DocumentTypeCode_check";
+            ALTER TABLE employers.employer_documents DROP CONSTRAINT IF EXISTS employer_documents_document_type_check;
             ALTER TABLE employers.employer_documents ADD CONSTRAINT employer_documents_document_type_check CHECK ("DocumentTypeCode" IN (3,4,5,6,7));
             ALTER TABLE employers.employer_documents ADD COLUMN IF NOT EXISTS "EmployeePensionProductId" uuid NULL;
             CREATE INDEX IF NOT EXISTS ix_employer_documents_product ON employers.employer_documents ("EmployeePensionProductId");
