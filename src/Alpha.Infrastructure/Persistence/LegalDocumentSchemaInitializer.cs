@@ -24,4 +24,26 @@ public static class LegalDocumentSchemaInitializer
         CREATE UNIQUE INDEX IF NOT EXISTS ix_legal_one_draft
             ON reference_data.legal_document_versions (status) WHERE status = 'draft';
         """);
+    /// <summary>
+    /// Version 1 release seed. Never overwrites an existing draft or legal version.
+    /// Runs after the schema initializer; publications after v1 use the admin API.
+    /// </summary>
+    public static async Task PublishVersionOneIfEmptyAsync(AlphaDbContext db)
+    {
+        const string resourceName = "Alpha.Infrastructure.LegalDocuments.PolicyV1.md";
+        await using var stream = typeof(LegalDocumentSchemaInitializer).Assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException($"Missing embedded legal document resource: {resourceName}");
+        using var reader = new StreamReader(stream);
+        var markdown = await reader.ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(markdown))
+            throw new InvalidOperationException("The legal document v1 resource is empty.");
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO reference_data.legal_document_versions
+                (id, version, title, markdown, status, requires_reacceptance, created_at, published_at, effective_at)
+            SELECT {Guid.NewGuid()}, 1, {"ALPHA — מדיניות ומידע משפטי"}, {markdown},
+                'published', false, now(), now(), now()
+            WHERE NOT EXISTS (SELECT 1 FROM reference_data.legal_document_versions)
+            ON CONFLICT (version) DO NOTHING
+            """);
+    }
 }
