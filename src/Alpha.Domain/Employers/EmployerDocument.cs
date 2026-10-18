@@ -11,8 +11,8 @@ public sealed class EmployerDocument : Entity
     {
         if (organizationId == Guid.Empty || employerId == Guid.Empty) throw new ArgumentException("Employer scope is required.");
         if (documentTypeCode is not (3 or 4 or 5 or 6 or 7)) throw new ArgumentOutOfRangeException(nameof(documentTypeCode));
-        if (documentTypeCode is 3 or 7 && (employmentId.HasValue || employeePensionProductId.HasValue))
-            throw new ArgumentException("Employer affidavits cannot be assigned to an employee or pension product.");
+        if (documentTypeCode is (3 or 7) && (employmentId.HasValue || employeePensionProductId.HasValue))
+            throw new ArgumentException("Employer-wide documents cannot be assigned to an employee or pension product.");
         if (documentTypeCode is not (3 or 7) && (employmentId is null || employeePensionProductId is null))
             throw new ArgumentException("A pension product assignment is required.", nameof(employeePensionProductId));
         if (string.IsNullOrWhiteSpace(fileName) || encryptedContent.Length == 0) throw new ArgumentException("PDF is required.");
@@ -35,7 +35,7 @@ public sealed class EmployerDocument : Entity
 
     public void AssignProduct(Guid productId)
     {
-        if (EmploymentId is null || DocumentTypeCode == 3)
+        if (EmploymentId is null || DocumentTypeCode is 3 or 7)
             throw new InvalidOperationException("Employer-wide documents cannot be assigned to pension products.");
         if (productId == Guid.Empty) throw new ArgumentException("Product ID is required.", nameof(productId));
         if (EmployeePensionProductId.HasValue)
