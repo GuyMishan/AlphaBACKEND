@@ -15,7 +15,7 @@ public sealed class SessionActivityMiddleware(RequestDelegate next)
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan TouchInterval = TimeSpan.FromMinutes(1);
 
-    public async Task InvokeAsync(HttpContext context, AlphaDbContext db)
+    public async Task InvokeAsync(HttpContext context, AlphaDbContext db, IHostEnvironment environment)
     {
         if (context.User.Identity?.IsAuthenticated != true) { await next(context); return; }
         var sidValue = context.User.FindFirstValue("alpha:session_id");
@@ -39,6 +39,32 @@ public sealed class SessionActivityMiddleware(RequestDelegate next)
 
         if (now - session.LastActivityAt >= TouchInterval)
         { session.TouchActivity(now); await db.SaveChangesAsync(context.RequestAborted); }
+        // Production-only admission check. Existing sessions and fresh OTP sign-ins share this gate.
+        // The consent/session and logout endpoints remain available so the user can accept or leave.
+        if (environment.IsProduction() && !context.Request.Path.StartsWithSegments("/api/auth/legal/accept")
+            && !context.Request.Path.StartsWithSegments("/api/auth/session")
+            && !context.Request.Path.StartsWithSegments("/api/auth/logout")
+            && !context.Request.Path.StartsWithSegments("/api/legal-document")
+            && !context.Request.Path.StartsWithSegments("/health"))
+        {
+            var required = await db.Database.SqlQueryRaw<int>(
+                """
+                SELECT version AS "Value" FROM reference_data.legal_document_versions
+                WHERE status='published' AND effective_at <= now() ORDER BY version DESC LIMIT 1
+                """).ToListAsync(context.RequestAborted);
+            if (required.Count > 0)
+            {
+                var accepted = await db.Database.SqlQueryRaw<int?>(
+                    "SELECT \"AcceptedLegalVersion\" AS \"Value\" FROM identity.users WHERE \"Id\" = {0}", uid)
+                    .ToListAsync(context.RequestAborted);
+                if (accepted.FirstOrDefault() != required[0])
+                {
+                    context.Response.StatusCode = StatusCodes.Status409Conflict;
+                    await context.Response.WriteAsJsonAsync(new { error = "legal_consent_required" }, context.RequestAborted);
+                    return;
+                }
+            }
+        }
         await next(context);
     }
 }
