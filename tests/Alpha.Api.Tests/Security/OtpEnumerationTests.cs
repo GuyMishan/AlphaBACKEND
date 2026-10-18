@@ -81,15 +81,6 @@ public sealed class OtpEnumerationTests
         await RunAsync(async (factory, client, ct) =>
         {
             await SeedAccountAsync(factory);
-            await factory.WithDbAsync(async db =>
-            {
-                await db.Database.ExecuteSqlRawAsync("""
-                    INSERT INTO reference_data.legal_document_versions
-                        (id, version, title, markdown, status, requires_reacceptance, created_at, published_at, effective_at)
-                    VALUES (gen_random_uuid(), 1, 'Terms', '# Terms', 'published', false, now(), now(), now());
-                    """, ct);
-            });
-
             // An existing national ID is answered with a neutral 200 before any cooldown is checked.
             var existing = new[]
             {
