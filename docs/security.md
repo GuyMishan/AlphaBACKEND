@@ -150,3 +150,7 @@ The legal-document API permits anonymous reads of active and historical publishe
 ## Registration consent enforcement
 
 Anonymous registration requires explicit terms acceptance and the current effective legal-document version. The server binds the choice and separate marketing opt-in to the OTP challenge and rechecks the active legal version at verification. User creation, consent snapshot and append-only events share the registration transaction; changes to the terms during OTP require a fresh challenge. Until the first approved legal document is published, new registrations fail closed. Existing accounts are unaffected at this stage.
+
+## Legal version admission gate
+
+Production authenticated API requests require current published legal version. `/api/auth/session` reports mismatch without blocking and `/api/auth/legal/accept` validates current version before saving; `/api/auth/logout` remains available. Newly registered users carry the OTP-bound legal consent version. Marketing opt-in is separately editable by the authenticated user. Middleware enforcement should be regression tested in an environment exercising production gating.
