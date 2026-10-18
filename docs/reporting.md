@@ -23,10 +23,14 @@ whether negative and/or current technical documents would be generated and
 how many source/workspace products each would include. An empty result is not
 permission to transmit: it means no executable route is currently available.
 
-**Important:** This endpoint is read-only; it neither chooses nor persists a route.
+**Important:** The preview endpoint is read-only; it neither chooses nor persists a route.
 `materialize-correction` still has the existing semantics and does not accept a
-route selection. A separate validated completion contract is needed before the UI
-can honestly offer interactive route selection or send a correction from the wizard.
+route selection. The `POST /api/organizations/{organizationId}/employers/{employerId}/manual-reports/{workspaceId}/complete-correction`
+endpoint accepts `{ "routeId": "delta-replacement" }`, rechecks the preview on the server,
+and materializes the negative/current technical drafts atomically using the existing workflow.
+It returns the technical report IDs with `transmitted: false`. This completes preparation,
+**not transmission**; the technical documents must still pass validation and be sent in
+the prescribed order. No unsupported alternative route is exposed.
 
 ## Feedback resolution
 
