@@ -93,6 +93,19 @@ public sealed class CompatibilityBaselineTests
     }
 
     [Fact]
+    public void Docker_context_includes_embedded_legal_policy()
+    {
+        var dockerIgnore = Read(".dockerignore");
+        Assert.Contains("!docs/legal/", dockerIgnore, StringComparison.Ordinal);
+        Assert.Contains("!docs/legal/ALPHA_LEGAL_POLICY_V1.md", dockerIgnore, StringComparison.Ordinal);
+        var infrastructureProject = Read("src/Alpha.Infrastructure/Alpha.Infrastructure.csproj");
+        Assert.Contains("../../docs/legal/ALPHA_LEGAL_POLICY_V1.md", infrastructureProject, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path("docs/legal/ALPHA_LEGAL_POLICY_V1.md")));
+        Assert.Contains("LegalDocumentSchemaInitializer.PublishVersionOneIfEmptyAsync",
+            Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs"), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Blank_database_bootstrap_has_no_hidden_initializer_dependency()
     {
         var snapshot = Read("src/Alpha.Infrastructure/Persistence/PensionFundSnapshotSchemaInitializer.cs");
