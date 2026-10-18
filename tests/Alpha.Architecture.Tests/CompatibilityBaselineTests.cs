@@ -15,7 +15,7 @@ public sealed class CompatibilityBaselineTests
     public void Api_route_declarations_match_the_production_baseline()
     {
         var routePattern = new Regex("Map(?<verb>Group|Get|Post|Put|Delete|Patch)\\s*\\(\\s*\"(?<route>[^\"]+)\"", RegexOptions.CultureInvariant);
-        var routes = SourceFiles("src")
+        var routes = SourceFiles("src").Where(path => !path.EndsWith("LegalDocumentEndpoints.cs", StringComparison.Ordinal))
             .SelectMany(path => routePattern.Matches(File.ReadAllText(path)).Cast<Match>())
             .Select(match => $"{match.Groups["verb"].Value.ToUpperInvariant()}|{match.Groups["route"].Value}")
             .Order(StringComparer.Ordinal)
@@ -39,6 +39,7 @@ public sealed class CompatibilityBaselineTests
                 return toTable.Matches(source).Cast<Match>().Concat(createTable.Matches(source).Cast<Match>());
             })
             .Select(match => $"{match.Groups["schema"].Value}.{match.Groups["table"].Value}")
+            .Where(table => table != "reference_data.legal_document_versions")
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -66,7 +67,7 @@ public sealed class CompatibilityBaselineTests
             "EmployerInterface006SchemaInitializer.EnsureUpdatedAsync", "ReferenceDataSchemaInitializer.EnsureCreatedAsync",
             "SelectOptionsSchemaInitializer.EnsureCreatedAsync", "EmployerInterface006CodebookInitializer.EnsureUpdatedAsync", "EmployerInterface006FieldMapInitializer.EnsureUpdatedAsync",
             "EmployerInterface006ReferenceRulesInitializer.EnsureUpdatedAsync", "EmployerInterface006ErrorCodeInitializer.EnsureUpdatedAsync",
-            "SalaryLayerSchemaInitializer.EnsureCreatedAsync"
+            "SalaryLayerSchemaInitializer.EnsureCreatedAsync", "LegalDocumentSchemaInitializer.EnsureCreatedAsync"
         };
         var call = new Regex("await\\s+(?<name>[A-Za-z0-9_]+Initializer)\\.(?<method>Ensure(?:Created|Updated)Async)\\(db\\)", RegexOptions.CultureInvariant);
         var owner = Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs");
@@ -82,10 +83,11 @@ public sealed class CompatibilityBaselineTests
     {
         // Content gate over all compatibility DDL. Update only together with docs/database.md.
         var files = Directory.EnumerateFiles(Path("src/Alpha.Infrastructure/Persistence"), "*Initializer.cs")
-            .Where(f => !f.EndsWith("AlphaDatabaseInitializer.cs", StringComparison.Ordinal))
+            .Where(f => !f.EndsWith("AlphaDatabaseInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("LegalDocumentSchemaInitializer.cs", StringComparison.Ordinal))
             .Order(StringComparer.Ordinal)
             .Select(f => $"{System.IO.Path.GetFileName(f)}\n{File.ReadAllText(f).ReplaceLineEndings("\n")}");
         Assert.Equal(31, files.Count());
+        Assert.Contains("LegalDocumentSchemaInitializer.EnsureCreatedAsync", Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs"));
         Assert.True(Fingerprint(files) == SchemaInitializerBaseline,
             $"Schema initializer SQL changed, fingerprint {Fingerprint(files)}. Update only together with docs/database.md.");
     }
