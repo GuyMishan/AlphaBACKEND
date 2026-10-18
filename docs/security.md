@@ -146,3 +146,7 @@ The organization-scoped `PUT /api/organizations/{organizationId}/access/users/{u
 ## Legal document publishing
 
 The legal-document API permits anonymous reads of active and historical published/archived versions only; drafts and writes require an authenticated platform administrator. Markdown is bounded and rejects raw angle brackets and dangerous URI schemes, and consuming UIs must render Markdown with HTML disabled and URL sanitization. Publishing preserves text, creator timestamps and reacceptance flag. No user-consent enforcement is introduced in this foundation stage.
+
+## Registration consent enforcement
+
+Anonymous registration requires explicit terms acceptance and the current effective legal-document version. The server binds the choice and separate marketing opt-in to the OTP challenge and rechecks the active legal version at verification. User creation, consent snapshot and append-only events share the registration transaction; changes to the terms during OTP require a fresh challenge. Until the first approved legal document is published, new registrations fail closed. Existing accounts are unaffected at this stage.
