@@ -114,3 +114,7 @@ Business rules: [reporting.md](reporting.md). Authoritative 006 sources: `docs/s
 
 - `src/Modules/ReferenceData/Alpha.Modules.ReferenceData/Features/LegalDocuments/LegalDocumentEndpoints.cs`: public active and historical legal Markdown, platform-admin draft/publish/archive API.
 - `src/Alpha.Infrastructure/Persistence/LegalDocumentSchemaInitializer.cs`: additive global document-version schema. This is intentionally managed through raw SQL (no new DbSet) so the established EF model remains unchanged.
+
+## Registration consent (stage 2)
+
+IdentityAccess Authentication verifies the latest effective legal version at registration request and OTP verification. `RegistrationConsentSchemaInitializer` stores OTP-bound intent, user consent snapshot and immutable event history. No marketing consent is implied by acceptance of the legal document.
