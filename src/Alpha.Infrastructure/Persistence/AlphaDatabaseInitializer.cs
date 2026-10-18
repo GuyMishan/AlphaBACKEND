@@ -56,5 +56,6 @@ public static class AlphaDatabaseInitializer
         await EmployerInterface006ErrorCodeInitializer.EnsureUpdatedAsync(db);
         await SalaryLayerSchemaInitializer.EnsureCreatedAsync(db);
         await LegalDocumentSchemaInitializer.EnsureCreatedAsync(db);
+        await LegalDocumentSchemaInitializer.PublishVersionOneIfEmptyAsync(db);
     }
 }
