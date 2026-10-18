@@ -15,8 +15,10 @@ public sealed class LegalDocumentHttpIntegrationTests
     {
         await AlphaApiTestHost.RunAsync(async (factory, client, ct) =>
         {
-            using var missing = await client.GetAsync("/api/legal-document/active", ct);
-            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            using var initial = await client.GetAsync("/api/legal-document/active", ct);
+            Assert.Equal(HttpStatusCode.OK, initial.StatusCode);
+            using (var initialBody = JsonDocument.Parse(await initial.Content.ReadAsStringAsync(ct)))
+                Assert.Equal(1, initialBody.RootElement.GetProperty("version").GetInt32());
 
             var admin = new User("legal-admin", "legal-admin@test.invalid", "Legal Administrator");
             admin.SetPlatformAdmin(true);
@@ -46,9 +48,9 @@ public sealed class LegalDocumentHttpIntegrationTests
             {
                 Assert.Equal(HttpStatusCode.Created, created.StatusCode);
                 using var response = JsonDocument.Parse(await created.Content.ReadAsStringAsync(ct));
-                Assert.Equal(1, response.RootElement.GetProperty("version").GetInt32());
+                Assert.Equal(2, response.RootElement.GetProperty("version").GetInt32());
             }
-            using (var unpublished = await client.GetAsync("/api/legal-document/versions/1", ct))
+            using (var unpublished = await client.GetAsync("/api/legal-document/versions/2", ct))
                 Assert.Equal(HttpStatusCode.NotFound, unpublished.StatusCode);
 
             using (var request = AlphaApiTestHost.Request(HttpMethod.Post, "/api/platform/legal-document/draft/publish",
@@ -75,14 +77,15 @@ public sealed class LegalDocumentHttpIntegrationTests
             {
                 Assert.Equal(HttpStatusCode.Created, created.StatusCode);
                 using var body = JsonDocument.Parse(await created.Content.ReadAsStringAsync(ct));
-                Assert.Equal(2, body.RootElement.GetProperty("version").GetInt32());
+                Assert.Equal(3, body.RootElement.GetProperty("version").GetInt32());
             }
 
             await factory.WithDbAsync(async db =>
             {
                 // Re-running the additive initializer must not rewrite the published version.
                 await Alpha.Infrastructure.Persistence.LegalDocumentSchemaInitializer.EnsureCreatedAsync(db);
-                Assert.Equal(2, await db.Database.SqlQueryRaw<int>(
+                await Alpha.Infrastructure.Persistence.LegalDocumentSchemaInitializer.PublishVersionOneIfEmptyAsync(db);
+                Assert.Equal(3, await db.Database.SqlQueryRaw<int>(
                     "SELECT count(*)::integer AS \"Value\" FROM reference_data.legal_document_versions").SingleAsync(ct));
             });
         });
