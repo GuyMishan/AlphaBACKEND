@@ -473,6 +473,43 @@ public static class CorrectionWorkflowService
         return true;
     }
 
+    public sealed record CorrectionRoutePreview(
+        string Id, string Title, string Description, bool RequiresNegative,
+        bool RequiresCurrent, int PendingChanges, int NegativeProducts, int CurrentProducts);
+
+    public static async Task<CorrectionRoutePreview?> PreviewRouteAsync(
+        Guid organizationId, Guid employerId, Guid workspaceId,
+        AlphaDbContext db, IDataProtectionService protector, CancellationToken ct)
+    {
+        var workspace = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.Id == workspaceId && x.OrganizationId == organizationId && x.EmployerId == employerId
+            && x.IsCorrectionWorkspace && x.SourceReportId.HasValue
+            && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
+                || x.Status == ManualReportStatus.Error), ct);
+        if (workspace is null) return null;
+        var source = await LoadGraphAsync(workspace.SourceReportId!.Value, db, ct);
+        var edited = await LoadGraphAsync(workspaceId, db, ct);
+        if (source is null || edited is null || source.Report.IsTechnicalCorrectionDocument
+            || source.Report.ReportKind != ManualReportKind.Current
+            || source.Report.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
+            return null;
+        var delta = BuildDeltaPlan(source, edited, protector);
+        if (delta.PendingChanges == 0
+            || delta.NegativeSourceProductIds.Any(id => !source.Metadata.ContainsKey(id)))
+            return null;
+        var hasNegative = delta.NegativeSourceProductIds.Count > 0;
+        var hasCurrent = delta.CurrentWorkspaceProductIds.Count > 0;
+        var title = hasNegative && hasCurrent ? "ביטול הנתונים הישנים ודיווח מתוקן"
+            : hasNegative ? "ביטול הנתונים הקודמים" : "דיווח הנתונים שנוספו";
+        var description = hasNegative && hasCurrent
+            ? "ייווצר דיווח שלילי עבור נתונים שהשתנו או הוסרו, ולאחריו דיווח שוטף עבור הנתונים המעודכנים."
+            : hasNegative ? "ייווצר דיווח שלילי בלבד עבור הנתונים שהוסרו."
+            : "ייווצר דיווח שוטף עבור מוצרים חדשים בלבד.";
+        return new CorrectionRoutePreview("delta-replacement", title, description, hasNegative,
+            hasCurrent, delta.PendingChanges, delta.NegativeSourceProductIds.Count,
+            delta.CurrentWorkspaceProductIds.Count);
+    }
+
     public static async Task<int> PendingChangeCountAsync(
         Guid reportId, AlphaDbContext db, IDataProtectionService protector, CancellationToken ct)
     {

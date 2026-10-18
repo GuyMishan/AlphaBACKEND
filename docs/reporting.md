@@ -12,6 +12,29 @@ Business rules of the Reporting module that are not obvious from the code. Autho
 - Correction materialization is atomic: all technical documents are created and the workspace is claimed, or everything rolls back. Added/Changed/Removed/Unchanged comes from source-versus-workspace state; unchanged products are not retransmitted. Current-correction previous references follow product lineage to the matching negative technical product.
 - XML parsing disables DTD/XXE and bounds document size. Report identifiers, bank accounts, payloads and feedback evidence are encrypted at rest ([security.md](security.md#sensitive-data)).
 
+## Correction route preview (in development)
+
+`GET /api/organizations/{organizationId}/employers/{employerId}/manual-reports/{workspaceId}/correction-routes`
+requires report-creation permission and previews the existing correction materialization
+algorithm without mutating any report. It returns `{ routes, canComplete }`. At present,
+only the supported `delta-replacement` route is returned, when the workspace
+has changes and its transmitted current source is valid. The route describes
+whether negative and/or current technical documents would be generated and
+how many source/workspace products each would include. An empty result is not
+permission to transmit: it means no executable route is currently available.
+
+**Important:** The preview endpoint is read-only; it neither chooses nor persists a route.
+`materialize-correction` still has the existing semantics and does not accept a
+route selection. The `POST /api/organizations/{organizationId}/employers/{employerId}/manual-reports/{workspaceId}/complete-correction`
+endpoint accepts `{ "routeId": "delta-replacement" }`, rechecks the preview on the server,
+and materializes the negative/current technical drafts atomically using the existing workflow.
+It returns the technical report IDs with `transmitted: false`. This completes preparation,
+**not transmission**; the technical documents must still pass validation and be sent in
+the prescribed order. No unsupported alternative route is exposed.
+
+
+API compatibility review: the feature adds exactly two tenant-scoped routes, `GET /{reportId}/correction-routes` and `POST /{reportId}/complete-correction` within the manual-reports group. The architecture route baseline is intentionally updated from 246 to 248 declarations; no existing route was removed or changed.
+
 ## Feedback resolution
 
 - Actionable feedback is projected into deterministic per-feedback/contribution/sequence/error **ProblemIds**. A newer feedback file produces new ProblemIds, so an old resolution cannot hide it. Codes without a playbook entry (`FeedbackResolutionPlaybookCatalog`) are explicit "unsupported", never silently mapped; unsupported or stale actions fail closed.

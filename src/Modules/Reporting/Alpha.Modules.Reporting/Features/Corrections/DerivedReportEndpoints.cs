@@ -24,6 +24,8 @@ public static class DerivedReportEndpoints
         group.MapPost("/derived", CreateDerivedReportAsync);
         group.MapPost("/{reportId:guid}/correction-workspace", EnsureCorrectionWorkspaceAsync);
         group.MapPost("/{reportId:guid}/materialize-correction", MaterializeCorrectionAsync);
+        group.MapGet("/{reportId:guid}/correction-routes", GetCorrectionRoutesAsync);
+        group.MapPost("/{reportId:guid}/complete-correction", CompleteCorrectionAsync);
         group.MapGet("/{reportId:guid}/metadata", GetMetadataAsync);
         return endpoints;
     }
@@ -75,6 +77,57 @@ public static class DerivedReportEndpoints
             result.Created,
             result.PendingChanges
         });
+    }
+
+    private static async Task<IResult> GetCorrectionRoutesAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        AlphaDbContext db, IOrganizationAuthorization access,
+        IDataProtectionService protector, CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+
+        var route = await CorrectionWorkflowService.PreviewRouteAsync(
+            organizationId, employerId, reportId, db, protector, ct);
+        return Results.Ok(new
+        {
+            routes = route is null ? Array.Empty<CorrectionWorkflowService.CorrectionRoutePreview>()
+                : new[] { route },
+            canComplete = route is not null
+        });
+    }
+
+    private sealed record CompleteCorrectionRequest(string RouteId);
+
+    private static async Task<IResult> CompleteCorrectionAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        CompleteCorrectionRequest request, AlphaDbContext db, IOrganizationAuthorization access,
+        IDataProtectionService protector, ICurrentUser currentUser, HttpContext http, CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+        if (request.RouteId != "delta-replacement")
+            return Results.BadRequest(new { error = "correction_route_unsupported" });
+
+        // Recompute under server authority; a stale modal cannot finalize an invalid workspace.
+        var route = await CorrectionWorkflowService.PreviewRouteAsync(
+            organizationId, employerId, reportId, db, protector, ct);
+        if (route is null || route.Id != request.RouteId)
+            return Results.Conflict(new { error = "correction_route_not_available" });
+
+        var result = await CorrectionWorkflowService.MaterializeAsync(
+            organizationId, employerId, reportId, db, protector, ct);
+        if (result is null)
+            return Results.Conflict(new { error = "correction_workspace_not_ready" });
+
+        db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "report-correction.route-selected",
+            nameof(ManualReport), result.WorkspaceId, organizationId, employerId,
+            System.Text.Json.JsonSerializer.Serialize(new { request.RouteId, result.NegativeReportId,
+                result.CurrentReportId, result.PendingChanges }), http.TraceIdentifier));
+        await db.SaveChangesAsync(ct);
+        // Materialization creates technical drafts; it does NOT transmit them.
+        return Results.Ok(new { result.WorkspaceId, result.NegativeReportId, result.CurrentReportId,
+            result.PendingChanges, result.RevisionNumber, transmitted = false });
     }
 
     private static async Task<IResult> MaterializeCorrectionAsync(
