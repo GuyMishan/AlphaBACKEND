@@ -43,6 +43,10 @@ public static class ReportTransmissionEndpoints
             return Results.Conflict(new { error = "manufacturer_route_split_disabled" });
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct))
             return Results.Forbid();
+        if (!await db.EmployerDocuments.AsNoTracking().AnyAsync(
+            d => d.OrganizationId == organizationId && d.EmployerId == employerId
+                && d.DocumentTypeCode == 7 && d.EmploymentId == null, ct))
+            return Results.Conflict(new { error = "employer_legal_agreement_required" });
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
         if (!entitlement.Allowed)
             return Results.Conflict(new { error = entitlement.Error, feature = entitlement.Feature });
