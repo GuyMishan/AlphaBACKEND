@@ -117,10 +117,14 @@ public static class ReportTransmissionEndpoints
                 errors = generated.Validation.Issues
             });
         }
+        var hasEmployerAgreement = await db.EmployerDocuments.AsNoTracking().AnyAsync(
+            d => d.OrganizationId == organizationId && d.EmployerId == employerId
+                && d.DocumentTypeCode == 7 && d.EmploymentId == null, ct);
         return Results.Ok(new
         {
             reportId,
-            canTransmit = allPackagesValid && groups.Length > 0
+            employerAgreementRequired = !hasEmployerAgreement,
+            canTransmit = hasEmployerAgreement && allPackagesValid && groups.Length > 0
                 && (groups.Length == 1
                     || configuration.GetValue<bool>("Reporting:ManufacturerRouting:EnableHybridDispatch"))
                 && groups.All(group => available.Any(provider => provider.IsConfigured
