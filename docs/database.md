@@ -158,3 +158,7 @@ Mechanics:
 ## Legal document versions (2026-10-18)
 
 `reference_data.legal_document_versions` is owned by ReferenceData, global (not tenant-scoped). One draft at a time, monotonically numbered versions, immutable published Markdown and audit timestamps. The additive initializer is idempotent and runs after the legacy initializers. No existing data is rewritten. Roll forward by fixing the initializer; do not drop published evidence. The previous 67-table/31-initializer compatibility hashes remain pinned to historical tables and initializers; this new table/initializer has explicit compatibility assertions. Initial rollout has no published legal content; a platform admin must publish an approved version. Test both empty and populated isolated databases before deployment.
+
+## Registration consent (2026-10-18)
+
+`identity.registration_consent_intents` binds legal version and optional marketing decision to registration OTP (FK CASCADE on challenge expiry cleanup); `identity.user_consent_events` is append-only evidence of terms acceptance and marketing preference, with FK to preserved legal versions and users. `identity.users` gains `AcceptedLegalVersion`, `AcceptedLegalAt`, and `MarketingEmailOptIn` (false by default). Existing users retain null legal acceptance and are not automatically blocked until the reacceptance flow (stage 5). Two new tables are additive: 70 tables total. No live/shared DB writes used for tests.
