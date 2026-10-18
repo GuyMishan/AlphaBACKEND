@@ -154,3 +154,7 @@ Mechanics:
 
 - Development: `docker compose up -d postgres` (port 5432, database `alpha`, persistent volume) — `dotnet run` bootstraps it when empty.
 - Tests: `docker-compose.test.yml` (loopback port 55432, database `alpha_tests`, tmpfs). `PostgresTestEnvironment` refuses any non-loopback host or other database name; integration tests create and drop their own databases on that server.
+
+## Legal document versions (2026-10-18)
+
+`reference_data.legal_document_versions` is owned by ReferenceData, global (not tenant-scoped). One draft at a time, monotonically numbered versions, immutable published Markdown and audit timestamps. The additive initializer is idempotent and runs after the legacy initializers. No existing data is rewritten. Roll forward by fixing the initializer; do not drop published evidence. The previous 67-table/31-initializer compatibility hashes remain pinned to historical tables and initializers; this new table/initializer has explicit compatibility assertions. Initial rollout has no published legal content; a platform admin must publish an approved version. Test both empty and populated isolated databases before deployment.

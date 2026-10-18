@@ -226,3 +226,7 @@ Authorization concealment is intentional: resources outside the caller's scope r
 - **A12.3** replaced the per-module error bodies with one RFC 9457 contract produced only by the host (a filter on the root route group, status-code pages and one exception handler), keeping the previous `error` value as a deprecated alias for a frontend-independent rollout; closed two OTP enumeration oracles and the header-based invitation link; aligned the mail gateway script with the backend; and added the read-only production data-check script.
 
 The intermediate A0–A8 decision records were never committed; they were removed after their lasting decisions were folded into this section.
+
+## Legal content ownership
+
+ReferenceData owns the one global legal Markdown document and its versions, exposed at `/api/legal-document` (anonymous read) and `/api/platform/legal-document` (platform admin management). Published version text is immutable; archival changes status only. This does not yet implement user consent recording or employer transmission gating (later tasks).

@@ -1,4 +1,5 @@
 using Alpha.Modules.ReferenceData.Features.Administration;
+using Alpha.Modules.ReferenceData.Features.LegalDocuments;
 using Alpha.Modules.ReferenceData.Application;
 using Alpha.Modules.ReferenceData.Features.PublicCatalogs;
 using Microsoft.AspNetCore.Builder;
@@ -21,7 +22,8 @@ public static class ReferenceDataModule
 
     public static IEndpointRouteBuilder MapReferenceDataModule(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapReferenceDataEndpoints();
+        endpoints.MapReferenceDataEndpoints();
+        return endpoints.MapLegalDocumentEndpoints();
     }
 
     public static RouteGroupBuilder MapGeneralReferenceData(this RouteGroupBuilder group) =>
