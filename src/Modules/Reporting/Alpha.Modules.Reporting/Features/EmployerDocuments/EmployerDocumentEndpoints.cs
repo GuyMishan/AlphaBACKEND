@@ -79,8 +79,8 @@ public static class EmployerDocumentEndpoints
         if (type == 5 && !await db.EmployeePensionProducts.AsNoTracking()
             .AnyAsync(x => x.Id == productId && x.ProductType == Alpha.Domain.Reporting.PensionProductType.PensionFund, ct))
             return Results.BadRequest(new { error = "Default pension fund joining request requires a pension fund." });
-        if (type != 3 && !employmentId.HasValue) return Results.BadRequest(new { error = "This document requires an employee." });
-        if (type is 3 or 7 && (employmentId.HasValue || productId.HasValue)) return Results.BadRequest(new { error = "Employer affidavit is employer-wide." });
+        if (type is not (3 or 7) && !employmentId.HasValue) return Results.BadRequest(new { error = "This document requires an employee." });
+        if (type is (3 or 7) && (employmentId.HasValue || productId.HasValue)) return Results.BadRequest(new { error = "Employer-wide documents cannot belong to an employee or product." });
         if (type is 3 or 7 && !await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (employmentId.HasValue && !await db.Employments.AsNoTracking()
                 .AnyAsync(x => x.Id == employmentId.Value && x.EmployerId == employerId, ct))
