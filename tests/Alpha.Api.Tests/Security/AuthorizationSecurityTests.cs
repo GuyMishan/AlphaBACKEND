@@ -37,6 +37,8 @@ public sealed class AuthorizationSecurityTests
             {
                 "* /health",
                 "GET /api/invitations/{token}",
+                "GET /api/legal-document/active",
+                "GET /api/legal-document/versions/{version:int}",
                 "GET /health/db",
                 "GET /openapi/{documentName}.json",
                 "POST /api/auth/otp/request",
