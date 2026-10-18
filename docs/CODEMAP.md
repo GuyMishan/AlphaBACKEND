@@ -120,3 +120,7 @@ Business rules: [reporting.md](reporting.md). Authoritative 006 sources: `docs/s
 ## Employer agreement transmission prerequisite
 
 Employer agreement is document type 7 in the existing Reporting/EmployerDocuments API and is employer-wide (no employment/product). Reporting/Transmissions/ReportTransmissionEndpoints verifies its existence for both initial sends and hybrid resume before any provider dispatch. The Frontend reuses EmployerDocumentsTab and the common tooltip.
+
+## Registration and legal reacceptance
+
+IdentityAccess binds legal version and marketing opt-in to registration OTP through RegistrationConsentSchemaInitializer. UserPreferences owns `/api/me/preferences/marketing`. AuthEndpoints exposes `/api/auth/legal/accept` and `/api/auth/session` reports `legalConsentRequired`. SessionActivityMiddleware enforces current legal acceptance in Production and permits only session, logout, consent and public legal reading while consent is outstanding.

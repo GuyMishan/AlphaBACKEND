@@ -81,7 +81,6 @@ public sealed class OtpEnumerationTests
         await RunAsync(async (factory, client, ct) =>
         {
             await SeedAccountAsync(factory);
-
             // An existing national ID is answered with a neutral 200 before any cooldown is checked.
             var existing = new[]
             {
@@ -103,7 +102,7 @@ public sealed class OtpEnumerationTests
 
     private static Task<OtpResponse> RequestRegistrationAsync(HttpClient client, string nationalId, string peer, CancellationToken ct) =>
         PostAsync(client, "/api/auth/register/request",
-            new { displayName = "New User", email = "applicant@test.invalid", nationalId, phone = "0547654321" }, peer, ct);
+            new { displayName = "New User", email = "applicant@test.invalid", nationalId, phone = "0547654321", acceptedTerms = true, legalVersion = 1, marketingEmailOptIn = false }, peer, ct);
 
     private static async Task<Guid> SeedAccountAsync(Factory factory)
     {

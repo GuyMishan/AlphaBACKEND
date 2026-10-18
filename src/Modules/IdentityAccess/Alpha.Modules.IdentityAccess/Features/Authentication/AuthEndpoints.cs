@@ -15,7 +15,7 @@ namespace Alpha.Modules.IdentityAccess.Features.Authentication;
 
 public sealed record RequestOtp(string NationalId, string Phone, string Channel = "email");
 public sealed record VerifyOtp(Guid ChallengeId, string Code);
-public sealed record RequestRegistrationOtp(string DisplayName, string Email, string NationalId, string Phone, string? InvitationToken = null);
+public sealed record RequestRegistrationOtp(string DisplayName, string Email, string NationalId, string Phone, string? InvitationToken = null, bool AcceptedTerms = false, int LegalVersion = 0, bool MarketingEmailOptIn = false);
 public sealed record VerifyRegistrationOtp(Guid ChallengeId, string Code);
 
 public static class AuthEndpoints
@@ -30,9 +30,29 @@ public static class AuthEndpoints
             if (!currentUser.IsAuthenticated) return Results.Unauthorized();
             var user = await db.Users.AsNoTracking()
                 .SingleOrDefaultAsync(x => x.Id == currentUser.UserId && x.IsActive, ct);
-            return user is null
-                ? Results.Unauthorized()
-                : Results.Ok(new { userId = user.Id, platformAdmin = user.IsPlatformAdmin, isReferent = user.IsReferent, displayName = user.DisplayName });
+            if (user is null) return Results.Unauthorized();
+            var accepted = await db.Database.SqlQueryRaw<int?>(
+                "SELECT \"AcceptedLegalVersion\" AS \"Value\" FROM identity.users WHERE \"Id\" = {0}", user.Id).ToListAsync(ct);
+            var active = await ActiveLegalVersionAsync(db, ct);
+            return Results.Ok(new { userId = user.Id, platformAdmin = user.IsPlatformAdmin,
+                isReferent = user.IsReferent, displayName = user.DisplayName,
+                legalConsentRequired = active.HasValue && accepted.FirstOrDefault() != active.Value });
+        }).RequireAuthorization().WithTags("Authentication");
+
+        endpoints.MapPost("/api/auth/legal/accept", async (AcceptLegalRequest request,
+            AlphaDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
+        {
+            if (!request.AcceptedTerms) return Results.BadRequest(new { error = "legal_consent_required" });
+            var active = await ActiveLegalVersionAsync(db, ct);
+            if (!active.HasValue) return Results.StatusCode(503);
+            if (request.LegalVersion != active.Value)
+                return Results.Conflict(new { error = "legal_version_outdated" });
+            var updated = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE identity.users SET "AcceptedLegalVersion" = {active.Value},
+                    "AcceptedLegalAt" = {DateTimeOffset.UtcNow}
+                WHERE "Id" = {currentUser.UserId}
+                """, ct);
+            return updated == 0 ? Results.NotFound() : Results.NoContent();
         }).RequireAuthorization().WithTags("Authentication");
 
         endpoints.MapPost("/api/auth/logout", async (AlphaDbContext db, ClaimsPrincipal principal, CancellationToken ct) =>
@@ -115,6 +135,12 @@ public static class AuthEndpoints
 
             if (displayName.Length is < 2 or > 120 || !IsValidEmail(email) || !IsraeliNationalId.IsValid(nationalId) || !IsIsraeliMobile(phone))
                 return Results.BadRequest(new { error = "invalid_input" });
+            if (!request.AcceptedTerms || request.LegalVersion <= 0)
+                return Results.BadRequest(new { error = "legal_consent_required" });
+            var currentLegalVersion = await ActiveLegalVersionAsync(db, ct);
+            if (currentLegalVersion is null) return Results.Json(new { error = "legal_document_unavailable" }, statusCode: 503);
+            if (request.LegalVersion != currentLegalVersion)
+                return Results.Conflict(new { error = "legal_version_outdated" });
             if ((config["PrototypeAuth:SigningKey"]?.Length ?? 0) < 32)
                 return Results.Problem("Authentication is not configured.", statusCode: 503);
 
@@ -175,6 +201,10 @@ public static class AuthEndpoints
             };
             db.RegistrationOtpChallenges.Add(challenge);
             await db.SaveChangesAsync(ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO identity.registration_consent_intents (challenge_id, legal_version, marketing_opt_in)
+                VALUES ({challenge.Id}, {request.LegalVersion}, {request.MarketingEmailOptIn})
+                """, ct);
             await transaction.CommitAsync(ct);
 
             try { await delivery.SendAsync("email", email, code, ct); }
@@ -278,11 +308,39 @@ public static class AuthEndpoints
                 return Results.Conflict(new { error = "user_exists" });
             }
 
+            var consent = await db.Database.SqlQueryRaw<RegistrationIntentSnapshot>(
+                """
+                SELECT legal_version AS "LegalVersion", marketing_opt_in AS "MarketingOptIn"
+                FROM identity.registration_consent_intents WHERE challenge_id = {0}
+                """, challenge.Id).SingleOrDefaultAsync(ct);
+            var liveVersion = await ActiveLegalVersionAsync(db, ct);
+            if (consent is null || liveVersion is null || consent.LegalVersion != liveVersion)
+            {
+                await transaction.RollbackAsync(ct);
+                return Results.Conflict(new { error = "legal_version_outdated" });
+            }
+
             var nationalId = protector.Unprotect(challenge.NationalIdEncrypted, "auth-national-id");
             var phone = protector.Unprotect(challenge.PhoneEncrypted, "auth-phone");
             var user = new User($"national-id-hash:{challenge.NationalIdLookupHash}", challenge.Email, challenge.DisplayName, nationalId, phone);
             user.SetProtectedIdentity(challenge.NationalIdEncrypted, challenge.NationalIdLookupHash, challenge.PhoneEncrypted, challenge.PhoneLookupHash);
             db.Users.Add(user);
+            await db.SaveChangesAsync(ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE identity.users SET "AcceptedLegalVersion" = {consent.LegalVersion},
+                    "AcceptedLegalAt" = {DateTimeOffset.UtcNow}, "MarketingEmailOptIn" = {consent.MarketingOptIn}
+                WHERE "Id" = {user.Id}
+                """, ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO identity.user_consent_events (id, user_id, legal_version, event_type, accepted, occurred_at, source)
+                VALUES ({Guid.NewGuid()}, {user.Id}, {consent.LegalVersion}, 'terms_accepted', true, {DateTimeOffset.UtcNow}, 'registration')
+                """, ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO identity.user_consent_events (id, user_id, legal_version, event_type, accepted, occurred_at, source)
+                VALUES ({Guid.NewGuid()}, {user.Id}, {consent.LegalVersion},
+                    { (consent.MarketingOptIn ? "marketing_opt_in" : "marketing_opt_out") },
+                    {consent.MarketingOptIn}, {DateTimeOffset.UtcNow}, 'registration')
+                """, ct);
 
             if (invitation is not null)
             {
@@ -319,6 +377,25 @@ public static class AuthEndpoints
             return await CreateTokenResultAsync(config, db, user.Id, user.DisplayName, user.IsPlatformAdmin, ct);
         }).AllowAnonymous().WithTags("Authentication");
         return endpoints;
+    }
+
+    private sealed record AcceptLegalRequest(bool AcceptedTerms, int LegalVersion);
+
+    private sealed class RegistrationIntentSnapshot
+    {
+        public int LegalVersion { get; set; }
+        public bool MarketingOptIn { get; set; }
+    }
+
+    private static async Task<int?> ActiveLegalVersionAsync(AlphaDbContext db, CancellationToken ct)
+    {
+        var latest = await db.Database.SqlQueryRaw<int>(
+            """
+            SELECT version AS "Value" FROM reference_data.legal_document_versions
+            WHERE status = 'published' AND effective_at <= now()
+            ORDER BY version DESC LIMIT 1
+            """).ToListAsync(ct);
+        return latest.Count == 0 ? null : latest[0];
     }
 
     private static string HashCode(IConfiguration config, string code)
