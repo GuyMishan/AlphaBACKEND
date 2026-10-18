@@ -32,6 +32,9 @@ It returns the technical report IDs with `transmitted: false`. This completes pr
 **not transmission**; the technical documents must still pass validation and be sent in
 the prescribed order. No unsupported alternative route is exposed.
 
+
+API compatibility review: the feature adds exactly two tenant-scoped routes, `GET /{reportId}/correction-routes` and `POST /{reportId}/complete-correction` within the manual-reports group. The architecture route baseline is intentionally updated from 246 to 248 declarations; no existing route was removed or changed.
+
 ## Feedback resolution
 
 - Actionable feedback is projected into deterministic per-feedback/contribution/sequence/error **ProblemIds**. A newer feedback file produces new ProblemIds, so an old resolution cannot hide it. Codes without a playbook entry (`FeedbackResolutionPlaybookCatalog`) are explicit "unsupported", never silently mapped; unsupported or stale actions fail closed.
