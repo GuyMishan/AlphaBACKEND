@@ -22,15 +22,6 @@ public sealed class RegistrationConsentIntegrationTests
         };
         await RunAsync(async (factory, client, ct) =>
         {
-            await factory.WithDbAsync(async db =>
-            {
-                await db.Database.ExecuteSqlRawAsync("""
-                    INSERT INTO reference_data.legal_document_versions
-                    (id, version, title, markdown, status, requires_reacceptance, created_at, published_at, effective_at)
-                    VALUES (gen_random_uuid(), 1, 'Terms', '# Terms', 'published', false, now(), now(), now())
-                    """, ct);
-            });
-
             using (var rejected = await client.PostAsJsonAsync("/api/auth/register/request",
                 new { displayName = "Consent User", email = "consent@test.invalid", nationalId = "000000018",
                     phone = "0547654321", acceptedTerms = false, legalVersion = 1, marketingEmailOptIn = marketing }, ct))
