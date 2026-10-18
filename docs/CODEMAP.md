@@ -118,3 +118,7 @@ Business rules: [reporting.md](reporting.md). Authoritative 006 sources: `docs/s
 ## Registration consent (stage 2)
 
 IdentityAccess Authentication verifies the latest effective legal version at registration request and OTP verification. `RegistrationConsentSchemaInitializer` stores OTP-bound intent, user consent snapshot and immutable event history. No marketing consent is implied by acceptance of the legal document.
+
+## Legal consent
+
+Registration OTP binds the current published legal version and optional marketing decision to a challenge. UserPreferences exposes PUT `/api/me/preferences/marketing`. Authentication exposes POST `/api/auth/legal/accept` and the session response indicates `legalConsentRequired`. Production SessionActivityMiddleware blocks authenticated API routes until current terms are accepted, except session, legal acceptance, logout and public legal reading. The user consent evidence remains internal, with no management screen.
