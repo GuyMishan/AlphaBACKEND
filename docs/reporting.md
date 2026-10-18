@@ -131,3 +131,7 @@ Acceptance scenario for a multi-vault change: two products (one routed to a manu
 Open feedback-routing items (editor coverage per field and code, code-18 semantics, the executable routing matrix) are tracked in [feedback-routing-audit-2026-10-11.md](feedback-routing-audit-2026-10-11.md).
 
 Real clearinghouse/manufacturer acceptance, provider timeouts after remote acceptance, real feedback timing and order, production sender/recipient identifiers and credentials, production-scale files, and the operational reconciliation of reports left in `Processing`. The system fails closed for all of them.
+
+## Employer legal agreement gate
+
+Every transmission request, including resumed hybrid dispatch, requires an existing employer-wide document with DocumentTypeCode=7 and matching organization/employer. Missing agreement returns HTTP 409 `employer_legal_agreement_required`; draft editing and validation remain available. Uploaded PDFs are scanned and encrypted through the existing employer document flow. This feature intentionally does not infer that a user's click legally executes a signed contract: uploading a document records the employer's declared acceptance, with contract authenticity and authority subject to review. Removing the document blocks future sends, not previously sent reports.

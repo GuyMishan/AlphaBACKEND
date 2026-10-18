@@ -146,3 +146,7 @@ The organization-scoped `PUT /api/organizations/{organizationId}/access/users/{u
 ## Legal document publishing
 
 The legal-document API permits anonymous reads of active and historical published/archived versions only; drafts and writes require an authenticated platform administrator. Markdown is bounded and rejects raw angle brackets and dangerous URI schemes, and consuming UIs must render Markdown with HTML disabled and URL sanitization. Publishing preserves text, creator timestamps and reacceptance flag. No user-consent enforcement is introduced in this foundation stage.
+
+## Employer legal agreement prerequisite
+
+Type 7 is employer-wide and may be uploaded only by users permitted to edit the employer, using the existing PDF signature, size, malware-scan and encrypted persistence path. All report send and hybrid resume endpoints enforce the document gate after `CanTransmitReportAsync` authorization and before any provider call, returning a scoped 409 when absent. This is an evidence-presence gate; it is not a cryptographic signature verification system.

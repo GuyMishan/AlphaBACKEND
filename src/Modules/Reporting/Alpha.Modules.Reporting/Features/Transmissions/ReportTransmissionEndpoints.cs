@@ -43,6 +43,10 @@ public static class ReportTransmissionEndpoints
             return Results.Conflict(new { error = "manufacturer_route_split_disabled" });
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct))
             return Results.Forbid();
+        if (!await db.EmployerDocuments.AsNoTracking().AnyAsync(
+            d => d.OrganizationId == organizationId && d.EmployerId == employerId
+                && d.DocumentTypeCode == 7 && d.EmploymentId == null, ct))
+            return Results.Conflict(new { error = "employer_legal_agreement_required" });
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
         if (!entitlement.Allowed)
             return Results.Conflict(new { error = entitlement.Error, feature = entitlement.Feature });
@@ -113,10 +117,14 @@ public static class ReportTransmissionEndpoints
                 errors = generated.Validation.Issues
             });
         }
+        var hasEmployerAgreement = await db.EmployerDocuments.AsNoTracking().AnyAsync(
+            d => d.OrganizationId == organizationId && d.EmployerId == employerId
+                && d.DocumentTypeCode == 7 && d.EmploymentId == null, ct);
         return Results.Ok(new
         {
             reportId,
-            canTransmit = allPackagesValid && groups.Length > 0
+            employerAgreementRequired = !hasEmployerAgreement,
+            canTransmit = hasEmployerAgreement && allPackagesValid && groups.Length > 0
                 && (groups.Length == 1
                     || configuration.GetValue<bool>("Reporting:ManufacturerRouting:EnableHybridDispatch"))
                 && groups.All(group => available.Any(provider => provider.IsConfigured
@@ -194,6 +202,10 @@ public static class ReportTransmissionEndpoints
         IConfiguration configuration, CancellationToken ct)
     {
         if (!await access.CanTransmitReportAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (!await db.EmployerDocuments.AsNoTracking().AnyAsync(
+            d => d.OrganizationId == organizationId && d.EmployerId == employerId
+                && d.DocumentTypeCode == 7 && d.EmploymentId == null, ct))
+            return Results.Conflict(new { error = "employer_legal_agreement_required" });
         var entitlement = await entitlements.CanTransmitReport(organizationId, ct);
         if (!entitlement.Allowed)
             return Results.Json(new { error = entitlement.Error, feature = entitlement.Feature }, statusCode: StatusCodes.Status409Conflict);
