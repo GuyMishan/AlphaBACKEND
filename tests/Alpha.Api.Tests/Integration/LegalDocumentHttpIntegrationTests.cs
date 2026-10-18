@@ -59,7 +59,7 @@ public sealed class LegalDocumentHttpIntegrationTests
             using (var published = await client.SendAsync(request, ct))
                 Assert.Equal(HttpStatusCode.NoContent, published.StatusCode);
 
-            using (var previous = await client.GetAsync("/api/legal-document/versions/1", ct))
+            using (var previous = await client.GetAsync("/api/legal-document/versions/2", ct))
             {
                 Assert.Equal(HttpStatusCode.OK, previous.StatusCode);
                 using var body = JsonDocument.Parse(await previous.Content.ReadAsStringAsync(ct));
