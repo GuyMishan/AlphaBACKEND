@@ -258,6 +258,39 @@ public sealed class AuthorizationSecurityTests
     }
 
     [Fact]
+    public async Task Employer_agreement_is_required_to_send_and_is_tenant_scoped()
+    {
+        await RunAsync(async (factory, client, ct) =>
+        {
+            var a = await SeedTenantAsync(factory, "Agreement-A");
+            var b = await SeedTenantAsync(factory, "Agreement-B");
+            var path = $"/api/organizations/{a.Organization.Id}/employers/{a.Employer.Id}/manual-reports/{Guid.NewGuid()}/transmissions";
+
+            // The server rejects the send before looking up a report or contacting a provider.
+            using (var missing = await client.SendAsync(Request(HttpMethod.Post, path, a.Admin.Id, a.Session.Id, json: new { }), ct))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, missing.StatusCode);
+                Assert.Contains("employer_legal_agreement_required", await missing.Content.ReadAsStringAsync(ct));
+            }
+
+            // A document uploaded for another employer does not satisfy this employer's prerequisite.
+            var foreign = new EmployerDocument(b.Organization.Id, b.Employer.Id, null, null, 7,
+                "agreement.pdf", new byte[] { 1 }, 1, new string('f', 64));
+            await factory.WithDbAsync(async db => { db.Add(foreign); await db.SaveChangesAsync(ct); });
+            using (var stillMissing = await client.SendAsync(Request(HttpMethod.Post, path, a.Admin.Id, a.Session.Id, json: new { }), ct))
+                Assert.Contains("employer_legal_agreement_required", await stillMissing.Content.ReadAsStringAsync(ct));
+
+            var own = new EmployerDocument(a.Organization.Id, a.Employer.Id, null, null, 7,
+                "agreement.pdf", new byte[] { 1 }, 1, new string('a', 64));
+            await factory.WithDbAsync(async db => { db.Add(own); await db.SaveChangesAsync(ct); });
+            using (var permittedToAdvance = await client.SendAsync(Request(HttpMethod.Post, path, a.Admin.Id, a.Session.Id, json: new { }), ct))
+                Assert.DoesNotContain("employer_legal_agreement_required", await permittedToAdvance.Content.ReadAsStringAsync(ct));
+            using (var foreignAccess = await client.SendAsync(Request(HttpMethod.Post, path, b.Admin.Id, b.Session.Id, json: new { }), ct))
+                Assert.Equal(HttpStatusCode.Forbidden, foreignAccess.StatusCode);
+        });
+    }
+
+    [Fact]
     public async Task Selected_employer_member_cannot_reach_unassigned_employer_by_direct_id()
     {
         await RunAsync(async (factory, client, ct) =>
