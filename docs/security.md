@@ -142,3 +142,7 @@ Status values: **Fixed and tested** (defect reproduced by a failing test, then f
 ## User access type transitions
 
 The organization-scoped `PUT /api/organizations/{organizationId}/access/users/{userId}/type` operation changes between platform, organization and direct-employer access. Only platform administrators can grant or revoke the global platform-admin flag; organization administrators can change customer organization/employer access only. Organization-role transitions reject removal of the last organization administrator, and self-demotion from platform administration is forbidden. Employer grants are replaced transactionally within the selected organization only; unrelated organizations are not altered. The endpoint rejects foreign-employer IDs and checks user entitlements when creating a membership. A platform-admin promotion preserves existing scoped memberships for safe reversibility; therefore these types are effective access categories, not an exclusive global database discriminator.
+
+## Legal document publishing
+
+The legal-document API permits anonymous reads of active and historical published/archived versions only; drafts and writes require an authenticated platform administrator. Markdown is bounded and rejects raw angle brackets and dangerous URI schemes, and consuming UIs must render Markdown with HTML disabled and URL sanitization. Publishing preserves text, creator timestamps and reacceptance flag. No user-consent enforcement is introduced in this foundation stage.
