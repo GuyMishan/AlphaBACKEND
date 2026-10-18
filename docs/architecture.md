@@ -230,3 +230,7 @@ The intermediate A0–A8 decision records were never committed; they were remove
 ## Legal content ownership
 
 ReferenceData owns the one global legal Markdown document and its versions, exposed at `/api/legal-document` (anonymous read) and `/api/platform/legal-document` (platform admin management). Published version text is immutable; archival changes status only. This does not yet implement user consent recording or employer transmission gating (later tasks).
+
+## Registration consent
+
+IdentityAccess owns OTP-linked consent intents and user consent evidence; it reads the globally versioned legal document through a read-only SQL query to avoid creating a second legal-document state. The legal-acceptance and optional marketing preference are separate, committed together with new-user creation. UI reads the published document through the public API. Reacceptance and user preference editing are later tasks.
