@@ -162,3 +162,7 @@ Mechanics:
 ## Legal document v1 release (2026-10-18)
 
 The initial approved-for-publication v1 Markdown is held at `docs/legal/ALPHA_LEGAL_POLICY_V1.md` and embedded in Alpha.Infrastructure. On startup `LegalDocumentSchemaInitializer.PublishVersionOneIfEmptyAsync` publishes version 1 only if `reference_data.legal_document_versions` is empty; **it never modifies any existing legal document or draft**. Once populated, all further changes go through the platform admin publishing endpoints. If an existing draft is present in an environment, an administrator must review and publish it; startup must not overwrite it. A smoke test of the anonymous `/api/legal-document/active` endpoint after deployment is required. This release stores an initial draft adapted to ALPHA and needs legal/operator-identity review; the signed-off business owner explicitly requested its publication.
+
+### Container build legal-resource guard
+
+The legal v1 Markdown is an embedded resource in Alpha.Infrastructure. The Docker build context must explicitly include `docs/legal/ALPHA_LEGAL_POLICY_V1.md` even though other `docs/` files are excluded. `.dockerignore` has targeted reinclusion rules; `CompatibilityBaselineTests.Docker_context_includes_embedded_legal_policy` guards the file and project reference. A .NET-only solution build cannot detect Docker context omissions, so also verify the Render Docker deployment succeeds.
