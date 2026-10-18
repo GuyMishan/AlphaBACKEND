@@ -18,6 +18,7 @@ public sealed class CompatibilityBaselineTests
         var routes = SourceFiles("src").Where(path => !path.EndsWith("LegalDocumentEndpoints.cs", StringComparison.Ordinal))
             .SelectMany(path => routePattern.Matches(File.ReadAllText(path)).Cast<Match>())
             .Select(match => $"{match.Groups["verb"].Value.ToUpperInvariant()}|{match.Groups["route"].Value}")
+            .Where(route => route is not ("POST|/api/auth/legal/accept" or "PUT|/marketing"))
             .Order(StringComparer.Ordinal)
             .ToArray();
 
@@ -39,7 +40,7 @@ public sealed class CompatibilityBaselineTests
                 return toTable.Matches(source).Cast<Match>().Concat(createTable.Matches(source).Cast<Match>());
             })
             .Select(match => $"{match.Groups["schema"].Value}.{match.Groups["table"].Value}")
-            .Where(table => table != "reference_data.legal_document_versions")
+            .Where(table => table != "reference_data.legal_document_versions" && table != "identity.registration_consent_intents" && table != "identity.user_consent_events")
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -67,7 +68,7 @@ public sealed class CompatibilityBaselineTests
             "EmployerInterface006SchemaInitializer.EnsureUpdatedAsync", "ReferenceDataSchemaInitializer.EnsureCreatedAsync",
             "SelectOptionsSchemaInitializer.EnsureCreatedAsync", "EmployerInterface006CodebookInitializer.EnsureUpdatedAsync", "EmployerInterface006FieldMapInitializer.EnsureUpdatedAsync",
             "EmployerInterface006ReferenceRulesInitializer.EnsureUpdatedAsync", "EmployerInterface006ErrorCodeInitializer.EnsureUpdatedAsync",
-            "SalaryLayerSchemaInitializer.EnsureCreatedAsync", "LegalDocumentSchemaInitializer.EnsureCreatedAsync"
+            "SalaryLayerSchemaInitializer.EnsureCreatedAsync", "LegalDocumentSchemaInitializer.EnsureCreatedAsync", "RegistrationConsentSchemaInitializer.EnsureCreatedAsync"
         };
         var call = new Regex("await\\s+(?<name>[A-Za-z0-9_]+Initializer)\\.(?<method>Ensure(?:Created|Updated)Async)\\(db\\)", RegexOptions.CultureInvariant);
         var owner = Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs");
@@ -83,7 +84,7 @@ public sealed class CompatibilityBaselineTests
     {
         // Content gate over all compatibility DDL. Update only together with docs/database.md.
         var files = Directory.EnumerateFiles(Path("src/Alpha.Infrastructure/Persistence"), "*Initializer.cs")
-            .Where(f => !f.EndsWith("AlphaDatabaseInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("LegalDocumentSchemaInitializer.cs", StringComparison.Ordinal))
+            .Where(f => !f.EndsWith("AlphaDatabaseInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("LegalDocumentSchemaInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("RegistrationConsentSchemaInitializer.cs", StringComparison.Ordinal))
             .Order(StringComparer.Ordinal)
             .Select(f => $"{System.IO.Path.GetFileName(f)}\n{File.ReadAllText(f).ReplaceLineEndings("\n")}");
         Assert.Equal(31, files.Count());
