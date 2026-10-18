@@ -24,6 +24,7 @@ public static class DerivedReportEndpoints
         group.MapPost("/derived", CreateDerivedReportAsync);
         group.MapPost("/{reportId:guid}/correction-workspace", EnsureCorrectionWorkspaceAsync);
         group.MapPost("/{reportId:guid}/materialize-correction", MaterializeCorrectionAsync);
+        group.MapGet("/{reportId:guid}/correction-routes", GetCorrectionRoutesAsync);
         group.MapGet("/{reportId:guid}/metadata", GetMetadataAsync);
         return endpoints;
     }
@@ -74,6 +75,24 @@ public static class DerivedReportEndpoints
             reportProductId = result.ReportProductId,
             result.Created,
             result.PendingChanges
+        });
+    }
+
+    private static async Task<IResult> GetCorrectionRoutesAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        AlphaDbContext db, IOrganizationAuthorization access,
+        IDataProtectionService protector, CancellationToken ct)
+    {
+        if (!await access.CanCreateReportAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+
+        var route = await CorrectionWorkflowService.PreviewRouteAsync(
+            organizationId, employerId, reportId, db, protector, ct);
+        return Results.Ok(new
+        {
+            routes = route is null ? Array.Empty<CorrectionWorkflowService.CorrectionRoutePreview>()
+                : new[] { route },
+            canComplete = route is not null
         });
     }
 
