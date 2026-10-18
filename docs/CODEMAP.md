@@ -114,3 +114,5 @@ Business rules: [reporting.md](reporting.md). Authoritative 006 sources: `docs/s
 
 - `src/Modules/ReferenceData/Alpha.Modules.ReferenceData/Features/LegalDocuments/LegalDocumentEndpoints.cs`: public active and historical legal Markdown, platform-admin draft/publish/archive API.
 - `src/Alpha.Infrastructure/Persistence/LegalDocumentSchemaInitializer.cs`: additive global document-version schema. This is intentionally managed through raw SQL (no new DbSet) so the established EF model remains unchanged.
+
+- `docs/legal/ALPHA_LEGAL_POLICY_V1.md` — version 1 published legal text; embedded by `src/Alpha.Infrastructure/Alpha.Infrastructure.csproj`, seeded by `LegalDocumentSchemaInitializer.PublishVersionOneIfEmptyAsync` only on an empty store.
