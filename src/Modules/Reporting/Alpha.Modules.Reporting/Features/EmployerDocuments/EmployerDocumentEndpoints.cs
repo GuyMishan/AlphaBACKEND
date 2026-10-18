@@ -56,8 +56,8 @@ public static class EmployerDocumentEndpoints
             return Results.NotFound();
         if (!request.HasFormContentType) return Results.BadRequest(new { error = "multipart/form-data is required." });
         var form = await request.ReadFormAsync(ct);
-        if (!int.TryParse(form["documentTypeCode"].FirstOrDefault(), out int type) || type is not (3 or 4 or 5 or 6))
-            return Results.BadRequest(new { error = "Document type must be 3, 4, 5 or 6." });
+        if (!int.TryParse(form["documentTypeCode"].FirstOrDefault(), out int type) || type is not (3 or 4 or 5 or 6 or 7))
+            return Results.BadRequest(new { error = "Document type must be 3, 4, 5, 6 or 7." });
         Guid? employmentId = null;
         var employmentRaw = form["employmentId"].FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(employmentRaw))
@@ -73,15 +73,15 @@ public static class EmployerDocumentEndpoints
                 return Results.BadRequest(new { error = "Invalid pension product." });
             productId = parsedProduct;
         }
-        if (type != 3 && (!productId.HasValue || !await db.EmployeePensionProducts.AsNoTracking()
+        if (type is not (3 or 7) && (!productId.HasValue || !await db.EmployeePensionProducts.AsNoTracking()
             .AnyAsync(x => x.Id == productId.Value && x.EmploymentId == employmentId, ct)))
             return Results.BadRequest(new { error = "Select a saved pension product of this employee." });
         if (type == 5 && !await db.EmployeePensionProducts.AsNoTracking()
             .AnyAsync(x => x.Id == productId && x.ProductType == Alpha.Domain.Reporting.PensionProductType.PensionFund, ct))
             return Results.BadRequest(new { error = "Default pension fund joining request requires a pension fund." });
         if (type != 3 && !employmentId.HasValue) return Results.BadRequest(new { error = "This document requires an employee." });
-        if (type == 3 && (employmentId.HasValue || productId.HasValue)) return Results.BadRequest(new { error = "Employer affidavit is employer-wide." });
-        if (type == 3 && !await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
+        if (type is 3 or 7 && (employmentId.HasValue || productId.HasValue)) return Results.BadRequest(new { error = "Employer affidavit is employer-wide." });
+        if (type is 3 or 7 && !await access.CanEditEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         if (employmentId.HasValue && !await db.Employments.AsNoTracking()
                 .AnyAsync(x => x.Id == employmentId.Value && x.EmployerId == employerId, ct))
             return Results.BadRequest(new { error = "Employee does not belong to the employer." });
