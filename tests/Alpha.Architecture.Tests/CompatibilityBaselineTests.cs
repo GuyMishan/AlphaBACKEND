@@ -67,7 +67,7 @@ public sealed class CompatibilityBaselineTests
             "EmployerInterface006SchemaInitializer.EnsureUpdatedAsync", "ReferenceDataSchemaInitializer.EnsureCreatedAsync",
             "SelectOptionsSchemaInitializer.EnsureCreatedAsync", "EmployerInterface006CodebookInitializer.EnsureUpdatedAsync", "EmployerInterface006FieldMapInitializer.EnsureUpdatedAsync",
             "EmployerInterface006ReferenceRulesInitializer.EnsureUpdatedAsync", "EmployerInterface006ErrorCodeInitializer.EnsureUpdatedAsync",
-            "SalaryLayerSchemaInitializer.EnsureCreatedAsync", "LegalDocumentSchemaInitializer.EnsureCreatedAsync"
+            "SalaryLayerSchemaInitializer.EnsureCreatedAsync", "LegalDocumentSchemaInitializer.EnsureCreatedAsync", "RegistrationConsentSchemaInitializer.EnsureCreatedAsync"
         };
         var call = new Regex("await\\s+(?<name>[A-Za-z0-9_]+Initializer)\\.(?<method>Ensure(?:Created|Updated)Async)\\(db\\)", RegexOptions.CultureInvariant);
         var owner = Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs");
@@ -83,10 +83,11 @@ public sealed class CompatibilityBaselineTests
     {
         // Content gate over all compatibility DDL. Update only together with docs/database.md.
         var files = Directory.EnumerateFiles(Path("src/Alpha.Infrastructure/Persistence"), "*Initializer.cs")
-            .Where(f => !f.EndsWith("AlphaDatabaseInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("LegalDocumentSchemaInitializer.cs", StringComparison.Ordinal))
+            .Where(f => !f.EndsWith("AlphaDatabaseInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("LegalDocumentSchemaInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("RegistrationConsentSchemaInitializer.cs", StringComparison.Ordinal))
             .Order(StringComparer.Ordinal)
             .Select(f => $"{System.IO.Path.GetFileName(f)}\n{File.ReadAllText(f).ReplaceLineEndings("\n")}");
         Assert.Equal(31, files.Count());
+        Assert.Contains("RegistrationConsentSchemaInitializer.EnsureCreatedAsync", Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs"));
         Assert.Contains("LegalDocumentSchemaInitializer.EnsureCreatedAsync", Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs"));
         Assert.True(Fingerprint(files) == SchemaInitializerBaseline,
             $"Schema initializer SQL changed, fingerprint {Fingerprint(files)}. Update only together with docs/database.md.");
