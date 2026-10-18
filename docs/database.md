@@ -166,3 +166,7 @@ The initial approved-for-publication v1 Markdown is held at `docs/legal/ALPHA_LE
 ### Container build legal-resource guard
 
 The legal v1 Markdown is an embedded resource in Alpha.Infrastructure. The Docker build context must explicitly include `docs/legal/ALPHA_LEGAL_POLICY_V1.md` even though other `docs/` files are excluded. `.dockerignore` has targeted reinclusion rules; `CompatibilityBaselineTests.Docker_context_includes_embedded_legal_policy` guards the file and project reference. A .NET-only solution build cannot detect Docker context omissions, so also verify the Render Docker deployment succeeds.
+
+## Employer legal agreement document type
+
+The existing `employers.employer_documents` table gains document type 7 through the idempotent `EmployerDocumentSchemaInitializer`, widening the existing CHECK constraint while retaining the same entity/table and encrypted file storage. This is an additive document-type change, not a new table. Existing document records are preserved.
