@@ -109,3 +109,8 @@ Business rules: [reporting.md](reporting.md). Authoritative 006 sources: `docs/s
 3. Follow injected services within the module; cross-module calls go through a Contracts interface.
 4. Inspect the entity in `Alpha.Domain`, then its configuration and initializer in `Alpha.Infrastructure/Persistence`.
 5. Find the matching tests under `tests/Alpha.Api.Tests/<Module>` and `Security`.
+
+## Legal document foundation
+
+- `src/Modules/ReferenceData/Alpha.Modules.ReferenceData/Features/LegalDocuments/LegalDocumentEndpoints.cs`: public active and historical legal Markdown, platform-admin draft/publish/archive API.
+- `src/Alpha.Infrastructure/Persistence/LegalDocumentSchemaInitializer.cs`: additive global document-version schema. This is intentionally managed through raw SQL (no new DbSet) so the established EF model remains unchanged.
