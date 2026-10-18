@@ -170,3 +170,7 @@ The legal v1 Markdown is an embedded resource in Alpha.Infrastructure. The Docke
 ## Employer legal agreement document type
 
 The existing `employers.employer_documents` table gains document type 7 through the idempotent `EmployerDocumentSchemaInitializer`, widening the existing CHECK constraint while retaining the same entity/table and encrypted file storage. This is an additive document-type change, not a new table. Existing document records are preserved.
+
+## Consent schema
+
+RegistrationConsentSchemaInitializer adds `identity.registration_consent_intents`, `identity.user_consent_events` (append-only technical evidence), and user columns `AcceptedLegalVersion`, `AcceptedLegalAt`, `MarketingEmailOptIn`. Registration binds acceptance to OTP, keeping marketing separate. No consent management screen is introduced. Schema verifier count becomes 70 tables.
