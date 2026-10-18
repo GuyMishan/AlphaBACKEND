@@ -30,9 +30,29 @@ public static class AuthEndpoints
             if (!currentUser.IsAuthenticated) return Results.Unauthorized();
             var user = await db.Users.AsNoTracking()
                 .SingleOrDefaultAsync(x => x.Id == currentUser.UserId && x.IsActive, ct);
-            return user is null
-                ? Results.Unauthorized()
-                : Results.Ok(new { userId = user.Id, platformAdmin = user.IsPlatformAdmin, isReferent = user.IsReferent, displayName = user.DisplayName });
+            if (user is null) return Results.Unauthorized();
+            var accepted = await db.Database.SqlQueryRaw<int?>(
+                "SELECT \"AcceptedLegalVersion\" AS \"Value\" FROM identity.users WHERE \"Id\" = {0}", user.Id).ToListAsync(ct);
+            var active = await ActiveLegalVersionAsync(db, ct);
+            return Results.Ok(new { userId = user.Id, platformAdmin = user.IsPlatformAdmin,
+                isReferent = user.IsReferent, displayName = user.DisplayName,
+                legalConsentRequired = active.HasValue && accepted.FirstOrDefault() != active.Value });
+        }).RequireAuthorization().WithTags("Authentication");
+
+        endpoints.MapPost("/api/auth/legal/accept", async (AcceptLegalRequest request,
+            AlphaDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
+        {
+            if (!request.AcceptedTerms) return Results.BadRequest(new { error = "legal_consent_required" });
+            var active = await ActiveLegalVersionAsync(db, ct);
+            if (!active.HasValue) return Results.StatusCode(503);
+            if (request.LegalVersion != active.Value)
+                return Results.Conflict(new { error = "legal_version_outdated" });
+            var updated = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE identity.users SET "AcceptedLegalVersion" = {active.Value},
+                    "AcceptedLegalAt" = {DateTimeOffset.UtcNow}
+                WHERE "Id" = {currentUser.UserId}
+                """, ct);
+            return updated == 0 ? Results.NotFound() : Results.NoContent();
         }).RequireAuthorization().WithTags("Authentication");
 
         endpoints.MapPost("/api/auth/logout", async (AlphaDbContext db, ClaimsPrincipal principal, CancellationToken ct) =>
@@ -358,6 +378,8 @@ public static class AuthEndpoints
         }).AllowAnonymous().WithTags("Authentication");
         return endpoints;
     }
+
+    private sealed record AcceptLegalRequest(bool AcceptedTerms, int LegalVersion);
 
     private sealed class RegistrationIntentSnapshot
     {
