@@ -116,3 +116,7 @@ Business rules: [reporting.md](reporting.md). Authoritative 006 sources: `docs/s
 - `src/Alpha.Infrastructure/Persistence/LegalDocumentSchemaInitializer.cs`: additive global document-version schema. This is intentionally managed through raw SQL (no new DbSet) so the established EF model remains unchanged.
 
 - `docs/legal/ALPHA_LEGAL_POLICY_V1.md` — version 1 published legal text; embedded by `src/Alpha.Infrastructure/Alpha.Infrastructure.csproj`, seeded by `LegalDocumentSchemaInitializer.PublishVersionOneIfEmptyAsync` only on an empty store.
+
+## Employer agreement transmission prerequisite
+
+Employer agreement is document type 7 in the existing Reporting/EmployerDocuments API and is employer-wide (no employment/product). Reporting/Transmissions/ReportTransmissionEndpoints verifies its existence for both initial sends and hybrid resume before any provider dispatch. The Frontend reuses EmployerDocumentsTab and the common tooltip.
