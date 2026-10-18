@@ -10,4 +10,7 @@
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../docs/legal/ALPHA_LEGAL_POLICY_V1.md" LogicalName="Alpha.Infrastructure.LegalDocuments.PolicyV1.md" />
+  </ItemGroup>
 </Project>
