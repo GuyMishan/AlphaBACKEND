@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using System.Text.Json;
 using Alpha.Api.Payments;
@@ -223,7 +224,7 @@ public sealed class CardComPaymentProviderTests
 
         return new CardComPaymentProvider(
             new TestHttpClientFactory(new HttpClient(new DelegateHandler(handler))),
-            configuration);
+            configuration, NullLogger<CardComPaymentProvider>.Instance);
     }
 
     private static HttpResponseMessage Json(HttpStatusCode status, object value) =>
