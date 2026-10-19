@@ -96,6 +96,22 @@ public sealed class BillingAccount : Entity
         Touch();
     }
 
+    public bool AbandonProviderSetup(string setupReference)
+    {
+        if (string.IsNullOrWhiteSpace(setupReference) ||
+            !string.Equals(PendingSetupReference, setupReference, StringComparison.Ordinal))
+            return false;
+
+        PendingProvider = string.Empty;
+        PendingProviderCustomerId = string.Empty;
+        PendingSetupReference = string.Empty;
+        if (PaymentMethodStatus == BillingPaymentMethodStatus.Pending &&
+            !DefaultPaymentMethodId.HasValue && string.IsNullOrWhiteSpace(ProviderPaymentMethodId))
+            PaymentMethodStatus = BillingPaymentMethodStatus.NotConfigured;
+        Touch();
+        return true;
+    }
+
     public void CompleteProviderSetup()
     {
         PendingProvider = string.Empty;
