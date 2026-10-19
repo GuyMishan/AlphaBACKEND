@@ -27,6 +27,7 @@ public static class PaymentProviderEndpoints
             .RequireAuthorization().WithTags("Alpha Billing Provider");
         org.MapPost("/setup", StartOrganizationSetupAsync);
         org.MapPost("/abandon", AbandonOrganizationSetupAsync);
+        org.MapGet("/status", GetOrganizationSetupStatusAsync);
         org.MapPost("/sync", SyncOrganizationAsync);
         org.MapPost("/cancel", CancelOrganizationAsync);
 
@@ -34,6 +35,7 @@ public static class PaymentProviderEndpoints
             .RequireAuthorization().WithTags("Alpha Billing Provider");
         employer.MapPost("/setup", StartEmployerSetupAsync);
         employer.MapPost("/abandon", AbandonEmployerSetupAsync);
+        employer.MapGet("/status", GetEmployerSetupStatusAsync);
         employer.MapPost("/sync", SyncEmployerAsync);
         employer.MapPost("/cancel", CancelEmployerAsync);
 
@@ -48,6 +50,29 @@ public static class PaymentProviderEndpoints
         return endpoints;
     }
 
+    private static async Task<IResult> GetOrganizationSetupStatusAsync(Guid organizationId, string setupReference,
+        AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct)
+    {
+        if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        var account = await db.BillingAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == null, ct);
+        return await GetSetupStatusAsync(account, setupReference, db, ct);
+    }
+
+    private static async Task<IResult> GetEmployerSetupStatusAsync(Guid organizationId, Guid employerId, string setupReference,
+        AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct)
+    {
+        if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var account = await db.BillingAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.EmployerId == employerId && x.OrganizationId == null, ct);
+        return await GetSetupStatusAsync(account, setupReference, db, ct);
+    }
+
+    private static async Task<IResult> GetSetupStatusAsync(BillingAccount? account, string setupReference, AlphaDbContext db, CancellationToken ct)
+    {
+        if (account is null || string.IsNullOrWhiteSpace(setupReference)) return Results.NotFound();
+        var state = await db.Database.SqlQueryRaw<bool>("SELECT (completed_at IS NOT NULL) AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0} AND setup_reference = {1}", account.Id, setupReference).ToListAsync(ct);
+        return Results.Ok(new { confirmed = state.Count > 0 && state[0] && account.PaymentMethodStatus == BillingPaymentMethodStatus.Active,
+            pending = string.Equals(account.PendingSetupReference, setupReference, StringComparison.Ordinal) });
+    }
     private static async Task<IResult> AbandonOrganizationSetupAsync(Guid organizationId,
         PaymentMethodAbandonApiRequest request, AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct)
     {
@@ -212,7 +237,7 @@ public static class PaymentProviderEndpoints
                 INSERT INTO billing.pending_payment_setup_details (billing_account_id, setup_reference, details_json)
                 VALUES ({account.Id}, {setupReference}, {stagedDetails}::jsonb)
                 ON CONFLICT (billing_account_id) DO UPDATE
-                SET setup_reference = EXCLUDED.setup_reference, details_json = EXCLUDED.details_json, created_at = now()
+                SET setup_reference = EXCLUDED.setup_reference, details_json = EXCLUDED.details_json, created_at = now(), completed_at = NULL
                 """, ct);
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "billing.payment-method.setup-started",
                 nameof(BillingAccount), account.Id, organizationId, employerId,
@@ -610,7 +635,7 @@ public static class PaymentProviderEndpoints
         await using var commit = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
         await db.Database.ExecuteSqlInterpolatedAsync($"""
-            DELETE FROM billing.pending_payment_setup_details
+            UPDATE billing.pending_payment_setup_details SET completed_at = now()
             WHERE billing_account_id = {account.Id} AND setup_reference = {externalReference}
             """, ct);
         await commit.CommitAsync(ct);
