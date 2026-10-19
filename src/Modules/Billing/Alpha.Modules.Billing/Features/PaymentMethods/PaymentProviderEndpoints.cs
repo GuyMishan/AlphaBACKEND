@@ -202,7 +202,14 @@ public static class PaymentProviderEndpoints
 
             stage = "persist_pending_setup";
             if (!string.IsNullOrWhiteSpace(account.PendingSetupReference))
-                return Results.Conflict(new { error = "payment_method_setup_pending" });
+            {
+                var expired = await db.Database.SqlQueryRaw<bool>(
+                    "SELECT (created_at < now() - interval '30 minutes') AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0} AND setup_reference = {1}",
+                    account.Id, account.PendingSetupReference).ToListAsync(ct);
+                if (expired.Count == 0 || !expired[0])
+                    return Results.Conflict(new { error = "payment_method_setup_pending" });
+                account.AbandonProviderSetup(account.PendingSetupReference);
+            }
             var setupReference = $"{account.Id:D}:{Guid.NewGuid():N}";
             // Persist setup only once the external payment page was successfully created.
 
