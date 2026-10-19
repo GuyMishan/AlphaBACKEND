@@ -127,9 +127,12 @@ public sealed class PaymentCallbackUrlTests
                     invoiceEmail = "discard@test.invalid", billingAddress = "Discard Address" });
                 using var setupResponse = await client.SendAsync(request, ct);
                 Assert.Equal(HttpStatusCode.OK, setupResponse.StatusCode);
-                var reference = await factory.WithDbAsync(async db =>
-                    await db.BillingAccounts.Where(x => x.OrganizationId == organizationId)
-                        .Select(x => x.PendingSetupReference).SingleAsync(ct));
+                string? reference = null;
+                await factory.WithDbAsync(async db =>
+                {
+                    reference = await db.BillingAccounts.Where(x => x.OrganizationId == organizationId)
+                        .Select(x => x.PendingSetupReference).SingleAsync(ct);
+                });
                 Assert.NotEmpty(reference);
                 using var abandon = new HttpRequestMessage(HttpMethod.Post,
                     $"/api/organizations/{organizationId}/billing-account/provider/abandon")
