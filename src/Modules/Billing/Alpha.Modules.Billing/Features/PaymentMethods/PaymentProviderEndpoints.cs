@@ -176,6 +176,8 @@ public static class PaymentProviderEndpoints
             }
 
             stage = "persist_pending_setup";
+            if (!string.IsNullOrWhiteSpace(account.PendingSetupReference))
+                return Results.Conflict(new { error = "payment_method_setup_pending" });
             var setupReference = $"{account.Id:D}:{Guid.NewGuid():N}";
             // Persist setup only once the external payment page was successfully created.
 
