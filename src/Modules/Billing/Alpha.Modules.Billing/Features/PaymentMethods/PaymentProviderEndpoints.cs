@@ -554,6 +554,14 @@ public static class PaymentProviderEndpoints
             return Results.Conflict(new { error = "provider_payment_method_already_assigned" });
         }
 
+        // A cancelled or superseded attempt must never reactivate an old checkout.
+        if (string.IsNullOrWhiteSpace(account.PendingSetupReference))
+        {
+            webhook.Complete(ProviderWebhookStatus.Ignored, "payment_setup_no_longer_pending");
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { ok = true, stale = true });
+        }
+
         var stagedJson = await db.Database.SqlQueryRaw<string>(
             "SELECT details_json::text AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0} AND setup_reference = {1}",
             account.Id, externalReference).ToListAsync(ct);
