@@ -33,6 +33,7 @@ public static class AlphaDatabaseInitializer
         await EmployerDocumentSchemaInitializer.EnsureUpdatedAsync(db);
         await OrganizationProfileSchemaInitializer.EnsureCreatedAsync(db);
         await BillingSchemaInitializer.EnsureCreatedAsync(db);
+        await BillingPendingSetupSchemaInitializer.EnsureCreatedAsync(db);
         await BillingInheritanceSchemaInitializer.EnsureUpdatedAsync(db);
         await BillingV2SchemaInitializer.EnsureUpdatedAsync(db);
         await OtpSchemaInitializer.EnsureCreatedAsync(db);

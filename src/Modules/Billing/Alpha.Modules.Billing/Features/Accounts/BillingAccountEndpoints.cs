@@ -235,7 +235,7 @@ public static class BillingAccountEndpoints
                 || !string.IsNullOrWhiteSpace(account.TaxId)
                 || !string.IsNullOrWhiteSpace(account.InvoiceEmail)
                 || !string.IsNullOrWhiteSpace(account.BillingAddress)
-                || account.PaymentMethodStatus != BillingPaymentMethodStatus.NotConfigured
+                || account.PaymentMethodStatus is not (BillingPaymentMethodStatus.NotConfigured or BillingPaymentMethodStatus.Pending)
                 || account.DefaultPaymentMethodId.HasValue,
             account.CreatedAt,
             account.UpdatedAt

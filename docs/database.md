@@ -1,13 +1,17 @@
 # Alpha database
 
-One PostgreSQL database, one `AlphaDbContext`, eight schemas, 67 tables. This document covers ownership, how the schema is created and changed, and the rules for changing it safely while production is live.
+One PostgreSQL database, one `AlphaDbContext`, eight schemas, 68 tables. This document covers ownership, how the schema is created and changed, and the rules for changing it safely while production is live.
+
+## Staged ALPHA payment setup (October 2026)
+
+The additive `billing.pending_payment_setup_details` table stores the proposed invoicing identity/address as JSON until the payment provider confirms a token via a verified callback. It is keyed by the billing account and correlated to `PendingSetupReference`. The account's published details are unchanged while payment setup is pending; on verified callback, the details and payment-token metadata are written in a single transaction and the staged draft is deleted. A failed or cancelled hosted checkout must not activate or overwrite the previous account. An unconfirmed attempt expires after 30 minutes; later callbacks are ignored, and a new attempt can replace the expired draft. The completed reference is retained in the staging table for checkout-specific status verification. The provider never receives a PAN or CVV from ALPHA, and these are not stored in staging. This table is intentionally raw SQL, with no new EF DbSet.
 
 ## How the schema is built
 
-There are **no EF Core migrations**. The schema is the EF model plus 31 idempotent compatibility initializers (`src/Alpha.Infrastructure/Persistence/*SchemaInitializer.cs`, `*Initializer.cs`), executed on every startup by `AlphaDatabaseInitializer` in a fixed order:
+There are **no EF Core migrations**. The schema is the EF model plus 32 idempotent compatibility initializers (`src/Alpha.Infrastructure/Persistence/*SchemaInitializer.cs`, `*Initializer.cs`), executed on every startup by `AlphaDatabaseInitializer` in a fixed order:
 
 1. If `Database:BootstrapEmptyDatabase` is true (default: Development only), `EnsureCreatedAsync()` creates the EF model. It is a no-op when the database already has any table.
-2. The 31 initializers run in the production order (`ALTER ... ADD COLUMN IF NOT EXISTS`, `CREATE ... IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION`, idempotent seed/upsert of codebooks).
+2. The 32 initializers run in the production order (`ALTER ... ADD COLUMN IF NOT EXISTS`, `CREATE ... IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION`, idempotent seed/upsert of codebooks).
 3. Reporting runs `LegacyFeedbackNormalization`: a one-time normalization of feedback stored before ingestion normalized it. It holds one payload at a time, never fails startup because of one row, and records `legacy-feedback-normalization-v1` after a clean pass; later starts skip it.
 
 Production never runs `EnsureCreated` unless the flag is set explicitly; a production database therefore only receives the idempotent initializer DDL on deploy.

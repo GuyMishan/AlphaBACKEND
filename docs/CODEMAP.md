@@ -36,7 +36,7 @@ Where to find things. Paths are relative to the repository root. For the rules b
 ## Shared projects
 
 - `src/Alpha.Domain`: `Auditing/AuditEvent`, `Billing/*`, `Common/Entity`, `Common/IsraeliNationalId`, `Employees/*`, `Employers/*`, `Identity/*`, `Organizations/*`, `Reporting/*`, `Validation/WorkforceInputValidation`.
-- `src/Alpha.Infrastructure`: `DependencyInjection.cs` (DbContext, advisory lock, connection-string normalization); `Persistence/AlphaDbContext.cs`; `Persistence/*Configuration(s).cs`; `Persistence/AlphaDatabaseInitializer.cs` (ordered startup DDL); `Persistence/*Initializer.cs` (incl. `EmployerInterface006FieldMapInitializer`, which loads the official V6 workbook); `Persistence/OrganizationEntitlementLock.cs`; `Persistence/DataFixMarkers.cs` (completion markers of one-time jobs); `Persistence/DemoDataSeeder.cs`.
+- `src/Alpha.Infrastructure`: `DependencyInjection.cs` (DbContext, advisory lock, connection-string normalization); `Persistence/AlphaDbContext.cs`; `Persistence/*Configuration(s).cs`; `Persistence/AlphaDatabaseInitializer.cs` (ordered startup DDL, including `BillingPendingSetupSchemaInitializer` for card setup drafts); `Persistence/*Initializer.cs` (incl. `EmployerInterface006FieldMapInitializer`, which loads the official V6 workbook); `Persistence/OrganizationEntitlementLock.cs`; `Persistence/DataFixMarkers.cs` (completion markers of one-time jobs); `Persistence/DemoDataSeeder.cs`.
 
 ## Modules — `src/Modules`
 
@@ -54,7 +54,7 @@ Where to find things. Paths are relative to the repository root. For the rules b
 
 ### Billing
 
-`Features/Accounts`, `Features/Management` (`BillingManagementEndpoints` partial class: `.Platform.cs` platform-admin operations, `.Tenant.cs` organization/employer self-service), `Features/PaymentMethods` (setup/sync/cancel, provider callbacks). `Application/`: `BillingEngine` (calculator, usage collector), `BillingCycleService` + `BillingCycleHostedService`, `BillingGateService`, `EntitlementService`, `BillingInheritanceService`. Contracts: entitlements, inheritance, transmission gate, payment providers.
+`Features/Accounts`, `Features/Management` (`BillingManagementEndpoints` partial class: `.Platform.cs` platform-admin operations, `.Tenant.cs` organization/employer self-service), `Features/PaymentMethods` (staged billing-details setup/abandon/sync/cancel; verified provider callbacks atomically activate the card and apply staged billing details). `Application/`: `BillingEngine` (calculator, usage collector), `BillingCycleService` + `BillingCycleHostedService`, `BillingGateService`, `EntitlementService`, `BillingInheritanceService`. Contracts: entitlements, inheritance, transmission gate, payment providers.
 
 ### Reporting
 

@@ -41,6 +41,126 @@ public sealed class PaymentCallbackUrlTests
     }
 
     [Fact]
+    public async Task Provider_setup_stages_new_details_without_changing_existing_account()
+    {
+        var provider = new RecordingPaymentProvider();
+        await RunAsync(async (factory, client, ct) =>
+        {
+            var (organizationId, request) = await SetupRequestAsync(factory);
+            using (request)
+            {
+                // Replace only the body; retain the seeded authenticated identity.
+                request.Content = System.Net.Http.Json.JsonContent.Create(new {
+                    returnPath = "/settings",
+                    billingName = "New Pending Name",
+                    taxId = "123456789",
+                    invoiceEmail = "new@test.invalid",
+                    billingAddress = "New Address"
+                });
+                using var response = await client.SendAsync(request, ct);
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            }
+
+            await factory.WithDbAsync(async db =>
+            {
+                var account = await db.BillingAccounts.SingleAsync(x => x.OrganizationId == organizationId, ct);
+                Assert.Equal("Callback Test", account.BillingName);
+                Assert.Equal("515151515", account.TaxId);
+                Assert.Equal("billing@test.invalid", account.InvoiceEmail);
+                Assert.Equal("1 Test Street", account.BillingAddress);
+                Assert.Null(account.DefaultPaymentMethodId);
+                var staged = await db.Database.SqlQueryRaw<string>(
+                    "SELECT details_json::text AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0}",
+                    account.Id).ToListAsync(ct);
+                Assert.Single(staged);
+                Assert.Contains("New Pending Name", staged[0]);
+            });
+        }, new Dictionary<string, string?> { ["Payments:PublicApiBaseUrl"] = "https://api.alpha.test" }, provider.Install);
+    }
+
+    [Fact]
+    public async Task Verified_payment_callback_applies_pending_details_and_card_together()
+    {
+        var provider = new RecordingPaymentProvider();
+        await RunAsync(async (factory, client, ct) =>
+        {
+            var (organizationId, request) = await SetupRequestAsync(factory);
+            using (request)
+            {
+                request.Content = System.Net.Http.Json.JsonContent.Create(new { returnPath = "/settings",
+                    billingName = "Approved Name", taxId = "123456789",
+                    invoiceEmail = "approved@test.invalid", billingAddress = "Approved Address" });
+                using var response = await client.SendAsync(request, ct);
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            }
+            using var callback = new HttpRequestMessage(HttpMethod.Post, "/api/billing/providers/Recording/callback")
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new { event_id = "success-1" })
+            };
+            using var callbackResponse = await client.SendAsync(callback, ct);
+            Assert.Equal(HttpStatusCode.OK, callbackResponse.StatusCode);
+            await factory.WithDbAsync(async db =>
+            {
+                var account = await db.BillingAccounts.SingleAsync(x => x.OrganizationId == organizationId, ct);
+                Assert.Equal("Approved Name", account.BillingName);
+                Assert.Equal("123456789", account.TaxId);
+                Assert.Equal("approved@test.invalid", account.InvoiceEmail);
+                Assert.Equal("Approved Address", account.BillingAddress);
+                Assert.Equal(BillingPaymentMethodStatus.Active, account.PaymentMethodStatus);
+                Assert.NotNull(account.DefaultPaymentMethodId);
+                Assert.Equal("token-1", account.ProviderPaymentMethodId);
+                var completion = await db.Database.SqlQueryRaw<bool>(
+                    "SELECT (completed_at IS NOT NULL) AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0}",
+                    account.Id).ToListAsync(ct);
+                Assert.Equal(new[] { true }, completion);
+            });
+        }, new Dictionary<string, string?> { ["Payments:PublicApiBaseUrl"] = "https://api.alpha.test" }, provider.Install);
+    }
+
+    [Fact]
+    public async Task Cancelled_checkout_discards_pending_details_and_preserves_existing_account()
+    {
+        var provider = new RecordingPaymentProvider();
+        await RunAsync(async (factory, client, ct) =>
+        {
+            var (organizationId, request) = await SetupRequestAsync(factory);
+            using (request)
+            {
+                request.Content = System.Net.Http.Json.JsonContent.Create(new { returnPath = "/settings",
+                    billingName = "Discard Me", taxId = "123456789",
+                    invoiceEmail = "discard@test.invalid", billingAddress = "Discard Address" });
+                using var setupResponse = await client.SendAsync(request, ct);
+                Assert.Equal(HttpStatusCode.OK, setupResponse.StatusCode);
+                string? reference = null;
+                await factory.WithDbAsync(async db =>
+                {
+                    reference = await db.BillingAccounts.Where(x => x.OrganizationId == organizationId)
+                        .Select(x => x.PendingSetupReference).SingleAsync(ct);
+                });
+                Assert.False(string.IsNullOrEmpty(reference));
+                using var abandon = new HttpRequestMessage(HttpMethod.Post,
+                    $"/api/organizations/{organizationId}/billing-account/provider/abandon")
+                {
+                    Content = System.Net.Http.Json.JsonContent.Create(new { setupReference = reference })
+                };
+                foreach (var header in request.Headers)
+                    abandon.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                using var abandonResponse = await client.SendAsync(abandon, ct);
+                Assert.Equal(HttpStatusCode.NoContent, abandonResponse.StatusCode);
+            }
+            await factory.WithDbAsync(async db =>
+            {
+                var account = await db.BillingAccounts.SingleAsync(x => x.OrganizationId == organizationId, ct);
+                Assert.Equal("Callback Test", account.BillingName);
+                Assert.Equal("515151515", account.TaxId);
+                Assert.Equal(BillingPaymentMethodStatus.NotConfigured, account.PaymentMethodStatus);
+                Assert.Equal(string.Empty, account.PendingSetupReference);
+                Assert.Null(account.DefaultPaymentMethodId);
+            });
+        }, new Dictionary<string, string?> { ["Payments:PublicApiBaseUrl"] = "https://api.alpha.test" }, provider.Install);
+    }
+
+    [Fact]
     public async Task Callback_url_uses_the_configured_api_base_and_ignores_the_host_header()
     {
         var provider = new RecordingPaymentProvider();
@@ -139,6 +259,7 @@ public sealed class PaymentCallbackUrlTests
     {
         private int customersCreated;
         private readonly System.Collections.Concurrent.ConcurrentQueue<string> callbackUrls = new();
+        private string? externalReference;
 
         public string Name => "Recording";
         public int CustomersCreated => Volatile.Read(ref customersCreated);
@@ -160,6 +281,7 @@ public sealed class PaymentCallbackUrlTests
 
         public Task<PaymentMethodSetupResult> CreatePaymentMethod(PaymentMethodSetupRequest request, CancellationToken ct = default)
         {
+            externalReference = request.ExternalReference;
             callbackUrls.Enqueue(request.CallbackUrl);
             return Task.FromResult(new PaymentMethodSetupResult("setup-1", "https://provider.test/setup"));
         }
@@ -169,6 +291,6 @@ public sealed class PaymentCallbackUrlTests
         public Task<PaymentMethodStatusResult> GetPaymentMethodStatus(string customerId, string paymentMethodId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task CancelPaymentMethod(string customerId, string paymentMethodId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PaymentMethodStatusResult> ResolvePaymentMethodFromCallback(string rawBody, IReadOnlyDictionary<string, string> headers, CancellationToken ct = default) =>
-            throw new NotSupportedException();
+            Task.FromResult(new PaymentMethodStatusResult(true, "token-1", "Visa", "4242", 12, 2030, null, "customer-1", externalReference));
     }
 }

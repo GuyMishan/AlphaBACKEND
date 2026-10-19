@@ -16,7 +16,8 @@ using Microsoft.Extensions.Logging;
 namespace Alpha.Modules.Billing.Features.PaymentMethods;
 
 public sealed record BillingChargeRequest(decimal Amount, string? Description, bool CreateInvoice = true);
-public sealed record PaymentMethodSetupApiRequest(string? ReturnPath);
+public sealed record PaymentMethodSetupApiRequest(string? ReturnPath, string? BillingName = null, string? TaxId = null, string? InvoiceEmail = null, string? BillingAddress = null);
+public sealed record PaymentMethodAbandonApiRequest(string SetupReference);
 
 public static class PaymentProviderEndpoints
 {
@@ -25,12 +26,16 @@ public static class PaymentProviderEndpoints
         var org = endpoints.MapGroup("/api/organizations/{organizationId:guid}/billing-account/provider")
             .RequireAuthorization().WithTags("Alpha Billing Provider");
         org.MapPost("/setup", StartOrganizationSetupAsync);
+        org.MapPost("/abandon", AbandonOrganizationSetupAsync);
+        org.MapGet("/status", GetOrganizationSetupStatusAsync);
         org.MapPost("/sync", SyncOrganizationAsync);
         org.MapPost("/cancel", CancelOrganizationAsync);
 
         var employer = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/billing-account/provider")
             .RequireAuthorization().WithTags("Alpha Billing Provider");
         employer.MapPost("/setup", StartEmployerSetupAsync);
+        employer.MapPost("/abandon", AbandonEmployerSetupAsync);
+        employer.MapGet("/status", GetEmployerSetupStatusAsync);
         employer.MapPost("/sync", SyncEmployerAsync);
         employer.MapPost("/cancel", CancelEmployerAsync);
 
@@ -45,6 +50,63 @@ public static class PaymentProviderEndpoints
         return endpoints;
     }
 
+    private static async Task<IResult> GetOrganizationSetupStatusAsync(Guid organizationId, string setupReference,
+        AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct)
+    {
+        if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        var account = await db.BillingAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EmployerId == null, ct);
+        return await GetSetupStatusAsync(account, setupReference, db, ct);
+    }
+
+    private static async Task<IResult> GetEmployerSetupStatusAsync(Guid organizationId, Guid employerId, string setupReference,
+        AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct)
+    {
+        if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var account = await db.BillingAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.EmployerId == employerId && x.OrganizationId == null, ct);
+        return await GetSetupStatusAsync(account, setupReference, db, ct);
+    }
+
+    private static async Task<IResult> GetSetupStatusAsync(BillingAccount? account, string setupReference, AlphaDbContext db, CancellationToken ct)
+    {
+        if (account is null || string.IsNullOrWhiteSpace(setupReference)) return Results.NotFound();
+        var state = await db.Database.SqlQueryRaw<bool>("SELECT (completed_at IS NOT NULL) AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0} AND setup_reference = {1}", account.Id, setupReference).ToListAsync(ct);
+        return Results.Ok(new { confirmed = state.Count > 0 && state[0] && account.PaymentMethodStatus == BillingPaymentMethodStatus.Active,
+            pending = string.Equals(account.PendingSetupReference, setupReference, StringComparison.Ordinal) });
+    }
+    private static async Task<IResult> AbandonOrganizationSetupAsync(Guid organizationId,
+        PaymentMethodAbandonApiRequest request, AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct)
+    {
+        if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        var account = await db.BillingAccounts.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.EmployerId == null, ct);
+        return await AbandonSetupAsync(account, request.SetupReference, db, ct);
+    }
+
+    private static async Task<IResult> AbandonEmployerSetupAsync(Guid organizationId, Guid employerId,
+        PaymentMethodAbandonApiRequest request, AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct)
+    {
+        if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var account = await db.BillingAccounts.SingleOrDefaultAsync(
+            x => x.EmployerId == employerId && x.OrganizationId == null, ct);
+        return await AbandonSetupAsync(account, request.SetupReference, db, ct);
+    }
+
+    private static async Task<IResult> AbandonSetupAsync(BillingAccount? account, string setupReference,
+        AlphaDbContext db, CancellationToken ct)
+    {
+        if (account is null || !account.AbandonProviderSetup(setupReference))
+            return Results.Conflict(new { error = "payment_setup_not_pending" });
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            DELETE FROM billing.pending_payment_setup_details
+            WHERE billing_account_id = {account.Id} AND setup_reference = {setupReference}
+            """, ct);
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> StartOrganizationSetupAsync(Guid organizationId, PaymentMethodSetupApiRequest request,
         AlphaDbContext db, ICurrentUser currentUser, IOrganizationAuthorization access,
         IPaymentProviderResolver resolver, IConfiguration config, ILoggerFactory loggerFactory, HttpContext http, CancellationToken ct)
@@ -52,8 +114,8 @@ public static class PaymentProviderEndpoints
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.OrganizationId == organizationId && x.EmployerId == null, ct);
-        if (account is null) return Results.Conflict(new { error = "billing_account_required" });
-        return await StartSetupAsync(account, organizationId, null, request.ReturnPath, db, currentUser, resolver, config, loggerFactory.CreateLogger("Alpha.Billing.PaymentSetup"), http, ct);
+        if (account is null) { account = new BillingAccount(organizationId, null); db.BillingAccounts.Add(account); }
+        return await StartSetupAsync(account, organizationId, null, request, db, currentUser, resolver, config, loggerFactory.CreateLogger("Alpha.Billing.PaymentSetup"), http, ct);
     }
 
     private static async Task<IResult> StartEmployerSetupAsync(Guid organizationId, Guid employerId, PaymentMethodSetupApiRequest request,
@@ -63,18 +125,27 @@ public static class PaymentProviderEndpoints
         if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.EmployerId == employerId && x.OrganizationId == null, ct);
-        if (account is null) return Results.Conflict(new { error = "billing_account_required" });
-        return await StartSetupAsync(account, organizationId, employerId, request.ReturnPath, db, currentUser, resolver, config, loggerFactory.CreateLogger("Alpha.Billing.PaymentSetup"), http, ct);
+        if (account is null) { account = new BillingAccount(null, employerId); db.BillingAccounts.Add(account); }
+        return await StartSetupAsync(account, organizationId, employerId, request, db, currentUser, resolver, config, loggerFactory.CreateLogger("Alpha.Billing.PaymentSetup"), http, ct);
     }
 
     private static async Task<IResult> StartSetupAsync(BillingAccount account, Guid organizationId, Guid? employerId,
-        string? returnPath, AlphaDbContext db, ICurrentUser currentUser, IPaymentProviderResolver resolver,
+        PaymentMethodSetupApiRequest request, AlphaDbContext db, ICurrentUser currentUser, IPaymentProviderResolver resolver,
         IConfiguration config, ILogger logger, HttpContext http, CancellationToken ct)
     {
         if (account.PaymentMethodType != BillingPaymentMethodType.CreditCard)
             return Results.Conflict(new { error = "provider_setup_not_supported_for_bank_debit" });
-        if (string.IsNullOrWhiteSpace(account.BillingName) || string.IsNullOrWhiteSpace(account.InvoiceEmail))
-            return Results.Conflict(new { error = "billing_details_incomplete" });
+        var draftProvided = request.BillingName is not null || request.TaxId is not null || request.InvoiceEmail is not null || request.BillingAddress is not null;
+        var billingName = draftProvided ? request.BillingName?.Trim() ?? "" : account.BillingName;
+        var taxId = draftProvided ? request.TaxId?.Trim() ?? "" : account.TaxId;
+        var invoiceEmail = draftProvided ? request.InvoiceEmail?.Trim() ?? "" : account.InvoiceEmail;
+        var billingAddress = draftProvided ? request.BillingAddress?.Trim() ?? "" : account.BillingAddress;
+        if (string.IsNullOrWhiteSpace(billingName) || billingName.Length > 200 ||
+            string.IsNullOrWhiteSpace(taxId) || taxId.Length > 30 ||
+            string.IsNullOrWhiteSpace(invoiceEmail) || invoiceEmail.Length > 320 ||
+            !System.Net.Mail.MailAddress.TryCreate(invoiceEmail, out _) ||
+            string.IsNullOrWhiteSpace(billingAddress) || billingAddress.Length > 500)
+            return Results.BadRequest(new { error = "billing_details_incomplete" });
         // The provider calls this URL back, so it comes only from configuration; Host is caller-controlled.
         // Without an explicit setting, Render's own RENDER_EXTERNAL_URL (set by the platform for every web service)
         // is used; an explicit but invalid setting is never replaced. Checked before any provider call or state change.
@@ -121,47 +192,73 @@ public static class PaymentProviderEndpoints
             {
                 stage = "create_customer";
                 var customer = await provider.CreateCustomer(new PaymentProviderCustomerRequest(
-                    account.BillingName,
-                    account.InvoiceEmail,
-                    account.TaxId,
-                    account.BillingAddress,
+                    billingName,
+                    invoiceEmail,
+                    taxId,
+                    billingAddress,
                     account.Id.ToString()), ct);
                 customerId = customer.CustomerId;
             }
 
             stage = "persist_pending_setup";
+            if (!string.IsNullOrWhiteSpace(account.PendingSetupReference))
+            {
+                var expired = await db.Database.SqlQueryRaw<bool>(
+                    "SELECT (created_at < now() - interval '30 minutes') AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0} AND setup_reference = {1}",
+                    account.Id, account.PendingSetupReference).ToListAsync(ct);
+                if (expired.Count == 0 || !expired[0])
+                    return Results.Conflict(new { error = "payment_method_setup_pending" });
+                account.AbandonProviderSetup(account.PendingSetupReference);
+            }
             var setupReference = $"{account.Id:D}:{Guid.NewGuid():N}";
-            account.BeginProviderSetup(provider.Name, customerId, setupReference);
-            await db.SaveChangesAsync(ct);
+            // Persist setup only once the external payment page was successfully created.
 
             var frontend = config["Frontend:BaseUrl"]?.TrimEnd('/');
             if (string.IsNullOrWhiteSpace(frontend))
                 frontend = "https://alpha-ochre-ten.vercel.app";
 
-            var safeReturnPath = !string.IsNullOrWhiteSpace(returnPath) && returnPath.StartsWith('/') && !returnPath.StartsWith("//")
-                ? returnPath
+            var safeReturnPath = !string.IsNullOrWhiteSpace(request.ReturnPath) && request.ReturnPath.StartsWith('/') && !request.ReturnPath.StartsWith("//")
+                ? request.ReturnPath
                 : "/settings";
             var returnSeparator = safeReturnPath.Contains('?') ? "&" : "?";
 
             stage = "create_payment_page";
             var setup = await provider.CreatePaymentMethod(new PaymentMethodSetupRequest(
                 customerId,
-                $"{frontend}{safeReturnPath}{returnSeparator}payment=success",
-                $"{frontend}{safeReturnPath}{returnSeparator}payment=failed",
-                $"{frontend}{safeReturnPath}{returnSeparator}payment=cancelled",
+                $"{frontend}{safeReturnPath}{returnSeparator}payment=success&setup_reference={Uri.EscapeDataString(setupReference)}",
+                $"{frontend}{safeReturnPath}{returnSeparator}payment=failed&setup_reference={Uri.EscapeDataString(setupReference)}",
+                $"{frontend}{safeReturnPath}{returnSeparator}payment=cancelled&setup_reference={Uri.EscapeDataString(setupReference)}",
                 $"{callbackBase}/api/billing/providers/{Uri.EscapeDataString(provider.Name)}/callback",
                 setupReference,
-                account.BillingName,
-                account.TaxId,
-                account.InvoiceEmail,
-                account.BillingAddress), ct);
+                billingName,
+                taxId,
+                invoiceEmail,
+                billingAddress), ct);
 
             stage = "persist_setup_audit";
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            if (db.Entry(account).State != EntityState.Added)
+            {
+                var current = await db.Database.SqlQueryRaw<string>(
+                    "SELECT \"PendingSetupReference\" AS \"Value\" FROM billing.billing_accounts WHERE \"Id\" = {0} FOR UPDATE", account.Id).ToListAsync(ct);
+                if (current.Count != 1 || !string.Equals(current[0], account.PendingSetupReference, StringComparison.Ordinal))
+                    return Results.Conflict(new { error = "payment_method_setup_pending" });
+            }
+            account.BeginProviderSetup(provider.Name, customerId, setupReference);
+            await db.SaveChangesAsync(ct);
+            var stagedDetails = JsonSerializer.Serialize(new { billingName, taxId, invoiceEmail, billingAddress });
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO billing.pending_payment_setup_details (billing_account_id, setup_reference, details_json)
+                VALUES ({account.Id}, {setupReference}, {stagedDetails}::jsonb)
+                ON CONFLICT (billing_account_id) DO UPDATE
+                SET setup_reference = EXCLUDED.setup_reference, details_json = EXCLUDED.details_json, created_at = now(), completed_at = NULL
+                """, ct);
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "billing.payment-method.setup-started",
                 nameof(BillingAccount), account.Id, organizationId, employerId,
                 JsonSerializer.Serialize(new { provider = provider.Name, setup.SetupRequestId }),
                 http.TraceIdentifier));
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
 
             return Results.Ok(new
             {
@@ -496,6 +593,34 @@ public static class PaymentProviderEndpoints
             return Results.Conflict(new { error = "provider_payment_method_already_assigned" });
         }
 
+        // A cancelled or superseded attempt must never reactivate an old checkout.
+        if (string.IsNullOrWhiteSpace(account.PendingSetupReference))
+        {
+            webhook.Complete(ProviderWebhookStatus.Ignored, "payment_setup_no_longer_pending");
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { ok = true, stale = true });
+        }
+
+        var stillValid = await db.Database.SqlQueryRaw<bool>(
+            "SELECT (created_at >= now() - interval '30 minutes') AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0} AND setup_reference = {1}",
+            account.Id, externalReference).ToListAsync(ct);
+        if (stillValid.Count != 1 || !stillValid[0])
+        {
+            webhook.Complete(ProviderWebhookStatus.Ignored, "expired_payment_setup_callback");
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { ok = true, expired = true });
+        }
+        var stagedJson = await db.Database.SqlQueryRaw<string>(
+            "SELECT details_json::text AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0} AND setup_reference = {1}",
+            account.Id, externalReference).ToListAsync(ct);
+        if (stagedJson.Count > 0)
+        {
+            using var staged = JsonDocument.Parse(stagedJson[0]);
+            var d = staged.RootElement;
+            account.UpdateBillingDetails(d.GetProperty("billingName").GetString(),
+                d.GetProperty("taxId").GetString(), d.GetProperty("invoiceEmail").GetString(),
+                d.GetProperty("billingAddress").GetString(), BillingPaymentMethodType.CreditCard);
+        }
         account.UpdateProviderMetadata(
             BillingPaymentMethodStatus.Active,
             customerId,
@@ -530,7 +655,13 @@ public static class PaymentProviderEndpoints
         account.CompleteProviderSetup();
         webhook.Complete(ProviderWebhookStatus.Processed);
 
+        await using var commit = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE billing.pending_payment_setup_details SET completed_at = now()
+            WHERE billing_account_id = {account.Id} AND setup_reference = {externalReference}
+            """, ct);
+        await commit.CommitAsync(ct);
         return Results.Ok(new { ok = true });
     }
 

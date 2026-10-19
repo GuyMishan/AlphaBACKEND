@@ -18,11 +18,15 @@ public sealed class CompatibilityBaselineTests
         var routes = SourceFiles("src").Where(path => !path.EndsWith("LegalDocumentEndpoints.cs", StringComparison.Ordinal))
             .SelectMany(path => routePattern.Matches(File.ReadAllText(path)).Cast<Match>())
             .Select(match => $"{match.Groups["verb"].Value.ToUpperInvariant()}|{match.Groups["route"].Value}")
-            .Where(route => route is not ("POST|/api/auth/legal/accept" or "PUT|/marketing"))
+            .Where(route => route is not ("POST|/api/auth/legal/accept" or "PUT|/marketing" or "POST|/abandon" or "GET|/status"))
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        Assert.True(routes.Length == 248 && Fingerprint(routes) == RouteBaseline,
+        Assert.Contains("org.MapGet(\"/status\", GetOrganizationSetupStatusAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
+        Assert.Contains("employer.MapGet(\"/status\", GetEmployerSetupStatusAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
+        Assert.Contains("org.MapPost(\"/abandon\", AbandonOrganizationSetupAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
+        Assert.Contains("employer.MapPost(\"/abandon\", AbandonEmployerSetupAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
+        Assert.True(routes.Length == 247 && Fingerprint(routes) == RouteBaseline,
             $"Route baseline changed: {routes.Length} routes, fingerprint {Fingerprint(routes)}. Update only for a reviewed API change.");
     }
 
@@ -40,7 +44,7 @@ public sealed class CompatibilityBaselineTests
                 return toTable.Matches(source).Cast<Match>().Concat(createTable.Matches(source).Cast<Match>());
             })
             .Select(match => $"{match.Groups["schema"].Value}.{match.Groups["table"].Value}")
-            .Where(table => table != "reference_data.legal_document_versions" && table != "identity.registration_consent_intents" && table != "identity.user_consent_events")
+            .Where(table => table != "reference_data.legal_document_versions" && table != "identity.registration_consent_intents" && table != "identity.user_consent_events" && table != "billing.pending_payment_setup_details")
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -57,7 +61,7 @@ public sealed class CompatibilityBaselineTests
             "IdentitySchemaInitializer.EnsureUpdatedAsync", "ReferentSchemaInitializer.EnsureUpdatedAsync",
             "EmployeeIdentitySchemaInitializer.EnsureUpdatedAsync", "EmployerAccessSchemaInitializer.EnsureUpdatedAsync",
             "AccessPermissionsSchemaInitializer.EnsureUpdatedAsync", "EmployerProfileSchemaInitializer.EnsureCreatedAsync", "EmployerDocumentSchemaInitializer.EnsureUpdatedAsync",
-            "OrganizationProfileSchemaInitializer.EnsureCreatedAsync", "BillingSchemaInitializer.EnsureCreatedAsync",
+            "OrganizationProfileSchemaInitializer.EnsureCreatedAsync", "BillingSchemaInitializer.EnsureCreatedAsync", "BillingPendingSetupSchemaInitializer.EnsureCreatedAsync",
             "BillingInheritanceSchemaInitializer.EnsureUpdatedAsync", "BillingV2SchemaInitializer.EnsureUpdatedAsync",
             "OtpSchemaInitializer.EnsureCreatedAsync", "RegistrationOtpSchemaInitializer.EnsureCreatedAsync",
             "InvitationSchemaInitializer.EnsureCreatedAsync", "ReportingSchemaInitializer.EnsureCreatedAsync",
@@ -84,11 +88,13 @@ public sealed class CompatibilityBaselineTests
     {
         // Content gate over all compatibility DDL. Update only together with docs/database.md.
         var files = Directory.EnumerateFiles(Path("src/Alpha.Infrastructure/Persistence"), "*Initializer.cs")
-            .Where(f => !f.EndsWith("AlphaDatabaseInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("LegalDocumentSchemaInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("RegistrationConsentSchemaInitializer.cs", StringComparison.Ordinal))
+            .Where(f => !f.EndsWith("AlphaDatabaseInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("LegalDocumentSchemaInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("RegistrationConsentSchemaInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("BillingPendingSetupSchemaInitializer.cs", StringComparison.Ordinal))
             .Order(StringComparer.Ordinal)
             .Select(f => $"{System.IO.Path.GetFileName(f)}\n{File.ReadAllText(f).ReplaceLineEndings("\n")}");
         Assert.Equal(31, files.Count());
         Assert.Contains("LegalDocumentSchemaInitializer.EnsureCreatedAsync", Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs"));
+        Assert.Contains("BillingPendingSetupSchemaInitializer.EnsureCreatedAsync", Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs"));
+        Assert.Contains("CREATE TABLE IF NOT EXISTS billing.pending_payment_setup_details", Read("src/Alpha.Infrastructure/Persistence/BillingPendingSetupSchemaInitializer.cs"));
         Assert.True(Fingerprint(files) == SchemaInitializerBaseline,
             $"Schema initializer SQL changed, fingerprint {Fingerprint(files)}. Update only together with docs/database.md.");
     }
@@ -118,7 +124,7 @@ public sealed class CompatibilityBaselineTests
             Assert.DoesNotMatch(@"Database\.(EnsureCreated|EnsureDeleted|Migrate)(Async)?\(", File.ReadAllText(file));
     }
 
-    internal const string RouteBaseline = "3bc933694debf60d48eff4f5beb39beb1a43f67fac2ae84b66c73b42d422a952";
+    internal const string RouteBaseline = "da07bbf73facb4887b4aa539aca31ba00b874027f8a2530173f435069a95f72e";
     internal const string TableBaseline = "cf1d402e5a2a8aa29b39821298684b2826e204535c97dea04d46735673994b53";
     internal const string SchemaInitializerBaseline = "ec93b2da33d4e60afc7721fea09a6aa23a6f06c1ec92fd1d7eb5a439fe466fdd";
 }
