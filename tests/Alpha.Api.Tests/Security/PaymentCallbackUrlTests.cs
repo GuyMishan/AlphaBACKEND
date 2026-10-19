@@ -109,6 +109,10 @@ public sealed class PaymentCallbackUrlTests
                 Assert.Equal(BillingPaymentMethodStatus.Active, account.PaymentMethodStatus);
                 Assert.NotNull(account.DefaultPaymentMethodId);
                 Assert.Equal("token-1", account.ProviderPaymentMethodId);
+                var completion = await db.Database.SqlQueryRaw<bool>(
+                    "SELECT (completed_at IS NOT NULL) AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0}",
+                    account.Id).ToListAsync(ct);
+                Assert.Equal(new[] { true }, completion);
             });
         }, new Dictionary<string, string?> { ["Payments:PublicApiBaseUrl"] = "https://api.alpha.test" }, provider.Install);
     }
