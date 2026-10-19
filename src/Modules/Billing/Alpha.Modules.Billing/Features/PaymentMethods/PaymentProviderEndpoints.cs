@@ -17,6 +17,7 @@ namespace Alpha.Modules.Billing.Features.PaymentMethods;
 
 public sealed record BillingChargeRequest(decimal Amount, string? Description, bool CreateInvoice = true);
 public sealed record PaymentMethodSetupApiRequest(string? ReturnPath, string? BillingName = null, string? TaxId = null, string? InvoiceEmail = null, string? BillingAddress = null);
+public sealed record PaymentMethodAbandonApiRequest(string SetupReference);
 
 public static class PaymentProviderEndpoints
 {
@@ -25,12 +26,14 @@ public static class PaymentProviderEndpoints
         var org = endpoints.MapGroup("/api/organizations/{organizationId:guid}/billing-account/provider")
             .RequireAuthorization().WithTags("Alpha Billing Provider");
         org.MapPost("/setup", StartOrganizationSetupAsync);
+        org.MapPost("/abandon", AbandonOrganizationSetupAsync);
         org.MapPost("/sync", SyncOrganizationAsync);
         org.MapPost("/cancel", CancelOrganizationAsync);
 
         var employer = endpoints.MapGroup("/api/organizations/{organizationId:guid}/employers/{employerId:guid}/billing-account/provider")
             .RequireAuthorization().WithTags("Alpha Billing Provider");
         employer.MapPost("/setup", StartEmployerSetupAsync);
+        employer.MapPost("/abandon", AbandonEmployerSetupAsync);
         employer.MapPost("/sync", SyncEmployerAsync);
         employer.MapPost("/cancel", CancelEmployerAsync);
 
@@ -43,6 +46,40 @@ public static class PaymentProviderEndpoints
             .AllowAnonymous().WithTags("Alpha Billing Provider");
 
         return endpoints;
+    }
+
+    private static async Task<IResult> AbandonOrganizationSetupAsync(Guid organizationId,
+        PaymentMethodAbandonApiRequest request, AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct)
+    {
+        if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
+        var account = await db.BillingAccounts.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.EmployerId == null, ct);
+        return await AbandonSetupAsync(account, request.SetupReference, db, ct);
+    }
+
+    private static async Task<IResult> AbandonEmployerSetupAsync(Guid organizationId, Guid employerId,
+        PaymentMethodAbandonApiRequest request, AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct)
+    {
+        if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
+        var account = await db.BillingAccounts.SingleOrDefaultAsync(
+            x => x.EmployerId == employerId && x.OrganizationId == null, ct);
+        return await AbandonSetupAsync(account, request.SetupReference, db, ct);
+    }
+
+    private static async Task<IResult> AbandonSetupAsync(BillingAccount? account, string setupReference,
+        AlphaDbContext db, CancellationToken ct)
+    {
+        if (account is null || !account.AbandonProviderSetup(setupReference))
+            return Results.Conflict(new { error = "payment_setup_not_pending" });
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            DELETE FROM billing.pending_payment_setup_details
+            WHERE billing_account_id = {account.Id} AND setup_reference = {setupReference}
+            """, ct);
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> StartOrganizationSetupAsync(Guid organizationId, PaymentMethodSetupApiRequest request,
@@ -154,9 +191,9 @@ public static class PaymentProviderEndpoints
             stage = "create_payment_page";
             var setup = await provider.CreatePaymentMethod(new PaymentMethodSetupRequest(
                 customerId,
-                $"{frontend}{safeReturnPath}{returnSeparator}payment=success",
-                $"{frontend}{safeReturnPath}{returnSeparator}payment=failed",
-                $"{frontend}{safeReturnPath}{returnSeparator}payment=cancelled",
+                $"{frontend}{safeReturnPath}{returnSeparator}payment=success&setup_reference={Uri.EscapeDataString(setupReference)}",
+                $"{frontend}{safeReturnPath}{returnSeparator}payment=failed&setup_reference={Uri.EscapeDataString(setupReference)}",
+                $"{frontend}{safeReturnPath}{returnSeparator}payment=cancelled&setup_reference={Uri.EscapeDataString(setupReference)}",
                 $"{callbackBase}/api/billing/providers/{Uri.EscapeDataString(provider.Name)}/callback",
                 setupReference,
                 billingName,
