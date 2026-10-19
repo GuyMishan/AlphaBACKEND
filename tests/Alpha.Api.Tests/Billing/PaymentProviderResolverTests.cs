@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Alpha.Api.Payments;
 using Microsoft.Extensions.Configuration;
 using Xunit;
@@ -64,7 +65,7 @@ public sealed class PaymentProviderResolverTests
         var clients = new NoopHttpClientFactory();
         return new PaymentProviderResolver(
             new FakePaymentProvider(),
-            new CardComPaymentProvider(clients, configuration),
+            new CardComPaymentProvider(clients, configuration, NullLogger<CardComPaymentProvider>.Instance),
             new PayPlusPaymentProvider(clients, configuration),
             configuration);
     }

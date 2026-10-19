@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -7,7 +8,7 @@ using Alpha.Modules.Billing.Contracts;
 
 namespace Alpha.Api.Payments;
 
-public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfiguration configuration) : IPaymentProvider
+public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfiguration configuration, ILogger<CardComPaymentProvider> logger) : IPaymentProvider
 {
     public string Name => "CardCom";
 
@@ -245,14 +246,17 @@ public sealed class CardComPaymentProvider(IHttpClientFactory clients, IConfigur
         }
     }
 
-    private static void EnsureSuccess(HttpResponseMessage response, JsonElement root, string operation)
+    private void EnsureSuccess(HttpResponseMessage response, JsonElement root, string operation)
     {
         var code = IntValue(root, "ResponseCode");
         if (!response.IsSuccessStatusCode || code != 0)
-            throw new InvalidOperationException(
-                $"{operation} failed: {StringValue(root, "Description") ?? $"HTTP {(int)response.StatusCode}"} (ResponseCode={code?.ToString() ?? "<missing>"}).");
+        {
+            // Never log Description, raw payloads, personal data or credentials.
+            logger.LogError("CardCom request rejected operation={Operation} httpStatus={HttpStatus} responseCode={ResponseCode}",
+                operation, (int)response.StatusCode, code);
+            throw new InvalidOperationException($"{operation} failed: HTTP {(int)response.StatusCode}, ResponseCode={code?.ToString(CultureInfo.InvariantCulture) ?? "missing"}.");
+        }
     }
-
     private static string? ExtractLowProfileId(string rawBody)
     {
         if (string.IsNullOrWhiteSpace(rawBody)) return null;
