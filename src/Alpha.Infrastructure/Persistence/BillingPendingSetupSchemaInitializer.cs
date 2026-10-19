@@ -10,7 +10,9 @@ public static class BillingPendingSetupSchemaInitializer
             billing_account_id uuid PRIMARY KEY REFERENCES billing.billing_accounts("Id") ON DELETE CASCADE,
             setup_reference varchar(200) NOT NULL,
             details_json jsonb NOT NULL,
-            created_at timestamptz NOT NULL DEFAULT now()
+            created_at timestamptz NOT NULL DEFAULT now(),
+            completed_at timestamptz NULL
         );
+        ALTER TABLE billing.pending_payment_setup_details ADD COLUMN IF NOT EXISTS completed_at timestamptz NULL;
         """);
 }
