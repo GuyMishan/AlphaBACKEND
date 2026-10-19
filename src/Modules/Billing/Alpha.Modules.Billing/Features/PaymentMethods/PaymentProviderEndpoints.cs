@@ -594,6 +594,15 @@ public static class PaymentProviderEndpoints
             return Results.Ok(new { ok = true, stale = true });
         }
 
+        var stillValid = await db.Database.SqlQueryRaw<bool>(
+            "SELECT (created_at >= now() - interval '30 minutes') AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0} AND setup_reference = {1}",
+            account.Id, externalReference).ToListAsync(ct);
+        if (stillValid.Count != 1 || !stillValid[0])
+        {
+            webhook.Complete(ProviderWebhookStatus.Ignored, "expired_payment_setup_callback");
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { ok = true, expired = true });
+        }
         var stagedJson = await db.Database.SqlQueryRaw<string>(
             "SELECT details_json::text AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0} AND setup_reference = {1}",
             account.Id, externalReference).ToListAsync(ct);
