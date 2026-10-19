@@ -22,7 +22,7 @@ public sealed class SchemaVerifierTests
 
         Assert.Empty(SchemaComparer.Compare(first, second));
         Assert.Equal(SchemaCatalog.ApplicationSchemas.Order(), first.Schemas.Order());
-        Assert.Equal(70, first.Objects.Keys.Count(k => k.StartsWith("table ", StringComparison.Ordinal)));
+        Assert.Equal(71, first.Objects.Keys.Count(k => k.StartsWith("table ", StringComparison.Ordinal)));
         Assert.Contains("table reference_data.legal_document_versions", first.Objects.Keys);
     }
 
