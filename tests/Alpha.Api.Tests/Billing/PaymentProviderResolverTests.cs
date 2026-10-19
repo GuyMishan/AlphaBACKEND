@@ -67,7 +67,7 @@ public sealed class PaymentProviderResolverTests
             new FakePaymentProvider(),
             new CardComPaymentProvider(clients, configuration, NullLogger<CardComPaymentProvider>.Instance),
             new PayPlusPaymentProvider(clients, configuration),
-            configuration, NullLogger<CardComPaymentProvider>.Instance);
+            configuration);
     }
 
     private sealed class NoopHttpClientFactory : IHttpClientFactory
