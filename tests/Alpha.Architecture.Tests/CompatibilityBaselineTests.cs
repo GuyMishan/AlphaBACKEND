@@ -40,7 +40,7 @@ public sealed class CompatibilityBaselineTests
                 return toTable.Matches(source).Cast<Match>().Concat(createTable.Matches(source).Cast<Match>());
             })
             .Select(match => $"{match.Groups["schema"].Value}.{match.Groups["table"].Value}")
-            .Where(table => table != "reference_data.legal_document_versions" && table != "identity.registration_consent_intents" && table != "identity.user_consent_events")
+            .Where(table => table != "reference_data.legal_document_versions" && table != "identity.registration_consent_intents" && table != "identity.user_consent_events" && table != "billing.pending_payment_setup_details")
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -57,7 +57,7 @@ public sealed class CompatibilityBaselineTests
             "IdentitySchemaInitializer.EnsureUpdatedAsync", "ReferentSchemaInitializer.EnsureUpdatedAsync",
             "EmployeeIdentitySchemaInitializer.EnsureUpdatedAsync", "EmployerAccessSchemaInitializer.EnsureUpdatedAsync",
             "AccessPermissionsSchemaInitializer.EnsureUpdatedAsync", "EmployerProfileSchemaInitializer.EnsureCreatedAsync", "EmployerDocumentSchemaInitializer.EnsureUpdatedAsync",
-            "OrganizationProfileSchemaInitializer.EnsureCreatedAsync", "BillingSchemaInitializer.EnsureCreatedAsync",
+            "OrganizationProfileSchemaInitializer.EnsureCreatedAsync", "BillingSchemaInitializer.EnsureCreatedAsync", "BillingPendingSetupSchemaInitializer.EnsureCreatedAsync",
             "BillingInheritanceSchemaInitializer.EnsureUpdatedAsync", "BillingV2SchemaInitializer.EnsureUpdatedAsync",
             "OtpSchemaInitializer.EnsureCreatedAsync", "RegistrationOtpSchemaInitializer.EnsureCreatedAsync",
             "InvitationSchemaInitializer.EnsureCreatedAsync", "ReportingSchemaInitializer.EnsureCreatedAsync",
@@ -84,11 +84,13 @@ public sealed class CompatibilityBaselineTests
     {
         // Content gate over all compatibility DDL. Update only together with docs/database.md.
         var files = Directory.EnumerateFiles(Path("src/Alpha.Infrastructure/Persistence"), "*Initializer.cs")
-            .Where(f => !f.EndsWith("AlphaDatabaseInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("LegalDocumentSchemaInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("RegistrationConsentSchemaInitializer.cs", StringComparison.Ordinal))
+            .Where(f => !f.EndsWith("AlphaDatabaseInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("LegalDocumentSchemaInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("RegistrationConsentSchemaInitializer.cs", StringComparison.Ordinal) && !f.EndsWith("BillingPendingSetupSchemaInitializer.cs", StringComparison.Ordinal))
             .Order(StringComparer.Ordinal)
             .Select(f => $"{System.IO.Path.GetFileName(f)}\n{File.ReadAllText(f).ReplaceLineEndings("\n")}");
         Assert.Equal(31, files.Count());
         Assert.Contains("LegalDocumentSchemaInitializer.EnsureCreatedAsync", Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs"));
+        Assert.Contains("BillingPendingSetupSchemaInitializer.EnsureCreatedAsync", Read("src/Alpha.Infrastructure/Persistence/AlphaDatabaseInitializer.cs"));
+        Assert.Contains("CREATE TABLE IF NOT EXISTS billing.pending_payment_setup_details", Read("src/Alpha.Infrastructure/Persistence/BillingPendingSetupSchemaInitializer.cs"));
         Assert.True(Fingerprint(files) == SchemaInitializerBaseline,
             $"Schema initializer SQL changed, fingerprint {Fingerprint(files)}. Update only together with docs/database.md.");
     }
