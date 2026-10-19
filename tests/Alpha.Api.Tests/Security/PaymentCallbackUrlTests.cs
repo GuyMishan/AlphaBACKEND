@@ -70,7 +70,7 @@ public sealed class PaymentCallbackUrlTests
                 Assert.Equal("1 Test Street", account.BillingAddress);
                 Assert.Null(account.DefaultPaymentMethodId);
                 var staged = await db.Database.SqlQueryRaw<string>(
-                    "SELECT details_json::text AS \\"Value\\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0}",
+                    "SELECT details_json::text AS \"Value\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0}",
                     account.Id).ToListAsync(ct);
                 Assert.Single(staged);
                 Assert.Contains("New Pending Name", staged[0]);
