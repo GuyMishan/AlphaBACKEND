@@ -48,6 +48,23 @@ public sealed class CardComPaymentProviderTests
     }
 
     [Fact]
+    public async Task Provider_rejection_reports_http_and_response_code_without_raw_description()
+    {
+        var provider = CreateProvider(_ => Task.FromResult(Json(HttpStatusCode.Forbidden, new
+        {
+            ResponseCode = 42, Description = "Sensitive provider response"
+        })));
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.CreatePaymentMethod(
+            new PaymentMethodSetupRequest("customer", "https://alpha.test/success", "https://alpha.test/fail",
+                "https://alpha.test/cancel", "https://alpha.test/callback", "id",
+                "Acme", "515151515", "billing@acme.test", "Address"),
+            TestContext.Current.CancellationToken));
+        Assert.Contains("HTTP 403", error.Message);
+        Assert.Contains("ResponseCode=42", error.Message);
+        Assert.DoesNotContain("Sensitive provider response", error.Message);
+    }
+
+    [Fact]
     public async Task Webhook_is_verified_with_api_11_get_lp_result_before_token_is_accepted()
     {
         var provider = CreateProvider(async request =>
