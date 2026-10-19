@@ -237,6 +237,13 @@ public static class PaymentProviderEndpoints
 
             stage = "persist_setup_audit";
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            if (db.Entry(account).State != EntityState.Added)
+            {
+                var current = await db.Database.SqlQueryRaw<string>(
+                    "SELECT \"PendingSetupReference\" AS \"Value\" FROM billing.billing_accounts WHERE \"Id\" = {0} FOR UPDATE", account.Id).ToListAsync(ct);
+                if (current.Count != 1 || !string.Equals(current[0], account.PendingSetupReference, StringComparison.Ordinal))
+                    return Results.Conflict(new { error = "payment_method_setup_pending" });
+            }
             account.BeginProviderSetup(provider.Name, customerId, setupReference);
             await db.SaveChangesAsync(ct);
             var stagedDetails = JsonSerializer.Serialize(new { billingName, taxId, invoiceEmail, billingAddress });
