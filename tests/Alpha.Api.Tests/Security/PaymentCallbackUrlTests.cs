@@ -133,7 +133,7 @@ public sealed class PaymentCallbackUrlTests
                     reference = await db.BillingAccounts.Where(x => x.OrganizationId == organizationId)
                         .Select(x => x.PendingSetupReference).SingleAsync(ct);
                 });
-                Assert.NotEmpty(reference);
+                Assert.False(string.IsNullOrEmpty(reference));
                 using var abandon = new HttpRequestMessage(HttpMethod.Post,
                     $"/api/organizations/{organizationId}/billing-account/provider/abandon")
                 {
