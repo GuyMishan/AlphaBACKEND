@@ -19,6 +19,28 @@ namespace Alpha.Api.Tests.Security;
 public sealed class PaymentCallbackUrlTests
 {
     [Fact]
+    public async Task Missing_cardcom_setup_configuration_returns_specific_503_without_creating_pending_setup()
+    {
+        await RunAsync(async (factory, client, ct) =>
+        {
+            var (organizationId, request) = await SetupRequestAsync(factory);
+            using var response = await client.SendAsync(request, ct);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            Assert.Equal("PAYMENT_PROVIDER_NOT_CONFIGURED", body.RootElement.GetProperty("errorCode").GetString());
+            await factory.WithDbAsync(async db => Assert.Equal(string.Empty,
+                await db.BillingAccounts.Where(x => x.OrganizationId == organizationId)
+                    .Select(x => x.PendingProvider).SingleAsync(ct)));
+        }, new Dictionary<string, string?>
+        {
+            ["Payments:DefaultProvider"] = "CardCom",
+            ["Payments:CardCom:TerminalNumber"] = "",
+            ["Payments:CardCom:InterfaceApiName"] = "",
+            ["Payments:PublicApiBaseUrl"] = "https://api.alpha.test"
+        });
+    }
+
+    [Fact]
     public async Task Callback_url_uses_the_configured_api_base_and_ignores_the_host_header()
     {
         var provider = new RecordingPaymentProvider();
