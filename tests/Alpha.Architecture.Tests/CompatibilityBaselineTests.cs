@@ -18,10 +18,12 @@ public sealed class CompatibilityBaselineTests
         var routes = SourceFiles("src").Where(path => !path.EndsWith("LegalDocumentEndpoints.cs", StringComparison.Ordinal))
             .SelectMany(path => routePattern.Matches(File.ReadAllText(path)).Cast<Match>())
             .Select(match => $"{match.Groups["verb"].Value.ToUpperInvariant()}|{match.Groups["route"].Value}")
-            .Where(route => route is not ("POST|/api/auth/legal/accept" or "PUT|/marketing" or "POST|/abandon"))
+            .Where(route => route is not ("POST|/api/auth/legal/accept" or "PUT|/marketing" or "POST|/abandon" or "GET|/status"))
             .Order(StringComparer.Ordinal)
             .ToArray();
 
+        Assert.Contains("org.MapGet(\"/status\", GetOrganizationSetupStatusAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
+        Assert.Contains("employer.MapGet(\"/status\", GetEmployerSetupStatusAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
         Assert.Contains("org.MapPost(\"/abandon\", AbandonOrganizationSetupAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
         Assert.Contains("employer.MapPost(\"/abandon\", AbandonEmployerSetupAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
         Assert.True(routes.Length == 248 && Fingerprint(routes) == RouteBaseline,
