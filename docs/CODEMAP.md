@@ -54,7 +54,7 @@ Where to find things. Paths are relative to the repository root. For the rules b
 
 ### Billing
 
-`Features/Accounts`, `Features/Management` (`BillingManagementEndpoints` partial class: `.Platform.cs` platform-admin operations, `.Tenant.cs` organization/employer self-service), `Features/PaymentMethods` (staged billing-details setup/sync/cancel, provider callbacks which commit details only after verified approval). `Application/`: `BillingEngine` (calculator, usage collector), `BillingCycleService` + `BillingCycleHostedService`, `BillingGateService`, `EntitlementService`, `BillingInheritanceService`. Contracts: entitlements, inheritance, transmission gate, payment providers.
+`Features/Accounts`, `Features/Management` (`BillingManagementEndpoints` partial class: `.Platform.cs` platform-admin operations, `.Tenant.cs` organization/employer self-service), `Features/PaymentMethods` (staged billing-details setup/abandon/sync/cancel; verified provider callbacks atomically activate the card and apply staged billing details). `Application/`: `BillingEngine` (calculator, usage collector), `BillingCycleService` + `BillingCycleHostedService`, `BillingGateService`, `EntitlementService`, `BillingInheritanceService`. Contracts: entitlements, inheritance, transmission gate, payment providers.
 
 ### Reporting
 
