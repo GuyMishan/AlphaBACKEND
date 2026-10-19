@@ -41,6 +41,44 @@ public sealed class PaymentCallbackUrlTests
     }
 
     [Fact]
+    public async Task Provider_setup_stages_new_details_without_changing_existing_account()
+    {
+        var provider = new RecordingPaymentProvider();
+        await RunAsync(async (factory, client, ct) =>
+        {
+            var (organizationId, request) = await SetupRequestAsync(factory);
+            using (request)
+            {
+                // Replace only the body; retain the seeded authenticated identity.
+                request.Content = System.Net.Http.Json.JsonContent.Create(new {
+                    returnPath = "/settings",
+                    billingName = "New Pending Name",
+                    taxId = "123456789",
+                    invoiceEmail = "new@test.invalid",
+                    billingAddress = "New Address"
+                });
+                using var response = await client.SendAsync(request, ct);
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            }
+
+            await factory.WithDbAsync(async db =>
+            {
+                var account = await db.BillingAccounts.SingleAsync(x => x.OrganizationId == organizationId, ct);
+                Assert.Equal("Callback Test", account.BillingName);
+                Assert.Equal("515151515", account.TaxId);
+                Assert.Equal("billing@test.invalid", account.InvoiceEmail);
+                Assert.Equal("1 Test Street", account.BillingAddress);
+                Assert.Null(account.DefaultPaymentMethodId);
+                var staged = await db.Database.SqlQueryRaw<string>(
+                    "SELECT details_json::text AS \\"Value\\" FROM billing.pending_payment_setup_details WHERE billing_account_id = {0}",
+                    account.Id).ToListAsync(ct);
+                Assert.Single(staged);
+                Assert.Contains("New Pending Name", staged[0]);
+            });
+        }, new Dictionary<string, string?> { ["Payments:PublicApiBaseUrl"] = "https://api.alpha.test" }, provider.Install);
+    }
+
+    [Fact]
     public async Task Callback_url_uses_the_configured_api_base_and_ignores_the_host_header()
     {
         var provider = new RecordingPaymentProvider();
