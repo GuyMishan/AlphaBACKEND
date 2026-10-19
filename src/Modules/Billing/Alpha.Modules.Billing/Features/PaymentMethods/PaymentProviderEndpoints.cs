@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Alpha.Modules.Billing.Features.PaymentMethods;
 
@@ -46,29 +47,29 @@ public static class PaymentProviderEndpoints
 
     private static async Task<IResult> StartOrganizationSetupAsync(Guid organizationId, PaymentMethodSetupApiRequest request,
         AlphaDbContext db, ICurrentUser currentUser, IOrganizationAuthorization access,
-        IPaymentProviderResolver resolver, IConfiguration config, HttpContext http, CancellationToken ct)
+        IPaymentProviderResolver resolver, IConfiguration config, ILoggerFactory loggerFactory, HttpContext http, CancellationToken ct)
     {
         if (!await access.CanManageOrganizationAsync(organizationId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.OrganizationId == organizationId && x.EmployerId == null, ct);
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
-        return await StartSetupAsync(account, organizationId, null, request.ReturnPath, db, currentUser, resolver.Resolve(), config, http, ct);
+        return await StartSetupAsync(account, organizationId, null, request.ReturnPath, db, currentUser, resolver, config, loggerFactory.CreateLogger("Alpha.Billing.PaymentSetup"), http, ct);
     }
 
     private static async Task<IResult> StartEmployerSetupAsync(Guid organizationId, Guid employerId, PaymentMethodSetupApiRequest request,
         AlphaDbContext db, ICurrentUser currentUser, IOrganizationAuthorization access,
-        IPaymentProviderResolver resolver, IConfiguration config, HttpContext http, CancellationToken ct)
+        IPaymentProviderResolver resolver, IConfiguration config, ILoggerFactory loggerFactory, HttpContext http, CancellationToken ct)
     {
         if (!await access.CanManageEmployerBillingAsync(organizationId, employerId, ct)) return Results.Forbid();
         var account = await db.BillingAccounts.SingleOrDefaultAsync(x =>
             x.EmployerId == employerId && x.OrganizationId == null, ct);
         if (account is null) return Results.Conflict(new { error = "billing_account_required" });
-        return await StartSetupAsync(account, organizationId, employerId, request.ReturnPath, db, currentUser, resolver.Resolve(), config, http, ct);
+        return await StartSetupAsync(account, organizationId, employerId, request.ReturnPath, db, currentUser, resolver, config, loggerFactory.CreateLogger("Alpha.Billing.PaymentSetup"), http, ct);
     }
 
     private static async Task<IResult> StartSetupAsync(BillingAccount account, Guid organizationId, Guid? employerId,
-        string? returnPath, AlphaDbContext db, ICurrentUser currentUser, IPaymentProvider provider,
-        IConfiguration config, HttpContext http, CancellationToken ct)
+        string? returnPath, AlphaDbContext db, ICurrentUser currentUser, IPaymentProviderResolver resolver,
+        IConfiguration config, ILogger logger, HttpContext http, CancellationToken ct)
     {
         if (account.PaymentMethodType != BillingPaymentMethodType.CreditCard)
             return Results.Conflict(new { error = "provider_setup_not_supported_for_bank_debit" });
@@ -82,8 +83,29 @@ public static class PaymentProviderEndpoints
             is not { } callbackBase)
             return Results.Json(new { error = "payment_callback_not_configured" }, statusCode: StatusCodes.Status503ServiceUnavailable);
 
+        var stage = "resolve_provider";
+        string? providerName = null;
         try
         {
+            var provider = resolver.Resolve();
+            providerName = provider.Name;
+            var requiredSettings = provider.Name switch
+            {
+                "CardCom" => new[] { "Payments:CardCom:TerminalNumber", "Payments:CardCom:InterfaceApiName" },
+                "PayPlus" => new[] { "Payments:PayPlus:BaseUrl", "Payments:PayPlus:ApiKey", "Payments:PayPlus:SecretKey",
+                    "Payments:PayPlus:CashierUid", "Payments:PayPlus:PaymentPageUid" },
+                _ => Array.Empty<string>()
+            };
+            var missing = requiredSettings.Where(key => string.IsNullOrWhiteSpace(config[key])).ToArray();
+            if (missing.Length > 0)
+            {
+                logger.LogError("Payment setup missing configuration: {SettingNames}; provider={Provider}; traceId={TraceId}",
+                    string.Join(", ", missing), provider.Name, http.TraceIdentifier);
+                return Results.Json(new { error = "payment_provider_not_configured" },
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            stage = "load_payment_method";
             var currentMethod = account.DefaultPaymentMethodId.HasValue
                 ? await db.PaymentMethods.AsNoTracking().SingleOrDefaultAsync(
                     x => x.Id == account.DefaultPaymentMethodId.Value && x.BillingAccountId == account.Id, ct)
@@ -97,6 +119,7 @@ public static class PaymentProviderEndpoints
 
             if (string.IsNullOrWhiteSpace(customerId))
             {
+                stage = "create_customer";
                 var customer = await provider.CreateCustomer(new PaymentProviderCustomerRequest(
                     account.BillingName,
                     account.InvoiceEmail,
@@ -106,6 +129,7 @@ public static class PaymentProviderEndpoints
                 customerId = customer.CustomerId;
             }
 
+            stage = "persist_pending_setup";
             var setupReference = $"{account.Id:D}:{Guid.NewGuid():N}";
             account.BeginProviderSetup(provider.Name, customerId, setupReference);
             await db.SaveChangesAsync(ct);
@@ -119,6 +143,7 @@ public static class PaymentProviderEndpoints
                 : "/settings";
             var returnSeparator = safeReturnPath.Contains('?') ? "&" : "?";
 
+            stage = "create_payment_page";
             var setup = await provider.CreatePaymentMethod(new PaymentMethodSetupRequest(
                 customerId,
                 $"{frontend}{safeReturnPath}{returnSeparator}payment=success",
@@ -131,6 +156,7 @@ public static class PaymentProviderEndpoints
                 account.InvoiceEmail,
                 account.BillingAddress), ct);
 
+            stage = "persist_setup_audit";
             db.AuditEvents.Add(new AuditEvent(currentUser.UserId, "billing.payment-method.setup-started",
                 nameof(BillingAccount), account.Id, organizationId, employerId,
                 JsonSerializer.Serialize(new { provider = provider.Name, setup.SetupRequestId }),
@@ -146,6 +172,9 @@ public static class PaymentProviderEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Never log ex.Message: upstream errors may contain provider payloads or personal information.
+            logger.LogError("Payment setup failed at {Stage}; provider={Provider}; exceptionType={ExceptionType}; traceId={TraceId}",
+                stage, providerName ?? "unresolved", ex.GetType().Name, http.TraceIdentifier);
             return Results.Json(new { error = "payment_provider_unavailable" },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
