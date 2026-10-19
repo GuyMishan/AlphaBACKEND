@@ -79,6 +79,41 @@ public sealed class PaymentCallbackUrlTests
     }
 
     [Fact]
+    public async Task Verified_payment_callback_applies_pending_details_and_card_together()
+    {
+        var provider = new RecordingPaymentProvider();
+        await RunAsync(async (factory, client, ct) =>
+        {
+            var (organizationId, request) = await SetupRequestAsync(factory);
+            using (request)
+            {
+                request.Content = System.Net.Http.Json.JsonContent.Create(new { returnPath = "/settings",
+                    billingName = "Approved Name", taxId = "123456789",
+                    invoiceEmail = "approved@test.invalid", billingAddress = "Approved Address" });
+                using var response = await client.SendAsync(request, ct);
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            }
+            using var callback = new HttpRequestMessage(HttpMethod.Post, "/api/billing/providers/Recording/callback")
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new { event_id = "success-1" })
+            };
+            using var callbackResponse = await client.SendAsync(callback, ct);
+            Assert.Equal(HttpStatusCode.OK, callbackResponse.StatusCode);
+            await factory.WithDbAsync(async db =>
+            {
+                var account = await db.BillingAccounts.SingleAsync(x => x.OrganizationId == organizationId, ct);
+                Assert.Equal("Approved Name", account.BillingName);
+                Assert.Equal("123456789", account.TaxId);
+                Assert.Equal("approved@test.invalid", account.InvoiceEmail);
+                Assert.Equal("Approved Address", account.BillingAddress);
+                Assert.Equal(BillingPaymentMethodStatus.Active, account.PaymentMethodStatus);
+                Assert.NotNull(account.DefaultPaymentMethodId);
+                Assert.Equal("token-1", account.ProviderPaymentMethodId);
+            });
+        }, new Dictionary<string, string?> { ["Payments:PublicApiBaseUrl"] = "https://api.alpha.test" }, provider.Install);
+    }
+
+    [Fact]
     public async Task Callback_url_uses_the_configured_api_base_and_ignores_the_host_header()
     {
         var provider = new RecordingPaymentProvider();
@@ -177,6 +212,7 @@ public sealed class PaymentCallbackUrlTests
     {
         private int customersCreated;
         private readonly System.Collections.Concurrent.ConcurrentQueue<string> callbackUrls = new();
+        private string? externalReference;
 
         public string Name => "Recording";
         public int CustomersCreated => Volatile.Read(ref customersCreated);
@@ -198,6 +234,7 @@ public sealed class PaymentCallbackUrlTests
 
         public Task<PaymentMethodSetupResult> CreatePaymentMethod(PaymentMethodSetupRequest request, CancellationToken ct = default)
         {
+            externalReference = request.ExternalReference;
             callbackUrls.Enqueue(request.CallbackUrl);
             return Task.FromResult(new PaymentMethodSetupResult("setup-1", "https://provider.test/setup"));
         }
@@ -207,6 +244,6 @@ public sealed class PaymentCallbackUrlTests
         public Task<PaymentMethodStatusResult> GetPaymentMethodStatus(string customerId, string paymentMethodId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task CancelPaymentMethod(string customerId, string paymentMethodId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PaymentMethodStatusResult> ResolvePaymentMethodFromCallback(string rawBody, IReadOnlyDictionary<string, string> headers, CancellationToken ct = default) =>
-            throw new NotSupportedException();
+            Task.FromResult(new PaymentMethodStatusResult(true, "token-1", "Visa", "4242", 12, 2030, null, "customer-1", externalReference));
     }
 }
