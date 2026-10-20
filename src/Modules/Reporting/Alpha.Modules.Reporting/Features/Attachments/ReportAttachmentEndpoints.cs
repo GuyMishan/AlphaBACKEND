@@ -126,9 +126,6 @@ public static class ReportAttachmentEndpoints
 
             if (documentTypeCode == 5)
             {
-                var eligible = await GetRequiredCode5ProductIdsAsync(db, report, ct);
-                if (!eligible.Contains(linkedProduct.Id))
-                    return Results.BadRequest(new { error = "Document type 5 is not applicable to this pension fund." });
                 if (linkedProduct.ProductType != PensionProductType.PensionFund)
                     return Results.BadRequest(new { error = "Version 006 document type 5 is relevant only to a pension fund." });
                 var linkedMetadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
@@ -165,6 +162,15 @@ public static class ReportAttachmentEndpoints
         var bytes = memory.ToArray();
         if (bytes.Length < 5 || bytes[0] != (byte)'%' || bytes[1] != (byte)'P' || bytes[2] != (byte)'D' || bytes[3] != (byte)'F' || bytes[4] != (byte)'-')
             return Results.BadRequest(new { error = "The uploaded file is not a valid PDF file." });
+
+        // Validate file format before checking selected-fund eligibility so invalid files
+        // consistently receive the established PDF validation errors.
+        if (documentTypeCode == 5)
+        {
+            var eligible = await GetRequiredCode5ProductIdsAsync(db, report, ct);
+            if (!eligible.Contains(reportProductId!.Value))
+                return Results.BadRequest(new { error = "Document type 5 is not applicable to this pension fund." });
+        }
 
         await using var scanStream = new MemoryStream(bytes, writable: false);
         var scan = await malwareScanner.ScanAsync(scanStream, file.FileName, ct);
