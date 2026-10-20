@@ -344,6 +344,9 @@ public static class ReportAttachmentEndpoints
                 if (metadata?.EmployeeStatus == 14)
                     return Results.BadRequest(new { error = "Type 5 is not applicable to new employee status 14." });
             }
+            if (source.DocumentTypeCode == 5 &&
+                !(await GetRequiredCode5ProductIdsAsync(db, report, ct, newOnly: false)).Contains(scope.Product.Id))
+                return Results.BadRequest(new { error = "Document type 5 is not applicable to this pension fund." });
             reportProductId = scope.Product.Id;
         }
         if (await db.ManualReportAttachments.CountAsync(x => x.ReportId == reportId, ct) >= MaxAttachmentsPerReport)
@@ -396,14 +399,17 @@ public static class ReportAttachmentEndpoints
             join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId
             where employee.ReportId == report.Id && product.ProductType == PensionProductType.PensionFund && metadata.EmployeeStatus != 14
             select new { product, employee.EmploymentId }).ToListAsync(ct);
+        var employmentIds = products.Select(x => x.EmploymentId).Distinct().ToArray();
+        var savedByEmployment = (await db.EmployeePensionProducts.AsNoTracking()
+            .Where(x => employmentIds.Contains(x.EmploymentId))
+            .ToListAsync(ct)).ToLookup(x => x.EmploymentId);
         foreach (var item in products)
         {
             if (!keys.Contains(item.product.FundExternalKey)) continue;
-            // Products added after the report was opened are new to ALPHA for this report.
-            // Existing products can still include type 5 evidence voluntarily.
-            var saved = await db.EmployeePensionProducts.AsNoTracking()
-                .Where(x => x.EmploymentId == item.EmploymentId).ToListAsync(ct);
-            if (!newOnly || !saved.Any(x => SamePensionProduct(item.product, x) && x.CreatedAt < report.CreatedAt))
+            // Products created after the report was opened are new in ALPHA for this report;
+            // earlier saved mix products may still attach type 5 voluntarily.
+            if (!newOnly || !savedByEmployment[item.EmploymentId]
+                .Any(x => SamePensionProduct(item.product, x) && x.CreatedAt < report.CreatedAt))
                 result.Add(item.product.Id);
         }
         return result;
