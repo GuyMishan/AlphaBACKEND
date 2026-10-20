@@ -9,6 +9,7 @@ using Alpha.Domain.Employees;
 using Alpha.Domain.Employers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Npgsql;
 
 namespace Alpha.Modules.Reporting.Features.Attachments;
 
@@ -59,9 +60,11 @@ public static class ReportAttachmentEndpoints
             && (items.Any(x => x.DocumentTypeCode == 3)
                 || await HasPreviouslySentAnnualAffidavitAsync(db, report, ct));
 
+        var requiredCode5ProductIds = await GetRequiredCode5ProductIdsAsync(db, report, ct);
         return Results.Ok(new
         {
             items,
+            requiredCode5ProductIds,
             annualEmployerAffidavitSatisfied,
             documentTypes = report.ReportKind == ManualReportKind.Negative
                 ? new[]
@@ -123,6 +126,9 @@ public static class ReportAttachmentEndpoints
 
             if (documentTypeCode == 5)
             {
+                var eligible = await GetRequiredCode5ProductIdsAsync(db, report, ct);
+                if (!eligible.Contains(linkedProduct.Id))
+                    return Results.BadRequest(new { error = "Document type 5 is not applicable to this pension fund." });
                 if (linkedProduct.ProductType != PensionProductType.PensionFund)
                     return Results.BadRequest(new { error = "Version 006 document type 5 is relevant only to a pension fund." });
                 var linkedMetadata = await db.EmployerInterfaceReportProductData.AsNoTracking()
@@ -372,4 +378,36 @@ public static class ReportAttachmentEndpoints
                   && (previousReport.Status == ManualReportStatus.Sent || previousReport.Status == ManualReportStatus.Completed)
             select attachment.Id).AnyAsync(ct);
     }
-}
+}    public static async Task<HashSet<Guid>> GetRequiredCode5ProductIdsAsync(AlphaDbContext db, ManualReport report, CancellationToken ct)
+    {
+        var result = new HashSet<Guid>();
+        if (report.ReportKind != ManualReportKind.Current) return result;
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        await using (var command = db.Database.GetDbConnection().CreateCommand())
+        {
+            command.CommandText = "SELECT fund_external_keys FROM employers.employer_default_funds WHERE employer_id = @id";
+            command.Parameters.Add(new NpgsqlParameter("id", report.EmployerId));
+            if (command.Connection!.State != System.Data.ConnectionState.Open) await command.Connection.OpenAsync(ct);
+            var selected = await command.ExecuteScalarAsync(ct);
+            if (selected is string[] overrideKeys) keys.UnionWith(overrideKeys);
+            else
+            {
+                await using var defaults = db.Database.GetDbConnection().CreateCommand();
+                defaults.CommandText = "SELECT external_key FROM reference_data.pension_products WHERE is_active AND is_system_default_fund";
+                await using var reader = await defaults.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct)) keys.Add(reader.GetString(0));
+            }
+        }
+        if (keys.Count == 0) return result;
+        var products = await (
+            from product in db.ManualReportProducts.AsNoTracking()
+            join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
+            join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId
+            where employee.ReportId == report.Id && product.ProductType == PensionProductType.PensionFund && metadata.EmployeeStatus != 14
+            select new { product.Id, product.FundExternalKey }).ToListAsync(ct);
+        foreach (var product in products)
+            if (keys.Contains(product.FundExternalKey)) result.Add(product.Id);
+        return result;
+    }
+
+
