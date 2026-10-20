@@ -396,8 +396,10 @@ public static class ReportAttachmentEndpoints
         var products = await (
             from product in db.ManualReportProducts.AsNoTracking()
             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
-            join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId
-            where employee.ReportId == report.Id && product.ProductType == PensionProductType.PensionFund && metadata.EmployeeStatus != 14
+            join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId into productMetadata
+            from metadata in productMetadata.DefaultIfEmpty()
+            where employee.ReportId == report.Id && product.ProductType == PensionProductType.PensionFund
+                  && (metadata == null || metadata.EmployeeStatus != 14)
             select new { product, employee.EmploymentId }).ToListAsync(ct);
         var employmentIds = products.Select(x => x.EmploymentId).Distinct().ToArray();
         var savedByEmployment = (await db.EmployeePensionProducts.AsNoTracking()
