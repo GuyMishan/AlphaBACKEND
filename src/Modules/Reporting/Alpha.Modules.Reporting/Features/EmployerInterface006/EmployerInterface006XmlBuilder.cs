@@ -423,6 +423,9 @@ public static class EmployerInterface006XmlBuilder
                 else if (meta.CollectiveAgreementRefund.Value
                     && !c.Attachments.Any(x => x.ReportProductId == meta.ReportProductId && x.DocumentTypeCode == 6))
                     issues.Add($"Product {meta.ReportProductId}: collective agreement refund requires document type 6 attached to this report product.");
+                else if (!meta.CollectiveAgreementRefund.Value
+                    && !c.Attachments.Any(x => x.ReportProductId == meta.ReportProductId && x.DocumentTypeCode == 4))
+                    issues.Add($"Product {meta.ReportProductId}: refund without collective agreement requires employee approval document type 4 attached to this report product.");
             }
             var hasOperation5 = c.ProductMetadata.Any(x => x.OperationCode == 5);
             if (hasOperation5 && !c.Attachments.Any(x => x.DocumentTypeCode == 3 && x.ReportProductId == null))
