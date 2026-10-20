@@ -425,8 +425,8 @@ public static class EmployerInterface006XmlBuilder
                     issues.Add($"Product {meta.ReportProductId}: collective agreement refund requires document type 6 attached to this report product.");
             }
             var hasOperation5 = c.ProductMetadata.Any(x => x.OperationCode == 5);
-            if (hasOperation5 && !c.AnnualEmployerAffidavitSatisfied)
-                issues.Add("Negative operation 5 requires the annual employer affidavit (SUG-MISMACH=3) at least once per calendar year.");
+            if (hasOperation5 && !c.Attachments.Any(x => x.DocumentTypeCode == 3 && x.ReportProductId == null))
+                issues.Add("Negative operation 5 requires an employer affidavit (SUG-MISMACH=3) attached to this report.");
 
         }
 
