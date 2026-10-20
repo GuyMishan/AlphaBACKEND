@@ -72,12 +72,13 @@ Before production sign-off, an executable matrix over every supported `(interfac
 
 ## Employer and product documents (006 attachments)
 
-- `EmployerDocument` is an encrypted, reusable PDF library owned by the employer. Type **3** (employer affidavit) is employer-wide; types **4–6** require the owning `EmploymentId` and `EmployeePensionProductId`; type 5 applies to pension funds only and not to employee status 14.
-- Endpoints: `/api/organizations/{org}/employers/{employer}/documents` (list, upload with type/signature/size/malware checks, download, delete, one-time `PATCH /{id}/product` assignment of legacy documents).
-- A library document is **copied** into an editable current or negative report (`GET .../attachments/library-candidates`, `POST .../attachments/from-library`) only after server-side matching of employer, employee, fund/policy and report kind; the copy is re-encrypted under the report's own purpose. Difference reports carry no 006 attachments.
-- The pension-mix save keeps matched product IDs stable and refuses to delete a product that still has documents.
-- Negative operation 5 stores a nullable `CollectiveAgreementRefund` answer per report product (workflow metadata, not an official XML element; accepted and returned by the 006 product-metadata endpoint). XML preflight fails without an explicit answer, and a `true` answer requires a type-6 attachment on the same report product.
-
+- **Type 3 (employer affidavit):** uploaded directly to each relevant negative report above its employee list. Every negative report with refund operation 5 requires its own document 3. Prior annual submissions do not satisfy the current report. It belongs to the report without a product ID, and cannot be newly uploaded into the employer profile or reused from the library.
+- **Type 4 (employee refund approval):** uploaded per refunded product when operation 5 is not based on a collective agreement. Separate files are supported for each product; no implicit sharing across products.
+- **Type 5 (joining request for a default pension fund):** available per eligible pension-fund product whose external key is in the employer's selected default-fund set and whose employee status is not 14. Mandatory when the matching employee-mix product was first created after the report opened; optional when it existed before the report opened. Stored joining requests may also live in the employee pension-mix library.
+- **Type 6 (employer declaration for collective agreement):** uploaded per refunded product when operation 5 is based on a collective agreement.
+- The employer-profile document upload API accepts only type 5 and the separate type 7 ALPHA employer agreement. Historical profile documents of other types remain readable, but type 3 cannot be attached again from the library.
+- Report-scoped PDF copies remain encrypted and immutable after submission. Difference reports do not carry 006 attachments. The product metadata field CollectiveAgreementRefund selects the required document type (4 or 6). Report validation and XML preflight enforce per-product refund evidence and the current report's affidavit.
+- The pension-mix save preserves matched product IDs and refuses deletion while saved documents refer to a product.
 ## Transmission routing and manufacturers
 
 - Default delivery is the clearinghouse provider. `Reporting:ManufacturerRouting:Funds:<fundCode>=<provider>` overrides are explicit and reviewed; they are never derived automatically.
@@ -142,4 +143,4 @@ The national selected-fund catalog flag is recorded on `reference_data.pension_p
 
 ### Code 5 document validation
 
-The reporting attachment endpoint exposes `requiredCode5ProductIds` using the effective employer fund selection (explicit override, otherwise the selected-fund catalog). For current reports, a saved pension fund product whose employee status is not 14 and whose `fund_external_key` belongs to that set is eligible for a type 5 document. Deposit/final report validation marks a missing eligible document as `DEFAULT_FUND_JOIN_DOCUMENT_REQUIRED`. This employer selection is an operational rule and must not be treated as proof of an individual enrollment choice.
+The report attachment API exposes eligibleCode5ProductIds for all eligible fund products (optional upload) and requiredCode5ProductIds for eligible fund products newly added to ALPHA during this report (mandatory upload). The latter triggers DEFAULT_FUND_JOIN_DOCUMENT_REQUIRED in deposit/final validation. Both exclude employee status 14. Product creation time is determined from the saved mix relative to the report's CreatedAt; a new product saved during wizard editing remains new for that report. The employer's chosen-fund selection is an ALPHA operational criterion, not proof of actual legal enrollment.
