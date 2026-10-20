@@ -60,10 +60,12 @@ public static class ReportAttachmentEndpoints
             && items.Any(x => x.DocumentTypeCode == 3);
 
         var requiredCode5ProductIds = await GetRequiredCode5ProductIdsAsync(db, report, ct);
+        var eligibleCode5ProductIds = await GetRequiredCode5ProductIdsAsync(db, report, ct, newOnly: false);
         return Results.Ok(new
         {
             items,
             requiredCode5ProductIds,
+            eligibleCode5ProductIds,
             annualEmployerAffidavitSatisfied,
             documentTypes = report.ReportKind == ManualReportKind.Negative
                 ? new[]
@@ -166,7 +168,7 @@ public static class ReportAttachmentEndpoints
         // consistently receive the established PDF validation errors.
         if (documentTypeCode == 5)
         {
-            var eligible = await GetRequiredCode5ProductIdsAsync(db, report, ct);
+            var eligible = await GetRequiredCode5ProductIdsAsync(db, report, ct, newOnly: false);
             if (!eligible.Contains(reportProductId!.Value))
                 return Results.BadRequest(new { error = "Document type 5 is not applicable to this pension fund." });
         }
@@ -368,7 +370,7 @@ public static class ReportAttachmentEndpoints
             reportCopy.SizeBytes, reportCopy.Sha256, reportCopy.CreatedAt });
     }
 
-    public static async Task<HashSet<Guid>> GetRequiredCode5ProductIdsAsync(AlphaDbContext db, ManualReport report, CancellationToken ct)
+    public static async Task<HashSet<Guid>> GetRequiredCode5ProductIdsAsync(AlphaDbContext db, ManualReport report, CancellationToken ct, bool newOnly = true)
     {
         var result = new HashSet<Guid>();
         if (report.ReportKind != ManualReportKind.Current) return result;
@@ -398,11 +400,12 @@ public static class ReportAttachmentEndpoints
         foreach (var item in products)
         {
             if (!keys.Contains(item.product.FundExternalKey)) continue;
-            // A new product is one that does not match an existing saved employee mix product.
-            // Existing products may still include type 5 evidence, but are not blocked by its absence.
+            // Products added after the report was opened are new to ALPHA for this report.
+            // Existing products can still include type 5 evidence voluntarily.
             var saved = await db.EmployeePensionProducts.AsNoTracking()
                 .Where(x => x.EmploymentId == item.EmploymentId).ToListAsync(ct);
-            if (!saved.Any(x => SamePensionProduct(item.product, x))) result.Add(item.product.Id);
+            if (!newOnly || !saved.Any(x => SamePensionProduct(item.product, x) && x.CreatedAt < report.CreatedAt))
+                result.Add(item.product.Id);
         }
         return result;
     }
