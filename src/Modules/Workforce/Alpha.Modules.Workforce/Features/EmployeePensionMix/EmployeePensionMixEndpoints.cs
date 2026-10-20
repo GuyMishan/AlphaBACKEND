@@ -174,17 +174,22 @@ public static class EmployeePensionMixEndpoints
             var legacySalary = item.SalaryAllocationType == SalaryAllocationType.Fixed
                 ? item.SalaryAllocationValue ?? input.Salary
                 : input.Salary;
+            var matchingSavedProduct = existingProducts.FirstOrDefault(x => x.ProductType == input.ProductType &&
+                (!string.IsNullOrWhiteSpace(input.PolicyNumber)
+                    ? string.Equals(x.PolicyNumber.Trim(), input.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase)
+                    : !string.IsNullOrWhiteSpace(input.FundExternalKey) &&
+                      string.Equals(x.FundExternalKey, input.FundExternalKey, StringComparison.OrdinalIgnoreCase)));
             var product = new EmployeePensionProduct(employmentId, input.ProductType, input.PolicyNumber,
                 Math.Max(legacySalary, 0), input.ReportingType, input.SalaryLayer, item.Section14Code is 1 or 2, input.Section14StartDate,
                 item.IsActive, item.EffectiveFrom, item.EffectiveTo, item.InstitutionalBody, item.Manufacturer,
                 item.FundExternalKey, item.FundCode, item.FundName, item.FundCompanyName,
                 item.SalaryAllocationType, item.SalaryAllocationValue, item.AllocationOrder, item.Section14Code, item.FundClassification,
-                existingProducts.FirstOrDefault(x => x.ProductType == input.ProductType &&
-                    (!string.IsNullOrWhiteSpace(input.PolicyNumber)
-                        ? string.Equals(x.PolicyNumber.Trim(), input.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase)
-                        : !string.IsNullOrWhiteSpace(input.FundExternalKey) &&
-                          string.Equals(x.FundExternalKey, input.FundExternalKey, StringComparison.OrdinalIgnoreCase)))?.Id);
+                matchingSavedProduct?.Id);
             db.EmployeePensionProducts.Add(product);
+            // Mix replacement must not convert an existing product into a newly created one.
+            // Report 006 type-5 evidence uses this original creation time for new-product detection.
+            if (matchingSavedProduct is not null)
+                db.Entry(product).Property(x => x.CreatedAt).CurrentValue = matchingSavedProduct.CreatedAt;
             AddContributions(db, product.Id, ContributionParty.Employer, input.EmployerContributions);
             AddContributions(db, product.Id, ContributionParty.Employee, input.EmployeeContributions);
         }
