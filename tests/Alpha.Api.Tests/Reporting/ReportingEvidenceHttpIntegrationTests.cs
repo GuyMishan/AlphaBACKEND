@@ -96,6 +96,10 @@ public sealed class ReportingEvidenceHttpIntegrationTests
             await using (var scope = factory.Services.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<AlphaDbContext>();
+                var historicalMetadata = new EmployerInterfaceReportProductData(historicalProduct.Id);
+                historicalMetadata.Update(1, 1, 1, new DateOnly(2026, 9, 1),
+                    null, null, null, null, 1, 1, 1);
+                db.Add(historicalMetadata);
                 db.AddRange(admin, viewer, outsider, organization, otherOrganization, employer, person, employment,
                     historicalReport, historicalEmployee, historicalProduct,
                     cleanupReport, cleanupEmployee, cleanupProduct,
