@@ -56,8 +56,8 @@ public static class EmployerDocumentEndpoints
             return Results.NotFound();
         if (!request.HasFormContentType) return Results.BadRequest(new { error = "multipart/form-data is required." });
         var form = await request.ReadFormAsync(ct);
-        if (!int.TryParse(form["documentTypeCode"].FirstOrDefault(), out int type) || type is not (3 or 4 or 5 or 6 or 7))
-            return Results.BadRequest(new { error = "Document type must be 3, 4, 5, 6 or 7." });
+        if (!int.TryParse(form["documentTypeCode"].FirstOrDefault(), out int type) || type is not (5 or 7))
+            return Results.BadRequest(new { error = "Only pension joining documents (5) and employer agreements (7) can be saved in the profile. Refund evidence must be uploaded to its report." });
         Guid? employmentId = null;
         var employmentRaw = form["employmentId"].FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(employmentRaw))
