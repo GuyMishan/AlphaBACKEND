@@ -115,21 +115,6 @@ public sealed class EmployerInterface006ExportService(
             .ToListAsync(ct);
 
         var annualEmployerAffidavitSatisfied = attachments.Any(x => x.DocumentTypeCode == 3);
-        if (!annualEmployerAffidavitSatisfied && report.ReportKind == ManualReportKind.Negative)
-        {
-            var yearStart = new DateOnly(report.ReportingMonth.Year, 1, 1);
-            var yearEnd = yearStart.AddYears(1);
-            annualEmployerAffidavitSatisfied = await (
-                from attachment in db.ManualReportAttachments.AsNoTracking()
-                join previousReport in db.ManualReports.AsNoTracking() on attachment.ReportId equals previousReport.Id
-                where attachment.DocumentTypeCode == 3
-                      && previousReport.Id != report.Id
-                      && previousReport.EmployerId == report.EmployerId
-                      && previousReport.ReportingMonth >= yearStart
-                      && previousReport.ReportingMonth < yearEnd
-                      && (previousReport.Status == ManualReportStatus.Sent || previousReport.Status == ManualReportStatus.Completed)
-                select attachment.Id).AnyAsync(ct);
-        }
 
         var preparedAt = preparedAtOverride ?? IsraelNow();
         var senderIdentifier = string.IsNullOrWhiteSpace(options.Value.SenderIdentifier) && options.Value.SenderCode == 5
