@@ -72,8 +72,9 @@ public sealed class EmployerInterface006XmlBuilderTests
 
         var bytes = EmployerInterface006XmlSerializer.Serialize(result.Document);
         Assert.Equal(expectedLength, bytes.Length);
-        Assert.Equal(expectedSha256,
-            Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
+        var actualSha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        Assert.True(string.Equals(expectedSha256, actualSha256, StringComparison.Ordinal),
+            $"Canonical XML SHA-256 mismatch: expected {expectedSha256}, actual {actualSha256}.");
         Assert.Equal("<?xml version=\"1.0\" encoding=\"utf-8\"?>", Encoding.UTF8.GetString(bytes[..38]));
         Assert.False(bytes.AsSpan().StartsWith(Encoding.UTF8.GetPreamble()));
         AssertValid(result.Document, negative
