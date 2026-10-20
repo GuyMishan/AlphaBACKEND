@@ -80,7 +80,7 @@ public sealed class ReportingEvidenceHttpIntegrationTests
                 employment.EmployeeNumber, employment.MonthlySalary);
             static ManualReportProduct Product(ManualReportEmployee employee, DateOnly month, string policy) =>
                 new(employee.Id, PensionProductType.PensionFund, policy, month, 10_000m,
-                    "1", "1", false, null, fundName: "A74 Fund");
+                    "1", "1", false, null, fundExternalKey: "A74-DEFAULT-FUND", fundName: "A74 Fund");
 
             var adminMembership = new OrganizationMembership(admin.Id, organization.Id, OrganizationRole.Admin,
                 EmployerAccessMode.AllEmployers, admin.Id);
@@ -103,6 +103,10 @@ public sealed class ReportingEvidenceHttpIntegrationTests
                     adminMembership, viewerMembership, outsiderMembership,
                     adminSession, viewerSession, outsiderSession);
                 await db.SaveChangesAsync(ct);
+                // Make the isolated security fixture an eligible pension default fund,
+                // so PDF/malware assertions exercise the upload path rather than eligibility denial.
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"INSERT INTO employers.employer_default_funds (employer_id, fund_external_keys) VALUES ({employer.Id}, {new[] { "A74-DEFAULT-FUND" }})", ct);
             }
 
             var attachments = $"/api/organizations/{organization.Id}/employers/{employer.Id}/manual-reports/{historicalReport.Id}/attachments";
