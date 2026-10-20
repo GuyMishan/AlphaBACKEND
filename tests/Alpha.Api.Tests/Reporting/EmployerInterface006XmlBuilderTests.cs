@@ -966,13 +966,11 @@ public sealed class EmployerInterface006XmlBuilderTests
     public void Negative_operation_5_emits_attachment_references_and_employee_flags()
     {
         var fixture = CreateFixture(true, operationCode: 5);
-        var employeeApproval = new ManualReportAttachment(Guid.NewGuid(), fixture.Product.Id, 4, "employee-approval.pdf",
-            "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.4\nemployee"));
         var collectiveAgreement = new ManualReportAttachment(Guid.NewGuid(), fixture.Product.Id, 6, "collective.pdf",
             "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.4\ncollective"));
         var context = fixture.Context with
         {
-            Attachments = [.. fixture.Context.Attachments, employeeApproval, collectiveAgreement],
+            Attachments = [.. fixture.Context.Attachments, collectiveAgreement],
             AnnualEmployerAffidavitSatisfied = true
         };
 
@@ -1280,6 +1278,8 @@ public sealed class EmployerInterface006XmlBuilderTests
         if (negative && (operationCode ?? 5) == 5)
         {
             attachments.Add(new ManualReportAttachment(reportId, null, 3, "employer-affidavit.pdf", "application/pdf",
+                Encoding.ASCII.GetBytes("%PDF-1.4\nfixture")));
+            attachments.Add(new ManualReportAttachment(reportId, product.Id, 4, "employee-approval.pdf", "application/pdf",
                 Encoding.ASCII.GetBytes("%PDF-1.4\nfixture")));
             annualAffidavitSatisfied = true;
         }
