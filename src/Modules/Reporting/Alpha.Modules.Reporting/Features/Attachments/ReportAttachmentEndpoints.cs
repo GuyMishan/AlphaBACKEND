@@ -378,7 +378,7 @@ public static class ReportAttachmentEndpoints
                   && (previousReport.Status == ManualReportStatus.Sent || previousReport.Status == ManualReportStatus.Completed)
             select attachment.Id).AnyAsync(ct);
     }
-}    public static async Task<HashSet<Guid>> GetRequiredCode5ProductIdsAsync(AlphaDbContext db, ManualReport report, CancellationToken ct)
+    public static async Task<HashSet<Guid>> GetRequiredCode5ProductIdsAsync(AlphaDbContext db, ManualReport report, CancellationToken ct)
     {
         var result = new HashSet<Guid>();
         if (report.ReportKind != ManualReportKind.Current) return result;
@@ -409,5 +409,4 @@ public static class ReportAttachmentEndpoints
             if (keys.Contains(product.FundExternalKey)) result.Add(product.Id);
         return result;
     }
-
-
+}
