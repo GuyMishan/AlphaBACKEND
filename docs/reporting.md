@@ -139,3 +139,7 @@ Every transmission request, including resumed hybrid dispatch, requires an exist
 ## Employer default pension fund selection (October 2026)
 
 The national selected-fund catalog flag is recorded on `reference_data.pension_products.is_system_default_fund`. An employer's explicit chosen set is stored separately under `employers.employer_default_funds`; no row means inherit the system defaults. GET/PUT/DELETE at `profile-center/default-funds` return, override, or restore those inherited values. The set is an employer preference and does not by itself establish employee enrollment or 006 attachment eligibility (including the regulator's ID-digit allocation rule).
+
+### Code 5 document validation
+
+The reporting attachment endpoint exposes `requiredCode5ProductIds` using the effective employer fund selection (explicit override, otherwise the selected-fund catalog). For current reports, a saved pension fund product whose employee status is not 14 and whose `fund_external_key` belongs to that set is eligible for a type 5 document. Deposit/final report validation marks a missing eligible document as `DEFAULT_FUND_JOIN_DOCUMENT_REQUIRED`. This employer selection is an operational rule and must not be treated as proof of an individual enrollment choice.
