@@ -996,13 +996,28 @@ public sealed class EmployerInterface006XmlBuilderTests
         var context = fixture.Context with
         {
             Attachments = [employeeApproval],
-            AnnualEmployerAffidavitSatisfied = false
+            AnnualEmployerAffidavitSatisfied = true
         };
 
         var result = EmployerInterface006XmlBuilder.BuildNegative(context);
 
         Assert.Null(result.Document);
         Assert.Contains(result.Issues, x => x.Contains("employer affidavit", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Negative_operation_5_requires_individual_employee_approval_when_not_collective()
+    {
+        var fixture = CreateFixture(true, operationCode: 5);
+        var context = fixture.Context with
+        {
+            Attachments = fixture.Context.Attachments.Where(x => x.DocumentTypeCode != 4).ToList()
+        };
+
+        var result = EmployerInterface006XmlBuilder.BuildNegative(context);
+
+        Assert.Null(result.Document);
+        Assert.Contains(result.Issues, x => x.Contains("employee approval document type 4", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
