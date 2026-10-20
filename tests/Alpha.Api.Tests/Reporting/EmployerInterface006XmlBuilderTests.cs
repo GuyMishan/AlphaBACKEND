@@ -990,7 +990,7 @@ public sealed class EmployerInterface006XmlBuilderTests
     }
 
     [Fact]
-    public void Negative_operation_5_requires_annual_employer_affidavit()
+    public void Negative_operation_5_requires_employer_affidavit_attached_to_this_report()
     {
         var fixture = CreateFixture(true, operationCode: 5);
         var employeeApproval = new ManualReportAttachment(Guid.NewGuid(), fixture.Product.Id, 4, "employee-approval.pdf",
@@ -1004,7 +1004,7 @@ public sealed class EmployerInterface006XmlBuilderTests
         var result = EmployerInterface006XmlBuilder.BuildNegative(context);
 
         Assert.Null(result.Document);
-        Assert.Contains(result.Issues, x => x.Contains("annual employer affidavit", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Issues, x => x.Contains("employer affidavit", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
