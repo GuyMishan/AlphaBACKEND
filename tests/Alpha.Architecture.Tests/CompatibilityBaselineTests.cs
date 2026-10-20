@@ -26,7 +26,7 @@ public sealed class CompatibilityBaselineTests
         Assert.Contains("employer.MapGet(\"/status\", GetEmployerSetupStatusAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
         Assert.Contains("org.MapPost(\"/abandon\", AbandonOrganizationSetupAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
         Assert.Contains("employer.MapPost(\"/abandon\", AbandonEmployerSetupAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
-        Assert.True(routes.Length == 247 && Fingerprint(routes) == RouteBaseline,
+        Assert.True(routes.Length == 250 && Fingerprint(routes) == RouteBaseline,
             $"Route baseline changed: {routes.Length} routes, fingerprint {Fingerprint(routes)}. Update only for a reviewed API change.");
     }
 
@@ -49,7 +49,7 @@ public sealed class CompatibilityBaselineTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        Assert.True(tables.Length == 67 && Fingerprint(tables) == TableBaseline,
+        Assert.True(tables.Length == 68 && Fingerprint(tables) == TableBaseline,
             $"Table baseline changed: {tables.Length} tables, fingerprint {Fingerprint(tables)}. Update only for a reviewed schema change.");
     }
 
@@ -124,7 +124,7 @@ public sealed class CompatibilityBaselineTests
             Assert.DoesNotMatch(@"Database\.(EnsureCreated|EnsureDeleted|Migrate)(Async)?\(", File.ReadAllText(file));
     }
 
-    internal const string RouteBaseline = "da07bbf73facb4887b4aa539aca31ba00b874027f8a2530173f435069a95f72e";
-    internal const string TableBaseline = "cf1d402e5a2a8aa29b39821298684b2826e204535c97dea04d46735673994b53";
-    internal const string SchemaInitializerBaseline = "ec93b2da33d4e60afc7721fea09a6aa23a6f06c1ec92fd1d7eb5a439fe466fdd";
+    internal const string RouteBaseline = "6fc4c2108b8211522e1415d33e6b967bef783737bf11c99f1f83201c81fe4979";
+    internal const string TableBaseline = "55ac448a8df55380feb223ef884aca8fc3b9b70e921840c33430df5e7b9bffdb";
+    internal const string SchemaInitializerBaseline = "91a8f9d07881516898cabd644b39d32739d89a30570f952fdbbb759154092fc0";
 }
