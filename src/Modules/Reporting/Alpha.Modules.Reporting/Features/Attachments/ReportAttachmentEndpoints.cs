@@ -57,8 +57,7 @@ public static class ReportAttachmentEndpoints
             }).ToListAsync(ct);
 
         var annualEmployerAffidavitSatisfied = report.ReportKind == ManualReportKind.Negative
-            && (items.Any(x => x.DocumentTypeCode == 3)
-                || await HasPreviouslySentAnnualAffidavitAsync(db, report, ct));
+            && items.Any(x => x.DocumentTypeCode == 3);
 
         var requiredCode5ProductIds = await GetRequiredCode5ProductIdsAsync(db, report, ct);
         return Results.Ok(new
@@ -369,21 +368,6 @@ public static class ReportAttachmentEndpoints
             reportCopy.SizeBytes, reportCopy.Sha256, reportCopy.CreatedAt });
     }
 
-    private static async Task<bool> HasPreviouslySentAnnualAffidavitAsync(AlphaDbContext db, ManualReport report, CancellationToken ct)
-    {
-        var yearStart = new DateOnly(report.ReportingMonth.Year, 1, 1);
-        var yearEnd = yearStart.AddYears(1);
-        return await (
-            from attachment in db.ManualReportAttachments.AsNoTracking()
-            join previousReport in db.ManualReports.AsNoTracking() on attachment.ReportId equals previousReport.Id
-            where attachment.DocumentTypeCode == 3
-                  && previousReport.Id != report.Id
-                  && previousReport.EmployerId == report.EmployerId
-                  && previousReport.ReportingMonth >= yearStart
-                  && previousReport.ReportingMonth < yearEnd
-                  && (previousReport.Status == ManualReportStatus.Sent || previousReport.Status == ManualReportStatus.Completed)
-            select attachment.Id).AnyAsync(ct);
-    }
     public static async Task<HashSet<Guid>> GetRequiredCode5ProductIdsAsync(AlphaDbContext db, ManualReport report, CancellationToken ct)
     {
         var result = new HashSet<Guid>();
@@ -410,9 +394,16 @@ public static class ReportAttachmentEndpoints
             join employee in db.ManualReportEmployees.AsNoTracking() on product.ReportEmployeeId equals employee.Id
             join metadata in db.EmployerInterfaceReportProductData.AsNoTracking() on product.Id equals metadata.ReportProductId
             where employee.ReportId == report.Id && product.ProductType == PensionProductType.PensionFund && metadata.EmployeeStatus != 14
-            select new { product.Id, product.FundExternalKey }).ToListAsync(ct);
-        foreach (var product in products)
-            if (keys.Contains(product.FundExternalKey)) result.Add(product.Id);
+            select new { product, employee.EmploymentId }).ToListAsync(ct);
+        foreach (var item in products)
+        {
+            if (!keys.Contains(item.product.FundExternalKey)) continue;
+            // A new product is one that does not match an existing saved employee mix product.
+            // Existing products may still include type 5 evidence, but are not blocked by its absence.
+            var saved = await db.EmployeePensionProducts.AsNoTracking()
+                .Where(x => x.EmploymentId == item.EmploymentId).ToListAsync(ct);
+            if (!saved.Any(x => SamePensionProduct(item.product, x))) result.Add(item.product.Id);
+        }
         return result;
     }
 }
