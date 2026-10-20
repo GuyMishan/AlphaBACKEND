@@ -137,7 +137,8 @@ public static class ReportAttachmentEndpoints
         }
         else
         {
-            reportProductId = null;
+            if (reportProductId.HasValue)
+                return Results.BadRequest(new { error = "Employer affidavit document type 3 must be attached to the report, not a product." });
         }
 
         if (await db.ManualReportAttachments.CountAsync(x => x.ReportId == reportId, ct) >= MaxAttachmentsPerReport)
