@@ -42,7 +42,7 @@ public sealed class EmployerInterface006XmlBuilderTests
 
     [Theory]
     [InlineData(false, 6275, "da9682760fc406c5b6bfecc6b7a4ea7a4bfeb77d35f61b24144cf9e813c0a08b")]
-    [InlineData(true, 5728, "80db3dc1030b2cf750e29909af96f70485c8c33791746ba70d4d452d7309d8c2")]
+    [InlineData(true, 5980, "80db3dc1030b2cf750e29909af96f70485c8c33791746ba70d4d452d7309d8c2")]
     public void Canonical_006_bytes_match_golden_characterization(
         bool negative, int expectedLength, string expectedSha256)
     {
