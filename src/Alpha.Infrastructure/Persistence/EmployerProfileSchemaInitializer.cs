@@ -39,6 +39,11 @@ public static class EmployerProfileSchemaInitializer
                     FOREIGN KEY ("EmployerId") REFERENCES employers.employers ("Id") ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS employers.employer_default_funds (
+                employer_id uuid PRIMARY KEY REFERENCES employers.employers("Id") ON DELETE CASCADE,
+                fund_external_keys text[] NOT NULL DEFAULT ARRAY[]::text[],
+                updated_at timestamptz NOT NULL DEFAULT now()
+            );
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_employer_profile_settings_EmployerId"
                 ON employers.employer_profile_settings ("EmployerId");
 

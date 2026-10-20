@@ -341,8 +341,8 @@ public sealed class ReferenceDataSyncService(HttpClient httpClient, AlphaDbConte
             INSERT INTO reference_data.pension_products
                 (external_key, source, domain, product_type, fund_code, fund_name, short_name, company_legal_id, company_name,
                  investment_track_code, investment_track_name, classification, bank_code, bank_name, branch_code, account_number,
-                 source_updated_at, is_active, last_seen_at, updated_at)
-            VALUES (@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11,@p12,@p13,@p14,@p15,@p16,true,@p17,@p17)
+                 source_updated_at, is_active, last_seen_at, updated_at, is_system_default_fund)
+            VALUES (@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11,@p12,@p13,@p14,@p15,@p16,true,@p17,@p17, @p3 = 'קרן פנסיה' AND @p5 ILIKE '%מקיפ%' AND (@p8 ILIKE '%מיטב%' OR @p8 ILIKE '%אלטשולר שחם%' OR @p8 ILIKE '%מור קופות%' OR @p8 ILIKE '%אינפיניטי%'))
             ON CONFLICT (external_key) DO UPDATE SET
                 source = EXCLUDED.source, domain = EXCLUDED.domain, product_type = EXCLUDED.product_type,
                 fund_code = EXCLUDED.fund_code, fund_name = EXCLUDED.fund_name, short_name = EXCLUDED.short_name,
@@ -350,7 +350,8 @@ public sealed class ReferenceDataSyncService(HttpClient httpClient, AlphaDbConte
                 investment_track_code = EXCLUDED.investment_track_code, investment_track_name = EXCLUDED.investment_track_name,
                 classification = EXCLUDED.classification, bank_code = EXCLUDED.bank_code, bank_name = EXCLUDED.bank_name,
                 branch_code = EXCLUDED.branch_code, account_number = EXCLUDED.account_number, source_updated_at = EXCLUDED.source_updated_at,
-                is_active = true, last_seen_at = EXCLUDED.last_seen_at, updated_at = EXCLUDED.updated_at
+                is_active = true, last_seen_at = EXCLUDED.last_seen_at, updated_at = EXCLUDED.updated_at,
+                is_system_default_fund = EXCLUDED.is_system_default_fund
             """,
             new object?[] { key, source, domain, productType, fundCode, fundName, shortName, companyLegalId, companyName, trackCode,
                 trackName, classification, bankCode, bankName, branchCode, accountNumber, sourceUpdatedAt, now }, ct);

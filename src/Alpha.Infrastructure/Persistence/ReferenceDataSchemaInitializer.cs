@@ -139,6 +139,17 @@ public static class ReferenceDataSchemaInitializer
                 last_seen_at timestamptz NOT NULL,
                 updated_at timestamptz NOT NULL
             );
+            ALTER TABLE reference_data.pension_products ADD COLUMN IF NOT EXISTS is_system_default_fund boolean NOT NULL DEFAULT false;
+            -- Official 2024–2028 selected comprehensive pension funds. Keep the source catalog
+            -- stable by external_key; derive the flag after each synchronization as well.
+            UPDATE reference_data.pension_products
+            SET is_system_default_fund =
+                product_type = 'קרן פנסיה' AND (
+                    fund_name ILIKE '%מקיפה%' OR fund_name ILIKE '%מקיף%'
+                ) AND (
+                    company_name ILIKE '%מיטב%' OR company_name ILIKE '%אלטשולר שחם%'
+                    OR company_name ILIKE '%מור קופות%' OR company_name ILIKE '%אינפיניטי%'
+                );
             ALTER TABLE reference_data.pension_products ADD COLUMN IF NOT EXISTS investment_track_code text NULL;
             ALTER TABLE reference_data.pension_products ADD COLUMN IF NOT EXISTS investment_track_name text NULL;
             CREATE INDEX IF NOT EXISTS ix_pension_products_domain ON reference_data.pension_products (domain);

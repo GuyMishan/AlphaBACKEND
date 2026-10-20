@@ -178,3 +178,7 @@ The existing `employers.employer_documents` table gains document type 7 through 
 ## Consent schema
 
 RegistrationConsentSchemaInitializer adds `identity.registration_consent_intents`, `identity.user_consent_events` (append-only technical evidence), and user columns `AcceptedLegalVersion`, `AcceptedLegalAt`, `MarketingEmailOptIn`. Registration binds acceptance to OTP, keeping marketing separate. No consent management screen is introduced. Schema verifier count becomes 70 tables.
+
+## Selected pension funds (October 2026)
+
+`reference_data.pension_products.is_system_default_fund` marks catalog funds identified from the official 2024–2028 selected-funds list (comprehensive pension funds managed by Meitav, Mor, Altshuler Shaham or Infinity). Employer-specific overrides live in `employers.employer_default_funds` as an explicit set of active pension-fund external keys. Absence of a row means inherited system selection; an empty array is an intentional empty employer selection. DELETE of the employer override restores inheritance. Catalog sync must reapply the official selection classification whenever reference products are replaced. The selected-fund flag is not proof of a particular employee's enrollment or of eligibility under the 2025 ID-digit allocation rule.

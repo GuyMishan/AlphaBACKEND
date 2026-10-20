@@ -30,6 +30,7 @@ public static class EmployerProfileCenterEndpoints
         group.MapPut("/billing", UpdateBillingAsync);
         group.MapPut("/pension-payment", UpdatePensionPaymentAsync);
         group.MapPut("/reporting", UpdateReportingAsync);
+        group.MapEmployerDefaultFundsEndpoints();
 
         return endpoints;
     }

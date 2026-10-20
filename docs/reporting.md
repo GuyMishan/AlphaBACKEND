@@ -135,3 +135,7 @@ Real clearinghouse/manufacturer acceptance, provider timeouts after remote accep
 ## Employer legal agreement gate
 
 Every transmission request, including resumed hybrid dispatch, requires an existing employer-wide document with DocumentTypeCode=7 and matching organization/employer. Missing agreement returns HTTP 409 `employer_legal_agreement_required`; draft editing and validation remain available. Uploaded PDFs are scanned and encrypted through the existing employer document flow. This feature intentionally does not infer that a user's click legally executes a signed contract: uploading a document records the employer's declared acceptance, with contract authenticity and authority subject to review. Removing the document blocks future sends, not previously sent reports.
+
+## Employer default pension fund selection (October 2026)
+
+The national selected-fund catalog flag is recorded on `reference_data.pension_products.is_system_default_fund`. An employer's explicit chosen set is stored separately under `employers.employer_default_funds`; no row means inherit the system defaults. GET/PUT/DELETE at `profile-center/default-funds` return, override, or restore those inherited values. The set is an employer preference and does not by itself establish employee enrollment or 006 attachment eligibility (including the regulator's ID-digit allocation rule).
