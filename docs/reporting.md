@@ -79,6 +79,7 @@ Before production sign-off, an executable matrix over every supported `(interfac
 - The employer-profile document upload API accepts only type 5 and the separate type 7 ALPHA employer agreement. Historical profile documents of other types remain readable, but type 3 cannot be attached again from the library.
 - Report-scoped PDF copies remain encrypted and immutable after submission. Difference reports do not carry 006 attachments. The product metadata field CollectiveAgreementRefund selects the required document type (4 or 6). Report validation and XML preflight enforce per-product refund evidence and the current report's affidavit.
 - The pension-mix save preserves matched product IDs and refuses deletion while saved documents refer to a product.
+- Editing products in an ordinary manual report also reuses matching report-product IDs rather than deleting/recreating them; this preserves report evidence, operation metadata, and payment references. A product with attached 006 evidence must have that evidence removed explicitly before the product can be deleted.
 ## Transmission routing and manufacturers
 
 - Default delivery is the clearinghouse provider. `Reporting:ManufacturerRouting:Funds:<fundCode>=<provider>` overrides are explicit and reviewed; they are never derived automatically.
