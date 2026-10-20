@@ -702,24 +702,65 @@ public static class ManualReportEndpoints
 
         if (!report.IsCorrectionWorkspace)
         {
-            var existingProductIds = existingProducts.Select(x => x.Id).ToArray();
-            if (existingProductIds.Length > 0)
-            {
-                await db.ManualContributions.Where(x => existingProductIds.Contains(x.ReportProductId)).ExecuteDeleteAsync(ct);
-                await db.ManualReportProducts.Where(x => x.ReportEmployeeId == reportEmployeeId).ExecuteDeleteAsync(ct);
-            }
-
+            // Preserve report-product identities for matching products: attachments,
+            // 006 metadata, and payment evidence are attached to these stable IDs.
+            var byId = existingProducts.ToDictionary(x => x.Id);
+            var reused = new HashSet<Guid>();
+            var prepared = new List<(ResolvedReportProduct Item, ManualReportProduct? Existing)>();
             foreach (var item in resolvedProducts.Items)
             {
                 var input = item.Input;
-                var product = new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
+                ManualReportProduct? existing = null;
+                if (input.WorkspaceReportProductId.HasValue)
+                {
+                    if (!byId.TryGetValue(input.WorkspaceReportProductId.Value, out existing))
+                        return Results.BadRequest(new { error = "The selected report product does not belong to this employee." });
+                }
+                else
+                {
+                    var matches = existingProducts.Where(x =>
+                        x.ProductType == input.ProductType &&
+                        string.Equals(x.SalaryLayer, input.SalaryLayer?.Trim() ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                        (!string.IsNullOrWhiteSpace(input.PolicyNumber)
+                            ? string.Equals(x.PolicyNumber, input.PolicyNumber.Trim(), StringComparison.OrdinalIgnoreCase)
+                            : !string.IsNullOrWhiteSpace(input.FundExternalKey) &&
+                              string.Equals(x.FundExternalKey, input.FundExternalKey.Trim(), StringComparison.OrdinalIgnoreCase)))
+                        .Take(2).ToArray();
+                    if (matches.Length == 1) existing = matches[0];
+                }
+                if (existing is not null && !reused.Add(existing.Id))
+                    return Results.BadRequest(new { error = "Multiple entries refer to the same report product." });
+                prepared.Add((item, existing));
+            }
+            var removed = existingProducts.Where(x => !reused.Contains(x.Id)).ToList();
+            var removedIds = removed.Select(x => x.Id).ToArray();
+            if (removedIds.Length > 0 && await db.ManualReportAttachments.AsNoTracking()
+                .AnyAsync(x => x.ReportProductId.HasValue && removedIds.Contains(x.ReportProductId.Value), ct))
+                return Results.Conflict(new { error = "Remove the product's report documents before removing the product." });
+
+            var existingIds = existingProducts.Select(x => x.Id).ToArray();
+            if (existingIds.Length > 0)
+                await db.ManualContributions.Where(x => existingIds.Contains(x.ReportProductId)).ExecuteDeleteAsync(ct);
+
+            foreach (var (item, existing) in prepared)
+            {
+                var input = item.Input;
+                var product = existing ?? new ManualReportProduct(reportEmployeeId, input.ProductType, input.PolicyNumber,
                     input.SalaryMonth, item.InsuredSalary, input.ReportingType, input.SalaryLayer, input.Section14,
                     input.Section14StartDate, input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
                     item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
-                db.ManualReportProducts.Add(product);
+                if (existing is not null)
+                    product.Update(input.ProductType, input.PolicyNumber, input.SalaryMonth, item.InsuredSalary,
+                        input.ReportingType, input.SalaryLayer, input.Section14, input.Section14StartDate,
+                        input.FundExternalKey, input.FundCode, input.FundName, input.FundCompanyName,
+                        item.AllocationType, item.AllocationValue, item.AllocationOrder, input.Section14Code, input.FundClassification);
+                else
+                    db.ManualReportProducts.Add(product);
                 AddContributions(db, product.Id, ContributionParty.Employer, item.InsuredSalary, input.EmployerContributions);
                 AddContributions(db, product.Id, ContributionParty.Employee, item.InsuredSalary, input.EmployeeContributions);
             }
+            if (removed.Count > 0)
+                db.ManualReportProducts.RemoveRange(removed);
         }
         else
         {
