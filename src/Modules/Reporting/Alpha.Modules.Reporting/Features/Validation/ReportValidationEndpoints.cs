@@ -153,6 +153,29 @@ public static class ReportValidationEndpoints
                     ValidationScope.Product, ProductId: id));
         }
 
+        if ((stage == ValidationStage.Deposits || stage == ValidationStage.Final) && report.ReportKind == ManualReportKind.Negative)
+        {
+            var attached = await db.ManualReportAttachments.AsNoTracking()
+                .Where(x => x.ReportId == reportId)
+                .Select(x => new { x.DocumentTypeCode, x.ReportProductId }).ToListAsync(ct);
+            var refunds = productMetadataById.Values.Where(x => x.OperationCode == 5).ToList();
+            if (refunds.Count > 0 && !attached.Any(x => x.DocumentTypeCode == 3 && x.ReportProductId == null))
+                issues.Add(new("REFUND_EMPLOYER_AFFIDAVIT_REQUIRED",
+                    "חובה לצרף תצהיר מעסיק (מסמך 3) לדיווח השלילי הנוכחי.",
+                    ValidationScope.Report));
+            foreach (var refund in refunds)
+            {
+                if (!refund.CollectiveAgreementRefund.HasValue)
+                    continue;
+                var code = refund.CollectiveAgreementRefund.Value ? 6 : 4;
+                if (!attached.Any(x => x.DocumentTypeCode == code && x.ReportProductId == refund.ReportProductId))
+                    issues.Add(new("REFUND_PRODUCT_DOCUMENT_REQUIRED",
+                        code == 6 ? "חובה לצרף הצהרת מעסיק להסכם קיבוצי (מסמך 6) למוצר זה."
+                                  : "חובה לצרף אישור עובד להשבת כספים (מסמך 4) למוצר זה.",
+                        ValidationScope.Product, ProductId: refund.ReportProductId));
+            }
+        }
+
         if (report.ReportingMonth.Year < 2000 || report.ReportingMonth > new DateOnly(DateTime.UtcNow.Year + 1, 12, 1))
             issues.Add(new("REPORTING_MONTH_INVALID", "חודש הדיווח אינו תקין.", ValidationScope.Report));
         if (report.SalaryPaymentDate is null)
