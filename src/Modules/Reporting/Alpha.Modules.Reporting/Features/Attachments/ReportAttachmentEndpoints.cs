@@ -289,13 +289,12 @@ public static class ReportAttachmentEndpoints
         if (scope is null) return Results.NotFound();
         var savedId = await MatchSavedProductAsync(db, scope, ct);
         var negative = report.ReportKind == ManualReportKind.Negative;
-        var codes = negative ? new[] { 3, 4, 6 } : new[] { 5 };
+        var codes = negative ? new[] { 4, 6 } : new[] { 5 };
         var documents = await db.EmployerDocuments.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId &&
                 codes.Contains(x.DocumentTypeCode) &&
-                ((negative && x.DocumentTypeCode == 3 && x.EmploymentId == null) ||
-                 (savedId.HasValue && x.EmploymentId == scope.EmploymentId &&
-                  x.EmployeePensionProductId == savedId)))
+                (savedId.HasValue && x.EmploymentId == scope.EmploymentId &&
+                 x.EmployeePensionProductId == savedId))
             .OrderByDescending(x => x.CreatedAt)
             .Select(x => new { x.Id, x.DocumentTypeCode, x.OriginalFileName, x.SizeBytes, x.CreatedAt })
             .ToListAsync(ct);
@@ -317,7 +316,7 @@ public static class ReportAttachmentEndpoints
             x.Id == request.EmployerDocumentId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (source is null) return Results.NotFound();
         var negative = report.ReportKind == ManualReportKind.Negative;
-        if ((negative && source.DocumentTypeCode is not (3 or 4 or 6)) ||
+        if ((negative && source.DocumentTypeCode is not (4 or 6)) ||
             (!negative && source.DocumentTypeCode != 5))
             return Results.BadRequest(new { error = "Document type is incompatible with this report." });
         Guid? reportProductId = null;
