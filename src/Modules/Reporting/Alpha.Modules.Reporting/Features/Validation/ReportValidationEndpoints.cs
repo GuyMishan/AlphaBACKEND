@@ -3,6 +3,7 @@ using Alpha.Infrastructure.Persistence;
 using Alpha.Domain.Reporting;
 using Alpha.Modules.IdentityAccess.Contracts;
 using Alpha.Modules.Reporting.Features.Corrections;
+using Alpha.Modules.Reporting.Features.Attachments;
 using Alpha.Modules.Reporting.Features.EmployerInterface006;
 using Alpha.Modules.Reporting.Features.ManualReports;
 using Microsoft.AspNetCore.Builder;
@@ -140,6 +141,17 @@ public static class ReportValidationEndpoints
         var limits = await db.ContributionPercentageLimits.AsNoTracking()
             .Where(x => years.Contains(x.Year)).ToListAsync(ct);
         var issues = new List<ValidationIssue>();
+        if ((stage == ValidationStage.Deposits || stage == ValidationStage.Final) && report.ReportKind == ManualReportKind.Current)
+        {
+            var required = await ReportAttachmentEndpoints.GetRequiredCode5ProductIdsAsync(db, report, ct);
+            var attached = await db.ManualReportAttachments.AsNoTracking()
+                .Where(x => x.ReportId == reportId && x.DocumentTypeCode == 5 && x.ReportProductId.HasValue)
+                .Select(x => x.ReportProductId!.Value).ToListAsync(ct);
+            foreach (var id in required.Except(attached))
+                issues.Add(new("DEFAULT_FUND_JOIN_DOCUMENT_REQUIRED",
+                    "חובה לצרף מסמך 5 — בקשת הצטרפות לקרן ברירת מחדל.",
+                    ValidationScope.Product, ProductId: id));
+        }
 
         if (report.ReportingMonth.Year < 2000 || report.ReportingMonth > new DateOnly(DateTime.UtcNow.Year + 1, 12, 1))
             issues.Add(new("REPORTING_MONTH_INVALID", "חודש הדיווח אינו תקין.", ValidationScope.Report));
