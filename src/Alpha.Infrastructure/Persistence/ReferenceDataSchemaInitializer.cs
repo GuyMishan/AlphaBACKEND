@@ -25,6 +25,18 @@ public static class ReferenceDataSchemaInitializer
                 updated_at timestamptz NOT NULL DEFAULT now(),
                 updated_by uuid NULL
             );
+            -- Optional error-specific outbound contact templates (no mail transport here).
+            CREATE TABLE IF NOT EXISTS reference_data.manufacturer_error_email_templates (
+                error_code integer PRIMARY KEY,
+                subject text NOT NULL,
+                body text NOT NULL,
+                is_enabled boolean NOT NULL DEFAULT false,
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                updated_by uuid NULL,
+                CONSTRAINT ck_manufacturer_template_subject CHECK (char_length(subject) BETWEEN 1 AND 200),
+                CONSTRAINT ck_manufacturer_template_body CHECK (char_length(body) BETWEEN 1 AND 8000)
+            );
+
             CREATE TABLE IF NOT EXISTS reference_data.product_contact_email_overrides (
                 external_key text PRIMARY KEY,
                 email text NOT NULL,
