@@ -187,6 +187,17 @@ public static class FeedbackResolutionWireProjection
             _ => prepareCorrection
         };
 
+        // A document upload belongs to an isolated report correction workspace, not a
+        // mutation of the already transmitted report or a generic employer library upload.
+        if (requestedResolver == WireName(FeedbackResolverType.Documents))
+            return group.Problems.All(problem =>
+                problem.TreatmentCanCorrect
+                && string.Equals(problem.ResolutionType, edit, StringComparison.Ordinal)
+                && problem.AvailableActions.Contains(WireName(FeedbackResolutionAction.UploadDocument), StringComparer.Ordinal)
+                && (string.Equals(problem.CorrectionBehavior, correctionWorkspace, StringComparison.Ordinal)
+                    || string.Equals(problem.CorrectionBehavior,
+                        WireName(FeedbackCorrectionBehavior.ExternalFollowUp), StringComparison.Ordinal)));
+
         return group.Problems.All(problem =>
             (string.Equals(problem.ResolutionType, edit, StringComparison.Ordinal)
                 && string.Equals(problem.CorrectionBehavior, correctionWorkspace, StringComparison.Ordinal)
