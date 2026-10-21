@@ -19,7 +19,7 @@ namespace Alpha.Modules.Reporting.Features.Feedback;
 /// <summary>Case-bound, tenant-authorized manufacturer inquiries. Never trusts a client recipient.</summary>
 public static class ManufacturerInquiryEndpoints
 {
-    public sealed record SendInquiryRequest(Guid ReportProductId, int ErrorCode, string Subject, string Body);
+    public sealed record SendInquiryRequest(Guid ReportProductId, int ErrorCode, string? AdditionalInformation);
     private sealed record Inquiry(Guid ReportProductId, int ErrorCode, string Recipient, string Manufacturer,
         string Product, string Subject, string Body);
     private sealed record History(Guid Id, string Recipient, string Subject, string Status, string? FailureCode, DateTimeOffset CreatedAt);
@@ -55,10 +55,15 @@ public static class ManufacturerInquiryEndpoints
         if (item is null || string.IsNullOrWhiteSpace(item.Recipient) ||
             string.IsNullOrWhiteSpace(item.Subject) || string.IsNullOrWhiteSpace(item.Body))
             return Results.BadRequest(new { error = "manufacturer_inquiry_unavailable" });
-        var subject = request.Subject?.Trim() ?? "";
-        var body = request.Body?.Trim() ?? "";
-        if (subject.Length is < 1 or > 200 || body.Length is < 1 or > 8000 ||
-            subject.Contains('\r') || subject.Contains('\n'))
+        // The approved DB template is authoritative; client input may only append free text.
+        var subject = item.Subject;
+        var additional = request.AdditionalInformation?.Trim() ?? "";
+        if (additional.Length > 3000 || additional.IndexOf('\\0') >= 0)
+            return Results.BadRequest(new { error = "manufacturer_inquiry_invalid_message" });
+        var body = item.Body + (additional.Length > 0
+            ? "\\n\\nמידע נוסף מטעם הפונה:\\n" + additional
+            : "");
+        if (subject.Length is < 1 or > 200 || body.Length > 8000)
             return Results.BadRequest(new { error = "manufacturer_inquiry_invalid_message" });
 
         var testMode = TestMode(config);
