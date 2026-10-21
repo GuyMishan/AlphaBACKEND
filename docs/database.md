@@ -1,6 +1,6 @@
 # Alpha database
 
-One PostgreSQL database, one `AlphaDbContext`, eight schemas, 68 tables. This document covers ownership, how the schema is created and changed, and the rules for changing it safely while production is live.
+One PostgreSQL database, one `AlphaDbContext`, eight schemas, 69 tables. This document covers ownership, how the schema is created and changed, and the rules for changing it safely while production is live.
 
 ## Staged ALPHA payment setup (October 2026)
 

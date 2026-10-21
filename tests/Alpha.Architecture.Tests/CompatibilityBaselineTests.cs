@@ -55,7 +55,7 @@ public sealed class CompatibilityBaselineTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        Assert.True(tables.Length == 68 && Fingerprint(tables) == TableBaseline,
+        Assert.True(tables.Length == 69 && Fingerprint(tables) == TableBaseline,
             $"Table baseline changed: {tables.Length} tables, fingerprint {Fingerprint(tables)}. Update only for a reviewed schema change.");
     }
 
@@ -131,6 +131,6 @@ public sealed class CompatibilityBaselineTests
     }
 
     internal const string RouteBaseline = "754a914977b6d26de9ddc01227f1bc62bdfe2ca3f2f61db30995f50878f62573";
-    internal const string TableBaseline = "55ac448a8df55380feb223ef884aca8fc3b9b70e921840c33430df5e7b9bffdb";
-    internal const string SchemaInitializerBaseline = "0321a12c812c426128a437a258224e7be2207e73616da3de26b09fdded7b9218";
+    internal const string TableBaseline = "34391c48ed17c2638b1451ae694ed4a4b8449aaf5db75e8320894e7582d1bc2c";
+    internal const string SchemaInitializerBaseline = "6fd0f833851358dbab316e240d7152542b0f6fd77f1df968eee50329e0612698";
 }
