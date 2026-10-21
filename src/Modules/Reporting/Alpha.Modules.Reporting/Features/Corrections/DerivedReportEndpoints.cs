@@ -335,7 +335,7 @@ public static class DerivedReportEndpoints
         {
             if (source.ReportKind != ManualReportKind.Current)
                 return Results.BadRequest(new { error = "A negative correction must be based on a current report." });
-            if (source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed) && !source.ExternalSourceReference)
+            if (source.Status != ManualReportStatus.Sent && !source.ExternalSourceReference)
                 return Results.Conflict(new { error = "The source current report must already have been transmitted, or carry an official external source reference." });
             if (sourceProducts.Any(p => !sourceMetadata.ContainsKey(p.Id)))
                 return Results.Conflict(new { error = "The source report is missing Employer Interface metadata required for a formal correction." });
@@ -345,7 +345,7 @@ public static class DerivedReportEndpoints
         {
             if (source.ReportKind != ManualReportKind.Negative)
                 return Results.BadRequest(new { error = "A current operation 2/3 correction must be based on a negative report." });
-            if (source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed) && !source.ExternalSourceReference)
+            if (source.Status != ManualReportStatus.Sent && !source.ExternalSourceReference)
                 return Results.Conflict(new { error = "The negative source must already have been transmitted, or be an imported external negative report." });
             if (sourceProducts.Count == 0 || sourceProducts.Any(p => !sourceMetadata.TryGetValue(p.Id, out var m) || m.OperationCode != 6))
                 return Results.BadRequest(new { error = "A current operation 2/3 correction must reference a negative operation 6 report." });
