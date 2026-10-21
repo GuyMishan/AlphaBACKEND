@@ -30,7 +30,9 @@ public static class ManufacturerEmailTemplateEndpoints
             cmd.CommandText = """
                 SELECT codes.code, codes.description, COALESCE(t.subject, ''),
                        COALESCE(t.body, ''), COALESCE(t.is_enabled, false)
-                FROM reference_data.employer_interface_006_error_codes codes
+                FROM (SELECT code, description, is_active FROM reference_data.employer_interface_006_error_codes
+                      UNION ALL SELECT 2, 'רשומה פוצלה בין פוליסות שונות', true
+                      UNION ALL SELECT 3, 'רשומה פוצלה בין קרן חדשה מקיפה לקרן חדשה כללית', true) codes
                 LEFT JOIN reference_data.manufacturer_error_email_templates t ON t.error_code = codes.code
                 WHERE codes.is_active = true AND
                       (@search = '' OR codes.description ILIKE '%' || @search || '%'
@@ -68,7 +70,7 @@ public static class ManufacturerEmailTemplateEndpoints
             var exists = await db.Database.SqlQueryRaw<int>(
                 "SELECT 1 AS \"Value\" FROM reference_data.employer_interface_006_error_codes WHERE code = {0} AND is_active = true LIMIT 1",
                 errorCode).AnyAsync(ct);
-            if (!exists) return Results.NotFound();
+            if (!exists && errorCode is not (2 or 3)) return Results.NotFound();
 
             if (subject.Length == 0 && body.Length == 0 && !request.IsEnabled)
                 await db.Database.ExecuteSqlInterpolatedAsync(
