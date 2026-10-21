@@ -467,7 +467,7 @@ public sealed class FeedbackResolutionContextContractTests
             FeedbackTreatmentPolicyCatalog.Get(code).Choice);
         Assert.True(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(group, "split"));
         Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
-            group with { Problems = new[] { problem with { AvailableActions = new[] { "review", "confirm" } } },
+            group with { Problems = new[] { problem with { AvailableActions = new[] { "review", "confirm" } } } },
             "split"));
     }
 
