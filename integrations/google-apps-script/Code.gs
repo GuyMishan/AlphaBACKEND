@@ -5,13 +5,22 @@
 function doPost(e) {
   try {
     // Invitations carry a Hebrew subject and text that the backend JSON-escapes (\uXXXX), so allow 4 KB.
-    if (!e || !e.postData || e.postData.contents.length > 4096) return reply_(false);
+    if (!e || !e.postData || e.postData.contents.length > 30000) return reply_(false);
     const body = JSON.parse(e.postData.contents);
     const secret = PropertiesService.getScriptProperties().getProperty('ALPHA_OTP_SECRET');
     if (!secret || secret.length < 32 || typeof body.secret !== 'string' || !sameSecret_(secret, body.secret))
       return reply_(false);
     if (typeof body.to !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.to) || body.to.length > 320)
       return reply_(false);
+
+    if (body.type === 'manufacturer-inquiry') {
+      if (typeof body.subject !== 'string' || body.subject.length < 1 || body.subject.length > 240 ||
+          /[\r\n]/.test(body.subject) ||
+          typeof body.text !== 'string' || body.text.length < 1 || body.text.length > 12000)
+        return reply_(false);
+      MailApp.sendEmail({ to: body.to, subject: body.subject, body: body.text, name: 'Alpha' });
+      return reply_(true);
+    }
 
     if (body.type === 'invitation') {
       // body.code is the invitation link: an https URL to the frontend's /invite page with a 64-hex token.
