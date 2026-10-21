@@ -323,6 +323,39 @@ public sealed class FeedbackResolutionContextContractTests
     }
 
     [Fact]
+    public void Document_upload_uses_a_correction_copy_only_when_treatment_allows_it()
+    {
+        var code = 103;
+        var problem = new FeedbackResolutionProblemDto(
+            ProblemId: "document", Code: code, Description: "document", Scope: "deposit",
+            ResolutionType: "edit", Family: "documents", ResolverType: "documents",
+            GroupStrategy: "perReport", GroupKey: "documents:report",
+            CorrectionBehavior: "externalFollowUp",
+            AvailableActions: new[] { "uploadDocument", "openExternalCase" },
+            CanEscalateExternally: true,
+            FeedbackId: Guid.NewGuid(), ReportId: Guid.NewGuid(),
+            ReportProductId: Guid.NewGuid(), ContributionId: Guid.NewGuid(),
+            ReportEmployeeId: Guid.NewGuid(), EmploymentId: Guid.NewGuid(),
+            PersonId: Guid.NewGuid(), EmployeeName: "Employee", ProductName: "Fund",
+            FundCompanyName: "Company", PolicyNumber: "Policy",
+            ReportedValues: new Dictionary<string, string?>(),
+            CurrentValues: new Dictionary<string, string?>(),
+            FeedbackValues: new Dictionary<string, string?>(),
+            ReceivedAt: DateTimeOffset.UtcNow,
+            TreatmentCanCorrect: true);
+        var group = new FeedbackResolutionGroupDto(
+            problem.GroupKey, "documents", problem.GroupStrategy, true, new[] { problem });
+
+        Assert.True(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(group, "documents"));
+        Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
+            group with { Problems = new[] { problem with { TreatmentCanCorrect = false } } },
+            "documents"));
+        Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
+            group with { Problems = new[] { problem with { AvailableActions = new[] { "review" } } } },
+            "documents"));
+    }
+
+    [Fact]
     public void Resolution_queue_groups_problems_by_resolver_qualified_group_key_in_first_seen_order()
     {
         static FeedbackResolutionProblemDto Problem(string id, string groupKey, string resolver, int code) =>
