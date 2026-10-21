@@ -58,7 +58,7 @@ public static class ManufacturerInquiryEndpoints
         // The approved DB template is authoritative; client input may only append free text.
         var subject = item.Subject;
         var additional = request.AdditionalInformation?.Trim() ?? "";
-        if (additional.Length > 3000 || additional.IndexOf('\\0') >= 0)
+        if (additional.Length > 3000 || additional.Contains((char)0) >= 0)
             return Results.BadRequest(new { error = "manufacturer_inquiry_invalid_message" });
         var body = item.Body + (additional.Length > 0
             ? "\\n\\nמידע נוסף מטעם הפונה:\\n" + additional
