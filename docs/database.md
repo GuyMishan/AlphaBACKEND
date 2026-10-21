@@ -6,6 +6,10 @@ One PostgreSQL database, one `AlphaDbContext`, eight schemas, 68 tables. This do
 
 The additive `billing.pending_payment_setup_details` table stores the proposed invoicing identity/address as JSON until the payment provider confirms a token via a verified callback. It is keyed by the billing account and correlated to `PendingSetupReference`. The account's published details are unchanged while payment setup is pending; on verified callback, the details and payment-token metadata are written in a single transaction and the staged draft is deleted. A failed or cancelled hosted checkout must not activate or overwrite the previous account. An unconfirmed attempt expires after 30 minutes; later callbacks are ignored, and a new attempt can replace the expired draft. The completed reference is retained in the staging table for checkout-specific status verification. The provider never receives a PAN or CVV from ALPHA, and these are not stored in staging. This table is intentionally raw SQL, with no new EF DbSet.
 
+## Feedback treatment configuration (October 2026)
+
+The V006 treatment-mode catalog is persisted in `reference_data.feedback_treatment_policies`. Its 101 rows are seeded by `EmployerInterface006ErrorCodeInitializer` using `ON CONFLICT DO NOTHING`, retaining deliberate DB changes on later boots. It has four permitted `treatment_choice` values plus `correction_target`, JSON `correction_fields`, `external_recipient_type`, and an update timestamp. Reporting reads this table for every resolution context; codes with no configured mode fail closed. The table is additive, with no changes to the official feedback-code descriptions or financial evidence.
+
 ## How the schema is built
 
 There are **no EF Core migrations**. The schema is the EF model plus 32 idempotent compatibility initializers (`src/Alpha.Infrastructure/Persistence/*SchemaInitializer.cs`, `*Initializer.cs`), executed on every startup by `AlphaDatabaseInitializer` in a fixed order:
