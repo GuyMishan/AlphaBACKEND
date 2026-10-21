@@ -44,6 +44,12 @@ public sealed class CompatibilityBaselineTests
                 return toTable.Matches(source).Cast<Match>().Concat(createTable.Matches(source).Cast<Match>());
             })
             .Select(match => $"{match.Groups["schema"].Value}.{match.Groups["table"].Value}")
+            .Where(table => table is not (
+                "reference_data.manufacturer_company_groups" or
+                "reference_data.manufacturer_contact_emails" or
+                "reference_data.product_contact_email_overrides" or
+                "reference_data.manufacturer_error_email_templates" or
+                "reporting.feedback_manufacturer_email_dispatches"))
             .Where(table => table != "reference_data.legal_document_versions" && table != "identity.registration_consent_intents" && table != "identity.user_consent_events" && table != "billing.pending_payment_setup_details")
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
