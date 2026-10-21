@@ -4,7 +4,7 @@ Business rules of the Reporting module that are not obvious from the code. Autho
 
 ## Completed reports are not correction sources (October 2026)
 
-- A report with internal status `Completed` is final and cannot initiate a new correction workspace or derived corrective report via the standard report actions/API. The query capability flags must not offer correction for `Completed`; backend correction entry points must reject it too. `Sent` reports remain eligible under their existing correction prerequisites.
+- A report with internal status `Completed` is final and cannot initiate a new correction workspace or derived corrective report via the standard report actions/API. The query capability flags must not offer correction for internal `Completed` **or** the user-visible feedback state `completed`; backend correction entry points reject internal `Completed` too. `Sent` reports remain eligible under their existing correction prerequisites.
 - This distinction does not affect resumable drafts, which include unsent `Validated` reports, or any existing external feedback-resolution process.
 
 ## Unsent reports after final validation (October 2026)
