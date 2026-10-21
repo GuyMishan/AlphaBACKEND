@@ -2,6 +2,11 @@
 
 Business rules of the Reporting module that are not obvious from the code. Authoritative sources for formats and codes: `docs/specifications/employer-interface/006` (XSDs, `Employer interface V 6.xlsx`, error-code workbook) and `docs/specifications/mislaka`. Never infer 006 rules from UI behavior. File locations are in [CODEMAP.md](CODEMAP.md#reporting).
 
+## Completed reports are not correction sources (October 2026)
+
+- A report with internal status `Completed` is final and cannot initiate a new correction workspace or derived corrective report via the standard report actions/API. The query capability flags must not offer correction for `Completed`; backend correction entry points must reject it too. `Sent` reports remain eligible under their existing correction prerequisites.
+- This distinction does not affect resumable drafts, which include unsent `Validated` reports, or any existing external feedback-resolution process.
+
 ## Unsent reports after final validation (October 2026)
 
 - Final validation (`Validated`) is **not** completion or transmission: if pre-send evidence, payment or agreement checks fail before any transmission, the report remains a resumable, editable draft in the user experience.
