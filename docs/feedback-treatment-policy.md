@@ -1,0 +1,29 @@
+# V006 feedback: four user-facing treatment choices (stage 1)
+
+The authoritative meanings of feedback codes remain the V006 workbook/XSD and clearinghouse specifications in `docs/specifications`. `FeedbackResolutionPlaybookCatalog` retains detailed resolver behavior. `FeedbackTreatmentPolicyCatalog` adds a **complete** user-facing classification; it does not replace the existing resolver or enable e-mail sending.
+
+| Choice | Count | Codes |
+| --- | ---: | --- |
+| `CorrectionOnly` | 41 | 6, 7, 16, 17, 18, 19, 20, 21, 23, 27, 28, 32, 33, 43, 44, 51, 53, 54, 59, 62, 71, 72, 73, 74, 75, 81, 82, 86, 88, 93, 96, 99, 100, 101, 104, 105, 106, 107, 108, 113, 114 |
+| `CorrectionOrManufacturer` | 41 | 2, 3, 4, 5, 11, 15, 24, 25, 26, 42, 45, 47, 49, 50, 55, 56, 57, 58, 61, 63, 64, 67, 68, 69, 70, 78, 79, 80, 83, 84, 85, 97, 98, 102, 103, 109, 110, 111, 112, 115, 116 |
+| `ManufacturerOnly` | 17 | 13, 29, 30, 34, 39, 46, 48, 52, 66, 77, 87, 89, 90, 91, 92, 94, 95 |
+| `InformationOnly` | 2 | 1, 31 |
+
+## Rules
+
+- **CorrectionOnly:** show a meaningful internal correction route; the target is the playbook resolver (employee/employment, contribution, payment, document, report, refund, etc.), not a screen selected by hard-coded error-code branches.
+- **CorrectionOrManufacturer:** both internal correction and external case are allowed *in principle*. This enum is named `CorrectionOrExternalInquiry` in code because a clearinghouse or other institution may be the actual responsible party.
+- **ManufacturerOnly:** external inquiry/case only (`ExternalInquiryOnly` in code). Resolve the verified receiving institution/product, not simply the report employer.
+- **InformationOnly:** explain, no action or fake confirmation.
+- **Decision** in the legacy playbook is a *preflight review requirement*, not a fifth treatment type, and must never close feedback through a no-op confirmation.
+- Availability of a treatment **is not permission to send**: enforce tenant authorization, verified recipient, product association, and case-level controls at request time. Retain test-mail override.
+- Saving internal corrections or sending a message does not close official feedback. Closure requires relevant confirmation / follow-up feedback.
+- The mapping captures the existing playbook's supported correction/external-case capabilities. It is intentionally separate from UI rollout and inbound-mail/AI work.
+
+## Next stages
+
+Wire the policy to resolution-context API and shared modal; reuse embedded existing forms, preserve corrections on copies of transmitted reports; then attach immutable templated outbound inquiries with append-only extra text and thread history. Do not create code-specific React editors.
+
+## Verification
+
+`FeedbackTreatmentPolicyCatalogTests` checks full official-code coverage, uniqueness, key cases and external-case action consistency. Run the verification commands in `AGENTS.md` before deploying.
