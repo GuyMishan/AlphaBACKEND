@@ -8,6 +8,23 @@ public static class ReferenceDataSchemaInitializer
         db.Database.ExecuteSqlRawAsync("""
             CREATE SCHEMA IF NOT EXISTS reference_data;
 
+            -- Central, administrator-verified destinations for future manufacturer inquiries.
+            -- Product exceptions use the stable catalog external key, not a tenant's report snapshot.
+            CREATE TABLE IF NOT EXISTS reference_data.manufacturer_contact_emails (
+                manufacturer_name text PRIMARY KEY,
+                email text NOT NULL,
+                is_verified boolean NOT NULL DEFAULT false,
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                updated_by uuid NULL
+            );
+            CREATE TABLE IF NOT EXISTS reference_data.product_contact_email_overrides (
+                external_key text PRIMARY KEY,
+                email text NOT NULL,
+                is_verified boolean NOT NULL DEFAULT false,
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                updated_by uuid NULL
+            );
+
             CREATE TABLE IF NOT EXISTS reference_data.sync_runs (
                 id uuid PRIMARY KEY,
                 integration_key varchar(80) NOT NULL,
