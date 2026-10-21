@@ -8,6 +8,14 @@ public static class ReferenceDataSchemaInitializer
         db.Database.ExecuteSqlRawAsync("""
             CREATE SCHEMA IF NOT EXISTS reference_data;
 
+            -- Reviewed parent mapping may be populated separately in production. On new
+            -- environments, provision its shape so the contact manager can start safely.
+            CREATE TABLE IF NOT EXISTS reference_data.manufacturer_company_groups (
+                company_name text PRIMARY KEY,
+                manufacturer_name text NOT NULL,
+                mapping_status text NOT NULL DEFAULT 'unreviewed'
+            );
+
             -- Central, administrator-verified destinations for future manufacturer inquiries.
             -- Product exceptions use the stable catalog external key, not a tenant's report snapshot.
             CREATE TABLE IF NOT EXISTS reference_data.manufacturer_contact_emails (
