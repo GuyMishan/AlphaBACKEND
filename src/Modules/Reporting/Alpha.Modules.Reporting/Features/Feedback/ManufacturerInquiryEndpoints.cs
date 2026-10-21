@@ -1,4 +1,6 @@
 using System.Data;
+using System.Net;
+using System.Net.Mail;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -56,9 +58,16 @@ public static class ManufacturerInquiryEndpoints
             subject.Contains('\r') || subject.Contains('\n'))
             return Results.BadRequest(new { error = "manufacturer_inquiry_invalid_message" });
 
-        var apiKey = config["ManufacturerMail:ResendApiKey"];
-        var from = config["ManufacturerMail:From"];
-        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(from))
+        // Reuse the exact OTP email provider configuration and priority:
+        // Google Apps Script -> Resend -> SMTP. Never accept a sender from the client.
+        var scriptUrl = config["Otp:Email:AppsScript:Url"];
+        var apiKey = config["Otp:Email:ResendApiKey"];
+        var from = config["Otp:Email:From"];
+        var smtpHost = config["Otp:Email:Host"];
+        if (string.IsNullOrWhiteSpace(scriptUrl) && string.IsNullOrWhiteSpace(apiKey) &&
+            (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(from)))
+            return Results.Conflict(new { error = "manufacturer_mail_delivery_not_configured" });
+        if (string.IsNullOrWhiteSpace(scriptUrl) && string.IsNullOrWhiteSpace(from))
             return Results.Conflict(new { error = "manufacturer_mail_delivery_not_configured" });
 
         // Persist before contacting the external provider, preserving an audit trail even on failure.
@@ -75,28 +84,68 @@ public static class ManufacturerInquiryEndpoints
         string? failure = null;
         try
         {
-            using var outgoing = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
-            outgoing.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            outgoing.Headers.TryAddWithoutValidation("Idempotency-Key", id.ToString("N"));
-            outgoing.Content = JsonContent.Create(new
+            if (!string.IsNullOrWhiteSpace(scriptUrl))
             {
-                from, to = new[] { item.Recipient }, subject, text = body
-            });
-            using var response = await clients.CreateClient().SendAsync(outgoing, ct);
-            if (response.IsSuccessStatusCode)
-            {
-                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-                if (json.RootElement.TryGetProperty("id", out var parsed) && parsed.ValueKind == JsonValueKind.String)
+                var secret = config["Otp:Email:AppsScript:Secret"];
+                if (string.IsNullOrWhiteSpace(secret) || secret.Length < 32 ||
+                    !Uri.TryCreate(scriptUrl, UriKind.Absolute, out var uri) ||
+                    uri.Scheme != Uri.UriSchemeHttps || uri.Host != "script.google.com" ||
+                    !uri.AbsolutePath.StartsWith("/macros/s/", StringComparison.Ordinal) ||
+                    !uri.AbsolutePath.EndsWith("/exec", StringComparison.Ordinal))
+                    throw new InvalidOperationException("OTP Apps Script is not safely configured.");
+                using var outgoing = new HttpRequestMessage(HttpMethod.Post, uri);
+                outgoing.Content = JsonContent.Create(new
                 {
-                    messageId = parsed.GetString();
-                    status = "sent";
+                    secret, to = item.Recipient, code = body, subject, text = body, type = "invitation"
+                });
+                using var response = await clients.CreateClient("otp-email").SendAsync(outgoing, ct);
+                if (!response.IsSuccessStatusCode) failure = "provider_http_" + (int)response.StatusCode;
+                else
+                {
+                    using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                    if (json.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True)
+                        status = "sent";
+                    else failure = "provider_response_invalid";
                 }
-                else failure = "provider_response_invalid";
             }
-            else failure = "provider_http_" + (int)response.StatusCode;
+            else if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                using var outgoing = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
+                outgoing.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                outgoing.Headers.TryAddWithoutValidation("Idempotency-Key", id.ToString("N"));
+                outgoing.Content = JsonContent.Create(new
+                {
+                    from, to = new[] { item.Recipient }, subject, text = body
+                });
+                using var response = await clients.CreateClient("otp-email").SendAsync(outgoing, ct);
+                if (response.IsSuccessStatusCode)
+                {
+                    using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                    if (json.RootElement.TryGetProperty("id", out var parsed) && parsed.ValueKind == JsonValueKind.String)
+                    {
+                        messageId = parsed.GetString();
+                        status = "sent";
+                    }
+                    else failure = "provider_response_invalid";
+                }
+                else failure = "provider_http_" + (int)response.StatusCode;
+            }
+            else
+            {
+                using var message = new MailMessage(from!, item.Recipient, subject, body);
+                using var smtp = new SmtpClient(smtpHost!, config.GetValue("Otp:Email:Port", 587))
+                {
+                    EnableSsl = config.GetValue("Otp:Email:EnableSsl", true),
+                    Credentials = new NetworkCredential(config["Otp:Email:Username"], config["Otp:Email:Password"])
+                };
+                await smtp.SendMailAsync(message, ct);
+                status = "sent";
+            }
         }
         catch (HttpRequestException) { failure = "provider_network_error"; }
+        catch (SmtpException) { failure = "provider_smtp_error"; }
         catch (JsonException) { failure = "provider_response_invalid"; }
+        catch (InvalidOperationException) { failure = "provider_configuration_invalid"; }
 
         await db.Database.ExecuteSqlInterpolatedAsync($"""
             UPDATE reporting.feedback_manufacturer_email_dispatches
