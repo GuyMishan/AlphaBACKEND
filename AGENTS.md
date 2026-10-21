@@ -21,13 +21,13 @@ ALPHA backend is a .NET 10 feature-first modular monolith for multi-tenant pensi
 - Report failures with `Results.*` (an established snake_case `error` code is fine); the host turns every error into the single Problem Details contract (`docs/architecture.md#error-handling`). Modules never write error bodies themselves.
 - Build links that go into e-mails or to providers from configuration (`Frontend:BaseUrl`, `Payments:PublicApiBaseUrl`), never from `Origin`/`Host` headers. Anonymous endpoints must answer identically whether or not an account exists.
 - Multi-step writes run in one transaction (`ExecuteUpdate/Delete` commit immediately on their own). Use `OrganizationEntitlementLock` for limit checks and last-admin style invariants.
-- Audit events are append-only; submitted financial/reporting evidence is immutable or superseded/reversed, never rewritten.
+- Audit events are append-only. Real submitted financial/reporting evidence is immutable or superseded/reversed, never rewritten. For **explicitly verified demo-only** reports sent exclusively to simulated providers, controlled cleanup/deletion is allowed under the demo cleanup exception below.
 - Payment provider code stays behind `IPaymentProvider`/`IPaymentProviderResolver`; transmission behind `IReportTransmissionProvider`.
 - Do not change encryption formats, purpose strings, routes, request/response contracts, the EF model or schema initializers without an explicit, documented decision; the baselines in the tests will fail and must be updated together with `docs/database.md` or the release notes.
 - Never log national IDs, bank data, report payloads, credentials or tokens.
 
 ## Safety
-- Never connect to production, staging or shared databases. Tests run only against `docker-compose.test.yml` (loopback, `alpha_tests`).
+- Development and automated tests must only use `docker-compose.test.yml` (loopback, `alpha_tests`); no incidental direct writes to production, staging or shared databases. A user-explicitly-requested cleanup of **verified demo-only data** in the shared ALPHA database is an exception only under the safeguards below.
 - A push or merge to `main` deploys to production. Do not commit, push or deploy without explicit approval.
 
 ## Verification
@@ -59,3 +59,11 @@ Documentation maintenance is part of implementation, not a separate optional tas
 - Simulation transmission accepts only unsubmitted Draft (non-correction-workspace) current/negative reports, enforces access, and routes only to `SimulatedVault`. Product routes to other providers fail closed. Existing standard transmission validation is unchanged.
 - The simulation flag is NOT an entitlement to use an arbitrary database safely: in the deployed host, simulated report/transmission/feedback writes use the configured database. Use dedicated test employers and do not use real financial records. The simulator remains scenario-driven (`success` default), not yet data-derived.
 - No verification should be claimed unless CI/build/tests or Render live status is observed.
+
+## Explicit demo report deletion exception (2026-10-21)
+
+- When the user explicitly requests deletion/reset of a **demo report**, including one already transmitted, agents MAY implement and use a controlled cleanup mechanism to remove that report and its **exclusively owned** dependent records, even when the demo instance is hosted under a Production ASP.NET environment. This is intentionally allowed to unblock sequential Employer Interface 006 tests.
+- Preconditions: `EmployerInterface006:SimulationTestMode=true`, `EmployerInterface006:EnvironmentCode=1`, `EmployerInterface006:ClearinghouseProvider=Simulated`; verify exact report ID, organization/employer ownership and that **all** transmissions are to simulated providers. A generic flag, simulated environment code, employer name or month alone is not evidence that a report is demo-only. Reject mixed real/simulated transmission histories or any ambiguous match.
+- Prefer a tenant-authorized, auditable backend **demo-cleanup endpoint/service** with explicit report ID and a transaction over direct database SQL. Keep the existing normal delete endpoint restrictions for real reports. Discover and clear dependent contribution, product, employee, payment, attachment, feedback, resolution and transmission records without touching shared employee master data, employer accounts, other reports or audit events. Handle external vault files/storage with an explicit safe orphan cleanup policy. Make the operation idempotent and verify postconditions.
+- If cleanup is requested against the shared database and prerequisites cannot be independently verified, do not destroy rows merely on the user's characterization of the environment; describe what remains blocked. Never print credentials or PII. A logical demo reset / hiding action is acceptable if historical foreign keys cannot be safely removed.
+- Explicit user authorization for a named demo report permits executing its verified cleanup; no additional permission to delete unrelated records is implied. Record stable identifier, count of affected rows by table, and an audit event. Normal transmitted reports remain immutable.
