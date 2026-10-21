@@ -106,7 +106,8 @@ public sealed class ReportFeedbackStatusResolverTests
 
     [Theory]
     [InlineData(true, false, ManualReportStatus.Sent, ManualReportKind.Current, false, true)]
-    [InlineData(true, false, ManualReportStatus.Completed, ManualReportKind.Negative, true, true)]
+    [InlineData(true, false, ManualReportStatus.Completed, ManualReportKind.Negative, true, false)]
+    [InlineData(true, false, ManualReportStatus.Completed, ManualReportKind.Current, true, false)]
     [InlineData(true, false, ManualReportStatus.Completed, ManualReportKind.Negative, false, false)]
     [InlineData(false, false, ManualReportStatus.Sent, ManualReportKind.Current, false, false)]
     [InlineData(true, true, ManualReportStatus.Sent, ManualReportKind.Current, false, false)]
