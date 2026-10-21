@@ -187,7 +187,8 @@ public sealed class ManualReport : Entity
 
     public void MarkCancelled() { EnsureEditable(); Status = ManualReportStatus.Cancelled; Touch(); }
     public void MarkDirty() { if (Status is ManualReportStatus.Sent or ManualReportStatus.Processing or ManualReportStatus.Completed or ManualReportStatus.Submitted or ManualReportStatus.Cancelled) throw new InvalidOperationException("A sent or completed report cannot be edited."); Status = ManualReportStatus.Draft; SnapshotTakenAt = null; ValidatedAt = null; ValidationError = string.Empty; Touch(); }
-    public bool IsEditable => Status is ManualReportStatus.Draft or ManualReportStatus.ReadyForValidation or ManualReportStatus.Error;
+    // Final validation does not submit a report. A validated report remains editable until transmission begins.
+    public bool IsEditable => Status is ManualReportStatus.Draft or ManualReportStatus.ReadyForValidation or ManualReportStatus.Validated or ManualReportStatus.Error;
     private void EnsureEditable() { if (!IsEditable) throw new InvalidOperationException("This report can no longer be edited."); }
 }
 
