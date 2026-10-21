@@ -61,7 +61,7 @@ public static class ManufacturerInquiryEndpoints
         if (additional.Length > 3000 || additional.Contains((char)0) >= 0)
             return Results.BadRequest(new { error = "manufacturer_inquiry_invalid_message" });
         var body = item.Body + (additional.Length > 0
-            ? "\\n\\nמידע נוסף מטעם הפונה:\\n" + additional
+            ? "\n\nמידע נוסף מטעם הפונה:\n" + additional
             : "");
         if (subject.Length is < 1 or > 200 || body.Length > 8000)
             return Results.BadRequest(new { error = "manufacturer_inquiry_invalid_message" });
@@ -70,11 +70,11 @@ public static class ManufacturerInquiryEndpoints
         var actualRecipient = testMode ? TestRecipient : item.Recipient;
         var actualSubject = testMode ? "[ALPHA - סביבת בדיקות] " + subject : subject;
         var actualBody = testMode
-            ? "הודעת בדיקה של ALPHA — לא נשלחה ליצרן.\\n" +
-              "הנמען המקורי שהיה אמור לקבל את ההודעה: " + item.Recipient + "\\n" +
-              "יצרן: " + item.Manufacturer + "\\n" +
-              "מוצר: " + item.Product + "\\n" +
-              "קוד שגיאה: " + item.ErrorCode + "\\n\\n" + body
+            ? "הודעת בדיקה של ALPHA — לא נשלחה ליצרן.\n" +
+              "הנמען המקורי שהיה אמור לקבל את ההודעה: " + item.Recipient + "\n" +
+              "יצרן: " + item.Manufacturer + "\n" +
+              "מוצר: " + item.Product + "\n" +
+              "קוד שגיאה: " + item.ErrorCode + "\n\n" + body
             : body;
 
         // Reuse the exact OTP email provider configuration and priority:
