@@ -433,7 +433,7 @@ public static partial class ReportFeedbackEndpoints
                     && tx is null && officialCounts.GetValueOrDefault(report.Id) == 0,
                 canStartCorrectionWorkspace = canCreateReport
                     && report.ReportKind == ManualReportKind.Current
-                    && report.Status is ManualReportStatus.Sent or ManualReportStatus.Completed
+                    && report.Status == ManualReportStatus.Sent
                     && !hasNewerRevision,
                 correctionWorkspaceId = workspaceBySource.TryGetValue(report.Id, out var workspace)
                     ? workspace.Id : (Guid?)null,
