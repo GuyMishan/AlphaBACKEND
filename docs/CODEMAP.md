@@ -128,3 +128,5 @@ IdentityAccess binds legal version and marketing opt-in to registration OTP thro
 Employer-selected default pension funds: `src/Modules/Workforce/Alpha.Modules.Workforce/Features/EmployerProfile/EmployerDefaultFundsEndpoints.cs` (GET/PUT/DELETE), `src/Alpha.Infrastructure/Persistence/EmployerProfileSchemaInitializer.cs` (per-employer override), and `src/Alpha.Infrastructure/Persistence/ReferenceDataSchemaInitializer.cs` (catalog flag).
 
 - `ReferenceData/Features/Administration/ManufacturerContactEndpoints.cs` — platform-admin-only manufacturer contact directory and product-specific overrides. Schema tables belong to `Alpha.Infrastructure/Persistence/ReferenceDataSchemaInitializer.cs`; documented in `docs/database.md`. This stage stores destinations only; it does not dispatch email.
+
+- `ReferenceData/Features/Administration/ManufacturerEmailTemplateEndpoints.cs` — platform-admin CRUD for error-code-specific manufacturer inquiry subject/body and enabled state, stored in the ReferenceData initializer table. No email transport in this stage.
