@@ -1478,7 +1478,10 @@ public static partial class ReportFeedbackEndpoints
                 LatestDecision: null,
                 LatestDecisionNote: string.Empty,
                 LatestDecisionAt: null,
-                ReceivedAt: row.ReceivedAt));
+                ReceivedAt: row.ReceivedAt,
+                TreatmentChoice: FeedbackResolutionWireProjection.WireName(FeedbackTreatmentPolicyCatalog.Get(playbook.Code).Choice),
+                TreatmentCanCorrect: FeedbackTreatmentPolicyCatalog.Get(playbook.Code).CanCorrect,
+                TreatmentCanInquire: FeedbackTreatmentPolicyCatalog.Get(playbook.Code).CanOpenExternalCase));
         }
 
         if (problems.Count > 0)
