@@ -186,7 +186,9 @@ public static class DerivedReportEndpoints
         var query = db.ManualReports.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
                 && !x.IsCorrectionWorkspace
-                && x.Status != ManualReportStatus.Cancelled);
+                // Unsent reports belong to the resume-draft picker, never the
+                // source picker for a new correction or derived report.
+                && (x.Status == ManualReportStatus.Sent || x.Status == ManualReportStatus.Completed));
 
         if (!string.IsNullOrWhiteSpace(search))
         {
