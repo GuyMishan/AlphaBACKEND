@@ -26,7 +26,7 @@ public sealed class CompatibilityBaselineTests
         Assert.Contains("employer.MapGet(\"/status\", GetEmployerSetupStatusAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
         Assert.Contains("org.MapPost(\"/abandon\", AbandonOrganizationSetupAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
         Assert.Contains("employer.MapPost(\"/abandon\", AbandonEmployerSetupAsync)", Read("src/Modules/Billing/Alpha.Modules.Billing/Features/PaymentMethods/PaymentProviderEndpoints.cs"));
-        Assert.True(routes.Length == 260 && Fingerprint(routes) == RouteBaseline,
+        Assert.True(routes.Length == 263 && Fingerprint(routes) == RouteBaseline,
             $"Route baseline changed: {routes.Length} routes, fingerprint {Fingerprint(routes)}. Update only for a reviewed API change.");
     }
 
@@ -130,7 +130,7 @@ public sealed class CompatibilityBaselineTests
             Assert.DoesNotMatch(@"Database\.(EnsureCreated|EnsureDeleted|Migrate)(Async)?\(", File.ReadAllText(file));
     }
 
-    internal const string RouteBaseline = "754a914977b6d26de9ddc01227f1bc62bdfe2ca3f2f61db30995f50878f62573";
+    internal const string RouteBaseline = "685e036e9300b77b1ab74e9aaa86480d6b453441dde1b04565268d1698882f5b";
     internal const string TableBaseline = "34391c48ed17c2638b1451ae694ed4a4b8449aaf5db75e8320894e7582d1bc2c";
-    internal const string SchemaInitializerBaseline = "6fd0f833851358dbab316e240d7152542b0f6fd77f1df968eee50329e0612698";
+    internal const string SchemaInitializerBaseline = "42205215af3825ae042a4bf77e63136d58f9ac9a56793c4a3d1559ce8513ebb5";
 }
