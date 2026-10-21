@@ -28,6 +28,7 @@ public static class ReportTransmissionEndpoints
         group.MapPost("/{reportId:guid}/transmissions/resume-hybrid", ResumeHybridAsync);
         group.MapPost("/{reportId:guid}/transmissions", SendAsync);
         group.MapPost("/{reportId:guid}/simulation/payload", BuildSimulationPayloadAsync);
+        group.MapPost("/{reportId:guid}/simulation/transmissions", SendSimulationAsync);
         return endpoints;
     }
 
@@ -394,6 +395,137 @@ public static class ReportTransmissionEndpoints
         }
     }
 
+
+    // Dedicated TEST-only transmission. Never route through normal send logic, and never
+    // allow caller-selected providers. Authorization and report ownership are unchanged.
+    private static async Task<IResult> SendSimulationAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        AlphaDbContext db, IOrganizationAuthorization access,
+        EmployerInterface006ExportService exporter,
+        EmployerInterfaceFileSequenceService fileSequences,
+        IDataProtectionService protector,
+        IEnumerable<IReportTransmissionProvider> providers,
+        IConfiguration configuration, IHostEnvironment environment, CancellationToken ct)
+    {
+        if (!environment.IsDevelopment()
+            || !configuration.GetValue<bool>("EmployerInterface006:SimulationTestMode")
+            || configuration.GetValue<int>("EmployerInterface006:EnvironmentCode") != 1
+            || !string.Equals(configuration["EmployerInterface006:ClearinghouseProvider"],
+                "Simulated", StringComparison.OrdinalIgnoreCase))
+            return Results.NotFound();
+
+        if (!await access.CanTransmitReportAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+
+        var provider = providers.SingleOrDefault(x => x.Name == "SimulatedVault" && x.IsConfigured);
+        if (provider is null)
+            return Results.Conflict(new { error = "simulation_provider_unavailable" });
+
+        var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(
+            x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (report.Status != ManualReportStatus.Draft || report.IsCorrectionWorkspace)
+            return Results.Conflict(new { error = "simulation_requires_unsubmitted_draft" });
+        if (report.ReportKind == ManualReportKind.Differences)
+            return Results.Conflict(new { error = "simulation_requires_transmittable_report_kind" });
+
+        // Never dispatch a multi-manufacturer file into one provider vault.
+        // Simulation is currently supported for reports whose products all use the default vault.
+        var products = await (
+            from p in db.ManualReportProducts.AsNoTracking()
+            join e in db.ManualReportEmployees.AsNoTracking() on p.ReportEmployeeId equals e.Id
+            where e.ReportId == reportId
+            select new ManufacturerHistoricalRoutingResolver.Product(
+                p.Id, p.FundCode, p.FundCompanyName, p.SourceReportProductId))
+            .ToArrayAsync(ct);
+        if (products.Length == 0)
+            return Results.Conflict(new { error = "simulation_requires_products" });
+        IReadOnlyList<ManufacturerHistoricalRoutingResolver.Assignment> routes;
+        try
+        {
+            routes = await ManufacturerHistoricalRoutingResolver.ResolveAsync(
+                report, products, db, provider.Name, configuration, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(new { error = ex.Message });
+        }
+        if (routes.Any(x => !string.Equals(x.Provider, provider.Name, StringComparison.OrdinalIgnoreCase)))
+            return Results.Conflict(new { error = "simulation_manufacturer_routing_unsupported" });
+
+        EmployerInterfaceFileSequenceService.Reservation reservation;
+        try { reservation = await fileSequences.ReserveAsync(employerId, ct); }
+        catch (InvalidOperationException)
+        {
+            return Results.Conflict(new { error = "simulation_file_sequence_unavailable" });
+        }
+
+        var generated = await exporter.ExportAsync(report, ct, reservation.Sequence,
+            reservation.PreparedAt, skipSimulationValidation: true);
+        if (generated.Bytes.Length == 0 || string.IsNullOrWhiteSpace(generated.PayloadFileName))
+            return Results.Conflict(new { error = "simulation_xml_generation_failed",
+                generated.Validation });
+
+        // Atomic claim: a draft can be dispatched exactly once. There is no retry after
+        // an ambiguous provider outcome. Subsequent error scenarios use new drafts.
+        var claimed = await db.ManualReports.Where(x =>
+            x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId
+            && x.Status == ManualReportStatus.Draft)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, ManualReportStatus.Processing)
+                .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow), ct);
+        if (claimed != 1)
+            return Results.Conflict(new { error = "simulation_report_already_claimed" });
+
+        var hash = EmployerInterfaceService.Hash(generated.Bytes);
+        var files = (generated.AttachmentFiles ?? [])
+            .Select(x => new ReportTransmissionAttachment(x.FileName, x.ContentType, x.Content, x.Sha256))
+            .ToArray();
+        var attempt = (await db.ReportTransmissions
+            .Where(x => x.ReportId == reportId)
+            .MaxAsync(x => (int?)x.AttemptNumber, ct) ?? 0) + 1;
+        var transmission = new ReportTransmission(reportId, organizationId, employerId, provider.Name, attempt);
+        var manifest = JsonSerializer.Serialize(files.Select(x => new {
+            x.FileName, x.ContentType, sizeBytes = x.Content.LongLength, x.Sha256
+        }));
+        transmission.Start(hash, generated.PayloadFileName,
+            protector.ProtectBytes(generated.Bytes, $"report-transmission:{transmission.Id}"), manifest);
+        db.ReportTransmissions.Add(transmission);
+        await db.SaveChangesAsync(ct);
+
+        try
+        {
+            // Once persisted, dispatch is irreversible. Do not use the request-abort token.
+            var result = await provider.SendAsync(new ReportTransmissionEnvelope(
+                reportId, organizationId, employerId, generated.Bytes, hash, files,
+                generated.PayloadFileName), CancellationToken.None);
+            transmission.Complete(result.Success ? ReportTransmissionStatus.Accepted :
+                ReportTransmissionStatus.Rejected, result.ExternalId,
+                string.IsNullOrWhiteSpace(result.ResponsePayload) ? string.Empty :
+                    protector.Protect(result.ResponsePayload,
+                        $"report-transmission-response:{transmission.Id}"), result.ErrorMessage);
+            var trackedReport = await db.ManualReports.SingleAsync(x => x.Id == reportId);
+            if (result.Success) trackedReport.MarkSent();
+            else trackedReport.MarkTransmissionError(result.ErrorMessage);
+            await db.SaveChangesAsync(CancellationToken.None);
+            return Results.Ok(new {
+                simulationTestMode = true, transmitted = result.Success,
+                reportId, transmissionId = transmission.Id,
+                transmissionStatus = transmission.Status,
+                generated.PayloadFileName,
+                validationBypassed = true,
+                generated.Validation
+            });
+        }
+        catch (Exception)
+        {
+            transmission.Complete(ReportTransmissionStatus.Error, null, null,
+                "Simulation dispatch outcome uncertain; reconciliation required.");
+            await db.SaveChangesAsync(CancellationToken.None);
+            return Results.Json(new { error = "simulation_dispatch_reconciliation_required" },
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+    }
 
     // This endpoint does not transmit or alter persisted reports. It is a restricted first
     // step for inspecting deliberately invalid 006 payloads in an isolated local TEST runtime.
