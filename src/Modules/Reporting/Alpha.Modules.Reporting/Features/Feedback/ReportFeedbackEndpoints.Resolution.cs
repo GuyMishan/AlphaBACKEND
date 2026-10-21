@@ -190,6 +190,9 @@ public static partial class ReportFeedbackEndpoints
             && selectedProblems.Length != request.ProblemIds.Distinct(StringComparer.Ordinal).Count())
             return Results.BadRequest(new { error = "resolution_problem_mismatch" });
 
+        if (selectedProblems.Length == 0 || selectedProblems.Any(problem => !problem.TreatmentCanCorrect))
+            return Results.BadRequest(new { error = "resolution_action_not_allowed" });
+
         var selectedGroup = resolutionGroup with { Problems = selectedProblems };
         if (!FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
                 selectedGroup, request.ResolverType))
