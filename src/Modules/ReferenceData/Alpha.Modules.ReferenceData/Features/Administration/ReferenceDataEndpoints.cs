@@ -18,6 +18,7 @@ public static class ReferenceDataEndpoints
             .WithTags("Platform Reference Data");
 
         group.MapManufacturerContactEndpoints();
+        group.MapManufacturerEmailTemplateEndpoints();
 
         group.MapGet("/interfaces", async (AlphaDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
         {
