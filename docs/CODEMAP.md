@@ -137,4 +137,8 @@ Employer-selected default pension funds: `src/Modules/Workforce/Alpha.Modules.Wo
 
 ## Feedback treatment policy
 
+`src/Modules/Reporting/Alpha.Modules.Reporting/Application/FeedbackTreatmentDbReader.cs` reads user-facing mode, correction target, correction field identifiers and recipient type from `reference_data.feedback_treatment_policies`. The table is created and seeded by `src/Alpha.Infrastructure/Persistence/EmployerInterface006ErrorCodeInitializer.cs` without overwriting DB edits. The resolution context endpoint projects the persisted policy to the frontend; the static `FeedbackTreatmentPolicyCatalog` supplies initial seed policy only, not runtime UI decisions.
+
+
+
 `src/Modules/Reporting/Alpha.Modules.Reporting/Application/FeedbackTreatmentPolicyCatalog.cs` defines the four user-facing options, surfaced through `FeedbackResolutionContextContracts.cs`. Details: [feedback-treatment-policy.md](feedback-treatment-policy.md).
