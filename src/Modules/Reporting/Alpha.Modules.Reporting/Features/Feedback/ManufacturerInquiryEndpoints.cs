@@ -127,7 +127,7 @@ public static class ManufacturerInquiryEndpoints
                    CASE WHEN po.is_verified THEN po.email
                         WHEN mc.is_verified THEN mc.email ELSE '' END recipient,
                    COALESCE(t.subject, ''), COALESCE(t.body, ''),
-                   COALESCE(mr."EmployerLegalNameSnapshot", ''), mr."ReportingMonth"::text, p."ReportId"::text
+                   COALESCE(mr."EmployerLegalNameSnapshot", ''), to_char(mr."ReportingMonth", 'MM/YYYY'), p."ReportId"::text
             FROM reporting.feedback_external_cases c
             JOIN reporting.feedback_external_case_problems p ON p."CaseId"=c."Id"
             JOIN reporting.manual_report_products rp ON rp."Id"=p."ReportProductId"
