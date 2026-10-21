@@ -194,10 +194,8 @@ public sealed class ReportingEvidenceHttpIntegrationTests
 
             using var historicalDelete = Request(HttpMethod.Delete, $"{attachments}/{attachmentId}", admin.Id, adminSession.Id);
             using var historicalDeleteResponse = await client.SendAsync(historicalDelete, ct);
-            Assert.Equal(HttpStatusCode.Conflict, historicalDeleteResponse.StatusCode);
-            Assert.Equal("A sent or completed report cannot be edited.",
-                (await historicalDeleteResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct))
-                .GetProperty("error").GetString());
+            // Validated without transmission is an editable draft, not historical evidence.
+            Assert.Equal(HttpStatusCode.NoContent, historicalDeleteResponse.StatusCode);
 
             var confirmations = $"/api/organizations/{organization.Id}/employers/{employer.Id}/manual-reports/{cleanupReport.Id}/payment-confirmations";
             using var badSignature = Multipart(HttpMethod.Post, $"{confirmations}/{cleanupProduct.Id}",
