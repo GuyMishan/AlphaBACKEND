@@ -61,7 +61,23 @@ public sealed class ReportTransmissionDomainStressTests
         report.MarkValidated();
 
         Assert.Equal(ManualReportStatus.Validated, report.Status);
-        Assert.False(report.IsEditable);
+        Assert.True(report.IsEditable);
+    }
+
+    [Fact]
+    public void Validated_but_unsent_report_can_be_edited_and_requires_revalidation()
+    {
+        var report = NewValidatedReport();
+        Assert.True(report.IsEditable);
+        Assert.NotNull(report.ValidatedAt);
+
+        report.UpdateDetails(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 9));
+
+        Assert.Equal(ManualReportStatus.Draft, report.Status);
+        Assert.Null(report.ValidatedAt);
+        report.MarkReadyForValidation();
+        report.MarkValidated();
+        Assert.Equal(ManualReportStatus.Validated, report.Status);
     }
 
     [Fact]
