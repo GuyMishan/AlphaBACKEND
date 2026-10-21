@@ -11,7 +11,6 @@ using Alpha.Domain.Reporting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 
@@ -405,10 +404,9 @@ public static class ReportTransmissionEndpoints
         EmployerInterfaceFileSequenceService fileSequences,
         IDataProtectionService protector,
         IEnumerable<IReportTransmissionProvider> providers,
-        IConfiguration configuration, IHostEnvironment environment, CancellationToken ct)
+        IConfiguration configuration, CancellationToken ct)
     {
-        if (!environment.IsDevelopment()
-            || !configuration.GetValue<bool>("EmployerInterface006:SimulationTestMode")
+        if (!configuration.GetValue<bool>("EmployerInterface006:SimulationTestMode")
             || configuration.GetValue<int>("EmployerInterface006:EnvironmentCode") != 1
             || !string.Equals(configuration["EmployerInterface006:ClearinghouseProvider"],
                 "Simulated", StringComparison.OrdinalIgnoreCase))
@@ -536,8 +534,7 @@ public static class ReportTransmissionEndpoints
         EmployerInterface006ExportService exporter, IConfiguration configuration,
         IHostEnvironment environment, CancellationToken ct)
     {
-        if (!environment.IsDevelopment()
-            || !configuration.GetValue<bool>("EmployerInterface006:SimulationTestMode")
+        if (!configuration.GetValue<bool>("EmployerInterface006:SimulationTestMode")
             || configuration.GetValue<int>("EmployerInterface006:EnvironmentCode") != 1
             || !string.Equals(configuration["EmployerInterface006:ClearinghouseProvider"],
                 "Simulated", StringComparison.OrdinalIgnoreCase))
