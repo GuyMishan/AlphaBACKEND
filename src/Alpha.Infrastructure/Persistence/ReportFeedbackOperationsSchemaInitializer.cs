@@ -224,6 +224,27 @@ public static class ReportFeedbackOperationsSchemaInitializer
             CREATE INDEX IF NOT EXISTS "IX_feedback_external_case_event_Case_CreatedAt"
                 ON reporting.feedback_external_case_events ("CaseId", "CreatedAt");
 
+            CREATE TABLE IF NOT EXISTS reporting.feedback_manufacturer_email_dispatches (
+                id uuid PRIMARY KEY,
+                case_id uuid NOT NULL REFERENCES reporting.feedback_external_cases("Id") ON DELETE CASCADE,
+                organization_id uuid NOT NULL,
+                employer_id uuid NOT NULL,
+                report_product_id uuid NOT NULL,
+                error_code integer NOT NULL,
+                recipient text NOT NULL,
+                subject text NOT NULL,
+                body text NOT NULL,
+                status varchar(20) NOT NULL DEFAULT 'pending',
+                provider_message_id text NULL,
+                failure_code text NULL,
+                requested_by uuid NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now(),
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                CONSTRAINT ck_manufacturer_dispatch_status CHECK (status IN ('pending','sent','failed'))
+            );
+            CREATE INDEX IF NOT EXISTS ix_manufacturer_email_dispatch_case
+                ON reporting.feedback_manufacturer_email_dispatches(case_id, created_at DESC);
+
             CREATE TABLE IF NOT EXISTS reporting.feedback_external_case_attachments (
                 "Id" uuid PRIMARY KEY,
                 "CaseId" uuid NOT NULL REFERENCES reporting.feedback_external_cases("Id") ON DELETE CASCADE,
