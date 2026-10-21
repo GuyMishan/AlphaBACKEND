@@ -37,37 +37,12 @@ public static class ReferenceDataSchemaInitializer
                 CONSTRAINT ck_manufacturer_template_body CHECK (char_length(body) BETWEEN 1 AND 8000)
             );
 
-            -- Safe starter templates for the two official split-feedback codes.
-            -- These request clarification only; they do not assert that money was received.
+            -- Starter clarification templates. PostgreSQL E-strings keep the C# raw SQL properly indented.
             INSERT INTO reference_data.manufacturer_error_email_templates
                 (error_code, subject, body, is_enabled)
             VALUES
-                (2, 'בירור פיצול הפקדה בין פוליסות - קוד {errorCode}',
-                 'שלום רב,
-
-התקבל משוב קוד {errorCode} ({errorDescription}) עבור המוצר {productName} של היצרן {manufacturerName}.
-מעסיק: {employerName}
-חודש דיווח: {reportMonth}
-מזהה דיווח: {reportReference}
-
-נבקש לאשר האם מלוא הכספים נקלטו, ולאילו פוליסות וסכומים בוצע הפיצול.
-ככל שהרשומה נדחתה או שקיים שיוך שגוי, נבקש פירוט והנחיות לתיקון.
-
-תודה רבה.',
-                 true),
-                (3, 'בירור פיצול בין קרן מקיפה לכללית - קוד {errorCode}',
-                 'שלום רב,
-
-התקבל משוב קוד {errorCode} ({errorDescription}) עבור המוצר {productName} של היצרן {manufacturerName}.
-מעסיק: {employerName}
-חודש דיווח: {reportMonth}
-מזהה דיווח: {reportReference}
-
-נבקש פירוט הסכומים ששויכו לקרן המקיפה ולקרן הכללית, ואישור שמלוא ההפקדה נקלטה בהתאם לזכויות העמית.
-אם הפיצול שגוי או שההפקדה לא נקלטה, נבקש הנחיות לתיקון.
-
-תודה רבה.',
-                 true)
+                (2, 'בירור פיצול הפקדה בין פוליסות - קוד {errorCode}', E'שלום רב,\n\nהתקבל משוב קוד {errorCode} ({errorDescription}) עבור המוצר {productName} של היצרן {manufacturerName}.\nמעסיק: {employerName}\nחודש דיווח: {reportMonth}\nמזהה דיווח: {reportReference}\n\nנבקש לאשר האם מלוא הכספים נקלטו, ולאילו פוליסות וסכומים בוצע הפיצול.\nככל שהרשומה נדחתה או שקיים שיוך שגוי, נבקש פירוט והנחיות לתיקון.\n\nתודה רבה.', true),
+                (3, 'בירור פיצול בין קרן מקיפה לכללית - קוד {errorCode}', E'שלום רב,\n\nהתקבל משוב קוד {errorCode} ({errorDescription}) עבור המוצר {productName} של היצרן {manufacturerName}.\nמעסיק: {employerName}\nחודש דיווח: {reportMonth}\nמזהה דיווח: {reportReference}\n\nנבקש פירוט הסכומים ששויכו לקרן המקיפה ולקרן הכללית, ואישור שמלוא ההפקדה נקלטה בהתאם לזכויות העמית.\nאם הפיצול שגוי או שההפקדה לא נקלטה, נבקש הנחיות לתיקון.\n\nתודה רבה.', true)
             ON CONFLICT (error_code) DO NOTHING;
 
             CREATE TABLE IF NOT EXISTS reference_data.product_contact_email_overrides (
