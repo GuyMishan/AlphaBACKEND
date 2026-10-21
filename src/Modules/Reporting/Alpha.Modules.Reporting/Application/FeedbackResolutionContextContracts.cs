@@ -161,7 +161,8 @@ public static class FeedbackResolutionWireProjection
             WireName(FeedbackResolverType.Documents),
             WireName(FeedbackResolverType.ReportCorrection),
             WireName(FeedbackResolverType.ConditionalField),
-            WireName(FeedbackResolverType.Refund)
+            WireName(FeedbackResolverType.Refund),
+            WireName(FeedbackResolverType.Split)
         };
         if (!correctionResolvers.Contains(requestedResolver)
             || !string.Equals(group.ResolverType, requestedResolver, StringComparison.Ordinal)
@@ -179,14 +180,21 @@ public static class FeedbackResolutionWireProjection
             var value when value == WireName(FeedbackResolverType.Payment) => WireName(FeedbackResolutionAction.EditPayment),
             var value when value == WireName(FeedbackResolverType.Documents) => WireName(FeedbackResolutionAction.UploadDocument),
             var value when value == WireName(FeedbackResolverType.Refund) => WireName(FeedbackResolutionAction.PrepareNegative),
+            var value when value == WireName(FeedbackResolverType.Split) => WireName(FeedbackResolutionAction.EditProduct),
             _ => prepareCorrection
         };
 
         return group.Problems.All(problem =>
-            string.Equals(problem.ResolutionType, edit, StringComparison.Ordinal)
-            && string.Equals(problem.CorrectionBehavior, correctionWorkspace, StringComparison.Ordinal)
-            && (problem.AvailableActions.Contains(prepareCorrection, StringComparer.Ordinal)
-                || problem.AvailableActions.Contains(resolverSpecificAction, StringComparer.Ordinal)));
+            (string.Equals(problem.ResolutionType, edit, StringComparison.Ordinal)
+                && string.Equals(problem.CorrectionBehavior, correctionWorkspace, StringComparison.Ordinal)
+                && (problem.AvailableActions.Contains(prepareCorrection, StringComparer.Ordinal)
+                    || problem.AvailableActions.Contains(resolverSpecificAction, StringComparer.Ordinal)))
+            // Decision is a preflight classification, not a no-op confirmation.
+            // Only a concrete editor action can open a correction workspace.
+            || (string.Equals(problem.ResolutionType, WireName(FeedbackResolutionType.Decision), StringComparison.Ordinal)
+                && problem.AvailableActions.Contains(resolverSpecificAction, StringComparer.Ordinal)
+                && resolverSpecificAction != prepareCorrection
+                && FeedbackTreatmentPolicyCatalog.Get(problem.Code).CanCorrect));
     }
 
     public static string BuildResolutionGroupKey(
