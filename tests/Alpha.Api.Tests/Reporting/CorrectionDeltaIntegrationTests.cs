@@ -307,9 +307,10 @@ public sealed class CorrectionDeltaIntegrationTests
 
             Assert.Null(await CorrectionWorkflowService.EnsureWorkspaceAsync(
                 organization.Id, employer.Id, source.Id, null, db, protector, ct));
+            // Completed reports are final and cannot become new correction sources.
             var revision3Workspace = await CorrectionWorkflowService.EnsureWorkspaceAsync(
                 organization.Id, employer.Id, revision2.Id, null, db, protector, ct);
-            Assert.NotNull(revision3Workspace);
+            Assert.Null(revision3Workspace);
         }
         finally
         {
