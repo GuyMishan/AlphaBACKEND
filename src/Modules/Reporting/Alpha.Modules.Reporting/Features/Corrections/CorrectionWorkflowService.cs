@@ -46,7 +46,7 @@ public static class CorrectionWorkflowService
             x.Id == sourceReportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (source is null || source.IsTechnicalCorrectionDocument
             || source.ReportKind != ManualReportKind.Current
-            || source.Status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
+            || source.Status != ManualReportStatus.Sent)
             return null;
 
         var rootReportId = source.RevisionRootReportId ?? source.Id;
