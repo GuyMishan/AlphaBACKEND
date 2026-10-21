@@ -48,7 +48,7 @@ public static class ManualReportEndpoints
             .Where(x => x.OrganizationId == organizationId && x.EmployerId == employerId
                 && !x.IsCorrectionWorkspace
                 && (x.Status == ManualReportStatus.Draft || x.Status == ManualReportStatus.ReadyForValidation
-                    || x.Status == ManualReportStatus.Error));
+                    || x.Status == ManualReportStatus.Error || x.Status == ManualReportStatus.Validated));
 
         if (!string.IsNullOrWhiteSpace(search))
         {
