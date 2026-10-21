@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Alpha.Infrastructure.Persistence;
 using Alpha.Modules.IdentityAccess.Contracts;
+using Alpha.Modules.Reporting.Features.FeedbackIngestion;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -115,10 +116,12 @@ public static class ManufacturerInquiryEndpoints
                    COALESCE(g.manufacturer_name, ''),
                    CASE WHEN po.is_verified THEN po.email
                         WHEN mc.is_verified THEN mc.email ELSE '' END recipient,
-                   COALESCE(t.subject, ''), COALESCE(t.body, '')
+                   COALESCE(t.subject, ''), COALESCE(t.body, ''),
+                   COALESCE(mr."EmployerLegalNameSnapshot", ''), mr."ReportingMonth"::text, p."ReportId"::text
             FROM reporting.feedback_external_cases c
             JOIN reporting.feedback_external_case_problems p ON p."CaseId"=c."Id"
             JOIN reporting.manual_report_products rp ON rp."Id"=p."ReportProductId"
+            JOIN reporting.manual_reports mr ON mr."Id"=p."ReportId" AND mr."OrganizationId"=c."OrganizationId" AND mr."EmployerId"=c."EmployerId"
             LEFT JOIN reference_data.manufacturer_company_groups g
                 ON g.company_name=rp.fund_company_name AND g.mapping_status='verified_name'
             LEFT JOIN reference_data.product_contact_email_overrides po
@@ -145,8 +148,11 @@ public static class ManufacturerInquiryEndpoints
                 var product = reader.IsDBNull(2) ? "" : reader.GetString(2);
                 var manufacturer = reader.GetString(3);
                 var recipient = reader.GetString(4);
-                var subject = Render(reader.GetString(5), code, product, manufacturer);
-                var body = Render(reader.GetString(6), code, product, manufacturer);
+                var employer = reader.GetString(7);
+                var month = reader.GetString(8);
+                var reportId = reader.GetString(9);
+                var subject = Render(reader.GetString(5), code, product, manufacturer, employer, month, reportId);
+                var body = Render(reader.GetString(6), code, product, manufacturer, employer, month, reportId);
                 rows.Add(new Inquiry(productId, code, recipient, manufacturer, product, subject, body));
             }
         }
@@ -161,15 +167,15 @@ public static class ManufacturerInquiryEndpoints
         return rows.DistinctBy(row => (row.ReportProductId, row.ErrorCode)).ToList();
     }
 
-    private static string Render(string template, int code, string product, string manufacturer)
+    private static string Render(string template, int code, string product, string manufacturer, string employer, string month, string reportId)
     {
         return template.Replace("{errorCode}", code.ToString(), StringComparison.Ordinal)
-            .Replace("{errorDescription}", "", StringComparison.Ordinal)
+            .Replace("{errorDescription}", EmployerInterfaceLineFeedbackParser.Description(code), StringComparison.Ordinal)
             .Replace("{manufacturerName}", manufacturer, StringComparison.Ordinal)
             .Replace("{productName}", product, StringComparison.Ordinal)
-            .Replace("{employerName}", "", StringComparison.Ordinal)
-            .Replace("{reportMonth}", "", StringComparison.Ordinal)
-            .Replace("{reportReference}", "", StringComparison.Ordinal)
+            .Replace("{employerName}", employer, StringComparison.Ordinal)
+            .Replace("{reportMonth}", month, StringComparison.Ordinal)
+            .Replace("{reportReference}", reportId, StringComparison.Ordinal)
             .Replace("{paymentReference}", "", StringComparison.Ordinal);
     }
 
