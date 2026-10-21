@@ -130,3 +130,5 @@ Employer-selected default pension funds: `src/Modules/Workforce/Alpha.Modules.Wo
 - `ReferenceData/Features/Administration/ManufacturerContactEndpoints.cs` — platform-admin-only manufacturer contact directory and product-specific overrides. Schema tables belong to `Alpha.Infrastructure/Persistence/ReferenceDataSchemaInitializer.cs`; documented in `docs/database.md`. This stage stores destinations only; it does not dispatch email.
 
 - `ReferenceData/Features/Administration/ManufacturerEmailTemplateEndpoints.cs` — platform-admin CRUD for error-code-specific manufacturer inquiry subject/body and enabled state, stored in the ReferenceData initializer table. No email transport in this stage.
+
+- `Reporting/Features/Feedback/ManufacturerInquiryEndpoints.cs` — external-case manufacturer email preview, validated recipient resolution from verified product/parent contacts and active official error-code template, explicitly confirmed Resend dispatch and tenant-scoped history. Requires dedicated `ManufacturerMail:ResendApiKey`/`From` settings; no fallback to OTP email provider.
