@@ -172,9 +172,11 @@ public static class ManufacturerInquiryEndpoints
             x => x.Id == caseId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
         if (externalCase is not null)
         {
-            externalCase.SetStatus("waiting");
+            if (!testMode) externalCase.SetStatus("waiting");
             db.FeedbackExternalCaseEvents.Add(new FeedbackExternalCaseEvent(
-                caseId, "manufacturer-mail-sent", $"פנייה ליצרן נמסרה לספק הדוא״ל (קוד {item.ErrorCode}).", currentUser.UserId));
+                caseId, testMode ? "manufacturer-mail-test" : "manufacturer-mail-sent",
+                testMode ? $"הודעת בדיקה נשלחה לתיבת ALPHA (קוד {item.ErrorCode}); היצרן לא קיבל הודעה." :
+                $"פנייה ליצרן נמסרה לספק הדוא״ל (קוד {item.ErrorCode}).", currentUser.UserId));
             await db.SaveChangesAsync(ct);
         }
         return Results.Ok(new { dispatchId = id, status, recipient = actualRecipient, intendedRecipient = item.Recipient, testMode });
