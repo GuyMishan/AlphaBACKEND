@@ -434,6 +434,7 @@ public static partial class ReportFeedbackEndpoints
                 canStartCorrectionWorkspace = canCreateReport
                     && report.ReportKind == ManualReportKind.Current
                     && report.Status == ManualReportStatus.Sent
+                    && State(report.Id) != "completed"
                     && !hasNewerRevision,
                 correctionWorkspaceId = workspaceBySource.TryGetValue(report.Id, out var workspace)
                     ? workspace.Id : (Guid?)null,
@@ -441,7 +442,7 @@ public static partial class ReportFeedbackEndpoints
                     ? workspaceChangedCounts.GetValueOrDefault(pendingWorkspace.Id)
                     : 0,
                 canCreateCorrection = ReportFeedbackStatusResolver.CanCreateCorrection(
-                    canCreateReport, report.IsEditable, report.Status, report.ReportKind,
+                    canCreateReport && State(report.Id) != "completed", report.IsEditable, report.Status, report.ReportKind,
                     productCounts.GetValueOrDefault(report.Id) > 0
                         && metadataCounts.GetValueOrDefault(report.Id) == productCounts.GetValueOrDefault(report.Id),
                     operation6Reports.Contains(report.Id)),
