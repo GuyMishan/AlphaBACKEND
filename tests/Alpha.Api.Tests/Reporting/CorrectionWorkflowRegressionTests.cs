@@ -439,18 +439,18 @@ public sealed class CorrectionDeltaRevisionRegressionTests
 public sealed class ReportingStressScenarioRegressionTests
 {
     [Fact]
-    public void Finally_validated_report_is_immutable_so_the_validated_payload_cannot_be_changed_before_send()
+    public void Finally_validated_unsent_report_is_editable_and_must_revalidate()
     {
         var report = NewReport();
         report.MarkReadyForValidation();
         report.MarkValidated();
 
         Assert.Equal(ManualReportStatus.Validated, report.Status);
-        Assert.False(report.IsEditable);
-        Assert.Throws<InvalidOperationException>(() =>
-            report.UpdateDetails(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 9)));
-        Assert.Equal(ManualReportStatus.Validated, report.Status);
-        Assert.NotNull(report.ValidatedAt);
+        Assert.True(report.IsEditable);
+        report.UpdateDetails(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 9));
+        Assert.Equal(ManualReportStatus.Draft, report.Status);
+        Assert.Null(report.ValidatedAt);
+        Assert.Null(report.SnapshotTakenAt);
     }
 
     [Fact]
