@@ -192,6 +192,7 @@ public static class FeedbackResolutionWireProjection
             // Decision is a preflight classification, not a no-op confirmation.
             // Only a concrete editor action can open a correction workspace.
             || (string.Equals(problem.ResolutionType, WireName(FeedbackResolutionType.Decision), StringComparison.Ordinal)
+                && string.Equals(problem.CorrectionBehavior, WireName(FeedbackCorrectionBehavior.Dynamic), StringComparison.Ordinal)
                 && problem.AvailableActions.Contains(resolverSpecificAction, StringComparer.Ordinal)
                 && resolverSpecificAction != prepareCorrection
                 && FeedbackTreatmentPolicyCatalog.Get(problem.Code).CanCorrect));
