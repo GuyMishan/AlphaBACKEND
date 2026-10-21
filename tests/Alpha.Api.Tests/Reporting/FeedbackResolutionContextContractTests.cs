@@ -276,9 +276,10 @@ public sealed class FeedbackResolutionContextContractTests
         Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
             group with { Problems = new[] { problem with { CorrectionBehavior = "revalidateOnly" } } },
             resolver));
-        Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
-            group with { Problems = new[] { problem with { CorrectionBehavior = "externalFollowUp" } } },
-            resolver));
+        Assert.Equal(resolver == "documents",
+            FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
+                group with { Problems = new[] { problem with { CorrectionBehavior = "externalFollowUp" } } },
+                resolver));
     }
 
     [Theory]
