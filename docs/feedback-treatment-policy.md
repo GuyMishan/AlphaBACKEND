@@ -39,3 +39,7 @@ The current embedded editor supports existing shared employer-contact and deposi
 ## Database source of truth (October 2026)
 
 `reference_data.feedback_treatment_policies` now stores the four treatment modes per official error code, together with correction target, JSON correction-field identifiers, and external recipient type. Startup seeds every catalog code using `ON CONFLICT DO NOTHING`, preserving DB overrides. Resolution-context API reads this table; unknown or unconfigured codes fail closed. Playbook classifications remain internal defaults for seeding, not user-facing mode authority. Configuration changes must retain authorization and action checks; `correction_target` identifies an existing editor, not executable code.
+
+## Administration API
+
+Platform administrators can inspect persisted modes with `GET /api/admin/feedback-treatment-policies` and change a policy with `PUT /api/admin/feedback-treatment-policies/{code}`. A write accepts `treatmentChoice`, `correctionTarget`, and `externalRecipientType`. Validation limits correction targets to the code's verified existing resolver, requires an actual edit action and an external-case action for any enabled route, and forbids changing informational codes to actionable ones. Unauthorized users receive 403. An admin UI is not yet implemented. These operations do not send mail or close errors.
