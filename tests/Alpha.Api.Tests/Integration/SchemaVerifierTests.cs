@@ -32,21 +32,47 @@ public sealed class SchemaVerifierTests
     {
         await InBootstrappedDatabase(async (connectionString, ct) =>
         {
-            var seeded = new Dictionary<int, (string Mode, string Fields)>();
+            var seeded = new Dictionary<int, (string Mode, string Target, string Recipient, string Fields)>();
             await using (var connection = new NpgsqlConnection(connectionString))
             {
                 await connection.OpenAsync(ct);
                 await using var command = new NpgsqlCommand(
-                    "SELECT code, treatment_choice, correction_fields::text FROM reference_data.feedback_treatment_policies",
+                    "SELECT code, treatment_choice, correction_target, external_recipient_type, correction_fields::text FROM reference_data.feedback_treatment_policies",
                     connection);
                 await using var reader = await command.ExecuteReaderAsync(ct);
                 while (await reader.ReadAsync(ct))
-                    Assert.True(seeded.TryAdd(reader.GetInt32(0), (reader.GetString(1), reader.GetString(2))));
+                    Assert.True(seeded.TryAdd(reader.GetInt32(0), (reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4))));
             }
 
             Assert.Equal(101, seeded.Count);
             Assert.Equal(FeedbackTreatmentPolicyCatalog.All.Select(policy => policy.Code).Order(),
                 seeded.Keys.Order());
+            foreach (var policy in FeedbackTreatmentPolicyCatalog.All)
+            {
+                var entry = seeded[policy.Code];
+                var playbook = FeedbackResolutionPlaybookCatalog.Get(policy.Code);
+                var expectedMode = policy.Choice switch
+                {
+                    FeedbackTreatmentChoice.CorrectionOnly => "correctionOnly",
+                    FeedbackTreatmentChoice.CorrectionOrExternalInquiry => "correctionOrExternalInquiry",
+                    FeedbackTreatmentChoice.ExternalInquiryOnly => "externalInquiryOnly",
+                    _ => "informationOnly"
+                };
+                Assert.Equal(expectedMode, entry.Mode);
+                Assert.Equal(policy.CanCorrect
+                    ? FeedbackResolutionWireProjection.WireName(playbook.Resolver)
+                    : "none", entry.Target);
+                Assert.Equal(policy.CanOpenExternalCase ? "manufacturer" : "none", entry.Recipient);
+                using var fields = System.Text.Json.JsonDocument.Parse(entry.Fields);
+                if (fields.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    Assert.Equal(FeedbackResolverType.Documents, playbook.Resolver);
+                    Assert.True(fields.RootElement.TryGetProperty("documentTypeCode", out var type));
+                    Assert.Contains(type.GetInt32(), new[] { 3, 4, 5, 6 });
+                }
+                else Assert.Equal(System.Text.Json.JsonValueKind.Array, fields.RootElement.ValueKind);
+            }
+
             Assert.Equal("informationOnly", seeded[1].Mode);
             Assert.Equal("correctionOrExternalInquiry", seeded[103].Mode);
             foreach (var code in new[] { 69, 70, 111, 112 })
