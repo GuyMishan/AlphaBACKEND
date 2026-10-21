@@ -55,6 +55,8 @@ public static partial class ReportFeedbackEndpoints
         if (selected.Length != request.ProblemIds.Distinct(StringComparer.Ordinal).Count())
             return Results.BadRequest(new { error = "resolution_problem_mismatch" });
         var requiredAction = caseAction == "reconcile" ? "reconcile" : "openExternalCase";
+        if (selected.Length == 0 || selected.Any(problem => !problem.TreatmentCanInquire))
+            return Results.BadRequest(new { error = "external_case_not_allowed" });
         if (selected.Any(problem => !problem.AvailableActions.Contains(requiredAction, StringComparer.Ordinal)))
             return Results.BadRequest(new { error = "external_case_not_allowed" });
 
