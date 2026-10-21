@@ -426,4 +426,49 @@ public sealed class FeedbackResolutionContextContractTests
             Assert.NotEmpty(FeedbackResolutionWireProjection.ActionNames(playbook.Actions));
         }
     }
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void Split_feedback_uses_real_edit_product_action_not_confirmation(int code)
+    {
+        var playbook = FeedbackResolutionPlaybookCatalog.Get(code);
+        var problem = new FeedbackResolutionProblemDto(
+            ProblemId: "split",
+            Code: code,
+            Description: "split",
+            Scope: "deposit",
+            ResolutionType: "decision",
+            Family: "split",
+            ResolverType: "split",
+            GroupStrategy: "perEmployeeProduct",
+            GroupKey: "split:test",
+            CorrectionBehavior: "dynamic",
+            AvailableActions: FeedbackResolutionWireProjection.ActionNames(playbook.Actions),
+            CanEscalateExternally: true,
+            FeedbackId: Guid.NewGuid(),
+            ReportId: Guid.NewGuid(),
+            ReportProductId: Guid.NewGuid(),
+            ContributionId: Guid.NewGuid(),
+            ReportEmployeeId: Guid.NewGuid(),
+            EmploymentId: Guid.NewGuid(),
+            PersonId: Guid.NewGuid(),
+            EmployeeName: "Employee",
+            ProductName: "Product",
+            FundCompanyName: "Fund",
+            PolicyNumber: "P-1",
+            ReportedValues: new Dictionary<string, string?>(),
+            CurrentValues: new Dictionary<string, string?>(),
+            FeedbackValues: new Dictionary<string, string?>(),
+            ReceivedAt: DateTimeOffset.UtcNow);
+        var group = new FeedbackResolutionGroupDto(
+            problem.GroupKey, "split", "perEmployeeProduct", true, new[] { problem });
+
+        Assert.Equal(FeedbackTreatmentChoice.CorrectionOrExternalInquiry,
+            FeedbackTreatmentPolicyCatalog.Get(code).Choice);
+        Assert.True(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(group, "split"));
+        Assert.False(FeedbackResolutionWireProjection.CanPrepareInternalCorrection(
+            group with { Problems = new[] { problem with { AvailableActions = new[] { "review", "confirm" } } },
+            "split"));
+    }
+
 }
