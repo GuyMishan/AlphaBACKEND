@@ -132,5 +132,5 @@ public sealed class CompatibilityBaselineTests
 
     internal const string RouteBaseline = "685e036e9300b77b1ab74e9aaa86480d6b453441dde1b04565268d1698882f5b";
     internal const string TableBaseline = "34391c48ed17c2638b1451ae694ed4a4b8449aaf5db75e8320894e7582d1bc2c";
-    internal const string SchemaInitializerBaseline = "42205215af3825ae042a4bf77e63136d58f9ac9a56793c4a3d1559ce8513ebb5";
+    internal const string SchemaInitializerBaseline = "470d8b190dd323b6435e84862124962b80d0509d480acff55c437e7e43509c28";
 }
