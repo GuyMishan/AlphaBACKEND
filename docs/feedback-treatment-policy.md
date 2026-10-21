@@ -35,3 +35,7 @@ The current embedded editor supports existing shared employer-contact and deposi
 ## Verification
 
 `FeedbackTreatmentPolicyCatalogTests` checks full official-code coverage, uniqueness, key cases and external-case action consistency. Run the verification commands in `AGENTS.md` before deploying.
+
+## Database source of truth (October 2026)
+
+`reference_data.feedback_treatment_policies` now stores the four treatment modes per official error code, together with correction target, JSON correction-field identifiers, and external recipient type. Startup seeds every catalog code using `ON CONFLICT DO NOTHING`, preserving DB overrides. Resolution-context API reads this table; unknown or unconfigured codes fail closed. Playbook classifications remain internal defaults for seeding, not user-facing mode authority. Configuration changes must retain authorization and action checks; `correction_target` identifies an existing editor, not executable code.

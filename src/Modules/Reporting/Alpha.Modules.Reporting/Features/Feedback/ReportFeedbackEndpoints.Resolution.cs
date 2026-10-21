@@ -1114,9 +1114,10 @@ public static partial class ReportFeedbackEndpoints
                 Array.Empty<int>(), Array.Empty<FeedbackResolutionProblemDto>(),
                 Array.Empty<FeedbackResolutionGroupDto>());
 
+        var dbTreatments = await FeedbackTreatmentDbReader.LoadAsync(db, ct);
         var targetSelections = await TreatmentTargetsAsync(rows, employerId, db, protector, ct);
         var unsupportedCodes = rows
-            .Where(x => x.ErrorCode.HasValue && !FeedbackResolutionPlaybookCatalog.TryGet(x.ErrorCode.Value, out _))
+            .Where(x => x.ErrorCode.HasValue && (!FeedbackResolutionPlaybookCatalog.TryGet(x.ErrorCode.Value, out _) || !dbTreatments.ContainsKey(x.ErrorCode.Value)))
             .Select(x => x.ErrorCode!.Value)
             .Distinct()
             .OrderBy(x => x)
@@ -1479,9 +1480,12 @@ public static partial class ReportFeedbackEndpoints
                 LatestDecisionNote: string.Empty,
                 LatestDecisionAt: null,
                 ReceivedAt: row.ReceivedAt,
-                TreatmentChoice: FeedbackResolutionWireProjection.WireName(FeedbackTreatmentPolicyCatalog.Get(playbook.Code).Choice),
-                TreatmentCanCorrect: FeedbackTreatmentPolicyCatalog.Get(playbook.Code).CanCorrect,
-                TreatmentCanInquire: FeedbackTreatmentPolicyCatalog.Get(playbook.Code).CanOpenExternalCase));
+                TreatmentChoice: dbTreatments[playbook.Code].Choice,
+                TreatmentCanCorrect: dbTreatments[playbook.Code].CanCorrect,
+                TreatmentCanInquire: dbTreatments[playbook.Code].CanInquire,
+                CorrectionTarget: dbTreatments[playbook.Code].CorrectionTarget,
+                CorrectionFields: dbTreatments[playbook.Code].CorrectionFields,
+                ExternalRecipientType: dbTreatments[playbook.Code].RecipientType));
         }
 
         if (problems.Count > 0)

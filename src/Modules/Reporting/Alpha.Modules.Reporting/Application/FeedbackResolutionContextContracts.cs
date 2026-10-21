@@ -56,7 +56,10 @@ public sealed record FeedbackResolutionProblemDto(
     string TargetScope = "deposit",
     string TreatmentChoice = "informationOnly",
     bool TreatmentCanCorrect = false,
-    bool TreatmentCanInquire = false);
+    bool TreatmentCanInquire = false,
+    string CorrectionTarget = "",
+    string CorrectionFields = "[]",
+    string ExternalRecipientType = "none");
 
 public static class FeedbackResolutionWireProjection
 {
