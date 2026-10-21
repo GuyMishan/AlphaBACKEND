@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Alpha.Infrastructure.Persistence;
+using Alpha.Domain.Reporting;
 using Alpha.Modules.IdentityAccess.Contracts;
 using Alpha.Modules.Reporting.Features.FeedbackIngestion;
 using Microsoft.AspNetCore.Builder;
@@ -104,6 +105,15 @@ public static class ManufacturerInquiryEndpoints
             """, ct);
 
         if (status != "sent") return Results.Json(new { error = "manufacturer_inquiry_send_failed", dispatchId = id }, statusCode: 502);
+        var externalCase = await db.FeedbackExternalCases.SingleOrDefaultAsync(
+            x => x.Id == caseId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (externalCase is not null)
+        {
+            externalCase.SetStatus("waiting");
+            db.FeedbackExternalCaseEvents.Add(new FeedbackExternalCaseEvent(
+                caseId, "manufacturer-mail-sent", $"פנייה ליצרן נמסרה לספק הדוא״ל (קוד {item.ErrorCode}).", currentUser.UserId));
+            await db.SaveChangesAsync(ct);
+        }
         return Results.Ok(new { dispatchId = id, status, recipient = item.Recipient });
     }
 
