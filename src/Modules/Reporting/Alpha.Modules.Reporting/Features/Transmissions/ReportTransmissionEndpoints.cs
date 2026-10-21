@@ -11,6 +11,7 @@ using Alpha.Domain.Reporting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 
@@ -26,6 +27,7 @@ public static class ReportTransmissionEndpoints
         group.MapGet("/{reportId:guid}/transmission-routing/validate", ValidateRoutingAsync);
         group.MapPost("/{reportId:guid}/transmissions/resume-hybrid", ResumeHybridAsync);
         group.MapPost("/{reportId:guid}/transmissions", SendAsync);
+        group.MapPost("/{reportId:guid}/simulation/payload", BuildSimulationPayloadAsync);
         return endpoints;
     }
 
@@ -390,6 +392,46 @@ public static class ReportTransmissionEndpoints
                 result = ToResponse(report, transmission, generated.Validation)
             }, statusCode: StatusCodes.Status502BadGateway);
         }
+    }
+
+
+    // This endpoint does not transmit or alter persisted reports. It is a restricted first
+    // step for inspecting deliberately invalid 006 payloads in an isolated local TEST runtime.
+    // The normal transmission route never calls the export validation bypass.
+    private static async Task<IResult> BuildSimulationPayloadAsync(
+        Guid organizationId, Guid employerId, Guid reportId,
+        AlphaDbContext db, IOrganizationAuthorization access,
+        EmployerInterface006ExportService exporter, IConfiguration configuration,
+        IHostEnvironment environment, CancellationToken ct)
+    {
+        if (!environment.IsDevelopment()
+            || !configuration.GetValue<bool>("EmployerInterface006:SimulationTestMode")
+            || configuration.GetValue<int>("EmployerInterface006:EnvironmentCode") != 1
+            || !string.Equals(configuration["EmployerInterface006:ClearinghouseProvider"],
+                "Simulated", StringComparison.OrdinalIgnoreCase))
+            return Results.NotFound();
+
+        if (!await access.CanTransmitReportAsync(organizationId, employerId, ct))
+            return Results.Forbid();
+
+        var report = await db.ManualReports.AsNoTracking().SingleOrDefaultAsync(
+            x => x.Id == reportId && x.OrganizationId == organizationId && x.EmployerId == employerId, ct);
+        if (report is null) return Results.NotFound();
+        if (report.Status != ManualReportStatus.Draft)
+            return Results.Conflict(new { error = "simulation_requires_draft" });
+
+        var generated = await exporter.ExportAsync(report, ct, skipSimulationValidation: true);
+        if (generated.Bytes.Length == 0)
+            return Results.Conflict(new { error = "simulation_xml_generation_failed",
+                generated.Validation });
+
+        return Results.Ok(new {
+            simulationTestMode = true,
+            transmitted = false,
+            generated.PayloadFileName,
+            xmlBase64 = Convert.ToBase64String(generated.Bytes),
+            generated.Validation
+        });
     }
 
     private static object ToResponse(ManualReport report, ReportTransmission transmission, EmployerInterface006FileValidation validation) => new
