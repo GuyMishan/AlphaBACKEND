@@ -134,3 +134,7 @@ Employer-selected default pension funds: `src/Modules/Workforce/Alpha.Modules.Wo
 - `Reporting/Features/Feedback/ManufacturerInquiryEndpoints.cs` — external-case manufacturer email preview, validated recipient resolution from verified product/parent contacts and active official error-code template, explicitly confirmed Resend dispatch and tenant-scoped history. Uses the existing `Otp:Email` provider configuration (Apps Script, then Resend, then SMTP).
 
 - `ManufacturerMail:TestMode` (default `true` in backend appsettings and in code) — forces all manufacturer inquiry messages to `alphapensia@gmail.com`, labels original manufacturer destination inside the email, and advances external cases to waiting on successful test delivery to exercise the complete workflow. This switch is separate from reporting simulation mode. Apps Script email gateway supports a `manufacturer-inquiry` message type.
+
+## Feedback treatment policy
+
+`src/Modules/Reporting/Alpha.Modules.Reporting/Application/FeedbackTreatmentPolicyCatalog.cs` defines the four user-facing options, surfaced through `FeedbackResolutionContextContracts.cs`. Details: [feedback-treatment-policy.md](feedback-treatment-policy.md).

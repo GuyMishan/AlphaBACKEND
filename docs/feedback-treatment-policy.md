@@ -20,9 +20,17 @@ The authoritative meanings of feedback codes remain the V006 workbook/XSD and cl
 - Saving internal corrections or sending a message does not close official feedback. Closure requires relevant confirmation / follow-up feedback.
 - The mapping captures the existing playbook's supported correction/external-case capabilities. It is intentionally separate from UI rollout and inbound-mail/AI work.
 
-## Next stages
+## Implemented integration
 
-Wire the policy to resolution-context API and shared modal; reuse embedded existing forms, preserve corrections on copies of transmitted reports; then attach immutable templated outbound inquiries with append-only extra text and thread history. Do not create code-specific React editors.
+- `FeedbackResolutionProblemDto` now includes `treatmentChoice`, `treatmentCanCorrect` and `treatmentCanInquire`; the reporting resolution context populates them from the catalog.
+- The frontend chooses correction, inquiry or information only from the backend policy. Shared existing editor forms are embedded where supported; transmitted reports are edited through correction workspaces, not rewritten.
+- Manufacturer inquiry sending derives the subject and protected body from the enabled DB template and verified product/institution recipient. The client submits only `additionalInformation`, appended after the server-rendered template. Test routing to the ALPHA mailbox remains enforced server-side.
+- Outbound dispatch records expose a chronological case conversation history; inbound e-mail capture and AI replies are deliberately outside this iteration.
+- Coverage tests assert every official playbook code is classified exactly once. Dedicated split tests exercise real edit-product correction preparation.
+
+## Remaining validation and constraints
+
+The current embedded editor supports existing shared employer-contact and deposit/product forms, plus existing employee resolvers. Some report-wide, document, and payment flows still rely on existing specialized workflows rather than an embedded editor. They must not be advertised as fully embedded until those reusable screens are supported. No inbound-mail listener or AI triage has been enabled.
 
 ## Verification
 
