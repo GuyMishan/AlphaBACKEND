@@ -31,14 +31,17 @@ public static class ManufacturerInquiryEndpoints
         return group;
     }
 
+    private const string TestRecipient = "alphapensia@gmail.com";
+    private static bool TestMode(IConfiguration config) => config.GetValue("ManufacturerMail:TestMode", true);
+
     private static async Task<IResult> GetAsync(Guid organizationId, Guid employerId, Guid caseId,
-        AlphaDbContext db, IOrganizationAuthorization access, CancellationToken ct)
+        AlphaDbContext db, IOrganizationAuthorization access, IConfiguration config, CancellationToken ct)
     {
         if (!await access.CanAccessEmployerAsync(organizationId, employerId, ct)) return Results.Forbid();
         var rows = await ResolveAsync(organizationId, employerId, caseId, db, ct);
         if (rows is null) return Results.NotFound();
         var history = await ReadHistoryAsync(caseId, db, ct);
-        return Results.Ok(new { inquiries = rows, history });
+        return Results.Ok(new { inquiries = rows, history, testMode = TestMode(config), testRecipient = TestMode(config) ? TestRecipient : null });
     }
 
     private static async Task<IResult> SendAsync(Guid organizationId, Guid employerId, Guid caseId,
@@ -58,6 +61,17 @@ public static class ManufacturerInquiryEndpoints
             subject.Contains('\r') || subject.Contains('\n'))
             return Results.BadRequest(new { error = "manufacturer_inquiry_invalid_message" });
 
+        var testMode = TestMode(config);
+        var actualRecipient = testMode ? TestRecipient : item.Recipient;
+        var actualSubject = testMode ? "[ALPHA - סביבת בדיקות] " + subject : subject;
+        var actualBody = testMode
+            ? "הודעת בדיקה של ALPHA — לא נשלחה ליצרן.\\n" +
+              "הנמען המקורי שהיה אמור לקבל את ההודעה: " + item.Recipient + "\\n" +
+              "יצרן: " + item.Manufacturer + "\\n" +
+              "מוצר: " + item.Product + "\\n" +
+              "קוד שגיאה: " + item.ErrorCode + "\\n\\n" + body
+            : body;
+
         // Reuse the exact OTP email provider configuration and priority:
         // Google Apps Script -> Resend -> SMTP. Never accept a sender from the client.
         var scriptUrl = config["Otp:Email:AppsScript:Url"];
@@ -76,7 +90,7 @@ public static class ManufacturerInquiryEndpoints
             INSERT INTO reporting.feedback_manufacturer_email_dispatches
               (id,case_id,organization_id,employer_id,report_product_id,error_code,recipient,subject,body,requested_by)
             VALUES ({id},{caseId},{organizationId},{employerId},{item.ReportProductId},{item.ErrorCode},
-                    {item.Recipient},{subject},{body},{currentUser.UserId})
+                    {actualRecipient},{actualSubject},{actualBody},{currentUser.UserId})
             """, ct);
 
         string status = "failed";
@@ -96,7 +110,7 @@ public static class ManufacturerInquiryEndpoints
                 using var outgoing = new HttpRequestMessage(HttpMethod.Post, uri);
                 outgoing.Content = JsonContent.Create(new
                 {
-                    secret, to = item.Recipient, code = body, subject, text = body, type = "invitation"
+                    secret, to = actualRecipient, subject = actualSubject, text = actualBody, type = "manufacturer-inquiry"
                 });
                 using var response = await clients.CreateClient("otp-email").SendAsync(outgoing, ct);
                 if (!response.IsSuccessStatusCode) failure = "provider_http_" + (int)response.StatusCode;
@@ -115,7 +129,7 @@ public static class ManufacturerInquiryEndpoints
                 outgoing.Headers.TryAddWithoutValidation("Idempotency-Key", id.ToString("N"));
                 outgoing.Content = JsonContent.Create(new
                 {
-                    from, to = new[] { item.Recipient }, subject, text = body
+                    from, to = new[] { actualRecipient }, subject = actualSubject, text = actualBody
                 });
                 using var response = await clients.CreateClient("otp-email").SendAsync(outgoing, ct);
                 if (response.IsSuccessStatusCode)
@@ -132,7 +146,7 @@ public static class ManufacturerInquiryEndpoints
             }
             else
             {
-                using var message = new MailMessage(from!, item.Recipient, subject, body);
+                using var message = new MailMessage(from!, actualRecipient, actualSubject, actualBody);
                 using var smtp = new SmtpClient(smtpHost!, config.GetValue("Otp:Email:Port", 587))
                 {
                     EnableSsl = config.GetValue("Otp:Email:EnableSsl", true),
@@ -163,7 +177,7 @@ public static class ManufacturerInquiryEndpoints
                 caseId, "manufacturer-mail-sent", $"פנייה ליצרן נמסרה לספק הדוא״ל (קוד {item.ErrorCode}).", currentUser.UserId));
             await db.SaveChangesAsync(ct);
         }
-        return Results.Ok(new { dispatchId = id, status, recipient = item.Recipient });
+        return Results.Ok(new { dispatchId = id, status, recipient = actualRecipient, intendedRecipient = item.Recipient, testMode });
     }
 
     private static async Task<List<Inquiry>?> ResolveAsync(Guid organizationId, Guid employerId, Guid caseId,
