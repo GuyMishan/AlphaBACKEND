@@ -17,6 +17,8 @@ public static class ReferenceDataEndpoints
             .RequireAuthorization()
             .WithTags("Platform Reference Data");
 
+        group.MapManufacturerContactEndpoints();
+
         group.MapGet("/interfaces", async (AlphaDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
         {
             if (!currentUser.IsPlatformAdmin) return Results.Forbid();
