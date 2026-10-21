@@ -57,3 +57,9 @@ Documentation maintenance is part of implementation, not a separate optional tas
 - The configuration key `EmployerInterface006:SimulationTestMode` is set to `true` (ON) in `src/Alpha.Api/appsettings.json` for planned isolated simulation tests. In any reporting-related status update, explicitly state the configured flag value and whether the bypass route is actually implemented/enabled.
 - **A configured `true` flag alone does not bypass any validation**. The isolated bypass path is not implemented yet. Do not represent this flag as proof that invalid reports can be transmitted.
 - Any future bypass implementation must be restricted to an independently isolated TEST runtime, `EnvironmentCode=1`, simulated providers only, and explicit test-report endpoints; it must not relax standard report endpoints, authorization, tenant isolation, financial evidence immutability, or real transmission protections. Fail closed when isolation cannot be established.
+
+## Simulation implementation status (2026-10-21)
+
+- `EmployerInterface006:SimulationTestMode = true` in `src/Alpha.Api/appsettings.json` (**ON configured**).
+- The restricted `POST /api/organizations/{organizationId}/employers/{employerId}/manual-reports/{reportId}/simulation/payload` route is available **only** in Development + TEST (`EnvironmentCode=1`) + `ClearinghouseProvider=Simulated`. It exports validation-bypassed XML from an authorized draft for inspection, without transmission or persistence changes.
+- **Bypassed transmission is NOT implemented**. Existing normal `POST .../transmissions` still requires validated reports and fully validates outbound payloads. Never suggest otherwise. Any reporting answer must distinguish configured flag ON from send-bypass inactive.
