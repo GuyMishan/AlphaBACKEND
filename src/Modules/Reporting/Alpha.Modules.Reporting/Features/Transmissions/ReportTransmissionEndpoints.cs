@@ -532,7 +532,7 @@ public static class ReportTransmissionEndpoints
         Guid organizationId, Guid employerId, Guid reportId,
         AlphaDbContext db, IOrganizationAuthorization access,
         EmployerInterface006ExportService exporter, IConfiguration configuration,
-        IHostEnvironment environment, CancellationToken ct)
+        CancellationToken ct)
     {
         if (!configuration.GetValue<bool>("EmployerInterface006:SimulationTestMode")
             || configuration.GetValue<int>("EmployerInterface006:EnvironmentCode") != 1
