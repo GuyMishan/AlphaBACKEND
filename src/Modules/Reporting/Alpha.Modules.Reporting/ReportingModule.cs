@@ -143,6 +143,7 @@ public static class ReportingModule
         endpoints.MapEmployerInterfacePreviousReferenceEndpoints();
         endpoints.MapReportTransmissionEndpoints();
         endpoints.MapReportFeedbackEndpoints();
+        endpoints.MapFeedbackTreatmentAdministrationEndpoints();
         return endpoints;
     }
 
