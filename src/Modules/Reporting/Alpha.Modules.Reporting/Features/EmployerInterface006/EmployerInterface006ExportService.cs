@@ -14,7 +14,7 @@ public sealed class EmployerInterface006ExportService(
 {
     public async Task<EmployerInterface006GeneratedDocument> ExportAsync(ManualReport report, CancellationToken ct,
         int fileSequence = 1, DateTimeOffset? preparedAtOverride = null,
-        IReadOnlyCollection<Guid>? includedProductIds = null)
+        IReadOnlyCollection<Guid>? includedProductIds = null, bool skipSimulationValidation = false)
     {
         if (report.ReportKind == ManualReportKind.Differences)
             return Invalid(EmployerInterfaceDocumentType.CurrentReport,
@@ -158,7 +158,7 @@ public sealed class EmployerInterface006ExportService(
             return new([], new(false, documentType, EmployerInterfaceSchemaRegistry.Version, null, built.Issues));
 
         var workbookIssues = EmployerInterface006WorkbookRules.ValidateAndApply(built.Document, context, negative);
-        if (workbookIssues.Count > 0)
+        if (workbookIssues.Count > 0 && !skipSimulationValidation)
             return new([], new(false, documentType, EmployerInterfaceSchemaRegistry.Version, null, workbookIssues));
 
         var bytes = EmployerInterface006XmlSerializer.Serialize(built.Document);
@@ -169,7 +169,7 @@ public sealed class EmployerInterface006ExportService(
                 attachmentNames[x.Id], x.ContentType,
                 protector.UnprotectBytes(x.Content, $"report-attachment:{x.ReportId}:{x.ReportProductId}:{x.DocumentTypeCode}"), x.Sha256))
             .ToArray();
-        return new(bytes, new(validation.IsValid, documentType, EmployerInterfaceSchemaRegistry.Version,
+        return new(bytes, new(skipSimulationValidation || validation.IsValid, documentType, EmployerInterfaceSchemaRegistry.Version,
             validation.SchemaFileName, validation.Issues), packageName.PayloadFileName, attachmentFiles);
     }
 
