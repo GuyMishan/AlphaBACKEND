@@ -197,6 +197,16 @@ public static class EmployerInterface006ErrorCodeInitializer
                 (115, 'correctionOrExternalInquiry', 'productPolicy', 'manufacturer'),
                 (116, 'correctionOrExternalInquiry', 'split', 'manufacturer')
             ON CONFLICT (code) DO NOTHING;
+            -- Seed supported document upload focus targets; retain administrator DB overrides.
+            UPDATE reference_data.feedback_treatment_policies
+            SET correction_fields = jsonb_build_object('documentTypeCode', 6), updated_at = now()
+            WHERE code IN (102, 103) AND correction_fields = '[]'::jsonb;
+            UPDATE reference_data.feedback_treatment_policies
+            SET correction_fields = jsonb_build_object('documentTypeCode', 4), updated_at = now()
+            WHERE code IN (109, 110) AND correction_fields = '[]'::jsonb;
+            UPDATE reference_data.feedback_treatment_policies
+            SET correction_fields = jsonb_build_object('documentTypeCode', 3), updated_at = now()
+            WHERE code IN (111, 112) AND correction_fields = '[]'::jsonb;
             -- Correct a prior seed bug only for external-only rows with an invalid "none" recipient.
             UPDATE reference_data.feedback_treatment_policies
             SET external_recipient_type = 'manufacturer', updated_at = now()
