@@ -54,14 +54,8 @@ Documentation maintenance is part of implementation, not a separate optional tas
 
 ## Simulation testing flag — reporting conversations
 
-- The configuration key `EmployerInterface006:SimulationTestMode` is set to `true` (ON) in `src/Alpha.Api/appsettings.json` for planned isolated simulation tests. In any reporting-related status update, explicitly state the configured flag value and whether the bypass route is actually implemented/enabled.
-- **A configured `true` flag alone does not bypass any validation**. The isolated bypass path is not implemented yet. Do not represent this flag as proof that invalid reports can be transmitted.
-- Any future bypass implementation must be restricted to an independently isolated TEST runtime, `EnvironmentCode=1`, simulated providers only, and explicit test-report endpoints; it must not relax standard report endpoints, authorization, tenant isolation, financial evidence immutability, or real transmission protections. Fail closed when isolation cannot be established.
-
-## Simulation implementation status (2026-10-21)
-
-- `EmployerInterface006:SimulationTestMode = true` in `src/Alpha.Api/appsettings.json` (**ON configured**).
-- The restricted `POST /api/organizations/{organizationId}/employers/{employerId}/manual-reports/{reportId}/simulation/payload` route is available **only** in Development + TEST (`EnvironmentCode=1`) + `ClearinghouseProvider=Simulated`. It exports validation-bypassed XML from an authorized draft for inspection, without transmission or persistence changes.
-- Dedicated bypass transmission IS implemented at `/simulation/transmissions` in isolated Development TEST only. Existing normal `POST .../transmissions` still requires validated reports and fully validates outbound payloads. Any reporting answer must distinguish configured flag ON from send-bypass inactive.
-
-- Implemented: in an isolated Development TEST runtime only, the dedicated `/simulation/transmissions` endpoint uses `SimulationTestMode=true` to bypass 006 workbook/XSD send validation. It does not change normal `/transmissions`. Requires explicit test drafts and sends only to `SimulatedVault`; routing to other manufacturers is refused. No tests have been executed yet; never call this production-verified. Simulator feedback is still scenario-based, not data-derived.
+- Always report `EmployerInterface006:SimulationTestMode` in reporting discussions: configured **ON** (`true` in `src/Alpha.Api/appsettings.json`).
+- When flag ON, `EnvironmentCode=1` and `ClearinghouseProvider=Simulated`, the dedicated `/simulation/payload` and `/simulation/transmissions` routes are enabled **also when the host environment is Production**. These are explicit tenant-scoped simulation routes, not overrides of the normal `/transmissions` endpoint.
+- Simulation transmission accepts only unsubmitted Draft (non-correction-workspace) current/negative reports, enforces access, and routes only to `SimulatedVault`. Product routes to other providers fail closed. Existing standard transmission validation is unchanged.
+- The simulation flag is NOT an entitlement to use an arbitrary database safely: in the deployed host, simulated report/transmission/feedback writes use the configured database. Use dedicated test employers and do not use real financial records. The simulator remains scenario-driven (`success` default), not yet data-derived.
+- No verification should be claimed unless CI/build/tests or Render live status is observed.
