@@ -31,7 +31,7 @@ public static class FeedbackTreatmentPolicyCatalog
 
     private static readonly IReadOnlyDictionary<int, FeedbackTreatmentPolicy> ByCode = Build();
 
-    public static IReadOnlyCollection<FeedbackTreatmentPolicy> All => ByCode.Values;
+    public static IReadOnlyCollection<FeedbackTreatmentPolicy> All => ByCode.Values.ToArray();
 
     public static bool TryGet(int code, out FeedbackTreatmentPolicy policy) =>
         ByCode.TryGetValue(code, out policy!);
