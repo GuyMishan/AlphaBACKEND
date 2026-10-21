@@ -8,6 +8,9 @@ The additive `billing.pending_payment_setup_details` table stores the proposed i
 
 ## Feedback treatment configuration (October 2026)
 
+Document focus is stored in `correction_fields` JSONB as `{ "documentTypeCode": 3|4|5|6 }`. The seed maps employer refund/declaration errors 69, 70, 111, 112 to type 3; employee declarations 109, 110 to type 4; and collective-agreement declarations 102, 103 to type 6. General document errors 55, 67 intentionally retain `[]` because the correct attachment type cannot be inferred safely. Existing customized nonempty JSONB is preserved at startup. The frontend uses these identifiers only to focus existing controls; uploads continue through scoped, validated report attachment endpoints.
+
+
 The V006 treatment-mode catalog is persisted in `reference_data.feedback_treatment_policies`. Its 101 rows are seeded by `EmployerInterface006ErrorCodeInitializer` using `ON CONFLICT DO NOTHING`, retaining deliberate DB changes on later boots. It has four permitted `treatment_choice` values plus `correction_target`, JSON `correction_fields`, `external_recipient_type`, and an update timestamp. Reporting reads this table for every resolution context; codes with no configured mode fail closed. The table is additive, with no changes to the official feedback-code descriptions or financial evidence.
 
 ## How the schema is built
