@@ -132,3 +132,5 @@ Employer-selected default pension funds: `src/Modules/Workforce/Alpha.Modules.Wo
 - `ReferenceData/Features/Administration/ManufacturerEmailTemplateEndpoints.cs` — platform-admin CRUD for error-code-specific manufacturer inquiry subject/body and enabled state, stored in the ReferenceData initializer table. No email transport in this stage.
 
 - `Reporting/Features/Feedback/ManufacturerInquiryEndpoints.cs` — external-case manufacturer email preview, validated recipient resolution from verified product/parent contacts and active official error-code template, explicitly confirmed Resend dispatch and tenant-scoped history. Uses the existing `Otp:Email` provider configuration (Apps Script, then Resend, then SMTP).
+
+- `ManufacturerMail:TestMode` (default `true` in backend appsettings and in code) — forces all manufacturer inquiry messages to `alphapensia@gmail.com`, labels original manufacturer destination inside the email, and does not advance external cases to waiting on test delivery. This switch is separate from reporting simulation mode. Apps Script email gateway supports a `manufacturer-inquiry` message type.
