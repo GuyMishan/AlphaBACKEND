@@ -53,7 +53,7 @@ A fresh database is built from the EF model first, while production was built ov
 
 The production procedure (logins, exact commands, expected output and stop criteria) is in [release.md](release.md#production-read-only-verification) and runs only after explicit approval; locally, `SchemaVerifierTests` exercise the same `expected`/`capture`/`compare` steps.
 
-Expected production-only results (Info/Review, not blocking): `reference_data.manufacturer_company_groups` and the view `reference_data.pension_products_by_manufacturer` (manual Supabase migration, 2026-10-08), and possibly initializer-era constraints such as a foreign key on `identity.user_sessions`. Any **Blocking** result stops the release. The `*.schema.json` outputs contain only catalog metadata but should still be kept out of the repository (they are git-ignored).
+Expected production-only results (Info/Review, not blocking): the view `reference_data.pension_products_by_manufacturer` (manual Supabase migration, 2026-10-08), and possibly initializer-era constraints such as a foreign key on `identity.user_sessions`. Any **Blocking** result stops the release. The `*.schema.json` outputs contain only catalog metadata but should still be kept out of the repository (they are git-ignored).
 
 `SchemaVerifierTests` prove determinism, the classification of simulated historical drift (including the `user_sessions` foreign key) and that capture works with a `CONNECT`-only role that cannot read data or write.
 
@@ -120,7 +120,7 @@ Owner = the module that defines the invariants and is the primary writer (also e
 | reporting.feedback_external_case_problems, feedback_external_case_events | Reporting | Case details | parent | — |
 | reporting.feedback_external_case_attachments | Reporting | Case attachments | parent | content (enc) |
 
-`reference_data.manufacturer_company_groups` is read by manufacturer routing but is not created by this codebase; it must be provisioned in each environment that enables manufacturer routing.
+`reference_data.manufacturer_company_groups` is now provisioned with its minimal shape on new databases by `ReferenceDataSchemaInitializer`, but manufacturer-to-company mappings must still be reviewed and populated explicitly; initializer DDL never fabricates routing mappings.
 
 Retention: `SecurityRetentionHostedService` deletes only OTP challenges older than `Security:OtpRetentionHours` and expired, non-pending invitations older than `Security:ExpiredInvitationRetentionDays`. Business, reporting, financial and audit rows are never deleted by jobs.
 
