@@ -260,7 +260,8 @@ public sealed class FeedbackResolutionContextContractTests
             ReportedValues: new Dictionary<string, string?>(),
             CurrentValues: new Dictionary<string, string?>(),
             FeedbackValues: new Dictionary<string, string?>(),
-            ReceivedAt: DateTimeOffset.UtcNow);
+            ReceivedAt: DateTimeOffset.UtcNow,
+            TreatmentCanCorrect: resolver == "documents");
         var group = new FeedbackResolutionGroupDto(
             problem.GroupKey, resolver, problem.GroupStrategy, true, new[] { problem });
 
