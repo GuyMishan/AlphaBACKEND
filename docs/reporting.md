@@ -2,6 +2,13 @@
 
 Business rules of the Reporting module that are not obvious from the code. Authoritative sources for formats and codes: `docs/specifications/employer-interface/006` (XSDs, `Employer interface V 6.xlsx`, error-code workbook) and `docs/specifications/mislaka`. Never infer 006 rules from UI behavior. File locations are in [CODEMAP.md](CODEMAP.md#reporting).
 
+## Unsent reports after final validation (October 2026)
+
+- Final validation (`Validated`) is **not** completion or transmission: if pre-send evidence, payment or agreement checks fail before any transmission, the report remains a resumable, editable draft in the user experience.
+- The open manual reports endpoint includes `Draft`, `ReadyForValidation`, `Validated` and `Error`. Editing a validated report calls `MarkDirty` and resets validation so it must pass final validation again before transmission.
+- Normal draft deletion still requires no persisted transmissions, no official feedback, no derived versions and permission for the employer. A failed or attempted transmission with stored external evidence must never become deletable merely because the report status is `Error`.
+- The frontend wizard loads this set for resume, and refreshes the list when the draft picker opens.
+
 ## Safety invariants
 
 - A submitted or transmitted report is immutable. Corrections are separate revisions; a correction workspace never mutates its source.
