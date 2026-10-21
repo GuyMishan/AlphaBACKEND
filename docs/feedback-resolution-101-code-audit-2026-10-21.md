@@ -132,3 +132,11 @@ This is an **exhaustive static cross-check** of every code in `FeedbackResolutio
 - Run browser E2E for every supported resolver and document type (3,4,5,6), including existing file, conditional branch, invalid file, mobile RTL and Dark/Light.
 - Against the real database, compare its 101 treatment rows to this seeded reference and audit manufacturer contact/template coverage; do not overwrite reviewed DB overrides during that check.
 - Simulate send/feedback cycles including rejected and accepted manufacturer responses before claiming 101 resolved scenarios.
+
+## Repeat audit: exhaustive persisted-policy integration test
+
+The repeat audit extends `SchemaVerifierTests.Persisted_feedback_treatments_cover_all_101_codes_with_document_focus` so it loops over **every** official policy, checking its actual fresh-bootstrap DB `treatment_choice`, `correction_target`, `external_recipient_type` and valid JSON correction fields against the playbook. This is a stronger check than the old count-only test. It also verifies DB overrides remain unchanged after re-running the initializer.
+
+The shared frontend fallback correction resolver no longer uses branches for individual document/report error numbers; document type comes from `correctionFields` and the appropriate domain report editor still owns upload semantics. Mixed-mode feedback groups now withhold any group-wide action unless every problem permits it, avoiding an unauthorized/incorrect cross-code action. A UI for **separately** handling mixed-permission groups is still a usability gap.
+
+**Honest completeness limit:** Static/bootstrapped DB coverage does not guarantee that all 101 producer issues have a successful actionable correction in every concrete report. The following remain outside this audit: full browser automation over 101 real feedbacks; production DB override reconciliation; actual send → manufacturer receipt → follow-up feedback; resolving incomplete product/report references; institution-specific missing document types 55 and 67; and verifying exact uploaded evidence bytes on provider side. This report cannot be used to claim these checks passed.
