@@ -1,4 +1,5 @@
 using Alpha.Infrastructure.Persistence;
+using Alpha.Modules.Reporting.Application;
 using Alpha.SchemaVerifier;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -24,6 +25,52 @@ public sealed class SchemaVerifierTests
         Assert.Equal(SchemaCatalog.ApplicationSchemas.Order(), first.Schemas.Order());
         Assert.Equal(78, first.Objects.Keys.Count(k => k.StartsWith("table ", StringComparison.Ordinal)));
         Assert.Contains("table reference_data.legal_document_versions", first.Objects.Keys);
+    }
+
+    [Fact]
+    public async Task Persisted_feedback_treatments_cover_all_101_codes_with_document_focus()
+    {
+        await InBootstrappedDatabase(async (connectionString, ct) =>
+        {
+            var seeded = new Dictionary<int, (string Mode, string Fields)>();
+            await using (var connection = new NpgsqlConnection(connectionString))
+            {
+                await connection.OpenAsync(ct);
+                await using var command = new NpgsqlCommand(
+                    "SELECT code, treatment_choice, correction_fields::text FROM reference_data.feedback_treatment_policies",
+                    connection);
+                await using var reader = await command.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                    Assert.True(seeded.TryAdd(reader.GetInt32(0), (reader.GetString(1), reader.GetString(2))));
+            }
+
+            Assert.Equal(101, seeded.Count);
+            Assert.Equal(FeedbackTreatmentPolicyCatalog.All.Select(policy => policy.Code).Order(),
+                seeded.Keys.Order());
+            Assert.Equal("informationOnly", seeded[1].Mode);
+            Assert.Equal("correctionOrExternalInquiry", seeded[103].Mode);
+            foreach (var code in new[] { 69, 70, 111, 112 })
+                Assert.Contains("\"documentTypeCode\": 3", seeded[code].Fields);
+            foreach (var code in new[] { 109, 110 })
+                Assert.Contains("\"documentTypeCode\": 4", seeded[code].Fields);
+            foreach (var code in new[] { 102, 103 })
+                Assert.Contains("\"documentTypeCode\": 6", seeded[code].Fields);
+            // Codes without an unambiguous document type must not focus an arbitrary file.
+            foreach (var code in new[] { 55, 67 })
+                Assert.Equal("[]", seeded[code].Fields);
+
+            await using (var optionsDb = new AlphaDbContext(
+                new DbContextOptionsBuilder<AlphaDbContext>().UseNpgsql(connectionString).Options))
+            {
+                await optionsDb.Database.ExecuteSqlRawAsync(
+                    "UPDATE reference_data.feedback_treatment_policies SET treatment_choice = 'externalInquiryOnly' WHERE code = 103", ct);
+                await EmployerInterface006ErrorCodeInitializer.EnsureUpdatedAsync(optionsDb, ct);
+                var preserved = await optionsDb.Database.SqlQueryRaw<string>(
+                    "SELECT treatment_choice AS \"Value\" FROM reference_data.feedback_treatment_policies WHERE code = 103")
+                    .SingleAsync(ct);
+                Assert.Equal("externalInquiryOnly", preserved);
+            }
+        });
     }
 
     [Fact]
