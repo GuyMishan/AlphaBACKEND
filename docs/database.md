@@ -186,3 +186,7 @@ RegistrationConsentSchemaInitializer adds `identity.registration_consent_intents
 ## Manufacturer contact email directory (October 2026)
 
 The ReferenceData startup initializer creates `reference_data.manufacturer_contact_emails` (primary key `manufacturer_name`) and `reference_data.product_contact_email_overrides` (primary key `external_key`). Both store contact `email`, `is_verified`, `updated_at` and `updated_by`. They are platform-managed metadata, not tenant-authored pension records. A verified product override takes precedence over the verified parent manufacturer address. Unverified or absent contacts are not eligible for sending. The parent is resolved via the verified `reference_data.manufacturer_company_groups` legal-company mapping, never from fund code alone. Removing an override restores fallback; no email is sent by these endpoints.
+
+## Manufacturer inquiry email templates (October 2026)
+
+`reference_data.manufacturer_error_email_templates` stores a single optional subject/body per official active feedback error code, with an explicit `is_enabled` flag (default false), `updated_by` and timestamp. The platform ReferenceData endpoint restricts mutation to platform admins and validates template placeholders against a small allowlist. No message is sent by the template API; future dispatch must independently enforce authorization, verified recipient resolution and personal-data minimization.
