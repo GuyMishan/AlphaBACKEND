@@ -22,7 +22,7 @@ public static class ManufacturerInquiryEndpoints
     public sealed record SendInquiryRequest(Guid ReportProductId, int ErrorCode, string? AdditionalInformation);
     private sealed record Inquiry(Guid ReportProductId, int ErrorCode, string Recipient, string Manufacturer,
         string Product, string Subject, string Body);
-    private sealed record History(Guid Id, string Recipient, string Subject, string Status, string? FailureCode, DateTimeOffset CreatedAt);
+    private sealed record History(Guid Id, string Recipient, string Subject, string Status, string? FailureCode, DateTimeOffset CreatedAt, string Body);
 
     public static RouteGroupBuilder MapManufacturerInquiryEndpoints(this RouteGroupBuilder group)
     {
@@ -263,7 +263,7 @@ public static class ManufacturerInquiryEndpoints
     {
         await using var cmd = db.Database.GetDbConnection().CreateCommand();
         cmd.CommandText = """
-            SELECT id, recipient, subject, status, failure_code, created_at
+            SELECT id, recipient, subject, status, failure_code, created_at, body
             FROM reporting.feedback_manufacturer_email_dispatches
             WHERE case_id=@case_id ORDER BY created_at DESC LIMIT 50
             """;
@@ -273,7 +273,7 @@ public static class ManufacturerInquiryEndpoints
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             result.Add(new History(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetFieldValue<DateTimeOffset>(5)));
+                reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetFieldValue<DateTimeOffset>(5), reader.GetString(6)));
         return result;
     }
 
