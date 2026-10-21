@@ -61,7 +61,7 @@ public static class ReportFeedbackStatusResolver
         bool allProductsOperation6)
     {
         if (!canCreateReport || isEditable || !hasCompleteMetadata
-            || status is not (ManualReportStatus.Sent or ManualReportStatus.Completed))
+            || status != ManualReportStatus.Sent)
             return false;
         return reportKind != ManualReportKind.Negative || allProductsOperation6;
     }
