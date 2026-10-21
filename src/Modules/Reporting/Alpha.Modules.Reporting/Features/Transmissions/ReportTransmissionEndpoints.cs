@@ -504,7 +504,7 @@ public static class ReportTransmissionEndpoints
                 string.IsNullOrWhiteSpace(result.ResponsePayload) ? string.Empty :
                     protector.Protect(result.ResponsePayload,
                         $"report-transmission-response:{transmission.Id}"), result.ErrorMessage);
-            var trackedReport = await db.ManualReports.SingleAsync(x => x.Id == reportId);
+            var trackedReport = await db.ManualReports.SingleAsync(x => x.Id == reportId, CancellationToken.None);
             if (result.Success) trackedReport.MarkSent();
             else trackedReport.MarkTransmissionError(result.ErrorMessage);
             await db.SaveChangesAsync(CancellationToken.None);
