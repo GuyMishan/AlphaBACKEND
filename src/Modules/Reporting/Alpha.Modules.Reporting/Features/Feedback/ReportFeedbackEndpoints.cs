@@ -88,6 +88,7 @@ public static partial class ReportFeedbackEndpoints
         group.MapGet("/{reportId:guid}/resolution-actions/{problemId}/original-movement-candidates", OriginalMovementCandidatesAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/{problemId}/link-original", LinkOriginalMovementAsync);
         group.MapPost("/{reportId:guid}/resolution-actions/external-case/open", OpenExternalCaseAsync);
+        group.MapManufacturerInquiryEndpoints();
         group.MapGet("/external-cases/{caseId:guid}", ExternalCaseDetailsAsync);
         group.MapPost("/external-cases/{caseId:guid}/events", AddExternalCaseEventAsync);
         group.MapPut("/external-cases/{caseId:guid}/assignment", AssignExternalCaseAsync);
