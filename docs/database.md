@@ -190,3 +190,7 @@ The ReferenceData startup initializer creates `reference_data.manufacturer_conta
 ## Manufacturer inquiry email templates (October 2026)
 
 `reference_data.manufacturer_error_email_templates` stores a single optional subject/body per official active feedback error code, with an explicit `is_enabled` flag (default false), `updated_by` and timestamp. The platform ReferenceData endpoint restricts mutation to platform admins and validates template placeholders against a small allowlist. No message is sent by the template API; future dispatch must independently enforce authorization, verified recipient resolution and personal-data minimization.
+
+## Manufacturer inquiry dispatch log (October 2026)
+
+`reporting.feedback_manufacturer_email_dispatches` records each case-scoped outbound email attempt, its recipient, edited subject/body, owner/tenant, product, official error code, provider ID, user, timestamp and pending/sent/failed state. The tenant-guarded Reporting endpoints use this log for case history; case deletion cascades its attempts. Email dispatch only uses an explicitly configured dedicated Resend sender (`ManufacturerMail:ResendApiKey`, `ManufacturerMail:From`) and never falls back to the OTP Apps Script credentials. A provider acceptance is recorded as sent-to-provider, not recipient delivery.
